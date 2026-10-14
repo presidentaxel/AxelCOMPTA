@@ -24,7 +24,13 @@ const LIASSE: DocumentCloture = "liasse-fiscale.pdf";
 /** Pièces à emporter pour les impôts. Pas une télédéclaration : rien n'est
  * envoyé à l'administration depuis cet écran. */
 const PIECES: Array<{ document: DocumentCloture; label: string; detail: string }> = [
-  { document: "fec.txt", label: "FEC", detail: "Fichier des écritures comptables" },
+  // AXE-422 : on garde le .txt légal (A.47 A-1). Pas de PDF : ce n'est pas
+  // le format qu'un contrôle demande.
+  {
+    document: "fec.txt",
+    label: "Fichier des écritures",
+    detail: "Texte .txt",
+  },
   { document: "grand-livre.pdf", label: "Grand livre", detail: "PDF" },
   { document: "balance.pdf", label: "Balance", detail: "PDF" },
   { document: "liasse.pdf", label: "Synthèse", detail: "Lecture courte du résultat" },
@@ -148,6 +154,11 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
           </div>
         </Dialogue>
       )}
+      <p className="mt-4 text-sm text-subtle">
+        Le fichier des écritures, souvent appelé FEC, est celui que
+        l&apos;administration demande lors d&apos;un contrôle. Il liste chaque
+        écriture. Le format légal est un fichier texte, pas un PDF.
+      </p>
       <ul className="mt-2">
         {[pieceDeclaration(dossier), ...PIECES].map(({ document, label, detail }) => (
           <li key={document} className="border-b border-hairline">
