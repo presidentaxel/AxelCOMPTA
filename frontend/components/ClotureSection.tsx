@@ -10,6 +10,7 @@
 // pas porter l'en-tête `Authorization` et échouerait en 401.
 // `telechargerAvecAuthChauffeur` fait le fetch authentifié puis déclenche
 // l'enregistrement.
+import { Download } from "lucide-react";
 import { useState } from "react";
 
 import { Dialogue } from "@/components/Dialogue";
@@ -164,11 +165,15 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
           <li key={document} className="border-b border-hairline">
             <button
               type="button"
+              aria-label={`Télécharger ${label} (${detail})`}
               onClick={() => void telecharger(document)}
-              className="flex w-full items-baseline justify-between gap-4 py-3 text-left"
+              className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-md px-2 py-3 text-left outline-none hover:bg-primary-subtle focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.12)]"
             >
-              <span className="text-sm font-medium text-ink">{label}</span>
-              <span className="shrink-0 text-sm text-subtle">{detail}</span>
+              <span className="text-sm font-medium text-primary">{label}</span>
+              <span className="flex shrink-0 items-center gap-2 text-sm text-subtle">
+                {detail}
+                <Download className="h-4 w-4 text-primary" aria-hidden />
+              </span>
             </button>
           </li>
         ))}
