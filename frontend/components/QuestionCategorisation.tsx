@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,7 @@ export function QuestionCategorisation({
   origine = null,
   confiance = null,
   sansProposition = false,
+  raccourci = false,
   onResolu,
 }: {
   dossierId: string;
@@ -40,30 +41,53 @@ export function QuestionCategorisation({
   confiance?: number | null;
   /** Vrai quand le libellé ne porte aucune catégorie : le modèle n'a pas tourné. */
   sansProposition?: boolean;
+  /** « O » confirme la proposition. Une seule question de l'écran le porte. */
+  raccourci?: boolean;
   onResolu: (transaction: TransactionVue) => void;
 }) {
   const [autreCategorie, setAutreCategorie] = useState("");
   const [afficherAutre, setAfficherAutre] = useState(false);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  const enCoursRef = useRef(false);
 
-  async function repondre(categorie: string) {
-    if (!categorie.trim()) return;
-    setEnCours(true);
-    setErreur(null);
-    try {
-      const transaction = await trancherTransactionChauffeur(
-        dossierId,
-        ecritureId,
-        categorie.trim(),
-      );
-      onResolu(transaction);
-    } catch (exception) {
-      setErreur(exception instanceof ApiError ? exception.message : "Échec de l'envoi.");
-    } finally {
-      setEnCours(false);
+  const repondre = useCallback(
+    async (categorie: string) => {
+      if (enCoursRef.current || !categorie.trim()) return;
+      enCoursRef.current = true;
+      setEnCours(true);
+      setErreur(null);
+      try {
+        const transaction = await trancherTransactionChauffeur(
+          dossierId,
+          ecritureId,
+          categorie.trim(),
+        );
+        onResolu(transaction);
+      } catch (exception) {
+        setErreur(exception instanceof ApiError ? exception.message : "Échec de l'envoi.");
+      } finally {
+        enCoursRef.current = false;
+        setEnCours(false);
+      }
+    },
+    [dossierId, ecritureId, onResolu],
+  );
+
+  useEffect(() => {
+    if (!raccourci || !proposition || afficherAutre) return;
+    const code = proposition.code;
+    function surTouche(evenement: KeyboardEvent) {
+      if (evenement.key.toLowerCase() !== "o") return;
+      if (evenement.metaKey || evenement.ctrlKey || evenement.altKey) return;
+      const cible = evenement.target;
+      if (cible instanceof HTMLElement && cible.closest("input, textarea, select")) return;
+      evenement.preventDefault();
+      void repondre(code);
     }
-  }
+    window.addEventListener("keydown", surTouche);
+    return () => window.removeEventListener("keydown", surTouche);
+  }, [afficherAutre, proposition, raccourci, repondre]);
 
   return (
     <div className="rounded-md border border-warning/40 bg-pending-subtle p-3">
@@ -82,9 +106,11 @@ export function QuestionCategorisation({
               variant="secondary"
               className="h-auto min-h-11 w-full px-3 whitespace-normal!"
               disabled={enCours}
+              aria-keyshortcuts={raccourci ? "o" : undefined}
               onClick={() => repondre(proposition.code)}
             >
               Oui, c&apos;est ça
+              {raccourci && <Touche>O</Touche>}
             </Button>
           )}
           <Button
@@ -171,6 +197,14 @@ export function QuestionCategorisation({
 
 /** Le chauffeur voit d'où vient la proposition : ce qu'il a déjà classé lui-même,
  * ou le modèle et sa confiance. */
+function Touche({ children }: { children: string }) {
+  return (
+    <kbd className="rounded-xs border border-border-strong bg-canvas-app px-1.5 py-px text-[11px] font-medium text-subtle shadow-[0_1px_0_var(--color-border-strong)]">
+      {children}
+    </kbd>
+  );
+}
+
 function intitule(
   libelle: string,
   origine: TransactionVue["origine_proposition"],

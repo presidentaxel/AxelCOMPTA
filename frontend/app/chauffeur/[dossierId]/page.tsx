@@ -15,6 +15,7 @@ import type { TransactionVue } from "@/lib/types";
 
 const MOIS = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
 const JOUR = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
+const ANNEAU = "outline-none focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.12)]";
 
 /** Activité : d'abord l'arriéré, qui se termine. Les mouvements déjà traités
  * se lisent mois par mois, comme un relevé, pas comme une file sans fin. */
@@ -122,7 +123,7 @@ function Onglet({
       type="button"
       aria-pressed={actif}
       onClick={onClick}
-      className={`h-9 rounded-full px-4 text-sm font-medium ${
+      className={`h-9 rounded-full px-4 text-sm font-medium ${ANNEAU} ${
         actif ? "bg-ink text-canvas" : "text-subtle"
       }`}
     >
@@ -149,6 +150,11 @@ function Arriere({
   onGroupeTranche: () => void;
 }) {
   const ticketsManquants = depenses.some((depense) => !depense.a_justificatif);
+  const premiereConfirmable = aVerifier.find(
+    (transaction) =>
+      transaction.proposition !== null &&
+      confirmable(transaction.proposition, transaction.origine_proposition),
+  )?.ecriture_id;
   if (aVerifier.length === 0 && !ticketsManquants) {
     return <p className="mt-10 text-sm text-subtle">Tout est à jour.</p>;
   }
@@ -177,6 +183,9 @@ function Arriere({
           const proposition = transaction.proposition
             ? { code: transaction.proposition, libelle: libelleCategorie(transaction.proposition) }
             : null;
+          const confirmableIci =
+            proposition !== null &&
+            confirmable(proposition.code, transaction.origine_proposition);
           return (
             <li key={transaction.ecriture_id} className="min-w-0 border-b border-hairline py-4">
               <LigneMontant
@@ -188,14 +197,11 @@ function Arriere({
                 <QuestionCategorisation
                   dossierId={dossierId}
                   ecritureId={transaction.ecriture_id}
-                  proposition={
-                    proposition && confirmable(proposition.code, transaction.origine_proposition)
-                      ? proposition
-                      : null
-                  }
+                  proposition={confirmableIci ? proposition : null}
                   origine={transaction.origine_proposition}
                   confiance={transaction.confiance_proposition}
                   sansProposition={proposition === null}
+                  raccourci={confirmableIci && transaction.ecriture_id === premiereConfirmable}
                   onResolu={onTranche}
                 />
               </div>
@@ -254,7 +260,7 @@ function Mouvements({
           aria-label="Mois précédent"
           disabled={!peutReculer}
           onClick={onReculer}
-          className="flex h-11 w-11 items-center justify-center text-ink disabled:text-faint"
+          className={`flex h-11 w-11 items-center justify-center rounded-full text-ink disabled:text-faint ${ANNEAU}`}
         >
           <ChevronLeft className="h-5 w-5" />
         </button>
@@ -264,7 +270,7 @@ function Mouvements({
           aria-label="Mois suivant"
           disabled={!peutAvancer}
           onClick={onAvancer}
-          className="flex h-11 w-11 items-center justify-center text-ink disabled:text-faint"
+          className={`flex h-11 w-11 items-center justify-center rounded-full text-ink disabled:text-faint ${ANNEAU}`}
         >
           <ChevronRight className="h-5 w-5" />
         </button>
@@ -364,7 +370,7 @@ function AjouterTicketSortie({
         type="button"
         disabled={envoi}
         onClick={() => inputRef.current?.click()}
-        className="mt-1 py-1 text-sm font-medium text-primary disabled:opacity-50"
+        className={`mt-1 rounded-md px-1 py-1 text-sm font-medium text-primary disabled:opacity-50 ${ANNEAU}`}
       >
         {envoi ? "Envoi…" : "Ajouter un ticket"}
       </button>

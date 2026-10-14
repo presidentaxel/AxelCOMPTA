@@ -154,7 +154,7 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
             <button
               type="button"
               onClick={() => void telecharger(document)}
-              className="flex w-full items-baseline justify-between gap-4 py-3 text-left"
+              className="flex w-full items-baseline justify-between gap-4 rounded-md px-2 py-3 text-left outline-none hover:bg-surface-soft focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.12)]"
             >
               <span className="text-sm font-medium text-ink">{label}</span>
               <span className="shrink-0 text-sm text-subtle">{detail}</span>
