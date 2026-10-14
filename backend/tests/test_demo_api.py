@@ -1736,3 +1736,61 @@ def test_seul_un_admin_regle_le_portefeuille_et_la_lecture_ne_regle_rien() -> No
         headers=_en_tete_gestionnaire(),
     )
     assert refus_dossier.status_code == 403
+
+
+def test_repetition_le_gestionnaire_voit_les_trois_dossiers() -> None:
+    """Checklist démo (AXE-431) : portefeuille, puis 401 sans jeton et 403
+    d'un chauffeur sur le dossier d'un autre."""
+    client = _client()
+    reponse = client.get("/dossiers", headers=_en_tete_gestionnaire())
+    assert reponse.status_code == 200
+    assert {dossier["dossier_id"] for dossier in reponse.json()} == {
+        "DEMO_karim",
+        "DEMO_sophie",
+        "DEMO_yanis",
+    }
+    assert client.get("/dossiers").status_code == 401
+    autre = client.get("/dossiers/DEMO_sophie/fec.txt", headers=_en_tete("DEMO_karim"))
+    assert autre.status_code == 403
+
+
+def test_repetition_sophie_le_fec_suit_la_decision() -> None:
+    """Zara (ou la première dépense à trancher) passe en 455, et le FEC suit."""
+    client = _client()
+    en_tete = _en_tete("DEMO_sophie")
+    ecriture_id = _premiere_a_trancher(client, "DEMO_sophie")
+    avant = client.get("/dossiers/DEMO_sophie/fec.txt", headers=en_tete).text
+    assert "\t455\t" not in avant
+    decision = client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/decision",
+        json={"categorie": "usage_personnel"},
+        headers=en_tete,
+    )
+    assert decision.status_code == 200
+    assert decision.json()["compte"] == "455"
+    apres = client.get("/dossiers/DEMO_sophie/fec.txt", headers=en_tete).text
+    assert "\t455\t" in apres
+
+
+def test_repetition_les_pdf_de_cloture_et_le_greffe() -> None:
+    client = _client()
+    en_tete = _en_tete("DEMO_karim")
+    for chemin in ("liasse-fiscale.pdf", "cerfa-2065.pdf", "grand-livre.pdf", "balance.pdf"):
+        reponse = client.get(f"/dossiers/DEMO_karim/{chemin}", headers=en_tete)
+        assert reponse.status_code == 200 and reponse.content.startswith(b"%PDF")
+    avant = client.get("/dossiers/DEMO_karim/greffe-inpi.pdf", headers=en_tete).content
+    signature = client.post("/dossiers/DEMO_karim/greffe-inpi/signature", headers=en_tete)
+    assert signature.status_code == 200 and signature.json()["qualifie"] is False
+    apres = client.get("/dossiers/DEMO_karim/greffe-inpi.pdf", headers=en_tete).content
+    assert apres.startswith(b"%PDF") and apres != avant
+
+
+def test_repetition_la_remise_a_neuf_cible_decisions_et_frise() -> None:
+    client, appels = _client_demo()
+    reponse = client.post(
+        "/demo/reinitialiser",
+        json={"parties": ["decisions", "jalons"]},
+        headers=_en_tete_gestionnaire(),
+    )
+    assert reponse.status_code == 200
+    assert appels == [("TENANT_DEMO", frozenset({"decisions", "jalons"}))]
