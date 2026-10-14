@@ -167,7 +167,7 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
               type="button"
               aria-label={`Télécharger ${label} (${detail})`}
               onClick={() => void telecharger(document)}
-              className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-md px-2 py-3 text-left outline-none hover:bg-primary-subtle focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.12)]"
+              className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-md px-2 py-3 text-left outline-none hover:bg-primary-subtle focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]"
             >
               <span className="text-sm font-medium text-primary">{label}</span>
               <span className="flex shrink-0 items-center gap-2 text-sm text-subtle">
