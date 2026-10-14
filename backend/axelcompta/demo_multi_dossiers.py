@@ -84,7 +84,7 @@ def _ligne_rapport(resultat: ResultatDossier) -> str:
       <td>
         <a href="{dossier_relatif}/liasse.pdf">liasse</a> ·
         <a href="{dossier_relatif}/cerfa_2065.pdf">CERFA 2065</a> ·
-        <a href="{dossier_relatif}/journal.fec.txt">FEC</a> ·
+        <a href="{dossier_relatif}/journal.fec.txt">fichier des écritures (.txt)</a> ·
         <a href="{dossier_relatif}/grand_livre.csv">grand livre</a> ·
         <a href="{dossier_relatif}/balance.csv">balance</a>
       </td>
