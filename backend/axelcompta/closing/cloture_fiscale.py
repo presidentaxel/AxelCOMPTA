@@ -17,9 +17,12 @@ Clés des cases : `2033A.084`, `2033B.310`... en centimes d'euros entiers
 
 from __future__ import annotations
 
+from axelcompta.core.errors import DomaineError
 from axelcompta.core.ids import DossierId
 from axelcompta.ledger.models import Ecriture, Sens
 
+from .ca3 import declaration_ca3
+from .controles_tdfc import controler_liasse
 from .ecritures_cloture import (
     ecriture_impot_societes,
     ecriture_liquidation_tva,
@@ -34,6 +37,7 @@ from .liasse_2033_annexes import (
     releve_2033d,
     valeur_ajoutee_2033e,
 )
+from .liasse_2050 import bilan_2050
 from .models import LiassePivot, ParametresCloture
 
 
@@ -158,7 +162,12 @@ def cloturer_fiscalement(
         "2033D", releve_2033d(balance_avant, m, fiscal, parametres.deficits_anterieurs)
     )
     cases |= _prefixer("2033E", valeur_ajoutee_2033e(balance, parametres.effectif_moyen))
-    return LiassePivot(
+    cases |= {f"CA3.{cle}": montant for cle, montant in declaration_ca3(balance_avant).items()}
+    if parametres.regime_liasse == "2050":
+        cases |= _prefixer("2050", bilan_2050(balance, resultat["310"]))
+    elif parametres.regime_liasse != "2033":
+        raise DomaineError(f"régime de liasse inconnu : {parametres.regime_liasse}")
+    liasse = LiassePivot(
         dossier_id=dossier_id,
         exercice=exercice,
         cases=cases,
@@ -169,3 +178,5 @@ def cloturer_fiscalement(
         soumis_is=parametres.soumis_is,
         associes=parametres.associes,
     )
+    controler_liasse(liasse)
+    return liasse
