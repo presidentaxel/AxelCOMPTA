@@ -4,6 +4,6 @@
 // `{ "extends": "next/core-web-vitals" }`.
 import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 
-const config = [...nextCoreWebVitals, { ignores: [".next/**"] }];
+const config = [...nextCoreWebVitals, { ignores: [".next/**", "e2e/**"] }];
 
 export default config;
