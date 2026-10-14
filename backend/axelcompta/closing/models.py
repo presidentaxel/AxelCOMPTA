@@ -61,3 +61,6 @@ class ParametresCloture:
     soumis_is: bool = True
     # Colonne de la matrice : la déclaration liste-t-elle des associés ?
     associes: bool = True
+    # "2033" : régime simplifié, liasse servie aujourd'hui. "2050" : y ajoute
+    # le bilan du réel normal (2050/2051), sans remplacer la 2033 ni son PDF.
+    regime_liasse: str = "2033"

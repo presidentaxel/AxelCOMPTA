@@ -2,9 +2,18 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from axelcompta.core.ids import DossierId, EcritureId
 from axelcompta.core.money import Money
-from axelcompta.filings.fec import COLONNES_FEC, exporter_fec, libelle_compte, nom_fichier_fec
+from axelcompta.filings.fec import (
+    COLONNES_FEC,
+    FecInvalide,
+    exporter_fec,
+    libelle_compte,
+    nom_fichier_fec,
+    valider_fec,
+)
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 
 DOSSIER = DossierId("d1")
@@ -20,7 +29,7 @@ def _ecriture_uber() -> Ecriture:
         reference_piece="PIECE-1",
         lignes=(
             LigneEcriture("512", Sens.DEBIT, Money(848_00)),
-            LigneEcriture("706", Sens.CREDIT, Money(945_45)),
+            LigneEcriture("706", Sens.CREDIT, Money(753_45)),
             LigneEcriture("44571", Sens.CREDIT, Money(94_55)),
         ),
     )
@@ -50,7 +59,7 @@ def test_champs_debit_credit_et_date_correctement_formates() -> None:
 
     ligne_706 = par_compte["706"]
     assert ligne_706[11] == "0,00"
-    assert ligne_706[12] == "945,45"
+    assert ligne_706[12] == "753,45"
 
 
 def test_libelle_compte_et_journal_renseignes() -> None:
@@ -141,3 +150,13 @@ def test_libelle_compte_remonte_au_prefixe_connu() -> None:
 
 def test_nom_de_fichier_normalise() -> None:
     assert nom_fichier_fec("987142031", date(2025, 12, 31)) == "987142031FEC20251231.txt"
+
+
+def test_un_fec_exporte_passe_les_controles_a47() -> None:
+    valider_fec(exporter_fec((_ecriture_uber(), _ecriture("e2", 4))))
+
+
+def test_refuse_une_ecriture_desequilibree() -> None:
+    fec = exporter_fec((_ecriture_uber(),))
+    with pytest.raises(FecInvalide, match="déséquilibrée"):
+        valider_fec(fec.replace("848,00", "1,00", 1))

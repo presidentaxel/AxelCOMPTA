@@ -20,8 +20,8 @@ Règles appliquées à la lettre (texte de l'article A.47 A-1, vérifié le
 - aucune zone ne contient de tabulation ni de retour à la ligne ;
 - nom du fichier `<SIREN>FEC<AAAAMMJJ>.txt`, date = clôture de l'exercice.
 
-**Limite assumée** : conforme au texte, mais pas encore passé dans « Test
-Compta Demat » (l'outil de validation DGFiP, Windows uniquement).
+`valider_fec` rejoue ces règles à l'export. Ça ne remplace pas « Test
+Compta Demat » (outil DGFiP, Windows uniquement), que ce dépôt ne lance pas.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from __future__ import annotations
 import re
 from datetime import date
 
+from axelcompta.core.errors import DomaineError
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 
 COLONNES_FEC = (
@@ -148,6 +149,18 @@ LIBELLE_COMPTE = {
 }
 
 _CARACTERES_INTERDITS = re.compile(r"[\t\r\n]+")
+_DATE = re.compile(r"^\d{8}$")
+_MONTANT = re.compile(r"^\d+,\d{2}$")
+# CompteLib, PieceRef, PieceDate, EcritureLib, ValidDate : zones obligatoires.
+_ZONES_OBLIGATOIRES = (5, 8, 9, 10, 15)
+
+
+class FecInvalide(DomaineError):
+    """Le fichier ne passerait pas les contrôles de l'article A.47 A-1.
+
+    Ce n'est pas l'outil « Test Compta Demat » (Windows, DGFiP) : les mêmes
+    règles, exécutées ici, pour qu'un FEC faux ne sorte pas de l'export.
+    """
 
 
 def libelle_compte(compte: str) -> str:
@@ -200,6 +213,65 @@ def _ligne_fec(ecriture: Ecriture, numero: int, ligne: LigneEcriture) -> tuple[s
     )
 
 
+def _centimes(montant: str) -> int:
+    if not _MONTANT.match(montant):
+        raise FecInvalide(f"montant hors format A.47 A-1 : {montant}")
+    entier, fraction = montant.split(",")
+    return int(entier) * 100 + int(fraction)
+
+
+def _champs(ligne: str) -> tuple[str, ...]:
+    champs = tuple(ligne.split(SEPARATEUR_ZONE))
+    if len(champs) != len(COLONNES_FEC):
+        raise FecInvalide("une ligne n'a pas 18 zones")
+    if any(not champs[index] for index in _ZONES_OBLIGATOIRES):
+        raise FecInvalide("une zone obligatoire est vide")
+    if not all(_DATE.match(champs[index]) for index in (3, 9, 15)):
+        raise FecInvalide("une date n'est pas au format AAAAMMJJ")
+    return champs
+
+
+def _controler_equilibre(par_numero: dict[int, list[tuple[int, int]]]) -> None:
+    for numero, lignes in par_numero.items():
+        debit = sum(montant for montant, _ in lignes)
+        credit = sum(montant for _, montant in lignes)
+        if debit != credit:
+            raise FecInvalide(f"écriture {numero} déséquilibrée")
+
+
+def _controler_corps(lignes: list[str]) -> None:
+    precedent = 0
+    date_precedente = ""
+    par_numero: dict[int, list[tuple[int, int]]] = {}
+    for ligne in lignes:
+        champs = _champs(ligne)
+        try:
+            numero = int(champs[2])
+        except ValueError as erreur:
+            raise FecInvalide("EcritureNum n'est pas un entier") from erreur
+        if date_precedente and champs[3] < date_precedente:
+            raise FecInvalide("les écritures ne sont pas dans l'ordre chronologique")
+        if numero != precedent and numero != precedent + 1:
+            raise FecInvalide("EcritureNum n'est pas une séquence continue")
+        debit, credit = _centimes(champs[11]), _centimes(champs[12])
+        if debit > 0 and credit > 0:
+            raise FecInvalide("une ligne est à la fois au débit et au crédit")
+        precedent = numero
+        date_precedente = champs[3]
+        par_numero.setdefault(numero, []).append((debit, credit))
+    _controler_equilibre(par_numero)
+
+
+def valider_fec(contenu: str) -> None:
+    """Lève `FecInvalide` si le texte ne respecte pas l'article A.47 A-1."""
+    if not contenu.endswith(SEPARATEUR_ENREGISTREMENT):
+        raise FecInvalide("le fichier ne se termine pas par CR+LF")
+    enregistrements = contenu.split(SEPARATEUR_ENREGISTREMENT)[:-1]
+    if not enregistrements or tuple(enregistrements[0].split(SEPARATEUR_ZONE)) != COLONNES_FEC:
+        raise FecInvalide("l'en-tête n'est pas celui de l'article A.47 A-1")
+    _controler_corps(enregistrements[1:])
+
+
 def exporter_fec(ecritures: tuple[Ecriture, ...]) -> str:
     """Écritures triées par date (les à-nouveaux d'abord le même jour), puis
     numérotées 1, 2, 3... dans cet ordre : la séquence continue et
@@ -211,4 +283,6 @@ def exporter_fec(ecritures: tuple[Ecriture, ...]) -> str:
         lignes_texte += [
             SEPARATEUR_ZONE.join(_ligne_fec(ecriture, numero, ligne)) for ligne in ecriture.lignes
         ]
-    return SEPARATEUR_ENREGISTREMENT.join(lignes_texte) + SEPARATEUR_ENREGISTREMENT
+    contenu = SEPARATEUR_ENREGISTREMENT.join(lignes_texte) + SEPARATEUR_ENREGISTREMENT
+    valider_fec(contenu)
+    return contenu
