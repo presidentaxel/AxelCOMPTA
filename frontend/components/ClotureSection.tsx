@@ -10,6 +10,7 @@
 // pas porter l'en-tête `Authorization` et échouerait en 401.
 // `telechargerAvecAuthChauffeur` fait le fetch authentifié puis déclenche
 // l'enregistrement.
+import { Download } from "lucide-react";
 import { useState } from "react";
 
 import { Dialogue } from "@/components/Dialogue";
@@ -24,7 +25,13 @@ const LIASSE: DocumentCloture = "liasse-fiscale.pdf";
 /** Pièces à emporter pour les impôts. Pas une télédéclaration : rien n'est
  * envoyé à l'administration depuis cet écran. */
 const PIECES: Array<{ document: DocumentCloture; label: string; detail: string }> = [
-  { document: "fec.txt", label: "FEC", detail: "Fichier des écritures comptables" },
+  // AXE-422 : on garde le .txt légal (A.47 A-1). Pas de PDF : ce n'est pas
+  // le format qu'un contrôle demande.
+  {
+    document: "fec.txt",
+    label: "Fichier des écritures",
+    detail: "Texte .txt",
+  },
   { document: "grand-livre.pdf", label: "Grand livre", detail: "PDF" },
   { document: "balance.pdf", label: "Balance", detail: "PDF" },
   { document: "liasse.pdf", label: "Synthèse", detail: "Lecture courte du résultat" },
@@ -148,16 +155,25 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
           </div>
         </Dialogue>
       )}
+      <p className="mt-4 text-sm text-subtle">
+        Le fichier des écritures, souvent appelé FEC, est celui que
+        l&apos;administration demande lors d&apos;un contrôle. Il liste chaque
+        écriture. Le format légal est un fichier texte, pas un PDF.
+      </p>
       <ul className="mt-2">
         {[pieceDeclaration(dossier), ...PIECES].map(({ document, label, detail }) => (
           <li key={document} className="border-b border-hairline">
             <button
               type="button"
+              aria-label={`Télécharger ${label} (${detail})`}
               onClick={() => void telecharger(document)}
-              className="flex w-full items-baseline justify-between gap-4 py-3 text-left"
+              className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-md px-2 py-3 text-left outline-none hover:bg-primary-subtle focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.12)]"
             >
-              <span className="text-sm font-medium text-ink">{label}</span>
-              <span className="shrink-0 text-sm text-subtle">{detail}</span>
+              <span className="text-sm font-medium text-primary">{label}</span>
+              <span className="flex shrink-0 items-center gap-2 text-sm text-subtle">
+                {detail}
+                <Download className="h-4 w-4 text-primary" aria-hidden />
+              </span>
             </button>
           </li>
         ))}
