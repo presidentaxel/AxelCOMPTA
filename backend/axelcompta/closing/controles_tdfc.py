@@ -81,6 +81,89 @@ def _controler_ca3(cases: dict[str, int], erreurs: list[str]) -> None:
     _noter(erreurs, cases["CA3.DUE"] == due, "CA3 : due ≠ collectée − déductible")
 
 
+_VENTES_2052 = ("FC", "FF", "FI")
+_PRODUITS_2052 = ("FL", "FM", "FN", "FO", "FP", "F1", "FQ")
+_CHARGES_2052 = ("FS", "FT", "FU", "FV", "FW", "FX", "FY", "FZ", "GA", "GB", "GC", "GD", "G1", "GE")
+
+
+def _somme(cases: dict[str, int], tableau: str, codes: tuple[str, ...]) -> int:
+    return sum(_euros(cases, f"{tableau}.{code}") for code in codes)
+
+
+def _controler_2052(cases: dict[str, int], erreurs: list[str]) -> None:
+    if "2052.FR" not in cases:
+        return
+    _noter(
+        erreurs,
+        _euros(cases, "2052.FL") == _somme(cases, "2052", _VENTES_2052),
+        "2052 : le chiffre d'affaires net n'est pas la somme des ventes",
+    )
+    _noter(
+        erreurs,
+        _euros(cases, "2052.FR") == _somme(cases, "2052", _PRODUITS_2052),
+        "2052 : total des produits d'exploitation",
+    )
+    _noter(
+        erreurs,
+        _euros(cases, "2052.GF") == _somme(cases, "2052", _CHARGES_2052),
+        "2052 : total des charges d'exploitation",
+    )
+    _noter(
+        erreurs,
+        _euros(cases, "2052.GG") == _euros(cases, "2052.FR") - _euros(cases, "2052.GF"),
+        "2052 : le résultat d'exploitation n'est pas produits moins charges",
+    )
+    _noter(
+        erreurs,
+        _euros(cases, "2052.GV") == _euros(cases, "2052.GP") - _euros(cases, "2052.GU"),
+        "2052 : le résultat financier",
+    )
+    courant = (
+        _euros(cases, "2052.GG")
+        + _euros(cases, "2052.GH")
+        - _euros(cases, "2052.GI")
+        + _euros(cases, "2052.GV")
+    )
+    _noter(erreurs, _euros(cases, "2052.GW") == courant, "2052 : le résultat courant")
+    _controler_2053(cases, erreurs)
+
+
+def _controler_2053(cases: dict[str, int], erreurs: list[str]) -> None:
+    if "2053.HN" not in cases:
+        return
+    _noter(
+        erreurs,
+        _euros(cases, "2053.HI") == _euros(cases, "2053.HD") - _euros(cases, "2053.HH"),
+        "2053 : le résultat exceptionnel",
+    )
+    produits = (
+        _euros(cases, "2052.FR")
+        + _euros(cases, "2052.GH")
+        + _euros(cases, "2052.GP")
+        + _euros(cases, "2053.HD")
+    )
+    charges = (
+        _euros(cases, "2052.GF")
+        + _euros(cases, "2052.GI")
+        + _euros(cases, "2052.GU")
+        + _euros(cases, "2053.HH")
+        + _euros(cases, "2053.HJ")
+        + _euros(cases, "2053.HK")
+    )
+    _noter(erreurs, _euros(cases, "2053.HL") == produits, "2053 : total des produits")
+    _noter(erreurs, _euros(cases, "2053.HM") == charges, "2053 : total des charges")
+    _noter(
+        erreurs,
+        _euros(cases, "2053.HN") == produits - charges,
+        "2053 : le bénéfice ou la perte n'est pas produits moins charges",
+    )
+    _noter(
+        erreurs,
+        _euros(cases, "2053.HN") == _euros(cases, "2033B.310"),
+        "2053 : le résultat n'est pas celui de la 2033-B",
+    )
+
+
 def _controler_2050(cases: dict[str, int], erreurs: list[str]) -> None:
     if "2050.CO" not in cases:
         return
@@ -103,5 +186,6 @@ def controler_liasse(liasse: LiassePivot) -> None:
     _controler_2065(liasse.cases, erreurs)
     _controler_ca3(liasse.cases, erreurs)
     _controler_2050(liasse.cases, erreurs)
+    _controler_2052(liasse.cases, erreurs)
     if erreurs:
         raise LiasseIncoherente(" ; ".join(erreurs))

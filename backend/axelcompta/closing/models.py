@@ -44,6 +44,17 @@ class LiassePivot:
 
 
 @dataclass(frozen=True, slots=True)
+class ProvisionCloture:
+    """Estimation fournie par l'indiv (doc 06 §5, point 5). `centimes` est
+    un entier positif. `nature` vaut ``cca`` ou ``fnp``."""
+
+    nature: str
+    compte_charge: str
+    centimes: int
+    libelle: str
+
+
+@dataclass(frozen=True, slots=True)
 class ParametresCloture:
     """Ce que la clôture fiscale doit savoir du dossier, au-delà de ses
     écritures : bornes déclarées de l'exercice (pas les dates des écritures),
@@ -62,5 +73,8 @@ class ParametresCloture:
     # Colonne de la matrice : la déclaration liste-t-elle des associés ?
     associes: bool = True
     # "2033" : régime simplifié, liasse servie aujourd'hui. "2050" : y ajoute
-    # le bilan du réel normal (2050/2051), sans remplacer la 2033 ni son PDF.
+    # le réel normal (bilan 2050/2051 et compte de résultat 2052/2053), sans
+    # remplacer la 2033 ni produire de PDF.
     regime_liasse: str = "2033"
+    # Estimations saisies (CCA, FNP). Vide : le moteur n'en invente pas.
+    provisions: tuple[ProvisionCloture, ...] = ()
