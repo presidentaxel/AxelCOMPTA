@@ -188,6 +188,51 @@ def _controler_2054(cases: dict[str, int], erreurs: list[str]) -> None:
         )
 
 
+def _controler_2055(cases: dict[str, int], erreurs: list[str]) -> None:
+    if "2055.0R" not in cases:
+        return
+    cloture = _euros(cases, "2055.0N") + _euros(cases, "2055.0P") - _euros(cases, "2055.0Q")
+    _noter(erreurs, _euros(cases, "2055.0R") == cloture, "2055 : les amortissements de clôture")
+    if "2033C.576" in cases:
+        _noter(
+            erreurs,
+            _euros(cases, "2055.0R") == _euros(cases, "2033C.576"),
+            "2055 : la clôture n'est pas celle de la 2033-C",
+        )
+
+
+def _controler_2056(cases: dict[str, int], erreurs: list[str]) -> None:
+    if "2056.UD" not in cases:
+        return
+    fin = _euros(cases, "2056.7C") + _euros(cases, "2056.UB") - _euros(cases, "2056.UC")
+    _noter(erreurs, _euros(cases, "2056.UD") == fin, "2056 : les provisions de clôture")
+
+
+def _controler_2058b(cases: dict[str, int], erreurs: list[str]) -> None:
+    if "2058B.YK" not in cases:
+        return
+    reportables = (
+        _euros(cases, "2058B.K4") + _euros(cases, "2058B.K4bis") - _euros(cases, "2058B.K5")
+    )
+    _noter(erreurs, _euros(cases, "2058B.K6") == reportables, "2058-B : les déficits reportables")
+    restant = _euros(cases, "2058B.K6") + _euros(cases, "2058B.YJ")
+    _noter(
+        erreurs,
+        _euros(cases, "2058B.YK") == restant,
+        "2058-B : les déficits restant à reporter",
+    )
+    _noter(
+        erreurs,
+        _euros(cases, "2058B.YJ") == _euros(cases, "2058A.XO"),
+        "2058-B : le déficit de l'exercice n'est pas celui du 2058-A",
+    )
+    _noter(
+        erreurs,
+        _euros(cases, "2058B.YK") == _euros(cases, "2033D.870"),
+        "2058-B : le stock de déficits n'est pas celui de la 2033-D",
+    )
+
+
 def _controler_2058(cases: dict[str, int], erreurs: list[str]) -> None:
     if "2058A.XN" not in cases and "2058A.XO" not in cases:
         return
@@ -236,6 +281,9 @@ def controler_liasse(liasse: LiassePivot) -> None:
     _controler_2050(liasse.cases, erreurs)
     _controler_2052(liasse.cases, erreurs)
     _controler_2054(liasse.cases, erreurs)
+    _controler_2055(liasse.cases, erreurs)
+    _controler_2056(liasse.cases, erreurs)
     _controler_2058(liasse.cases, erreurs)
+    _controler_2058b(liasse.cases, erreurs)
     if erreurs:
         raise LiasseIncoherente(" ; ".join(erreurs))

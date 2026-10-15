@@ -6,7 +6,11 @@ import dataclasses
 
 from axelcompta.closing.bilan_simplifie import ClotureSimplifieeService
 from axelcompta.closing.liasse_2033 import compte_de_resultat
+from axelcompta.closing.liasse_2033_annexes import Mouvements
 from axelcompta.closing.liasse_2052 import compte_2052
+from axelcompta.closing.liasse_2055 import amortissements_2055
+from axelcompta.closing.liasse_2056 import provisions_2056
+from axelcompta.closing.liasse_2058 import deficits_2058
 from axelcompta.demo_chauffeurs_type import construire_ledger, parametres_cloture
 from axelcompta.ingestion.providers.chauffeurs_demo import PROFIL_KARIM, PROFIL_YANIS
 
@@ -50,3 +54,24 @@ def test_les_chauffeurs_bouclent_avec_le_bilan() -> None:
             assert liasse.cases["2054.0L"] == (
                 liasse.cases["2054.0G"] + liasse.cases["2054.0J"] - liasse.cases["2054.0K"]
             )
+        if "2033C.576" in liasse.cases:
+            assert liasse.cases["2055.0R"] == liasse.cases["2033C.576"]
+            assert liasse.cases["2055.0R"] == (
+                liasse.cases["2055.0N"] + liasse.cases["2055.0P"] - liasse.cases["2055.0Q"]
+            )
+        assert liasse.cases["2058B.YJ"] == liasse.cases["2058A.XO"]
+        assert liasse.cases["2058B.YK"] == liasse.cases["2033D.870"]
+
+
+def test_une_provision_pour_risques_boucle() -> None:
+    mouvements = Mouvements(ouverture={"151": -1_000_00, "2815": -400_00}, debits={}, credits={})
+    assert provisions_2056(mouvements) == {"7C": 1_000, "UB": 0, "UC": 0, "UD": 1_000}
+    assert amortissements_2055({"570": 400, "572": 50, "574": 0, "576": 450})["0R"] == 450
+    assert deficits_2058({"982": 80, "983": 30, "984": 50, "860": 0, "870": 50}) == {
+        "K4": 80,
+        "K4bis": 0,
+        "K5": 30,
+        "K6": 50,
+        "YJ": 0,
+        "YK": 50,
+    }

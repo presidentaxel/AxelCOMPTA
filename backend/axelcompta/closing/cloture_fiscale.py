@@ -32,6 +32,7 @@ from .ecritures_cloture import (
 from .impot_societes import arrondir_euros, calculer_is
 from .liasse_2033 import Balance, bilan, compte_de_resultat, net_actif, resultat_fiscal
 from .liasse_2033_annexes import (
+    Mouvements,
     immobilisations_2033c,
     mouvements,
     releve_2033d,
@@ -40,7 +41,9 @@ from .liasse_2033_annexes import (
 from .liasse_2050 import bilan_2050
 from .liasse_2052 import compte_2052
 from .liasse_2054 import immobilisations_2054
-from .liasse_2058 import resultat_2058
+from .liasse_2055 import amortissements_2055
+from .liasse_2056 import provisions_2056
+from .liasse_2058 import deficits_2058, resultat_2058
 from .models import LiassePivot, ParametresCloture
 from .provisions import ecritures_provisions, prefixe_provisions
 
@@ -136,6 +139,30 @@ def _cases_historiques(balance: Balance, balance_avant: Balance) -> dict[str, in
     }
 
 
+def _liasse_reel_normal(
+    balance: Balance,
+    balance_avant: Balance,
+    resultat: dict[str, int],
+    m: Mouvements,
+    fiscal: dict[str, int],
+    parametres: ParametresCloture,
+) -> dict[str, int]:
+    """Annexes 2050 à 2058-B dont les totaux sont ceux de la 2033."""
+    exploitation, suite = compte_2052(balance)
+    immos = immobilisations_2033c(m)
+    releve = releve_2033d(balance_avant, m, fiscal, parametres.deficits_anterieurs)
+    return (
+        _prefixer("2050", bilan_2050(balance, resultat["310"]))
+        | _prefixer("2052", exploitation)
+        | _prefixer("2053", suite)
+        | _prefixer("2054", immobilisations_2054(m))
+        | _prefixer("2055", amortissements_2055(immos))
+        | _prefixer("2056", provisions_2056(m))
+        | _prefixer("2058A", resultat_2058(fiscal))
+        | _prefixer("2058B", deficits_2058(releve))
+    )
+
+
 def cloturer_fiscalement(
     dossier_id: DossierId,
     exercice: str,
@@ -171,12 +198,7 @@ def cloturer_fiscalement(
     cases |= _prefixer("2033E", valeur_ajoutee_2033e(balance, parametres.effectif_moyen))
     cases |= {f"CA3.{cle}": montant for cle, montant in declaration_ca3(balance_avant).items()}
     if parametres.regime_liasse == "2050":
-        cases |= _prefixer("2050", bilan_2050(balance, resultat["310"]))
-        exploitation, suite = compte_2052(balance)
-        cases |= _prefixer("2052", exploitation)
-        cases |= _prefixer("2053", suite)
-        cases |= _prefixer("2054", immobilisations_2054(m))
-        cases |= _prefixer("2058A", resultat_2058(fiscal))
+        cases |= _liasse_reel_normal(balance, balance_avant, resultat, m, fiscal, parametres)
     elif parametres.regime_liasse != "2033":
         raise DomaineError(f"régime de liasse inconnu : {parametres.regime_liasse}")
     liasse = LiassePivot(
