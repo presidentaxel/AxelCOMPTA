@@ -97,6 +97,33 @@ async function bouchon(route: Route) {
     await route.fulfill({ json: { ...ZARA, statut: "validé", compte: "455" } });
     return;
   }
+  if (url.includes("/cloture-exercice") && methode === "GET") {
+    await route.fulfill({
+      json: {
+        possible: true,
+        raison: null,
+        exercice_debut: "2025-01-01",
+        exercice_fin: "2025-12-31",
+        nouvel_exercice_debut: "2026-01-01",
+        ecritures: ["Liquidation de la TVA de l'exercice"],
+        changements: [],
+        attestation: "J'atteste la clôture.",
+      },
+    });
+    return;
+  }
+  if (url.includes("/provisions-cloture") && methode === "GET") {
+    await route.fulfill({ json: { lignes: [] } });
+    return;
+  }
+  if (url.includes("/provisions-cloture") && methode === "PUT") {
+    await route.fulfill({ json: route.request().postDataJSON() });
+    return;
+  }
+  if (url.includes("/affectation")) {
+    await route.fulfill({ json: { applicable: false, raison: null } });
+    return;
+  }
   if (url.includes("connexions-bancaires")) {
     await route.fulfill({
       json: {
@@ -154,6 +181,25 @@ test("le gestionnaire voit les trois dossiers", async ({ page }) => {
   await expect(page.getByText("Karim")).toBeVisible();
   await expect(page.getByText("Sophie")).toBeVisible();
   await expect(page.getByText("Yanis")).toBeVisible();
+});
+
+test("Sophie saisit une facture pas encore reçue", async ({ page }) => {
+  const exp = Math.floor(Date.now() / 1000) + 3600;
+  await session(page, "axelcompta_session_chauffeur", {
+    accessToken: jeton({ exp, app_metadata: { dossier_id: "DEMO_sophie" } }),
+    refreshToken: "rafraichissement",
+    dossierId: "DEMO_sophie",
+    email: "sophie@example.com",
+  });
+  await intercepterApi(page);
+  await page.goto("/chauffeur/DEMO_sophie/exercice");
+  await expect(page.getByRole("heading", { name: "Exercice", exact: true })).toBeVisible();
+  await page.getByLabel("Compte de charge").fill("622");
+  await page.getByLabel("Montant").fill("80");
+  await page.getByLabel("Libellé").fill("honoraire de décembre");
+  await page.getByRole("button", { name: "Ajouter" }).click();
+  await expect(page.getByText("honoraire de décembre")).toBeVisible();
+  await expect(page.getByText("Facture pas encore reçue — honoraire de décembre (622)")).toBeVisible();
 });
 
 test("Sophie tranche une dépense et l'écran suit", async ({ page }) => {

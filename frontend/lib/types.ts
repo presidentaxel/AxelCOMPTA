@@ -137,6 +137,13 @@ export type TransactionVue = {
 
 /** Clôture de l'exercice, préparée par l'API et validée par le chauffeur
  * seul (doc 06 §5). `attestation` se renvoie mot pour mot pour valider. */
+export type ProvisionClotureVue = {
+  nature: "cca" | "fnp";
+  compte_charge: string;
+  centimes: number;
+  libelle: string;
+};
+
 export type ClotureExerciceVue = {
   possible: boolean;
   raison: string | null;

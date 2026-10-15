@@ -21,6 +21,7 @@ import type {
   BulletinVue,
   DividendesVue,
   ClotureExerciceVue,
+  ProvisionClotureVue,
   NotificationVue,
   SignatureGreffeVue,
   TransactionVue,
@@ -403,6 +404,29 @@ export async function marquerNotificationsLuesChauffeur(dossierId: string): Prom
   if (!reponse.ok) {
     throw new ApiError(`HTTP ${reponse.status}`, reponse.status);
   }
+}
+
+export async function lireProvisionsCloture(dossierId: string): Promise<ProvisionClotureVue[]> {
+  const vue = await fetchAvecAuthChauffeur<{ lignes: ProvisionClotureVue[] }>(
+    `/dossiers/${dossierId}/provisions-cloture`,
+  );
+  return vue.lignes;
+}
+
+export async function enregistrerProvisionsCloture(
+  dossierId: string,
+  lignes: ProvisionClotureVue[],
+): Promise<ProvisionClotureVue[]> {
+  const reponse = await appelChauffeur(`/dossiers/${dossierId}/provisions-cloture`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lignes }),
+  });
+  if (!reponse.ok) {
+    throw erreurApi(await lireCorps(reponse), reponse);
+  }
+  const vue = (await reponse.json()) as { lignes: ProvisionClotureVue[] };
+  return vue.lignes;
 }
 
 /** La validation de clôture : le texte d'attestation présenté, renvoyé tel

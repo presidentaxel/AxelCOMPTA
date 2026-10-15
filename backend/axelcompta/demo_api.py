@@ -79,8 +79,9 @@ from axelcompta.closing.affectation import (
 from axelcompta.closing.bilan_simplifie import ClotureSimplifieeService
 from axelcompta.closing.cloture_fiscale import chiffre_affaires_ht
 from axelcompta.closing.dividendes import RetenuesDividendes, retenues
-from axelcompta.closing.models import LiassePivot, ParametresCloture
+from axelcompta.closing.models import LiassePivot, ParametresCloture, ProvisionCloture
 from axelcompta.closing.paie import Bulletin, BulletinIncoherent
+from axelcompta.closing.provisions import ProvisionInvalide, valider_provision
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, UserId
 from axelcompta.core.rls import appliquer_rls, contexte_identite
@@ -144,6 +145,8 @@ from axelcompta.tenants.franchise_tva import MillesimeInconnu, suivre_franchise
 from axelcompta.tenants.models import MODES_RELANCE, Dossier, Tenant
 from axelcompta.tenants.orm import droits_membre, rappels, regles_rappel
 from axelcompta.tenants.postgres import PostgresDossierRepository
+from axelcompta.tenants.provisions_cloture import ProvisionsClotureRepository
+from axelcompta.tenants.provisions_cloture_postgres import PostgresProvisionsClotureRepository
 from axelcompta.tenants.repository import DossierRepository
 from axelcompta.tenants.statuts import (
     ColonneMatrice,
@@ -405,18 +408,26 @@ def _statut_invitation_vue(statut: StatutInvitation) -> str:
     return {StatutInvitation.INVITE: "invité", StatutInvitation.ACTIF: "actif"}[statut]
 
 
-def _construire_liasse(dossier: Dossier, ledger: InMemoryLedgerService) -> LiassePivot:
+def _construire_liasse(
+    dossier: Dossier,
+    ledger: InMemoryLedgerService,
+    provisions: tuple[ProvisionCloture, ...] = (),
+) -> LiassePivot:
     """Semaine 4 (doc 17 §9) : même appel que `_resume` (clôture) et que les
     exports de `demo_chauffeurs_type._executer_un_chauffeur`, mais sur le
     ledger **avec les décisions humaines déjà appliquées**
     (`_ledger_avec_decisions`) : une transaction tranchée en 455/108 doit
     sortir de la liasse téléchargée, pas seulement du dashboard."""
     return ClotureSimplifieeService(ledger).cloturer(
-        dossier.id, exercice=str(dossier.exercice_debut.year), parametres=_parametres(dossier)
+        dossier.id,
+        exercice=str(dossier.exercice_debut.year),
+        parametres=_parametres(dossier, provisions),
     )
 
 
-def _parametres(dossier: Dossier) -> ParametresCloture:
+def _parametres(
+    dossier: Dossier, provisions: tuple[ProvisionCloture, ...] = ()
+) -> ParametresCloture:
     """Bornes déclarées de l'exercice et identité du dossier : ce qui fait
     passer la clôture du bilan simplifié à la liasse fiscale complète."""
     return ParametresCloture(
@@ -426,7 +437,14 @@ def _parametres(dossier: Dossier) -> ParametresCloture:
         identite=dossier.identite,
         soumis_is=_colonne(dossier).soumis_is,
         associes=_colonne(dossier).associes,
+        provisions=provisions,
     )
+
+
+def _provisions_saisies(
+    dossier: Dossier, depot: ProvisionsClotureRepository
+) -> tuple[ProvisionCloture, ...]:
+    return depot.lister(dossier.tenant_id, dossier.id, dossier.fin_exercice().year)
 
 
 def _regimes_a_venir(
@@ -481,13 +499,15 @@ def _exiger_depot_greffe(dossier: Dossier) -> None:
 
 
 def _ecritures_avec_cloture(
-    dossier: Dossier, ledger: InMemoryLedgerService
+    dossier: Dossier,
+    ledger: InMemoryLedgerService,
+    provisions: tuple[ProvisionCloture, ...] = (),
 ) -> tuple[Ecriture, ...]:
     """Écritures de l'exercice (mêmes bornes que la liasse) + écritures
     d'inventaire (TVA, IS) : FEC, grand livre et balance téléchargés
     concordent ainsi avec la liasse, au centime."""
     return ClotureSimplifieeService(ledger).ecritures_exercice_completes(
-        dossier.id, _parametres(dossier)
+        dossier.id, _parametres(dossier, provisions)
     )
 
 
@@ -509,9 +529,10 @@ def _resume(
     comptes: CompteRepository,
     signatures: SignatureRepository,
     digifactory_branche: bool = True,
+    provisions: tuple[ProvisionCloture, ...] = (),
 ) -> DossierResume:
     ecritures = ledger.grand_livre(dossier.id)
-    liasse = _construire_liasse(dossier, ledger)
+    liasse = _construire_liasse(dossier, ledger, provisions)
     exclues = annulees(ecritures)
     nb_a_trancher = sum(
         1
@@ -958,6 +979,15 @@ def get_affectations() -> AffectationRepository:
 AffectationsDep = Annotated[AffectationRepository, Depends(get_affectations)]
 
 
+def get_provisions_cloture() -> ProvisionsClotureRepository:
+    """Dépendance FastAPI — estimations CCA/FNP saisies. Surchargée en mémoire
+    dans les tests."""
+    return PostgresProvisionsClotureRepository(_engine())
+
+
+ProvisionsDep = Annotated[ProvisionsClotureRepository, Depends(get_provisions_cloture)]
+
+
 def _trancher(
     dossier: Dossier,
     ecriture_id: str,
@@ -1211,6 +1241,32 @@ def _enregistrer_routes_parametres_demo(app: FastAPI) -> None:
         return corps
 
 
+def _agregats_portefeuille(
+    dossiers: Sequence[Dossier],
+    base: LedgerService,
+    decisions: DecisionRepository,
+    comptes: CompteRepository,
+    signatures: SignatureRepository,
+    provisions: ProvisionsClotureRepository,
+    branche: bool,
+) -> list[DossierAgregat]:
+    return [
+        _agregat(
+            _resume(
+                dossier,
+                _ledger_avec_decisions(dossier, base, decisions),
+                comptes,
+                signatures,
+                branche,
+                _provisions_saisies(dossier, provisions),
+            ),
+            dossier,
+            _preuves_exercice(signatures, dossier.id),
+        )
+        for dossier in dossiers
+    ]
+
+
 def _enregistrer_routes_dossiers(app: FastAPI) -> None:
     @app.get("/dossiers", response_model=list[DossierAgregat])
     def lister_dossiers(
@@ -1220,6 +1276,7 @@ def _enregistrer_routes_dossiers(app: FastAPI) -> None:
         decisions: DecisionsDep,
         comptes: ComptesDep,
         signatures: SignaturesInpiDep,
+        provisions: ProvisionsDep,
         identite: IdentiteDep,
     ) -> list[DossierAgregat]:
         """Vue gestionnaire (doc 19 §2.1) : agrégats des dossiers **de son
@@ -1230,20 +1287,15 @@ def _enregistrer_routes_dossiers(app: FastAPI) -> None:
         if en_cache is not None:
             return en_cache
         branche = _digifactory_branche(request.app)
-        agregats = [
-            _agregat(
-                _resume(
-                    d,
-                    _ledger_avec_decisions(d, base, decisions),
-                    comptes,
-                    signatures,
-                    branche,
-                ),
-                d,
-                _preuves_exercice(signatures, d.id),
-            )
-            for d in dossiers.lister_par_tenant(tenant_id)
-        ]
+        agregats = _agregats_portefeuille(
+            dossiers.lister_par_tenant(tenant_id),
+            base,
+            decisions,
+            comptes,
+            signatures,
+            provisions,
+            branche,
+        )
         _ecrire_cache_agregats(request.app, str(tenant_id), agregats)
         return agregats
 
@@ -1255,8 +1307,16 @@ def _enregistrer_routes_dossiers(app: FastAPI) -> None:
         comptes: ComptesDep,
         signatures: SignaturesInpiDep,
         avenants: AvenantsDep,
+        provisions: ProvisionsDep,
     ) -> DossierResume:
-        resume = _resume(dossier, ledger, comptes, signatures, _digifactory_branche(request.app))
+        resume = _resume(
+            dossier,
+            ledger,
+            comptes,
+            signatures,
+            _digifactory_branche(request.app),
+            _provisions_saisies(dossier, provisions),
+        )
         return resume.model_copy(
             update={
                 "alerte_regime": alerte_option_ir(dossier),
@@ -1900,13 +1960,21 @@ def _enregistrer_routes_pieces_greffe(app: FastAPI) -> None:
     """Bilan et compte de résultat, une page chacun, au nom demandé par l'INPI."""
 
     @app.get("/dossiers/{dossier_id}/bilan.pdf")
-    def telecharger_bilan(dossier: DossierDep, ledger: LedgerDossierDep) -> Response:
-        pdf = extraire_page_2033(_construire_liasse(dossier, ledger), "2033A")
+    def telecharger_bilan(
+        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+    ) -> Response:
+        pdf = extraire_page_2033(
+            _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions)), "2033A"
+        )
         return _fichier(pdf, "application/pdf", f"bilan-actif-passif-{dossier.id}.pdf")
 
     @app.get("/dossiers/{dossier_id}/compte-resultat.pdf")
-    def telecharger_compte_resultat(dossier: DossierDep, ledger: LedgerDossierDep) -> Response:
-        pdf = extraire_page_2033(_construire_liasse(dossier, ledger), "2033B")
+    def telecharger_compte_resultat(
+        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+    ) -> Response:
+        pdf = extraire_page_2033(
+            _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions)), "2033B"
+        )
         return _fichier(pdf, "application/pdf", f"compte-de-resultat-{dossier.id}.pdf")
 
 
@@ -1915,23 +1983,31 @@ def _enregistrer_routes_declarations(app: FastAPI) -> None:
     2065 à l'IS, 2031 à l'IR. L'autre répond 409, jamais un formulaire faux."""
 
     @app.get("/dossiers/{dossier_id}/cerfa-2065.pdf")
-    def telecharger_cerfa(dossier: DossierDep, ledger: LedgerDossierDep) -> Response:
+    def telecharger_cerfa(
+        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+    ) -> Response:
         if not _colonne(dossier).soumis_is:
             raise HTTPException(
                 status_code=409,
                 detail=f"{_colonne(dossier).libelle} : la 2065 ne concerne que l'IS.",
             )
-        pdf = PdfCerfa2065Renderer().rendre(_construire_liasse(dossier, ledger))
+        pdf = PdfCerfa2065Renderer().rendre(
+            _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
+        )
         return _fichier(pdf, "application/pdf", f"cerfa-2065-{dossier.id}.pdf")
 
     @app.get("/dossiers/{dossier_id}/cerfa-2031.pdf")
-    def telecharger_cerfa_2031(dossier: DossierDep, ledger: LedgerDossierDep) -> Response:
+    def telecharger_cerfa_2031(
+        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+    ) -> Response:
         if _colonne(dossier).soumis_is:
             raise HTTPException(
                 status_code=409,
                 detail=f"{_colonne(dossier).libelle} : la 2031 ne concerne que l'IR.",
             )
-        pdf = PdfCerfa2031Renderer().rendre(_construire_liasse(dossier, ledger))
+        pdf = PdfCerfa2031Renderer().rendre(
+            _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
+        )
         return _fichier(pdf, "application/pdf", f"cerfa-2031-{dossier.id}.pdf")
 
 
@@ -1941,18 +2017,30 @@ def _enregistrer_routes_cloture(app: FastAPI) -> None:
     (`_construire_liasse`), pas le ledger brut."""
 
     @app.get("/dossiers/{dossier_id}/liasse.pdf")
-    def telecharger_liasse(dossier: DossierDep, ledger: LedgerDossierDep) -> Response:
-        pdf = PdfLiasseSimplifieeRenderer().rendre(_construire_liasse(dossier, ledger))
+    def telecharger_liasse(
+        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+    ) -> Response:
+        pdf = PdfLiasseSimplifieeRenderer().rendre(
+            _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
+        )
         return _fichier(pdf, "application/pdf", f"liasse-{dossier.id}.pdf")
 
     @app.get("/dossiers/{dossier_id}/liasse-fiscale.pdf")
-    def telecharger_liasse_fiscale(dossier: DossierDep, ledger: LedgerDossierDep) -> Response:
-        pdf = PdfLiasseFiscaleRenderer().rendre(_construire_liasse(dossier, ledger))
+    def telecharger_liasse_fiscale(
+        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+    ) -> Response:
+        pdf = PdfLiasseFiscaleRenderer().rendre(
+            _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
+        )
         return _fichier(pdf, "application/pdf", f"liasse-fiscale-{dossier.id}.pdf")
 
     @app.get("/dossiers/{dossier_id}/fec.txt")
-    def telecharger_fec(dossier: DossierDep, ledger: LedgerDossierDep) -> Response:
-        ecritures = _ecritures_avec_cloture(dossier, ledger)
+    def telecharger_fec(
+        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+    ) -> Response:
+        ecritures = _ecritures_avec_cloture(
+            dossier, ledger, _provisions_saisies(dossier, provisions)
+        )
         # Nom légal `<SIREN>FEC<clôture>.txt` (A.47 A-1) quand l'identité est connue.
         nom = (
             nom_fichier_fec(dossier.identite.siren, dossier.fin_exercice())
@@ -1961,36 +2049,58 @@ def _enregistrer_routes_cloture(app: FastAPI) -> None:
         )
         return _fichier(exporter_fec(ecritures), "text/plain; charset=utf-8", nom)
 
+
+def _enregistrer_routes_exports(app: FastAPI) -> None:
     @app.get("/dossiers/{dossier_id}/grand-livre.csv")
-    def telecharger_grand_livre(dossier: DossierDep, ledger: LedgerDossierDep) -> Response:
-        ecritures = _ecritures_avec_cloture(dossier, ledger)
+    def telecharger_grand_livre(
+        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+    ) -> Response:
+        ecritures = _ecritures_avec_cloture(
+            dossier, ledger, _provisions_saisies(dossier, provisions)
+        )
         return _fichier(
             exporter_grand_livre(ecritures), "text/csv", f"grand-livre-{dossier.id}.csv"
         )
 
     @app.get("/dossiers/{dossier_id}/grand-livre.pdf")
-    def telecharger_grand_livre_pdf(dossier: DossierDep, ledger: LedgerDossierDep) -> Response:
-        ecritures = _ecritures_avec_cloture(dossier, ledger)
+    def telecharger_grand_livre_pdf(
+        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+    ) -> Response:
+        ecritures = _ecritures_avec_cloture(
+            dossier, ledger, _provisions_saisies(dossier, provisions)
+        )
         pdf = rendre_grand_livre_pdf(ecritures, dossier_id=str(dossier.id))
         return _fichier(pdf, "application/pdf", f"grand-livre-{dossier.id}.pdf")
 
     @app.get("/dossiers/{dossier_id}/balance.csv")
-    def telecharger_balance(dossier: DossierDep, ledger: LedgerDossierDep) -> Response:
-        ecritures = _ecritures_avec_cloture(dossier, ledger)
+    def telecharger_balance(
+        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+    ) -> Response:
+        ecritures = _ecritures_avec_cloture(
+            dossier, ledger, _provisions_saisies(dossier, provisions)
+        )
         return _fichier(exporter_balance(ecritures), "text/csv", f"balance-{dossier.id}.csv")
 
     @app.get("/dossiers/{dossier_id}/balance.pdf")
-    def telecharger_balance_pdf(dossier: DossierDep, ledger: LedgerDossierDep) -> Response:
-        ecritures = _ecritures_avec_cloture(dossier, ledger)
+    def telecharger_balance_pdf(
+        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+    ) -> Response:
+        ecritures = _ecritures_avec_cloture(
+            dossier, ledger, _provisions_saisies(dossier, provisions)
+        )
         pdf = rendre_balance_pdf(ecritures, dossier_id=str(dossier.id))
         return _fichier(pdf, "application/pdf", f"balance-{dossier.id}.pdf")
 
 
-def _document_greffe_inpi(dossier: Dossier, ledger: InMemoryLedgerService) -> bytes:
+def _document_greffe_inpi(
+    dossier: Dossier,
+    ledger: InMemoryLedgerService,
+    provisions: tuple[ProvisionCloture, ...] = (),
+) -> bytes:
     """doc 20 §4 : le PDF non signé (« document de synthèse » de démo, pas
     celui que le Guichet Unique génère réellement — on ne peut pas
     l'appeler sans compte e-procédures)."""
-    return PdfDepotInpiRenderer().rendre(_construire_liasse(dossier, ledger))
+    return PdfDepotInpiRenderer().rendre(_construire_liasse(dossier, ledger, provisions))
 
 
 def _enregistrer_routes_greffe_inpi(app: FastAPI) -> None:
@@ -2002,14 +2112,17 @@ def _enregistrer_routes_greffe_inpi(app: FastAPI) -> None:
 
     @app.get("/dossiers/{dossier_id}/greffe-inpi.pdf")
     def telecharger_greffe_inpi(
-        dossier: DossierDep, ledger: LedgerDossierDep, signatures: SignaturesInpiDep
+        dossier: DossierDep,
+        ledger: LedgerDossierDep,
+        signatures: SignaturesInpiDep,
+        provisions: ProvisionsDep,
     ) -> Response:
         _exiger_depot_greffe(dossier)
         document_signe = signatures.dernier(dossier.id, TYPE_DOCUMENT_GREFFE_INPI)
         pdf = (
             document_signe.contenu_pdf
             if document_signe is not None
-            else _document_greffe_inpi(dossier, ledger)
+            else _document_greffe_inpi(dossier, ledger, _provisions_saisies(dossier, provisions))
         )
         return _fichier(pdf, "application/pdf", f"greffe-inpi-{dossier.id}.pdf")
 
@@ -2019,11 +2132,14 @@ def _enregistrer_routes_greffe_inpi(app: FastAPI) -> None:
         dossier: DossierDep,
         ledger: LedgerDossierDep,
         signatures: SignaturesInpiDep,
+        provisions: ProvisionsDep,
         identite: IdentiteDep,
     ) -> SignatureGreffeVue:
         identite = _verifier_acces_dossier(dossier.id, identite)
         _exiger_depot_greffe(dossier)
-        pdf_non_signe = _document_greffe_inpi(dossier, ledger)
+        pdf_non_signe = _document_greffe_inpi(
+            dossier, ledger, _provisions_saisies(dossier, provisions)
+        )
         document = SignatureDemoProvider().signer(pdf_non_signe, identite.user_id)
         signatures.enregistrer(dossier.id, TYPE_DOCUMENT_GREFFE_INPI, document)
         # Preuve greffe enregistrée. La frise n'avance que si clôture et
@@ -2109,20 +2225,103 @@ def _preparer_cloture(
     ledger: LedgerService,
     decisions: DecisionRepository,
     avenants: AvenantRegimeRepository,
+    provisions: tuple[ProvisionCloture, ...] = (),
 ) -> PassageExercice:
     try:
         return preparer_passage(
-            dossier, ledger, decisions, avenants.lister(dossier.id), datetime.now(UTC).date()
+            dossier,
+            ledger,
+            decisions,
+            avenants.lister(dossier.id),
+            datetime.now(UTC).date(),
+            provisions,
         )
     except PassageRefuse as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+class ProvisionVue(BaseModel):
+    nature: str
+    compte_charge: str
+    centimes: int
+    libelle: str
+
+
+class ProvisionsVue(BaseModel):
+    lignes: list[ProvisionVue]
+
+
+def _lire_provisions(corps: ProvisionsVue) -> tuple[ProvisionCloture, ...]:
+    provisions = tuple(
+        ProvisionCloture(
+            nature=ligne.nature,
+            compte_charge=ligne.compte_charge,
+            centimes=ligne.centimes,
+            libelle=ligne.libelle,
+        )
+        for ligne in corps.lignes
+    )
+    try:
+        for provision in provisions:
+            valider_provision(provision)
+    except ProvisionInvalide as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return provisions
+
+
+def _vue_provisions(lignes: tuple[ProvisionCloture, ...]) -> ProvisionsVue:
+    return ProvisionsVue(
+        lignes=[
+            ProvisionVue(
+                nature=ligne.nature,
+                compte_charge=ligne.compte_charge,
+                centimes=ligne.centimes,
+                libelle=ligne.libelle,
+            )
+            for ligne in lignes
+        ]
+    )
+
+
+def _enregistrer_routes_provisions(app: FastAPI) -> None:
+    """Estimation saisie par le chauffeur (doc 06 §5 point 5). Remplaçable."""
+
+    @app.get("/dossiers/{dossier_id}/provisions-cloture", response_model=ProvisionsVue)
+    def lire_provisions(
+        dossier: DossierDep, provisions: ProvisionsDep, identite: IdentiteDep
+    ) -> ProvisionsVue:
+        _verifier_acces_dossier(dossier.id, identite)
+        return _vue_provisions(_provisions_saisies(dossier, provisions))
+
+    @app.put("/dossiers/{dossier_id}/provisions-cloture", response_model=ProvisionsVue)
+    def enregistrer_provisions(
+        request: Request,
+        corps: ProvisionsVue,
+        dossier: DossierDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+    ) -> ProvisionsVue:
+        _verifier_acces_dossier(dossier.id, identite)
+        saisies = _lire_provisions(corps)
+        provisions.remplacer(dossier.tenant_id, dossier.id, dossier.fin_exercice().year, saisies)
+        _vider_cache_agregats(request.app, str(dossier.tenant_id))
+        return _vue_provisions(saisies)
+
+
+def _passage_cloture(
+    dossier: Dossier,
+    ledger: LedgerService,
+    decisions: DecisionRepository,
+    avenants: AvenantRegimeRepository,
+    provisions: ProvisionsClotureRepository,
+) -> PassageExercice:
+    return _preparer_cloture(
+        dossier, ledger, decisions, avenants, _provisions_saisies(dossier, provisions)
+    )
+
+
 def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
-    """Louis, 2026-09-26 : la clôture appartient au chauffeur, et à lui seul
-    (le gestionnaire n'a aucun droit sur les comptes). L'automatisation a
-    tout préparé ; il relit, accepte l'attestation mot pour mot, et c'est
-    cette validation qui clôt. Sans elle, rien ne se passe."""
+    """Le chauffeur seul valide la clôture. L'attestation est gardée mot pour mot."""
 
     @app.get("/dossiers/{dossier_id}/cloture-exercice", response_model=ClotureExerciceVue)
     def apercu_cloture(
@@ -2130,12 +2329,13 @@ def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
         ledger: LedgerBaseDep,
         decisions: DecisionsDep,
         avenants: AvenantsDep,
+        provisions: ProvisionsDep,
         identite: IdentiteDep,
     ) -> ClotureExerciceVue:
         identite = _verifier_acces_dossier(dossier.id, identite)
         debut, fin = dossier.exercice_debut.isoformat(), dossier.fin_exercice().isoformat()
         try:
-            passage = _preparer_cloture(dossier, ledger, decisions, avenants)
+            passage = _passage_cloture(dossier, ledger, decisions, avenants, provisions)
         except HTTPException as refus:
             return ClotureExerciceVue(
                 possible=False, raison=str(refus.detail), exercice_debut=debut, exercice_fin=fin
@@ -2160,6 +2360,7 @@ def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
         avenants: AvenantsDep,
         dossiers: DossiersDep,
         exercices: ExercicesDep,
+        provisions: ProvisionsDep,
         identite: IdentiteDep,
     ) -> ClotureExerciceVue:
         identite = _verifier_acces_dossier(dossier.id, identite)
@@ -2168,7 +2369,7 @@ def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
             raise HTTPException(
                 status_code=422, detail="L'attestation ne correspond pas au texte présenté."
             )
-        passage = _preparer_cloture(dossier, ledger, decisions, avenants)
+        passage = _passage_cloture(dossier, ledger, decisions, avenants, provisions)
         maintenant = datetime.now(UTC).replace(tzinfo=None)
         executer_passage(passage, ledger, dossiers, exercices, maintenant, identite.user_id, texte)
         _vider_cache_agregats(request.app, str(dossier.tenant_id))
@@ -2557,6 +2758,8 @@ def create_app() -> FastAPI:
     _enregistrer_routes_membres(app)
     _enregistrer_routes_invitation(app)
     _enregistrer_routes_cloture(app)
+    _enregistrer_routes_exports(app)
+    _enregistrer_routes_provisions(app)
     _enregistrer_routes_declarations(app)
     _enregistrer_routes_pieces_greffe(app)
     _enregistrer_routes_greffe_inpi(app)
