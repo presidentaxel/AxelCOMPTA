@@ -44,3 +44,9 @@ def test_les_chauffeurs_bouclent_avec_le_bilan() -> None:
         assert liasse.cases["2053.HN"] == liasse.cases["2033B.310"]
         assert liasse.cases["2053.HN"] == liasse.cases["2050.DI"]
         assert liasse.cases["2052.GG"] == liasse.cases["2052.FR"] - liasse.cases["2052.GF"]
+        assert liasse.cases["2058A.XN"] == liasse.cases["2033B.370"]
+        if "2033C.496" in liasse.cases:
+            assert liasse.cases["2054.0L"] == liasse.cases["2033C.496"]
+            assert liasse.cases["2054.0L"] == (
+                liasse.cases["2054.0G"] + liasse.cases["2054.0J"] - liasse.cases["2054.0K"]
+            )

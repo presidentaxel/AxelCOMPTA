@@ -38,7 +38,7 @@ from axelcompta.closing.cloture_fiscale import (
     ecritures_exercice,
     hors_inventaire,
 )
-from axelcompta.closing.models import ParametresCloture
+from axelcompta.closing.models import ParametresCloture, ProvisionCloture
 from axelcompta.closing.ouverture import ecriture_a_nouveaux
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId
@@ -78,6 +78,7 @@ def preparer_passage(
     decisions: DecisionRepository,
     avenants: tuple[AvenantRegime, ...],
     aujourd_hui: date,
+    provisions: tuple[ProvisionCloture, ...] = (),
 ) -> PassageExercice:
     fin = dossier.fin_exercice()
     if fin >= aujourd_hui:
@@ -100,6 +101,7 @@ def preparer_passage(
         identite=dossier.identite,
         soumis_is=colonne.soumis_is,
         associes=colonne.associes,
+        provisions=provisions,
     )
     de_l_exercice = hors_inventaire(
         dossier.id, ecritures_exercice(tranchees, parametres), parametres

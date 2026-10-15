@@ -72,6 +72,21 @@ affectations_resultat = Table(
     Column("decide_par", String, nullable=False),
 )
 
+# Estimations CCA/FNP de l'exercice ouvert (migration `c4e8a1b92d06`).
+# Remplaçables : ce n'est pas une écriture validée.
+provisions_cloture = Table(
+    "provisions_cloture",
+    metadata,
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), primary_key=True),
+    Column("annee", Integer, primary_key=True),
+    Column("position", Integer, primary_key=True),
+    Column("nature", String, nullable=False),
+    Column("compte_charge", String, nullable=False),
+    Column("centimes", Integer, nullable=False),
+    Column("libelle", String, nullable=False),
+)
+
 # Avenants de régime d'imposition (doc 06 §7), append-only : verrou en base
 # contre UPDATE et DELETE (migration `a4d7e2c9b518`).
 avenants_regime = Table(

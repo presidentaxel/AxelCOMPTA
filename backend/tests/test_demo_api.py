@@ -49,6 +49,7 @@ from axelcompta.demo_api import (
     get_ledger,
     get_notifications,
     get_propositions,
+    get_provisions_cloture,
     get_reinitialiseur,
     get_role_membre,
     get_signatures_inpi,
@@ -66,6 +67,7 @@ from axelcompta.tenants.avenants import InMemoryAvenantRegimeRepository, program
 from axelcompta.tenants.exercices import InMemoryExerciceRepository
 from axelcompta.tenants.memory import InMemoryDossierRepository
 from axelcompta.tenants.models import Dossier, Tenant
+from axelcompta.tenants.provisions_cloture import InMemoryProvisionsClotureRepository
 from axelcompta.workflow.decisions import DecisionHumaine
 from axelcompta.workflow.decisions_memory import InMemoryDecisionRepository
 from axelcompta.workflow.notifications import InMemoryNotificationRepository, NotificationEnvoyee
@@ -183,6 +185,8 @@ def _client_et_stubs(
     app.dependency_overrides[get_exercices] = lambda: exercices_stub
     affectations_stub = InMemoryAffectationRepository()
     app.dependency_overrides[get_affectations] = lambda: affectations_stub
+    provisions_stub = InMemoryProvisionsClotureRepository()
+    app.dependency_overrides[get_provisions_cloture] = lambda: provisions_stub
     # `droits_membre` est en Postgres : le rôle est fixé ici.
     app.dependency_overrides[get_role_membre] = lambda: role
     app.dependency_overrides[get_consentements] = lambda: _ConsentementsStub()
@@ -1359,6 +1363,38 @@ def test_un_dossier_en_franchise_au_dela_du_seuil_est_alerte() -> None:
     alertes = {d["dossier_id"]: d["alerte_tva"] for d in portefeuille}
     assert alertes["DEMO_franchise"] == fiche["alerte_tva"]
     assert alertes["DEMO_karim"] is None
+
+
+def test_une_cca_saisie_baisse_les_charges_et_apparait_a_la_cloture() -> None:
+    client = _client()
+    en_tete = _en_tete("DEMO_karim")
+    avant = client.get("/dossiers/DEMO_karim", headers=en_tete).json()["charges_cts"]
+    saisie = {
+        "lignes": [
+            {
+                "nature": "cca",
+                "compte_charge": "616",
+                "centimes": 10_000,
+                "libelle": "assurance janvier",
+            }
+        ]
+    }
+    enregistre = client.put("/dossiers/DEMO_karim/provisions-cloture", headers=en_tete, json=saisie)
+    assert enregistre.status_code == 200
+    relu = client.get("/dossiers/DEMO_karim/provisions-cloture", headers=en_tete).json()
+    assert relu["lignes"][0]["libelle"] == "assurance janvier"
+    apres = client.get("/dossiers/DEMO_karim", headers=en_tete).json()["charges_cts"]
+    assert apres < avant
+    apercu = client.get("/dossiers/DEMO_karim/cloture-exercice", headers=en_tete).json()
+    assert any(libelle.startswith("CCA — assurance janvier") for libelle in apercu["ecritures"])
+    refuse = client.put(
+        "/dossiers/DEMO_karim/provisions-cloture",
+        headers=en_tete,
+        json={
+            "lignes": [{"nature": "cca", "compte_charge": "706", "centimes": 100, "libelle": "non"}]
+        },
+    )
+    assert refuse.status_code == 422
 
 
 def test_la_cloture_se_prepare_puis_se_valide_par_le_chauffeur_lui_meme() -> None:

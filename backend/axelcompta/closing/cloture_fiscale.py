@@ -39,6 +39,8 @@ from .liasse_2033_annexes import (
 )
 from .liasse_2050 import bilan_2050
 from .liasse_2052 import compte_2052
+from .liasse_2054 import immobilisations_2054
+from .liasse_2058 import resultat_2058
 from .models import LiassePivot, ParametresCloture
 from .provisions import ecritures_provisions, prefixe_provisions
 
@@ -173,6 +175,8 @@ def cloturer_fiscalement(
         exploitation, suite = compte_2052(balance)
         cases |= _prefixer("2052", exploitation)
         cases |= _prefixer("2053", suite)
+        cases |= _prefixer("2054", immobilisations_2054(m))
+        cases |= _prefixer("2058A", resultat_2058(fiscal))
     elif parametres.regime_liasse != "2033":
         raise DomaineError(f"régime de liasse inconnu : {parametres.regime_liasse}")
     liasse = LiassePivot(
