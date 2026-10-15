@@ -38,7 +38,9 @@ from .liasse_2033_annexes import (
     valeur_ajoutee_2033e,
 )
 from .liasse_2050 import bilan_2050
+from .liasse_2052 import compte_2052
 from .models import LiassePivot, ParametresCloture
+from .provisions import ecritures_provisions, prefixe_provisions
 
 
 def soldes(ecritures: tuple[Ecriture, ...]) -> Balance:
@@ -80,24 +82,27 @@ def hors_inventaire(
     les soldes « avant inventaire » (TVA de la 2033-D)."""
     annee = parametres.exercice_fin.year
     exclues = {id_cloture_tva(dossier_id, annee), id_cloture_is(dossier_id, annee)}
-    return tuple(e for e in ecritures if e.id not in exclues)
+    prefixe = prefixe_provisions(dossier_id, annee)
+    return tuple(e for e in ecritures if e.id not in exclues and not e.id.startswith(prefixe))
 
 
 def ecritures_de_cloture(
     dossier_id: DossierId, ecritures: tuple[Ecriture, ...], parametres: ParametresCloture
 ) -> tuple[Ecriture, ...]:
-    """TVA puis IS, dans cet ordre. `ecritures` : celles de l'exercice."""
+    """Provisions saisies, puis TVA, puis IS. `ecritures` : celles de l'exercice."""
     ecritures = hors_inventaire(dossier_id, ecritures, parametres)
     fin = parametres.exercice_fin
-    tva = ecriture_liquidation_tva(dossier_id, soldes(ecritures), fin)
-    avec_tva = ecritures + ((tva,) if tva else ())
+    provisions = ecritures_provisions(dossier_id, parametres.provisions, fin)
+    avant_tva = ecritures + provisions
+    tva = ecriture_liquidation_tva(dossier_id, soldes(avant_tva), fin)
+    avec_tva = avant_tva + ((tva,) if tva else ())
+    if not parametres.soumis_is:
+        return provisions + ((tva,) if tva else ())
     balance = soldes(avec_tva)
     fiscal = resultat_fiscal(compte_de_resultat(balance), balance, parametres.deficits_anterieurs)
-    if not parametres.soumis_is:
-        return (tva,) if tva else ()
     impot = calculer_is(fiscal["370"], parametres.exercice_debut, fin).impot
     ecriture_is = ecriture_impot_societes(dossier_id, impot, fin)
-    return tuple(e for e in (tva, ecriture_is) if e is not None)
+    return provisions + tuple(e for e in (tva, ecriture_is) if e is not None)
 
 
 def _prefixer(tableau: str, lignes: dict[str, int]) -> dict[str, int]:
@@ -165,6 +170,9 @@ def cloturer_fiscalement(
     cases |= {f"CA3.{cle}": montant for cle, montant in declaration_ca3(balance_avant).items()}
     if parametres.regime_liasse == "2050":
         cases |= _prefixer("2050", bilan_2050(balance, resultat["310"]))
+        exploitation, suite = compte_2052(balance)
+        cases |= _prefixer("2052", exploitation)
+        cases |= _prefixer("2053", suite)
     elif parametres.regime_liasse != "2033":
         raise DomaineError(f"régime de liasse inconnu : {parametres.regime_liasse}")
     liasse = LiassePivot(
