@@ -1160,7 +1160,7 @@ def _configurer_cors(app: FastAPI) -> None:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[ORIGINE_FRONTEND_DEV],
-        allow_methods=["GET", "POST", "PATCH"],
+        allow_methods=["GET", "POST", "PUT", "PATCH"],
         allow_headers=["*"],
         # Lu par le front pour enregistrer un fichier sous le nom choisi par
         # le serveur (FEC : `<SIREN>FEC<AAAAMMJJ>.txt`, nom légal A.47 A-1).
