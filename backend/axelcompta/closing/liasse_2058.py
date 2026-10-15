@@ -10,6 +10,23 @@ from __future__ import annotations
 from .liasse_2033 import DEDUCTIONS, REINTEGRATIONS
 
 
+def deficits_2058(releve_2033d: dict[str, int]) -> dict[str, int]:
+    """2058-B, suivi des déficits. Mêmes euros que le cadre II de la 2033-D.
+
+    K4 reprend le 870 de l'exercice précédent. Aucun déficit n'est
+    transféré (K4bis). Les indemnités de congés et les provisions non
+    déductibles ne sont pas ventilées.
+    """
+    return {
+        "K4": releve_2033d.get("982", 0),
+        "K4bis": 0,
+        "K5": releve_2033d.get("983", 0),
+        "K6": releve_2033d.get("984", 0),
+        "YJ": releve_2033d.get("860", 0),
+        "YK": releve_2033d.get("870", 0),
+    }
+
+
 def resultat_2058(fiscal: dict[str, int]) -> dict[str, int]:
     """`fiscal` est le cadre B déjà calculé pour la 2033-B, en euros."""
     return {
