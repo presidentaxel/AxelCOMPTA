@@ -12,10 +12,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    # `edited` : changer la base (PR empilée retargetée vers main) ne
-    # redéclenche pas `synchronize`. Sans ça, les checks exigés restent
-    # « Expected » indéfiniment.
-    types: [opened, synchronize, reopened, edited]
     branches: [main]
 
 concurrency:
@@ -25,9 +21,6 @@ concurrency:
 jobs:
   backend:
     name: backend (lint · types · tests)
-    # Un edit de titre ou de description ne relance pas la CI. Un changement
-    # de base, si.
-    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -85,7 +78,6 @@ jobs:
 
   frontend:
     name: frontend (lint · build)
-    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null
     runs-on: ubuntu-latest
     defaults:
       run:
