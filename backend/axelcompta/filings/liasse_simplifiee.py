@@ -49,11 +49,14 @@ class PdfLiasseSimplifieeRenderer(FilingRenderer):
         dessin.setFont("Helvetica", 11)
         for libelle, cle in (
             ("Actif — Trésorerie", "TRESORERIE"),
+            ("Actif — Immobilisations", "IMMOBILISATIONS"),
+            ("Passif — Capitaux", "CAPITAUX"),
             ("Passif — Résultat", "RESULTAT"),
             ("Passif — TVA à payer", "TVA_A_PAYER"),
+            ("Comptes non ventilés", "COMPTES_NON_VENTILES"),
         ):
             y -= 20
-            _ligne(dessin, 60, y, libelle, liasse.cases[cle])
+            _ligne(dessin, 60, y, libelle, liasse.cases.get(cle, 0))
 
         y -= 35
         dessin.setFont("Helvetica-Bold", 13)

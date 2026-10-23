@@ -41,12 +41,15 @@ def test_construire_liasse_sur_un_dossier_reel_complet() -> None:
     assert liasse.cases["RESULTAT"] == liasse.cases["CA_HT"] - liasse.cases["CHARGES"]
     # Aucune TVA plateforme ici (pas de settlement Rollee historique).
     assert liasse.cases["TVA_A_PAYER"] == 0
-    # Contrairement au golden test (tests/closing/test_bilan_simplifie.py),
-    # trésorerie != résultat ici : ce vrai dossier a des mouvements hors
-    # compte de résultat (achat de véhicule, capital...) que notre bilan
-    # simplifié ne modélise pas séparément (doc 06 §5 la vraie checklist,
-    # V1 seulement) — écart assumé, pas un bug (doc 17 §2 reformulé).
+    # Le vrai dossier a du capital et des immobilisations : la trésorerie
+    # n'égale pas le résultat, mais le bilan ventilé reste équilibré.
     assert liasse.cases["TRESORERIE"] != liasse.cases["RESULTAT"]
+    assert (
+        liasse.cases["TRESORERIE"]
+        + liasse.cases["IMMOBILISATIONS"]
+        + liasse.cases["COMPTES_NON_VENTILES"]
+        == liasse.cases["RESULTAT"] + liasse.cases["TVA_A_PAYER"] + liasse.cases["CAPITAUX"]
+    )
     # Ce dossier a un exercice civil complet réel (vérifié : 2024-01-01 à
     # 2024-12-31) — dérivé des vraies dates d'écriture, pas supposé.
     assert liasse.exercice_debut == date(2024, 1, 1)
