@@ -28,6 +28,7 @@ from pypdf import PdfReader
 
 import axelcompta.demo_auth as demo_auth
 import axelcompta.demo_seed as demo_seed
+from axelcompta.anomaly.instruction import RegistreInstructions
 from axelcompta.categorize.models import Etage
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, UserId
 from axelcompta.core.money import Money
@@ -50,6 +51,7 @@ from axelcompta.demo_api import (
     get_notifications,
     get_propositions,
     get_provisions_cloture,
+    get_registre_anomalies,
     get_reinitialiseur,
     get_role_membre,
     get_signatures_inpi,
@@ -176,6 +178,7 @@ def _client_et_stubs(
     app.dependency_overrides[get_decisions] = lambda: decisions_stub
     app.dependency_overrides[get_comptes] = lambda: comptes_stub
     app.dependency_overrides[get_justificatifs] = lambda: justificatifs_stub
+    app.dependency_overrides[get_registre_anomalies] = lambda: RegistreInstructions()
     app.dependency_overrides[get_signatures_inpi] = lambda: signatures_stub
     notifications_stub = InMemoryNotificationRepository()
     app.dependency_overrides[get_notifications] = lambda: notifications_stub
@@ -1830,3 +1833,21 @@ def test_repetition_la_remise_a_neuf_cible_decisions_et_frise() -> None:
     )
     assert reponse.status_code == 200
     assert appels == [("TENANT_DEMO", frozenset({"decisions", "jalons"}))]
+
+
+def test_le_gestionnaire_liste_les_anomalies_de_son_dossier() -> None:
+    client = _client()
+    reponse = client.get("/dossiers/DEMO_karim/anomalies", headers=_en_tete_gestionnaire())
+    assert reponse.status_code == 200
+    assert isinstance(reponse.json(), list)
+    assert client.get("/dossiers/DEMO_karim/anomalies").status_code == 401
+
+
+def test_la_lecture_ne_qualifie_pas_une_alerte() -> None:
+    client = _client_et_stubs("lecture")[0]
+    reponse = client.post(
+        "/dossiers/DEMO_karim/anomalies/personnel:x",
+        json={"decision": "en_instruction"},
+        headers=_en_tete_gestionnaire(),
+    )
+    assert reponse.status_code == 403

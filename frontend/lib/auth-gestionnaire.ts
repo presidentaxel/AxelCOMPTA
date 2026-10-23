@@ -23,7 +23,7 @@ import {
   extraireErreurSupabase,
   URL_SUPABASE,
 } from "./auth-chauffeur";
-import type { DossierAgregat } from "./types";
+import type { AlerteAnomalie, DossierAgregat } from "./types";
 
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
@@ -212,6 +212,35 @@ export async function listerDossiers(): Promise<DossierAgregat[]> {
     // Affichage quand même, simplement pas mémorisé pour la prochaine page.
   }
   return dossiers;
+}
+
+export async function listerAnomalies(dossierId: string): Promise<AlerteAnomalie[]> {
+  const reponse = await requeteGestionnaire(`/dossiers/${dossierId}/anomalies`);
+  if (reponse.status === 401 || reponse.status === 403) {
+    throw new ErreurAuthGestionnaire();
+  }
+  if (!reponse.ok) {
+    throw new ApiError(`API démo (/anomalies) : HTTP ${reponse.status}`, reponse.status);
+  }
+  return (await reponse.json()) as AlerteAnomalie[];
+}
+
+export async function instruireAlerte(
+  dossierId: string,
+  alerteId: string,
+  decision: AlerteAnomalie["etat"],
+  commentaire: string,
+): Promise<AlerteAnomalie> {
+  const reponse = await requeteGestionnaire(`/dossiers/${dossierId}/anomalies/${encodeURIComponent(alerteId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision, commentaire }),
+  });
+  if (!reponse.ok) {
+    const corps = (await reponse.json().catch(() => null)) as { detail?: string } | null;
+    throw new ApiError(corps?.detail ?? "La qualification a échoué.", reponse.status);
+  }
+  return (await reponse.json()) as AlerteAnomalie;
 }
 
 export type RoleMembre = "admin" | "membre" | "lecture";

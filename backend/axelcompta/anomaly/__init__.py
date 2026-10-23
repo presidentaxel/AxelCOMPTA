@@ -1,7 +1,9 @@
-"""anomaly — détection d'abus / anomalies (doc 05 §6).
+"""Détection d'anomalies (doc 05 §6).
 
-Non prévu pour la démo (doc 17 §3) — dossier présent pour la V1, vide de
-code pour l'instant. Dépend de core, categorize.
+Le module signale des incohérences. Un humain les qualifie. Aucun libellé
+n'emploie de qualification juridique.
 """
 
-from __future__ import annotations
+from .service import analyser
+
+__all__ = ["analyser"]
