@@ -30,6 +30,7 @@ from axelcompta.categorize.models import Etage
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, UserId
 from axelcompta.core.money import Money
 from axelcompta.core.rls import appliquer_rls, contexte_identite
+from axelcompta.documents.postgres import PostgresJustificatifRepository
 from axelcompta.ingestion.consentement import ReleveSante, SanteConnexion, StatutConsentement
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
@@ -436,3 +437,25 @@ def test_relances_de_connexion_reglees_par_le_gestionnaire_de_son_portefeuille(
     assert yanis is not None and yanis.relance_consentement is None
     with engine.begin() as connexion, pytest.raises((ProgrammingError, DBAPIError)):
         connexion.execute(text("UPDATE tenants SET relance_consentement = 'sms'"))
+
+
+def test_un_justificatif_reste_dans_son_dossier(
+    engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """Migration `a8c3e1d94b20` : Karim voit sa photo, Sophie et l'autre
+    portefeuille non. Sophie ne peut pas en déposer une chez Karim."""
+    repo = PostgresJustificatifRepository(engine_web)
+    photo = EcritureId("photo-1")
+    with contexte_identite(dossier_id="karim", tenant_id=None):
+        repo.enregistrer(TenantId("tenant-a"), DossierId("karim"), photo, b"photo", ".jpg")
+        assert repo.a_un_justificatif(TenantId("tenant-a"), DossierId("karim"), photo)
+    with contexte_identite(dossier_id="sophie", tenant_id=None):
+        assert repo.a_un_justificatif(TenantId("tenant-a"), DossierId("karim"), photo) is False
+        with pytest.raises((ProgrammingError, DBAPIError)):
+            repo.enregistrer(
+                TenantId("tenant-a"), DossierId("karim"), EcritureId("photo-2"), b"x", ".jpg"
+            )
+    with contexte_identite(dossier_id=None, tenant_id="tenant-b"):
+        assert repo.a_un_justificatif(TenantId("tenant-a"), DossierId("karim"), photo) is False
+    with contexte_identite(dossier_id=None, tenant_id="tenant-a"):
+        assert repo.a_un_justificatif(TenantId("tenant-a"), DossierId("karim"), photo) is True

@@ -145,6 +145,15 @@ def reinitialiser_demo(
             connexion.execute(text(_DOSSIERS_DU_TENANT), {"tenant": str(tenant_id)}).scalars()
         )
         _remettre_en_base(connexion, parties, str(tenant_id))
+        if "justificatifs" in parties:
+            for dossier_id in dossier_ids[:10_000]:
+                connexion.execute(
+                    text(
+                        "DELETE FROM justificatifs "
+                        "WHERE tenant_id = :tenant AND dossier_id = :dossier"
+                    ),
+                    {"tenant": str(tenant_id), "dossier": dossier_id},
+                )
     if "jalons" in parties:
         poser_jalons_demo(
             PostgresDossierRepository(proprietaire),
@@ -152,6 +161,7 @@ def reinitialiser_demo(
             PostgresSignatureRepository(proprietaire),
         )
     if "justificatifs" in parties:
-        for dossier_id in dossier_ids:
+        for dossier_id in dossier_ids[:10_000]:
             shutil.rmtree(justificatifs / dossier_id, ignore_errors=True)
+            shutil.rmtree(justificatifs / str(tenant_id) / dossier_id, ignore_errors=True)
     return dossier_ids

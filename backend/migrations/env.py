@@ -13,6 +13,7 @@ from sqlalchemy import engine_from_config, pool
 
 # Import les modules qui définissent des tables sur metadata (doc 03 §3) —
 # l'import seul suffit à les enregistrer, pas besoin d'utiliser les noms.
+import axelcompta.documents.orm  # noqa: F401
 import axelcompta.ingestion.orm  # noqa: F401
 import axelcompta.ledger.orm  # noqa: F401
 import axelcompta.tenants.orm  # noqa: F401
