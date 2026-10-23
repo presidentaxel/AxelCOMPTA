@@ -14,7 +14,7 @@ import {
 } from "@/lib/lecture-ticket";
 import type { TransactionVue } from "@/lib/types";
 
-/** Une seule demande de photo pour les dépenses du mois encore sans ticket.
+/** Une photo s'attache à une seule dépense du mois, jamais à toutes.
  * La lecture est simulée : on confirme si ça colle, sinon on dit pourquoi. */
 export function StationTickets({
   dossierId,
@@ -91,7 +91,7 @@ export function StationTickets({
       <p className="mt-1 text-sm text-subtle">{phraseManquants(sansTicket.length, moisLu)}</p>
       {!lecture && !enLecture && sansTicket.length > 0 && (
         <Button type="button" variant="secondary" className="mt-4 w-full" onClick={ouvrirAppareil}>
-          Ajouter un ticket
+          Ajouter un ticket à une dépense
         </Button>
       )}
       {enLecture && <p className="mt-4 text-sm text-subtle">Lecture du ticket…</p>}
@@ -114,10 +114,11 @@ export function StationTickets({
 
 function phraseManquants(nombre: number, mois: string): string {
   if (nombre === 0) return `Les sorties de ${mois} ont leur ticket.`;
+  const entree = "Les entrées n'en demandent pas.";
   if (nombre === 1) {
-    return `1 sortie sans ticket en ${mois}. Les entrées n'en demandent pas.`;
+    return `1 sortie sans ticket en ${mois}. La photo s'attache à cette dépense. ${entree}`;
   }
-  return `${nombre} sorties sans ticket en ${mois}. Les entrées n'en demandent pas.`;
+  return `${nombre} sorties sans ticket en ${mois}. Une photo s'attache à une seule dépense, pas aux ${nombre}. ${entree}`;
 }
 
 function Resultat({
@@ -140,6 +141,7 @@ function Resultat({
   onReprendre: () => void;
 }) {
   const mouvement = lecture.mouvement;
+  const nom = mouvement ? nomCommercant(mouvement.libelle) : "";
   return (
     <div className="mt-4">
       <Comparaison
@@ -151,22 +153,27 @@ function Resultat({
       {mouvement && (
         <Comparaison
           titre="Mouvement"
-          enseigne={nomCommercant(mouvement.libelle)}
+          enseigne={nom}
           montant={mouvement.montant_cts}
           date={mouvement.date}
         />
       )}
       <p className="mt-3 text-sm text-ink">{raison(lecture, mouvement)}</p>
-      {lecture.ecart === null && (
+      {mouvement && (
+        <p className="mt-2 text-sm text-ink">
+          Cette photo sera posée sur {nom} ({formatMontant(mouvement.montant_cts)}).
+        </p>
+      )}
+      {lecture.ecart === null && mouvement && (
         <Button type="button" className="mt-4 w-full" disabled={envoi} onClick={onConfirmer}>
-          {envoi ? "Envoi…" : "Confirmer"}
+          {envoi ? "Envoi…" : `Poser sur ${nom}`}
         </Button>
       )}
       {lecture.ecart !== null && !choisir && (
         <div className="mt-4 flex flex-col gap-2">
           {mouvement && (
             <Button type="button" className="w-full" disabled={envoi} onClick={onConfirmer}>
-              {envoi ? "Envoi…" : "Poser sur ce mouvement"}
+              {envoi ? "Envoi…" : `Poser sur ${nom}`}
             </Button>
           )}
           {mouvement && (
