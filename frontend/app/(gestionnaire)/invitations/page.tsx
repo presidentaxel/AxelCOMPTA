@@ -12,6 +12,7 @@ import {
 } from "@/lib/auth-gestionnaire";
 import { libelleCompte } from "@/lib/dossier-libelles";
 import type { DossierAgregat } from "@/lib/types";
+import { Squelette } from "@/components/Squelette";
 
 /** Une ligne par entreprise sans compte, plus un collage pour plusieurs.
  * Plus de liste déroulante : l'e-mail se saisit en face du nom. */
@@ -93,7 +94,13 @@ export default function InvitationsPage() {
         </Button>
       </form>
       {erreur && <p className="mt-6 text-sm text-danger">{erreur}</p>}
-      {!dossiers && !erreur && <p className="mt-8 text-sm text-subtle">Chargement…</p>}
+      {!dossiers && !erreur && (
+        <div className="mt-10 space-y-3" aria-hidden>
+          <Squelette className="h-12 w-full" />
+          <Squelette className="h-12 w-full" />
+          <Squelette className="h-12 w-full" />
+        </div>
+      )}
 
       {sansCompte.length > 0 && (
         <ul className="mt-10">

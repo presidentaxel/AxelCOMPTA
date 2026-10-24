@@ -6,21 +6,30 @@ import { useEffect, useState } from "react";
 import { fetchAvecAuthChauffeur, obtenirSession } from "@/lib/auth-chauffeur";
 import type { DossierResume, TransactionVue } from "@/lib/types";
 
-export type DossierCharge =
+export type Bloc<T> =
   | { statut: "en_cours" }
-  | { statut: "pret"; dossier: DossierResume; transactions: TransactionVue[] }
+  | { statut: "pret"; valeur: T }
   | { statut: "erreur"; message: string };
 
-/** Charge le dossier du chauffeur connecté. Une autre adresse que la sienne
- * renvoie vers son dossier, pas une page d'erreur. `remplacer` met à jour
+/** Charge le dossier du chauffeur connecté. Le résumé et les opérations
+ * arrivent chacun à leur tour : l'un n'attend pas l'autre. Une autre
+ * adresse que la sienne renvoie vers son dossier. `remplacer` met à jour
  * une opération déjà affichée (photo, réponse) sans recharger la page. */
 export function useDossierChauffeur(dossierId: string): {
-  charge: DossierCharge;
+  dossier: Bloc<DossierResume>;
+  transactions: Bloc<TransactionVue[]>;
   remplacer: (transaction: TransactionVue) => void;
   recharger: () => void;
 } {
   const router = useRouter();
-  const [charge, setCharge] = useState<DossierCharge>({ statut: "en_cours" });
+  const [dossier, setDossier] = useState<Bloc<DossierResume>>({ statut: "en_cours" });
+  const [transactions, setTransactions] = useState<Bloc<TransactionVue[]>>({ statut: "en_cours" });
+  const [cle, setCle] = useState(dossierId);
+  if (cle !== dossierId) {
+    setCle(dossierId);
+    setDossier({ statut: "en_cours" });
+    setTransactions({ statut: "en_cours" });
+  }
 
   useEffect(() => {
     const session = obtenirSession();
@@ -32,20 +41,34 @@ export function useDossierChauffeur(dossierId: string): {
       router.replace(`/chauffeur/${session.dossierId}`);
       return;
     }
-    Promise.all([
-      fetchAvecAuthChauffeur<DossierResume>(`/dossiers/${dossierId}`),
-      fetchAvecAuthChauffeur<TransactionVue[]>(`/dossiers/${dossierId}/transactions`),
-    ])
-      .then(([dossier, transactions]) => setCharge({ statut: "pret", dossier, transactions }))
-      .catch(() => setCharge({ statut: "erreur", message: "Impossible de charger vos données." }));
+    let annule = false;
+    fetchAvecAuthChauffeur<DossierResume>(`/dossiers/${dossierId}`)
+      .then((valeur) => {
+        if (!annule) setDossier({ statut: "pret", valeur });
+      })
+      .catch(() => {
+        if (!annule) setDossier({ statut: "erreur", message: "Impossible de charger le dossier." });
+      });
+    fetchAvecAuthChauffeur<TransactionVue[]>(`/dossiers/${dossierId}/transactions`)
+      .then((valeur) => {
+        if (!annule) setTransactions({ statut: "pret", valeur });
+      })
+      .catch(() => {
+        if (!annule) {
+          setTransactions({ statut: "erreur", message: "Impossible de charger les opérations." });
+        }
+      });
+    return () => {
+      annule = true;
+    };
   }, [dossierId, router]);
 
   function remplacer(transaction: TransactionVue) {
-    setCharge((etat) =>
+    setTransactions((etat) =>
       etat.statut === "pret"
         ? {
             ...etat,
-            transactions: etat.transactions.map((ligne) =>
+            valeur: etat.valeur.map((ligne) =>
               ligne.ecriture_id === transaction.ecriture_id ? transaction : ligne,
             ),
           }
@@ -53,15 +76,15 @@ export function useDossierChauffeur(dossierId: string): {
     );
   }
 
-  /** Relit les opérations sans remettre la page en chargement : après une
+  /** Relit les opérations sans remettre la liste en squelette : après une
    * décision, les propositions des opérations semblables changent. */
   function recharger() {
     fetchAvecAuthChauffeur<TransactionVue[]>(`/dossiers/${dossierId}/transactions`)
-      .then((transactions) =>
-        setCharge((etat) => (etat.statut === "pret" ? { ...etat, transactions } : etat)),
+      .then((valeur) =>
+        setTransactions((etat) => (etat.statut === "pret" ? { statut: "pret", valeur } : etat)),
       )
       .catch(() => undefined);
   }
 
-  return { charge, remplacer, recharger };
+  return { dossier, transactions, remplacer, recharger };
 }
