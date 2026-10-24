@@ -2,71 +2,127 @@
 
 import { useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import { joindreJustificatifChauffeur } from "@/lib/auth-chauffeur";
-import { formatDate, formatMontant } from "@/lib/format";
-import {
-  graineFichier,
-  nomCommercant,
-  simulerLectureTicket,
-  type LectureTicket,
-} from "@/lib/lecture-ticket";
+import { formatMontant } from "@/lib/format";
 import type { TransactionVue } from "@/lib/types";
 
-/** Une seule demande de photo pour les dépenses du mois encore sans ticket.
- * La lecture est simulée : on confirme si ça colle, sinon on dit pourquoi. */
+const JOUR = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
+const ANNEAU =
+  "outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]";
+
+/** Le libellé bancaire suffit : le ticket ne sert pas à classer. */
+const CATEGORIES_CLAIRES = new Set([
+  "carburant",
+  "peage_stationnement",
+  "entretien_reparation_vehicule",
+  "assurance_vehicule",
+  "telecommunications",
+  "recettes_plateformes",
+  "amendes_infractions",
+  "honoraires_comptable_juridique",
+  "charges_sociales_impots",
+  "loyers_locations",
+  "virement_interne",
+  "compte_courant_associe",
+  "remuneration_dirigeant",
+  "frais_bancaires",
+  "abonnements_logiciels",
+  "fournitures_administratives",
+  "subventions",
+  "salaires_personnel",
+  "usage_personnel",
+]);
+
+/** Le ticket est ce qui permet de savoir ce qui a été acheté. */
+function categorieIncertaine(categorie: string): boolean {
+  return (
+    categorie === "usage_personnel_suspect" ||
+    categorie === "non_categorise_a_verifier" ||
+    categorie.startsWith("a_verifier")
+  );
+}
+
+/** Priorité : la pièce sert à lire l'achat et à classer l'écriture.
+ * Une dépense déjà claire (carburant, péage, téléphone…) n'est pas demandée. */
+export function ticketPrioritaire(depense: TransactionVue): boolean {
+  if (depense.montant_cts >= 0 || depense.a_justificatif) return false;
+  const categorie = categorieDe(depense);
+  if (categorie !== null && categorieIncertaine(categorie)) return true;
+  if (depense.statut !== "à trancher") return false;
+  return categorie === null || !CATEGORIES_CLAIRES.has(categorie);
+}
+
+/** Le ticket se pose sur la dépense qui ne se classe pas sans lui. */
 export function StationTickets({
   dossierId,
-  mois,
   depenses,
   onJointe,
 }: {
   dossierId: string;
-  mois: string;
   depenses: TransactionVue[];
   onJointe: (transaction: TransactionVue) => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [lecture, setLecture] = useState<LectureTicket | null>(null);
-  const [fichier, setFichier] = useState<File | null>(null);
-  const [enLecture, setEnLecture] = useState(false);
-  const [envoi, setEnvoi] = useState(false);
-  const [choisir, setChoisir] = useState(false);
-  const [erreur, setErreur] = useState<string | null>(null);
+  const prioritaires = depenses
+    .filter(ticketPrioritaire)
+    .sort(
+      (a, b) =>
+        rang(a) - rang(b) ||
+        b.date.localeCompare(a.date) ||
+        b.ecriture_id.localeCompare(a.ecriture_id),
+    );
 
-  const sansTicket = depenses.filter((depense) => !depense.a_justificatif);
-  const moisLu = new Intl.DateTimeFormat("fr-FR", { month: "long" }).format(
-    new Date(`${mois}-01T12:00:00`),
+  if (prioritaires.length === 0) return null;
+
+  return (
+    <section className="mt-6 border-b border-hairline pb-4">
+      <h2 className="text-base font-semibold text-ink">Tickets</h2>
+      <p className="mt-1 text-sm text-subtle">{phrase(prioritaires.length)}</p>
+      <ul className="mt-2">
+        {prioritaires.map((depense) => (
+          <LigneTicket
+            key={depense.ecriture_id}
+            dossierId={dossierId}
+            depense={depense}
+            onJointe={onJointe}
+          />
+        ))}
+      </ul>
+    </section>
   );
+}
 
-  function ouvrirAppareil() {
-    setErreur(null);
-    inputRef.current?.click();
-  }
+function phrase(nombre: number): string {
+  if (nombre === 1) return "1 dépense ne se classe pas sans son ticket.";
+  return `${nombre} dépenses ne se classent pas sans leur ticket.`;
+}
 
-  function lire(photo: File) {
-    setFichier(photo);
-    setLecture(null);
-    setChoisir(false);
-    setEnLecture(true);
-    setErreur(null);
-    window.setTimeout(() => {
-      setLecture(simulerLectureTicket(graineFichier(photo), sansTicket));
-      setEnLecture(false);
-    }, 700);
-  }
+function rang(depense: TransactionVue): number {
+  const categorie = categorieDe(depense);
+  if (categorie === null || categorieIncertaine(categorie)) return 0;
+  return 1;
+}
 
-  async function poser(ecritureId: string) {
-    if (!fichier) return;
+function LigneTicket({
+  dossierId,
+  depense,
+  onJointe,
+}: {
+  dossierId: string;
+  depense: TransactionVue;
+  onJointe: (transaction: TransactionVue) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const nom = nomDepense(depense.libelle);
+  const montant = formatMontant(depense.montant_cts);
+
+  async function envoyer(fichier: File) {
     setEnvoi(true);
     setErreur(null);
     try {
-      const transaction = await joindreJustificatifChauffeur(dossierId, ecritureId, fichier);
-      onJointe(transaction);
-      setLecture(null);
-      setFichier(null);
-      setChoisir(false);
+      onJointe(await joindreJustificatifChauffeur(dossierId, depense.ecriture_id, fichier));
     } catch (exception) {
       setErreur(exception instanceof ApiError ? exception.message : "Échec de l'envoi de la photo.");
     } finally {
@@ -75,164 +131,64 @@ export function StationTickets({
   }
 
   return (
-    <section className="mt-6 border-b border-hairline pb-4">
+    <li className="border-b border-hairline py-3 last:border-b-0">
+      <div className="flex items-baseline justify-between gap-4">
+        <span className="min-w-0">
+          <span className="block truncate text-base font-semibold text-ink">{nom}</span>
+          <span className="mt-0.5 block text-sm text-subtle">{libelleJour(depense.date)}</span>
+          <span className="mt-0.5 block text-sm text-subtle">{pourquoi(depense)}</span>
+        </span>
+        <span className="shrink-0 text-base font-semibold tabular-nums text-amount-negative">{montant}</span>
+      </div>
       <input
         ref={inputRef}
         type="file"
         accept="image/*"
         className="hidden"
+        aria-label={`Photo du ticket pour ${nom}, ${montant}`}
         onChange={(evenement) => {
-          const photo = evenement.target.files?.[0];
-          if (photo) lire(photo);
+          const fichier = evenement.target.files?.[0];
+          if (fichier) void envoyer(fichier);
           evenement.target.value = "";
         }}
       />
-      <h2 className="text-base font-semibold text-ink">Tickets</h2>
-      <p className="mt-1 text-sm text-subtle">{phraseManquants(sansTicket.length, moisLu)}</p>
-      {!lecture && !enLecture && sansTicket.length > 0 && (
-        <Button type="button" variant="secondary" className="mt-4 w-full" onClick={ouvrirAppareil}>
-          Ajouter un ticket
-        </Button>
-      )}
-      {enLecture && <p className="mt-4 text-sm text-subtle">Lecture du ticket…</p>}
-      {lecture && (
-        <Resultat
-          lecture={lecture}
-          envoi={envoi}
-          choisir={choisir}
-          autres={sansTicket.filter((depense) => depense.ecriture_id !== lecture.mouvement?.ecriture_id)}
-          onConfirmer={() => lecture.mouvement && void poser(lecture.mouvement.ecriture_id)}
-          onChoisir={() => setChoisir(true)}
-          onPoser={(id) => void poser(id)}
-          onReprendre={ouvrirAppareil}
-        />
-      )}
-      {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}
-    </section>
+      <button
+        type="button"
+        disabled={envoi}
+        onClick={() => inputRef.current?.click()}
+        className={`mt-1 rounded-md px-1 py-1 text-sm font-medium text-primary disabled:opacity-50 ${ANNEAU}`}
+      >
+        {envoi ? "Envoi…" : `Ajouter le ticket de ${nom}`}
+      </button>
+      {erreur && <p className="mt-1 text-xs text-danger">{erreur}</p>}
+    </li>
   );
 }
 
-function phraseManquants(nombre: number, mois: string): string {
-  if (nombre === 0) return `Les sorties de ${mois} ont leur ticket.`;
-  if (nombre === 1) {
-    return `1 sortie sans ticket en ${mois}. Les entrées n'en demandent pas.`;
+function nomDepense(libelle: string): string {
+  const trouve = libelle.match(/^(.*)\s+\(([a-z0-9_]+)\)$/);
+  return (trouve?.[1] ?? libelle).trim();
+}
+
+function categorieDe(depense: TransactionVue): string | null {
+  const trouve = depense.libelle.match(/\(([a-z0-9_]+)\)$/);
+  return trouve?.[1] ?? depense.proposition;
+}
+
+function pourquoi(depense: TransactionVue): string {
+  const categorie = categorieDe(depense);
+  if (categorie === "usage_personnel_suspect") {
+    return "Le libellé ne dit pas ce qui a été acheté.";
   }
-  return `${nombre} sorties sans ticket en ${mois}. Les entrées n'en demandent pas.`;
-}
-
-function Resultat({
-  lecture,
-  envoi,
-  choisir,
-  autres,
-  onConfirmer,
-  onChoisir,
-  onPoser,
-  onReprendre,
-}: {
-  lecture: LectureTicket;
-  envoi: boolean;
-  choisir: boolean;
-  autres: TransactionVue[];
-  onConfirmer: () => void;
-  onChoisir: () => void;
-  onPoser: (ecritureId: string) => void;
-  onReprendre: () => void;
-}) {
-  const mouvement = lecture.mouvement;
-  return (
-    <div className="mt-4">
-      <Comparaison
-        titre="Ticket"
-        enseigne={lecture.enseigne}
-        montant={lecture.montant_cts}
-        date={lecture.date}
-      />
-      {mouvement && (
-        <Comparaison
-          titre="Mouvement"
-          enseigne={nomCommercant(mouvement.libelle)}
-          montant={mouvement.montant_cts}
-          date={mouvement.date}
-        />
-      )}
-      <p className="mt-3 text-sm text-ink">{raison(lecture, mouvement)}</p>
-      {lecture.ecart === null && (
-        <Button type="button" className="mt-4 w-full" disabled={envoi} onClick={onConfirmer}>
-          {envoi ? "Envoi…" : "Confirmer"}
-        </Button>
-      )}
-      {lecture.ecart !== null && !choisir && (
-        <div className="mt-4 flex flex-col gap-2">
-          {mouvement && (
-            <Button type="button" className="w-full" disabled={envoi} onClick={onConfirmer}>
-              {envoi ? "Envoi…" : "Poser sur ce mouvement"}
-            </Button>
-          )}
-          {mouvement && (
-            <Button type="button" variant="secondary" disabled={envoi} onClick={onChoisir}>
-              Choisir un autre mouvement
-            </Button>
-          )}
-          <button type="button" className="py-2 text-sm font-medium text-primary" onClick={onReprendre}>
-            Choisir une autre photo
-          </button>
-        </div>
-      )}
-      {choisir && (
-        <ul className="mt-3">
-          {autres.slice(0, 5).map((depense) => (
-            <li key={depense.ecriture_id} className="border-t border-hairline">
-              <button
-                type="button"
-                disabled={envoi}
-                className="flex w-full items-baseline justify-between gap-3 py-3 text-left"
-                onClick={() => onPoser(depense.ecriture_id)}
-              >
-                <span className="min-w-0 truncate text-sm font-medium text-ink">
-                  {nomCommercant(depense.libelle)}
-                </span>
-                <span className="shrink-0 text-sm tabular-nums text-amount-negative">
-                  {formatMontant(depense.montant_cts)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function Comparaison({
-  titre,
-  enseigne,
-  montant,
-  date,
-}: {
-  titre: string;
-  enseigne: string;
-  montant: number;
-  date: string;
-}) {
-  return (
-    <p className="mt-3 flex items-baseline justify-between gap-3">
-      <span className="min-w-0">
-        <span className="block text-xs text-subtle">{titre}</span>
-        <span className="block truncate text-sm font-medium text-ink">{enseigne}</span>
-        {date && <span className="block text-xs text-subtle">{formatDate(date)}</span>}
-      </span>
-      <span className="shrink-0 text-sm font-semibold tabular-nums text-ink">{formatMontant(montant)}</span>
-    </p>
-  );
-}
-
-function raison(lecture: LectureTicket, mouvement: TransactionVue | null): string {
-  if (lecture.ecart === null) return "Ça colle. On peut le poser sur ce mouvement.";
-  if (lecture.ecart === "aucun" || !mouvement) return "Aucune dépense sans ticket ce mois-ci.";
-  if (lecture.ecart === "montant") {
-    const ecart = Math.abs(lecture.montant_cts - mouvement.montant_cts);
-    return `Le montant ne colle pas. Écart de ${formatMontant(ecart)}.`;
+  if (categorie === "repas_et_receptions") {
+    return "Repas de travail ou dépense personnelle : le ticket tranche.";
   }
-  return `L'enseigne ne colle pas. Le ticket dit « ${lecture.enseigne} », le mouvement est ${nomCommercant(mouvement.libelle)}.`;
+  if (categorie === null || categorieIncertaine(categorie)) {
+    return "Rien ne permet de la classer sans le ticket.";
+  }
+  return "Le libellé ne suffit pas à la classer.";
+}
+
+function libelleJour(jour: string): string {
+  return JOUR.format(new Date(`${jour.slice(0, 10)}T12:00:00`));
 }

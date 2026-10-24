@@ -46,6 +46,9 @@ def test_cloture_simplifiee_calcule_le_resultat_et_le_bilan() -> None:
     assert liasse.cases["TRESORERIE"] == 848_00
     assert liasse.cases["TVA_A_PAYER"] == 62_55
     assert liasse.cases["2065"] == liasse.cases["RESULTAT"]
+    assert liasse.cases["IMMOBILISATIONS"] == 0
+    assert liasse.cases["CAPITAUX"] == 0
+    assert liasse.cases["COMPTES_NON_VENTILES"] == 0
 
 
 def test_le_bilan_est_equilibre_tresorerie_egale_resultat_plus_tva() -> None:
@@ -62,3 +65,61 @@ def test_cloture_sur_dossier_vide() -> None:
     liasse = ClotureSimplifieeService(InMemoryLedgerService()).cloturer(DOSSIER, exercice="2026")
     assert liasse.cases["RESULTAT"] == 0
     assert liasse.cases["TRESORERIE"] == 0
+    assert liasse.cases["IMMOBILISATIONS"] == 0
+    assert liasse.cases["CAPITAUX"] == 0
+    assert liasse.cases["COMPTES_NON_VENTILES"] == 0
+
+
+def _ajouter(
+    ledger: InMemoryLedgerService, identifiant: str, lignes: tuple[LigneEcriture, ...]
+) -> None:
+    ledger.enregistrer(
+        Ecriture(
+            id=EcritureId(identifiant),
+            dossier_id=DOSSIER,
+            journal=Journal.BQ,
+            date=date(2026, 9, 4),
+            libelle=identifiant,
+            reference_piece=None,
+            lignes=lignes,
+        )
+    )
+
+
+def test_equilibre_avec_capital_immobilisation_et_compte_non_ventile() -> None:
+    """1013 et 218 sont produits par le pipeline (apport, véhicule).
+    401 n'a pas de ligne propre : il reste dans COMPTES_NON_VENTILES."""
+    ledger = _ledger_avec_le_golden_test_doc17()
+    _ajouter(
+        ledger,
+        "capital",
+        (
+            LigneEcriture("512", Sens.DEBIT, Money(100_000_00)),
+            LigneEcriture("1013", Sens.CREDIT, Money(100_000_00)),
+        ),
+    )
+    _ajouter(
+        ledger,
+        "vehicule",
+        (
+            LigneEcriture("218", Sens.DEBIT, Money(40_000_00)),
+            LigneEcriture("512", Sens.CREDIT, Money(40_000_00)),
+        ),
+    )
+    _ajouter(
+        ledger,
+        "fournisseur",
+        (
+            LigneEcriture("401", Sens.DEBIT, Money(5_000_00)),
+            LigneEcriture("512", Sens.CREDIT, Money(5_000_00)),
+        ),
+    )
+    cases = ClotureSimplifieeService(ledger).cloturer(DOSSIER, exercice="2026").cases
+    assert cases["CAPITAUX"] == 100_000_00
+    assert cases["IMMOBILISATIONS"] == 40_000_00
+    assert cases["COMPTES_NON_VENTILES"] == 5_000_00
+    assert cases["TRESORERIE"] == 848_00 + 100_000_00 - 40_000_00 - 5_000_00
+    assert (
+        cases["TRESORERIE"] + cases["IMMOBILISATIONS"] + cases["COMPTES_NON_VENTILES"]
+        == cases["RESULTAT"] + cases["TVA_A_PAYER"] + cases["CAPITAUX"]
+    )

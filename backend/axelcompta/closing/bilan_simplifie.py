@@ -4,15 +4,16 @@ pas de rapprochement bancaire, pas de dotations aux amortissements, pas de
 cadrage TVA de clôture, pas de réintégrations fiscales (doc 06 §5, la
 checklist complète, V1 seulement).
 
-**Limite trouvée en testant sur un vrai dossier complet** (doc 17 §2,
-reformulé 2026-09-05) : `TRESORERIE == RESULTAT + TVA_A_PAYER` ne tient que
-si *toutes* les transactions du grand livre touchent un compte classe 6/7
-(charge/produit). Dès qu'une transaction touche un compte hors compte de
-résultat (immobilisation, capital — `nature_depuis_compte` renvoie
-`"autre"`), la trésorerie s'écarte du résultat d'exactement ce montant,
-puisqu'on ne modélise pas de poste de bilan séparé pour ces comptes (pas de
-ligne « immobilisations », pas de ligne « capital »). Assumé pour la démo,
-pas un bug — voir tests/test_demo_dossier_reel.py pour un cas concret.
+Le pipeline démo et la synchro Digifactory produisent, en plus des
+classes 6 et 7 : `512` (banque), `44566`/`44571` (TVA), `1013` (capital
+libéré, `demo_chauffeurs_type`) et `218` (immobilisation véhicule, mapping
+du pack, volontairement pas ramené en charge). Tout autre compte (classe 3,
+classe 4 hors TVA, classe 5 hors `512`) est nommé `COMPTES_NON_VENTILES` :
+il n'a pas de ligne de bilan, mais il reste dans l'identité.
+
+Identité, soldes signés débit positif :
+
+`TRESORERIE + IMMOBILISATIONS + COMPTES_NON_VENTILES == RESULTAT + TVA_A_PAYER + CAPITAUX`
 """
 
 from __future__ import annotations
@@ -39,6 +40,29 @@ def _solde_par_compte(ecritures: tuple[Ecriture, ...]) -> dict[str, int]:
             signe = 1 if ligne.sens is Sens.DEBIT else -1
             balance[ligne.compte] = balance.get(ligne.compte, 0) + signe * ligne.montant.centimes
     return balance
+
+
+def _ventiler(balance: dict[str, int]) -> dict[str, int]:
+    """Postes du bilan simplifié, en centimes. `CAPITAUX` est créditeur
+    positif (classe 1). `COMPTES_NON_VENTILES` garde le signe débit."""
+    tresorerie = immobilisations = capitaux = non_ventiles = 0
+    for compte, solde in balance.items():
+        if compte == "512":
+            tresorerie += solde
+        elif compte in {"44566", "44571"} or compte.startswith(("6", "7")):
+            continue
+        elif compte.startswith("2"):
+            immobilisations += solde
+        elif compte.startswith("1"):
+            capitaux += solde
+        else:
+            non_ventiles += solde
+    return {
+        "TRESORERIE": tresorerie,
+        "IMMOBILISATIONS": immobilisations,
+        "CAPITAUX": -capitaux,
+        "COMPTES_NON_VENTILES": non_ventiles,
+    }
 
 
 def _compte_de_resultat(balance: dict[str, int]) -> tuple[int, int]:
@@ -101,8 +125,8 @@ class ClotureSimplifieeService(ClosingService):
                 "CA_HT": produits,
                 "CHARGES": charges,
                 "RESULTAT": resultat,
-                "TRESORERIE": balance.get("512", 0),
                 "TVA_A_PAYER": tva_a_payer,
+                **_ventiler(balance),
                 "2065": resultat,  # case-clé du formulaire 2065 (doc 17 §3)
             },
             # Bornes réelles de l'exercice (doc 06 §7 : un exercice peut être

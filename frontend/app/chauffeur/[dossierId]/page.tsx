@@ -6,7 +6,7 @@ import { use, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmationGroupee } from "@/components/ConfirmationGroupee";
 import { QuestionCategorisation } from "@/components/QuestionCategorisation";
-import { StationTickets } from "@/components/StationTickets";
+import { StationTickets, ticketPrioritaire } from "@/components/StationTickets";
 import { useDossierChauffeur } from "@/app/chauffeur/use-dossier";
 import { ApiError } from "@/lib/api";
 import { joindreJustificatifChauffeur } from "@/lib/auth-chauffeur";
@@ -78,15 +78,7 @@ export default function DossierChauffeurPage({
         <Arriere
           aVerifier={aVerifier}
           dossierId={dossierId}
-          mois={dernierMois}
-          depenses={
-            dernierMois
-              ? transactions.filter(
-                  (transaction) =>
-                    transaction.montant_cts < 0 && transaction.date.startsWith(dernierMois),
-                )
-              : []
-          }
+          depenses={transactions.filter(ticketPrioritaire)}
           onChange={remplacer}
           onTranche={(transaction) => {
             remplacer(transaction);
@@ -136,7 +128,6 @@ function Onglet({
 function Arriere({
   aVerifier,
   dossierId,
-  mois,
   depenses,
   onChange,
   onTranche,
@@ -144,26 +135,22 @@ function Arriere({
 }: {
   aVerifier: TransactionVue[];
   dossierId: string;
-  mois: string | undefined;
   depenses: TransactionVue[];
   onChange: (transaction: TransactionVue) => void;
   onTranche: (transaction: TransactionVue) => void;
   onGroupeTranche: () => void;
 }) {
-  const ticketsManquants = depenses.some((depense) => !depense.a_justificatif);
   const premiereConfirmable = aVerifier.find(
     (transaction) =>
       transaction.proposition !== null &&
       confirmable(transaction.proposition, transaction.origine_proposition),
   )?.ecriture_id;
-  if (aVerifier.length === 0 && !ticketsManquants) {
+  if (aVerifier.length === 0 && depenses.length === 0) {
     return <p className="mt-10 text-sm text-subtle">Tout est à jour.</p>;
   }
   return (
     <div>
-      {mois && ticketsManquants && (
-        <StationTickets dossierId={dossierId} mois={mois} depenses={depenses} onJointe={onChange} />
-      )}
+      <StationTickets dossierId={dossierId} depenses={depenses} onJointe={onChange} />
       {groupesSemblables(aVerifier).map(([categorie, operations]) => (
         <ConfirmationGroupee
           key={categorie}

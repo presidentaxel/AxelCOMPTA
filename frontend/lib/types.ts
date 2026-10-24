@@ -86,6 +86,17 @@ export type DossierAgregat = {
   alerte_tva: string | null;
 };
 
+export type AlerteAnomalie = {
+  id: string;
+  code: string;
+  libelle_ui: string;
+  detail: string;
+  etat: "ouverte" | "en_instruction" | "justifiee" | "usage_personnel" | "faux_positif";
+  libelle_mouvement: string;
+  montant_centimes: number;
+  date: string;
+};
+
 // doc 17 §9 Semaine 4 + AXE-417/418 : exports de clôture (PDF + CSV),
 // servis en téléchargement direct par demo_api.py.
 export type DocumentCloture =
