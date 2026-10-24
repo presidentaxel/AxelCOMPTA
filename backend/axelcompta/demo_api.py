@@ -845,7 +845,7 @@ def _mouvements_surveilles(
             dossier,
             ecriture,
             categorie,
-            justificatifs.a_un_justificatif(dossier.id, ecriture.id),
+            justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture.id),
         )
         if mouvement is not None:
             mouvements.append(mouvement)
