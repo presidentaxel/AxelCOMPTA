@@ -23,6 +23,12 @@ import {
   libelleRegimeTva,
   libelleTvaRecettes,
 } from "@/lib/dossier-libelles";
+import {
+  ETAPES_FRISE,
+  gardeEtape,
+  nonDeclarePourAnnee,
+  rangEtape,
+} from "@/lib/filtres-portefeuille";
 import { formatDate, formatMontant } from "@/lib/format";
 import type { DossierAgregat } from "@/lib/types";
 
@@ -38,6 +44,8 @@ export default function PortefeuillePage() {
   const [resultat, setResultat] = useState<FiltreResultat>("tous");
   const [forme, setForme] = useState("toutes");
   const [tva, setTva] = useState("toutes");
+  const [etape, setEtape] = useState("toutes");
+  const [anneeNonDeclaree, setAnneeNonDeclaree] = useState("toutes");
   const [selection, setSelection] = useState<string | null>(null);
   const [regles, setRegles] = useState<RegleRappel[]>([]);
   const [infoRappel, setInfoRappel] = useState<string | null>(null);
@@ -72,9 +80,19 @@ export default function PortefeuillePage() {
     () => [...new Set((dossiers ?? []).map((dossier) => dossier.tva_recettes_regime))].sort(),
     [dossiers],
   );
+  const annees = useMemo(
+    () =>
+      [
+        ...new Set(
+          (dossiers ?? []).flatMap((dossier) => [dossier.annee_courante, dossier.annee_precedente]),
+        ),
+      ].sort((a, b) => b - a),
+    [dossiers],
+  );
 
   const visibles = useMemo(() => {
     const aiguille = recherche.trim().toLowerCase();
+    const annee = anneeNonDeclaree === "toutes" ? null : Number(anneeNonDeclaree);
     return (dossiers ?? []).filter((dossier) => {
       if (compte === "sans_compte" && dossier.statut_invitation !== null) return false;
       if (compte === "invite" && dossier.statut_invitation !== "invité") return false;
@@ -83,19 +101,21 @@ export default function PortefeuillePage() {
       if (resultat === "positif" && dossier.resultat_cts < 0) return false;
       if (forme !== "toutes" && dossier.forme_juridique !== forme) return false;
       if (tva !== "toutes" && dossier.tva_recettes_regime !== tva) return false;
+      if (etape !== "toutes" && !gardeEtape(dossier, etape)) return false;
+      if (annee !== null && !nonDeclarePourAnnee(dossier, annee)) return false;
       if (!aiguille) return true;
       return `${dossier.nom} ${dossier.plateformes.join(" ")}`.toLowerCase().includes(aiguille);
     });
-  }, [compte, dossiers, forme, recherche, resultat, tva]);
+  }, [anneeNonDeclaree, compte, dossiers, etape, forme, recherche, resultat, tva]);
 
-  const totaux = useMemo(() => {
-    const liste = dossiers ?? [];
-    return {
-      nombre: liste.length,
-      sansCompte: liste.filter((dossier) => dossier.statut_invitation === null).length,
-      resultat: liste.reduce((somme, dossier) => somme + dossier.resultat_cts, 0),
-    };
-  }, [dossiers]);
+  const totaux = useMemo(
+    () => ({
+      nombre: visibles.length,
+      sansCompte: visibles.filter((dossier) => dossier.statut_invitation === null).length,
+      resultat: visibles.reduce((somme, dossier) => somme + dossier.resultat_cts, 0),
+    }),
+    [visibles],
+  );
 
   const choisi = dossiers?.find((dossier) => dossier.dossier_id === selection) ?? null;
 
@@ -152,6 +172,24 @@ export default function PortefeuillePage() {
             libelle: id === "toutes" ? "Toutes" : libelleTvaRecettes(id),
           }))}
           onChoisir={setTva}
+        />
+        <Bascule
+          libelle="Étape restante"
+          valeur={etape}
+          options={["toutes", ...ETAPES_FRISE].map((id) => ({
+            id,
+            libelle: id === "toutes" ? "Toutes" : id,
+          }))}
+          onChoisir={setEtape}
+        />
+        <Bascule
+          libelle="Non déclaré"
+          valeur={anneeNonDeclaree}
+          options={["toutes", ...annees.map(String)].map((id) => ({
+            id,
+            libelle: id === "toutes" ? "Toutes" : id,
+          }))}
+          onChoisir={setAnneeNonDeclaree}
         />
       </div>
 
@@ -426,15 +464,6 @@ function Bascule<T extends string>({
 /** Le compte se prépare une fois. Ensuite, par exercice : clôture, signature
  * de validation, dépôt au greffe, dépôt aux impôts, signature légale
  * (doc 02 §4 et §6, doc 19 §5.3, doc 20 §4bis). */
-const ETAPES = ["Compte", "Clôture", "Signature", "Greffe", "Impôts", "Signature légale"];
-
-function rangEtape(etape: string, compteOuvert: boolean): number {
-  if (etape === "Suivi" || (etape === "Compte" && compteOuvert)) return ETAPES.indexOf("Compte");
-  if (etape === "Signé") return ETAPES.indexOf("Greffe");
-  const index = ETAPES.indexOf(etape);
-  return etape === "Compte" ? -1 : index;
-}
-
 function Frise({
   annee,
   etape,
@@ -449,7 +478,7 @@ function Frise({
     <span className="flex items-start gap-3">
       <span className="w-8 shrink-0 pt-px text-xs leading-none text-subtle">{annee}</span>
       <span className="grid min-w-0 flex-1 grid-cols-6">
-        {ETAPES.map((nom, rang) => {
+        {ETAPES_FRISE.map((nom, rang) => {
           const fait = rang <= index;
           const traitFait = rang < index;
           return (
@@ -459,7 +488,7 @@ function Frise({
                   className={`absolute right-1/2 top-[3px] left-0 h-px ${traitFait || fait ? "bg-primary" : "bg-border"}`}
                 />
               )}
-              {rang < ETAPES.length - 1 && (
+              {rang < ETAPES_FRISE.length - 1 && (
                 <span
                   className={`absolute top-[3px] right-0 left-1/2 h-px ${traitFait ? "bg-primary" : "bg-border"}`}
                 />
