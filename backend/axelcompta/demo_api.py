@@ -38,7 +38,7 @@ from collections.abc import Callable, Sequence
 from collections.abc import Set as AbstractSet
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Annotated, Any, Protocol
+from typing import Annotated, Any, Literal, Protocol
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -58,6 +58,9 @@ from axelcompta.affectations import (
     enregistrer_bulletin,
     proposer,
 )
+from axelcompta.anomaly.instruction import RegistreInstructions, TransitionRefusee
+from axelcompta.anomaly.models import Alerte, MouvementSurveille
+from axelcompta.anomaly.service import analyser
 from axelcompta.categorize.appris import (
     OperationTranchee,
     libelle_sans_categorie,
@@ -305,6 +308,22 @@ class DossierAgregat(BaseModel):
     # régime, pas un détail comptable (doc 19 §2.4).
     alerte_regime: str | None = None
     alerte_tva: str | None = None
+
+
+class AlerteAnomalieVue(BaseModel):
+    id: str
+    code: str
+    libelle_ui: str
+    detail: str
+    etat: str
+    libelle_mouvement: str
+    montant_centimes: int
+    date: str
+
+
+class InstructionAnomalieEntree(BaseModel):
+    decision: Literal["en_instruction", "justifiee", "usage_personnel", "faux_positif"]
+    commentaire: str = ""
 
 
 class TransactionVue(BaseModel):
@@ -771,6 +790,67 @@ def _transaction_vue(ecriture: Ecriture, a_justificatif: bool, annulee: bool) ->
     )
 
 
+def _categories_par_compte() -> dict[str, str]:
+    inverse: dict[str, str] = {}
+    for categorie, compte in charger_compte_par_categorie().items():
+        inverse.setdefault(compte, categorie)
+    return inverse
+
+
+def _mouvement_anomalie(
+    dossier: Dossier,
+    ecriture: Ecriture,
+    categorie: str,
+    a_justificatif: bool,
+) -> MouvementSurveille | None:
+    autres = [ligne.compte for ligne in ecriture.lignes if ligne.compte != "512"]
+    if len(autres) != 1 or not categorie:
+        return None
+    return MouvementSurveille(
+        dossier_id=dossier.id,
+        ecriture_id=ecriture.id,
+        date=ecriture.date,
+        libelle=ecriture.libelle,
+        montant_centimes=_montant_512(ecriture),
+        categorie=categorie,
+        justificatif_id=ecriture.id if a_justificatif else None,
+        nature_ticket=None,
+    )
+
+
+def _mouvements_surveilles(
+    dossier: Dossier,
+    ledger: InMemoryLedgerService,
+    justificatifs: JustificatifRepository,
+    decisions: DecisionRepository,
+) -> tuple[MouvementSurveille, ...]:
+    """Sorties catégorisées, hors écritures contre-passées. Plafond 10 000."""
+    ecritures = ledger.grand_livre(dossier.id)
+    exclues = annulees(ecritures)
+    decidees = {
+        decision.ecriture_id: decision.categorie
+        for decision in decisions.lister_decisions(dossier.id)
+    }
+    par_compte = _categories_par_compte()
+    mouvements: list[MouvementSurveille] = []
+    for ecriture in ecritures:
+        if ecriture.id in exclues or len(mouvements) >= 10_000:
+            continue
+        autres = [ligne.compte for ligne in ecriture.lignes if ligne.compte != "512"]
+        categorie = decidees.get(ecriture.id, "")
+        if not categorie and len(autres) == 1:
+            categorie = par_compte.get(autres[0], "")
+        mouvement = _mouvement_anomalie(
+            dossier,
+            ecriture,
+            categorie,
+            justificatifs.a_un_justificatif(dossier.id, ecriture.id),
+        )
+        if mouvement is not None:
+            mouvements.append(mouvement)
+    return tuple(mouvements)
+
+
 _ENGINE_DEMO: Engine | None = None
 
 
@@ -929,6 +1009,17 @@ def get_justificatifs() -> JustificatifRepository:
 
 
 JustificatifsDep = Annotated[JustificatifRepository, Depends(get_justificatifs)]
+
+_REGISTRE_ANOMALIES = RegistreInstructions()
+
+
+def get_registre_anomalies() -> RegistreInstructions:
+    """Qualifications d'alertes, en mémoire de process. Les tests passent
+    une instance neuve."""
+    return _REGISTRE_ANOMALIES
+
+
+RegistreAnomaliesDep = Annotated[RegistreInstructions, Depends(get_registre_anomalies)]
 
 
 def get_signatures_inpi() -> SignatureRepository:
@@ -2742,6 +2833,73 @@ def _enregistrer_routes_demo(app: FastAPI) -> None:
         return RemiseANeufVue(parties=sorted(parties), dossiers=dossiers)
 
 
+def _alerte_vue(alerte: Alerte, etat: str) -> AlerteAnomalieVue:
+    return AlerteAnomalieVue(
+        id=alerte.id,
+        code=alerte.code,
+        libelle_ui=alerte.libelle_ui,
+        detail=alerte.detail,
+        etat=etat,
+        libelle_mouvement=alerte.libelle_mouvement,
+        montant_centimes=alerte.montant_centimes,
+        date=alerte.date.isoformat(),
+    )
+
+
+def _alertes_du_dossier(
+    dossier: Dossier,
+    base: LedgerService,
+    decisions: DecisionRepository,
+    justificatifs: JustificatifRepository,
+) -> dict[str, Alerte]:
+    ledger = _ledger_avec_decisions(dossier, base, decisions)
+    mouvements = _mouvements_surveilles(dossier, ledger, justificatifs, decisions)
+    return {alerte.id: alerte for alerte in analyser(mouvements)}
+
+
+def _enregistrer_routes_anomalies(app: FastAPI) -> None:
+    @app.get("/dossiers/{dossier_id}/anomalies", response_model=list[AlerteAnomalieVue])
+    def lister_anomalies(
+        dossier: DossierPortefeuilleDep,
+        base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        justificatifs: JustificatifsDep,
+        registre: RegistreAnomaliesDep,
+    ) -> list[AlerteAnomalieVue]:
+        alertes = _alertes_du_dossier(dossier, base, decisions, justificatifs)
+        return [_alerte_vue(alerte, registre.etat(alerte.id)) for alerte in alertes.values()]
+
+    @app.post(
+        "/dossiers/{dossier_id}/anomalies/{alerte_id}",
+        response_model=AlerteAnomalieVue,
+    )
+    def instruire_anomalie(
+        alerte_id: str,
+        entree: InstructionAnomalieEntree,
+        dossier: DossierPortefeuilleDep,
+        base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        justificatifs: JustificatifsDep,
+        registre: RegistreAnomaliesDep,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+    ) -> AlerteAnomalieVue:
+        """Le gestionnaire qualifie. Lecture consulte, ne qualifie pas."""
+        _exiger_ecriture(role, "La lecture ne qualifie pas une alerte.")
+        _, identite = _verifier_acces_gestionnaire(identite)
+        alertes = _alertes_du_dossier(dossier, base, decisions, justificatifs)
+        alerte = alertes.get(alerte_id)
+        if alerte is None:
+            raise HTTPException(status_code=404, detail="Alerte inconnue.")
+        try:
+            etat = registre.instruire(
+                alerte_id, entree.decision, identite.user_id, entree.commentaire
+            )
+        except TransitionRefusee as erreur:
+            raise HTTPException(status_code=400, detail=str(erreur)) from erreur
+        return _alerte_vue(alerte, etat)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="AxeLCompta — démo produit (API)", version="0.0.1")
     app.state.digifactory_branche = True
@@ -2750,6 +2908,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_parametres_demo(app)
     _enregistrer_routes_dossiers(app)
     _enregistrer_routes_transactions(app)
+    _enregistrer_routes_anomalies(app)
     _enregistrer_routes_revue(app)
     _enregistrer_routes_portefeuille(app)
     _enregistrer_routes_connexions(app)

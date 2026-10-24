@@ -231,6 +231,12 @@ export default function PortefeuillePage() {
             </Button>
           </div>
           <p className="mt-1 text-sm text-subtle">{libelleCompte(choisi.statut_invitation)}</p>
+          <Link
+            href={`/anomalies/${choisi.dossier_id}`}
+            className="mt-3 inline-block text-sm font-medium text-primary hover:underline"
+          >
+            Anomalies
+          </Link>
           <dl className="mt-6 space-y-4 text-sm">
             <Ligne libelle="Résultat" valeur={formatMontant(choisi.resultat_cts)} />
             <Ligne libelle="CA HT" valeur={formatMontant(choisi.ca_ht_cts)} />
