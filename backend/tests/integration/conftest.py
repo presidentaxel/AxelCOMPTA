@@ -16,6 +16,7 @@ from sqlalchemy.engine import Engine
 
 # L'import seul enregistre les tables de chaque module sur metadata partagée
 # (doc 03 §3) : nécessaire pour que create_all/drop_all les voient.
+import axelcompta.documents.orm  # noqa: F401
 import axelcompta.ingestion.orm  # noqa: F401
 import axelcompta.ledger.orm  # noqa: F401
 import axelcompta.tenants.orm  # noqa: F401

@@ -102,11 +102,10 @@ from axelcompta.demo_comptes import (
     SupabaseConfig,
 )
 from axelcompta.demo_jalons import JALONS_EXERCICE, etape_depuis_preuves
-from axelcompta.demo_justificatifs import (
-    FichierJustificatifRepository,
-    JustificatifRepository,
-)
+from axelcompta.demo_justificatifs import JustificatifRepository
 from axelcompta.demo_seed import TENANT_DEMO
+from axelcompta.documents.postgres import PostgresJustificatifRepository
+from axelcompta.documents.preparer import JustificatifRefuse
 from axelcompta.exercices import (
     PassageExercice,
     PassageRefuse,
@@ -688,10 +687,8 @@ def _transactions_dossier(
     """Extrait de la route (doc 08 §2 : longueur de fonction)."""
     ecritures = ledger.grand_livre(dossier.id)
     exclues = annulees(ecritures)
-    vues = [
-        _transaction_vue(e, justificatifs.a_un_justificatif(dossier.id, e.id), e.id in exclues)
-        for e in ecritures
-    ]
+    avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
+    vues = [_transaction_vue(e, e.id in avec_photo, e.id in exclues) for e in ecritures]
     return _avec_propositions(dossier, vues, decisions, pipeline)
 
 
@@ -827,6 +824,7 @@ def _mouvements_surveilles(
     """Sorties catégorisées, hors écritures contre-passées. Plafond 10 000."""
     ecritures = ledger.grand_livre(dossier.id)
     exclues = annulees(ecritures)
+    avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
     decidees = {
         decision.ecriture_id: decision.categorie
         for decision in decisions.lister_decisions(dossier.id)
@@ -844,7 +842,7 @@ def _mouvements_surveilles(
             dossier,
             ecriture,
             categorie,
-            justificatifs.a_un_justificatif(dossier.id, ecriture.id),
+            ecriture.id in avec_photo,
         )
         if mouvement is not None:
             mouvements.append(mouvement)
@@ -995,17 +993,10 @@ def get_ledger_du_dossier(
 LedgerDossierDep = Annotated[InMemoryLedgerService, Depends(get_ledger_du_dossier)]
 
 
-_REPO_JUSTIFICATIFS: FichierJustificatifRepository | None = None
-
-
 def get_justificatifs() -> JustificatifRepository:
-    """Dépendance FastAPI — même idiome que `get_decisions`/`get_comptes` :
-    construite à la première requête réelle. Les tests surchargent avec
-    `InMemoryJustificatifRepository` (jamais de fichier réel écrit)."""
-    global _REPO_JUSTIFICATIFS
-    if _REPO_JUSTIFICATIFS is None:
-        _REPO_JUSTIFICATIFS = FichierJustificatifRepository(RACINE_JUSTIFICATIFS_DEMO)
-    return _REPO_JUSTIFICATIFS
+    """Postgres, rôle web, policies RLS. Les tests surchargent avec
+    `InMemoryJustificatifRepository`."""
+    return PostgresJustificatifRepository(_engine())
 
 
 JustificatifsDep = Annotated[JustificatifRepository, Depends(get_justificatifs)]
@@ -1243,7 +1234,10 @@ def _joindre_justificatif(
         )
     contenu = fichier.file.read()
     extension = Path(fichier.filename or "").suffix or ".jpg"
-    justificatifs.enregistrer(dossier.id, ecriture_id, contenu, extension)
+    try:
+        justificatifs.enregistrer(dossier.tenant_id, dossier.id, ecriture.id, contenu, extension)
+    except JustificatifRefuse as erreur:
+        raise HTTPException(status_code=400, detail=str(erreur)) from erreur
     return ecriture
 
 
@@ -1452,10 +1446,8 @@ def _enregistrer_routes_revue(app: FastAPI) -> None:
             dossier, entree, base, decisions, propositions, identite.user_id
         )
         _vider_cache_agregats(request.app, str(dossier.tenant_id))
-        return [
-            _transaction_vue(e, justificatifs.a_un_justificatif(dossier.id, e.id), annulee=False)
-            for e in ecritures
-        ]
+        avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
+        return [_transaction_vue(e, e.id in avec_photo, annulee=False) for e in ecritures]
 
 
 def _enregistrer_routes_transactions(app: FastAPI) -> None:
@@ -1485,7 +1477,9 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
         _vider_cache_agregats(request.app, str(dossier.tenant_id))
         # `_trancher` refuse une écriture contre-passée : celle-ci ne l'est pas.
         return _transaction_vue(
-            ecriture, justificatifs.a_un_justificatif(dossier.id, ecriture_id), annulee=False
+            ecriture,
+            justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture.id),
+            annulee=False,
         )
 
     @app.post(
@@ -1504,7 +1498,7 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
         ecriture = _joindre_justificatif(dossier, ecriture_id, fichier, ledger, justificatifs)
         return _transaction_vue(
             ecriture,
-            justificatifs.a_un_justificatif(dossier.id, ecriture_id),
+            justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture.id),
             ecriture.id in annulees(ledger.grand_livre(dossier.id)),
         )
 
