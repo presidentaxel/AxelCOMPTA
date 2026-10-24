@@ -67,3 +67,15 @@ class PostgresJustificatifRepository:
                 .limit(1)
             ).first()
         return ligne is not None
+
+    def presents(self, tenant_id: TenantId, dossier_id: DossierId) -> frozenset[EcritureId]:
+        """Une lecture pour tout le dossier. Ne charge pas le contenu des photos."""
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            lignes = connexion.execute(
+                select(table.c.ecriture_id).where(
+                    table.c.tenant_id == tenant_id,
+                    table.c.dossier_id == dossier_id,
+                )
+            )
+        return frozenset(EcritureId(ligne.ecriture_id) for ligne in lignes)

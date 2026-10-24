@@ -17,6 +17,13 @@ class StockageMemoire:
     def contient(self, tenant_id: TenantId, dossier_id: DossierId, ecriture_id: EcritureId) -> bool:
         return (tenant_id, dossier_id, ecriture_id) in self._photos
 
+    def presents(self, tenant_id: TenantId, dossier_id: DossierId) -> frozenset[EcritureId]:
+        return frozenset(
+            EcritureId(ecriture)
+            for tenant, dossier, ecriture in self._photos
+            if tenant == tenant_id and dossier == dossier_id
+        )
+
     def lire(
         self, tenant_id: TenantId, dossier_id: DossierId, ecriture_id: EcritureId
     ) -> bytes | None:

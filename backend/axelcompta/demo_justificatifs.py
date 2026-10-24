@@ -30,6 +30,8 @@ class JustificatifRepository(Protocol):
         self, tenant_id: TenantId, dossier_id: DossierId, ecriture_id: EcritureId
     ) -> bool: ...
 
+    def presents(self, tenant_id: TenantId, dossier_id: DossierId) -> frozenset[EcritureId]: ...
+
 
 class InMemoryJustificatifRepository:
     def __init__(self) -> None:
@@ -52,6 +54,9 @@ class InMemoryJustificatifRepository:
     ) -> bool:
         return self._stockage.contient(tenant_id, dossier_id, ecriture_id)
 
+    def presents(self, tenant_id: TenantId, dossier_id: DossierId) -> frozenset[EcritureId]:
+        return self._stockage.presents(tenant_id, dossier_id)
+
 
 class FichierJustificatifRepository:
     def __init__(self, racine: Path) -> None:
@@ -73,3 +78,6 @@ class FichierJustificatifRepository:
         self, tenant_id: TenantId, dossier_id: DossierId, ecriture_id: EcritureId
     ) -> bool:
         return self._stockage.contient(tenant_id, dossier_id, ecriture_id)
+
+    def presents(self, tenant_id: TenantId, dossier_id: DossierId) -> frozenset[EcritureId]:
+        return self._stockage.presents(tenant_id, dossier_id)

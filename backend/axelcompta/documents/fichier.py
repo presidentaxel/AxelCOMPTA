@@ -20,10 +20,15 @@ class StockageFichier:
         chemin.write_bytes(contenu)
 
     def contient(self, tenant_id: TenantId, dossier_id: DossierId, ecriture_id: EcritureId) -> bool:
+        return ecriture_id in self.presents(tenant_id, dossier_id)
+
+    def presents(self, tenant_id: TenantId, dossier_id: DossierId) -> frozenset[EcritureId]:
         dossier = self._racine / tenant_id / dossier_id
         if not dossier.is_dir():
-            return False
-        return any(chemin.stem == ecriture_id for chemin in dossier.iterdir())
+            return frozenset()
+        return frozenset(
+            EcritureId(chemin.stem) for chemin in dossier.iterdir() if chemin.is_file()
+        )
 
     def lire(
         self, tenant_id: TenantId, dossier_id: DossierId, ecriture_id: EcritureId

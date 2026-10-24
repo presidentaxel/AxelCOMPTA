@@ -41,6 +41,12 @@ def test_une_autre_ecriture_reste_sans_justificatif(repo: JustificatifRepository
     assert repo.a_un_justificatif(TENANT, KARIM, AUTRE) is False
 
 
+def test_presents_ne_liste_que_le_dossier(repo: JustificatifRepository) -> None:
+    repo.enregistrer(TENANT, KARIM, ECRITURE, b"contenu-photo", ".jpg")
+    repo.enregistrer(TENANT, SOPHIE, AUTRE, b"autre-photo", ".jpg")
+    assert repo.presents(TENANT, KARIM) == frozenset({ECRITURE})
+
+
 def test_un_autre_dossier_ou_tenant_reste_sans_justificatif(repo: JustificatifRepository) -> None:
     repo.enregistrer(TENANT, KARIM, ECRITURE, b"contenu-photo", ".jpg")
     assert repo.a_un_justificatif(TENANT, SOPHIE, ECRITURE) is False

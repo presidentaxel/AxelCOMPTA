@@ -687,12 +687,8 @@ def _transactions_dossier(
     """Extrait de la route (doc 08 §2 : longueur de fonction)."""
     ecritures = ledger.grand_livre(dossier.id)
     exclues = annulees(ecritures)
-    vues = [
-        _transaction_vue(
-            e, justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, e.id), e.id in exclues
-        )
-        for e in ecritures
-    ]
+    avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
+    vues = [_transaction_vue(e, e.id in avec_photo, e.id in exclues) for e in ecritures]
     return _avec_propositions(dossier, vues, decisions, pipeline)
 
 
@@ -828,6 +824,7 @@ def _mouvements_surveilles(
     """Sorties catégorisées, hors écritures contre-passées. Plafond 10 000."""
     ecritures = ledger.grand_livre(dossier.id)
     exclues = annulees(ecritures)
+    avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
     decidees = {
         decision.ecriture_id: decision.categorie
         for decision in decisions.lister_decisions(dossier.id)
@@ -845,7 +842,7 @@ def _mouvements_surveilles(
             dossier,
             ecriture,
             categorie,
-            justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture.id),
+            ecriture.id in avec_photo,
         )
         if mouvement is not None:
             mouvements.append(mouvement)
@@ -1449,14 +1446,8 @@ def _enregistrer_routes_revue(app: FastAPI) -> None:
             dossier, entree, base, decisions, propositions, identite.user_id
         )
         _vider_cache_agregats(request.app, str(dossier.tenant_id))
-        return [
-            _transaction_vue(
-                e,
-                justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, e.id),
-                annulee=False,
-            )
-            for e in ecritures
-        ]
+        avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
+        return [_transaction_vue(e, e.id in avec_photo, annulee=False) for e in ecritures]
 
 
 def _enregistrer_routes_transactions(app: FastAPI) -> None:
