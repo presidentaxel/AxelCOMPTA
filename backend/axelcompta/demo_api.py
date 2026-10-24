@@ -117,7 +117,7 @@ from axelcompta.filings.cerfa_2031 import PdfCerfa2031Renderer
 from axelcompta.filings.cerfa_2033 import extraire_page_2033
 from axelcompta.filings.cerfa_2065 import PdfCerfa2065Renderer
 from axelcompta.filings.export_comptable import exporter_balance, exporter_grand_livre
-from axelcompta.filings.fec import exporter_fec, nom_fichier_fec
+from axelcompta.filings.fec import exporter_fec, libelle_compte, nom_fichier_fec
 from axelcompta.filings.inpi_depot import GuideGreffe, PdfDepotInpiRenderer, guide_greffe
 from axelcompta.filings.liasse_fiscale import PdfLiasseFiscaleRenderer
 from axelcompta.filings.liasse_simplifiee import PdfLiasseSimplifieeRenderer
@@ -159,6 +159,7 @@ from axelcompta.tenants.statuts import (
 )
 from axelcompta.workflow.decisions import DecisionHumaine, DecisionRepository
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
+from axelcompta.workflow.expert import ImputationRefusee, preparer_imputation
 from axelcompta.workflow.notifications import NotificationRepository
 from axelcompta.workflow.notifications_postgres import PostgresNotificationRepository
 from axelcompta.workflow.propositions import PropositionRepository
@@ -344,6 +345,35 @@ class TransactionVue(BaseModel):
 
 class DecisionEntree(BaseModel):
     categorie: str  # "usage_personnel" ou toute catégorie du pack (doc 17 §9 bloc C)
+
+
+class CompteChoix(BaseModel):
+    compte: str
+    libelle: str
+
+
+class SujetExpertVue(BaseModel):
+    id: str
+    dossier_id: str
+    dossier_nom: str
+    cote: Literal["chauffeur", "gestionnaire"]
+    nature: Literal["a_trancher", "ticket", "anomalie"]
+    libelle: str
+    detail: str
+    montant_cts: int | None
+    ecriture_id: str | None
+    imputable: bool
+
+
+class FileExpertVue(BaseModel):
+    sujets: list[SujetExpertVue]
+    comptes: list[CompteChoix]
+
+
+class ImputationEntree(BaseModel):
+    dossier_id: str
+    ecriture_id: str
+    compte: str
 
 
 MAX_DECISIONS_GROUPEES = 1000
@@ -2894,6 +2924,163 @@ def _enregistrer_routes_anomalies(app: FastAPI) -> None:
         return _alerte_vue(alerte, etat)
 
 
+_CATEGORIES_TICKET = frozenset({"usage_personnel_suspect", "non_categorise_a_verifier"})
+
+
+def _categorie_du_libelle(libelle: str) -> str | None:
+    debut = libelle.rfind(" (")
+    if debut < 0 or not libelle.endswith(")"):
+        return None
+    return libelle[debut + 2 : -1]
+
+
+def _ticket_necessaire(vue: TransactionVue) -> bool:
+    if vue.montant_cts >= 0 or vue.a_justificatif or vue.statut == "à trancher":
+        return False
+    categorie = _categorie_du_libelle(vue.libelle)
+    if categorie is None:
+        return False
+    return categorie in _CATEGORIES_TICKET or categorie.startswith("a_verifier")
+
+
+def _comptes_expert() -> list[CompteChoix]:
+    comptes = sorted(
+        {
+            compte
+            for compte in charger_compte_par_categorie().values()
+            if compte != "512" and not compte.startswith("445")
+        }
+    )
+    return [CompteChoix(compte=compte, libelle=libelle_compte(compte)) for compte in comptes]
+
+
+def _sujets_expert(
+    dossier: Dossier,
+    base: LedgerService,
+    decisions: DecisionRepository,
+    justificatifs: JustificatifRepository,
+    registre: RegistreInstructions,
+) -> list[SujetExpertVue]:
+    ledger = _ledger_avec_decisions(dossier, base, decisions)
+    prises = decisions.lister_decisions(dossier.id)
+    vues = _transactions_dossier(dossier, ledger, justificatifs, prises)
+    exclues = annulees(ledger.grand_livre(dossier.id))
+    sujets: list[SujetExpertVue] = []
+    for vue in vues:
+        if EcritureId(vue.ecriture_id) in exclues:
+            continue
+        if vue.statut == "à trancher":
+            sujets.append(
+                _sujet(
+                    dossier,
+                    f"trancher:{vue.ecriture_id}",
+                    "chauffeur",
+                    "a_trancher",
+                    vue.libelle,
+                    "Écriture en attente, côté chauffeur",
+                    vue.montant_cts,
+                    vue.ecriture_id,
+                )
+            )
+        elif _ticket_necessaire(vue):
+            sujets.append(
+                _sujet(
+                    dossier,
+                    f"ticket:{vue.ecriture_id}",
+                    "chauffeur",
+                    "ticket",
+                    vue.libelle,
+                    "Ticket manquant pour classer la dépense",
+                    vue.montant_cts,
+                    vue.ecriture_id,
+                )
+            )
+    for alerte in _alertes_du_dossier(dossier, base, decisions, justificatifs).values():
+        if alerte.ecriture_id in exclues:
+            continue
+        if registre.etat(alerte.id) not in ("ouverte", "en_instruction"):
+            continue
+        sujets.append(
+            _sujet(
+                dossier,
+                f"anomalie:{alerte.id}",
+                "gestionnaire",
+                "anomalie",
+                alerte.libelle_ui,
+                alerte.detail,
+                alerte.montant_centimes,
+                str(alerte.ecriture_id),
+            )
+        )
+    return sujets
+
+
+def _sujet(
+    dossier: Dossier,
+    sujet_id: str,
+    cote: Literal["chauffeur", "gestionnaire"],
+    nature: Literal["a_trancher", "ticket", "anomalie"],
+    libelle: str,
+    detail: str,
+    montant_cts: int,
+    ecriture_id: str,
+) -> SujetExpertVue:
+    return SujetExpertVue(
+        id=sujet_id,
+        dossier_id=str(dossier.id),
+        dossier_nom=dossier.nom,
+        cote=cote,
+        nature=nature,
+        libelle=libelle,
+        detail=detail,
+        montant_cts=montant_cts,
+        ecriture_id=ecriture_id,
+        imputable=True,
+    )
+
+
+def _enregistrer_routes_expert(app: FastAPI) -> None:
+    @app.get("/expert/file", response_model=FileExpertVue)
+    def lire_file_expert(
+        dossiers: DossiersDep,
+        base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        justificatifs: JustificatifsDep,
+        registre: RegistreAnomaliesDep,
+        identite: IdentiteDep,
+    ) -> FileExpertVue:
+        """File de l'expert-comptable : sujets chauffeur et gestionnaire,
+        tous dossiers du portefeuille. Le portefeuille agrégé ne change pas."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        sujets: list[SujetExpertVue] = []
+        for dossier in dossiers.lister_par_tenant(tenant_id):
+            sujets.extend(_sujets_expert(dossier, base, decisions, justificatifs, registre))
+        return FileExpertVue(sujets=sujets, comptes=_comptes_expert())
+
+    @app.post("/expert/imputations", status_code=204)
+    def imputer_ecriture(
+        entree: ImputationEntree,
+        dossiers: DossiersDep,
+        base: LedgerBaseDep,
+        identite: IdentiteDep,
+    ) -> None:
+        """Pose la contre-passation et la nouvelle écriture. L'originale reste."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        dossier = dossiers.obtenir(DossierId(entree.dossier_id))
+        if dossier is None or dossier.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Dossier inconnu.")
+        connus = {ecriture.id: ecriture for ecriture in base.grand_livre(dossier.id)}
+        ecriture = connus.get(EcritureId(entree.ecriture_id))
+        if ecriture is None:
+            raise HTTPException(status_code=404, detail="Écriture inconnue.")
+        try:
+            inverse, nouvelle = preparer_imputation(ecriture, entree.compte, set(connus))
+        except ImputationRefusee as erreur:
+            raise HTTPException(status_code=400, detail=str(erreur)) from erreur
+        base.enregistrer(inverse)
+        base.enregistrer(nouvelle)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="AxeLCompta — démo produit (API)", version="0.0.1")
     app.state.digifactory_branche = True
@@ -2903,6 +3090,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_dossiers(app)
     _enregistrer_routes_transactions(app)
     _enregistrer_routes_anomalies(app)
+    _enregistrer_routes_expert(app)
     _enregistrer_routes_revue(app)
     _enregistrer_routes_portefeuille(app)
     _enregistrer_routes_connexions(app)

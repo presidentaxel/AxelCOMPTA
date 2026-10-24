@@ -23,7 +23,7 @@ import {
   extraireErreurSupabase,
   URL_SUPABASE,
 } from "./auth-chauffeur";
-import type { AlerteAnomalie, DossierAgregat } from "./types";
+import type { AlerteAnomalie, DossierAgregat, FileExpert } from "./types";
 
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
@@ -212,6 +212,42 @@ export async function listerDossiers(): Promise<DossierAgregat[]> {
     // Affichage quand même, simplement pas mémorisé pour la prochaine page.
   }
   return dossiers;
+}
+
+export async function lireFileExpert(): Promise<FileExpert> {
+  const reponse = await requeteGestionnaire("/expert/file");
+  if (reponse.status === 401 || reponse.status === 403) {
+    throw new ErreurAuthGestionnaire();
+  }
+  if (!reponse.ok) {
+    throw new ApiError(`API démo (/expert/file) : HTTP ${reponse.status}`, reponse.status);
+  }
+  return (await reponse.json()) as FileExpert;
+}
+
+export async function imputerExpert(
+  dossierId: string,
+  ecritureId: string,
+  compte: string,
+): Promise<void> {
+  const reponse = await requeteGestionnaire("/expert/imputations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dossier_id: dossierId, ecriture_id: ecritureId, compte }),
+  });
+  if (reponse.status === 401 || reponse.status === 403) {
+    throw new ErreurAuthGestionnaire();
+  }
+  if (!reponse.ok) {
+    let detail = `HTTP ${reponse.status}`;
+    try {
+      const corps = (await reponse.json()) as { detail?: string };
+      if (corps.detail) detail = corps.detail;
+    } catch {
+      // Le message HTTP suffit.
+    }
+    throw new ApiError(detail, reponse.status);
+  }
 }
 
 export async function listerAnomalies(dossierId: string): Promise<AlerteAnomalie[]> {
