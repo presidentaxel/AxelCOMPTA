@@ -29,7 +29,10 @@ _LARGEUR_ID_ECRITURE = 24
 
 
 def _euros(centimes: int) -> str:
-    """Affichage uniquement — les calculs restent en centimes entiers."""
+    """Affichage uniquement — les calculs restent en centimes entiers.
+    Un solde nul sort vide, comme une case de liasse."""
+    if centimes == 0:
+        return ""
     return f"{centimes / 100:.2f} €"
 
 
