@@ -99,6 +99,7 @@ forbidden_modules = [
     "axelcompta.workflow",
     "axelcompta.api",
     "axelcompta.ml",
+    "axelcompta.pseudonymize",
 ]
 
 [[tool.importlinter.contracts]]
@@ -123,6 +124,7 @@ source_modules = [
     "axelcompta.filings",
     "axelcompta.workflow",
     "axelcompta.api",
+    "axelcompta.pseudonymize",
 ]
 forbidden_modules = ["axelcompta.ml"]
 
