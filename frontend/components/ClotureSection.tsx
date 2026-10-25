@@ -29,7 +29,7 @@ const PIECES: Array<{ document: DocumentCloture; label: string; detail: string }
   // le format qu'un contrôle demande.
   {
     document: "fec.txt",
-    label: "Fichier des écritures",
+    label: "FEC",
     detail: "Texte .txt",
   },
   { document: "grand-livre.pdf", label: "Grand livre", detail: "PDF" },
@@ -156,9 +156,8 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
         </Dialogue>
       )}
       <p className="mt-4 text-sm text-subtle">
-        Le fichier des écritures, souvent appelé FEC, est celui que
-        l&apos;administration demande lors d&apos;un contrôle. Il liste chaque
-        écriture. Le format légal est un fichier texte, pas un PDF.
+        Le FEC est le fichier que l&apos;administration demande lors d&apos;un
+        contrôle. Il liste chaque écriture, au format texte, pas en PDF.
       </p>
       <ul className="mt-2">
         {[pieceDeclaration(dossier), ...PIECES].map(({ document, label, detail }) => (
