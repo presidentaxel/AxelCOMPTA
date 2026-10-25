@@ -126,8 +126,29 @@ source_modules = [
     "axelcompta.workflow",
     "axelcompta.api",
     "axelcompta.pseudonymize",
+    "axelcompta.jobs",
 ]
 forbidden_modules = ["axelcompta.ml"]
+
+[[tool.importlinter.contracts]]
+name = "jobs ne dépend que de core"
+type = "forbidden"
+source_modules = ["axelcompta.jobs"]
+forbidden_modules = [
+    "axelcompta.tenants",
+    "axelcompta.packs",
+    "axelcompta.ingestion",
+    "axelcompta.documents",
+    "axelcompta.categorize",
+    "axelcompta.anomaly",
+    "axelcompta.ledger",
+    "axelcompta.closing",
+    "axelcompta.filings",
+    "axelcompta.workflow",
+    "axelcompta.api",
+    "axelcompta.ml",
+    "axelcompta.pseudonymize",
+]
 
 [[tool.importlinter.contracts]]
 name = "api n'importe que les façades publiques (pas les internes des modules)"
