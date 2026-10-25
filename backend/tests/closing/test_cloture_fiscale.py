@@ -15,6 +15,7 @@ from axelcompta.demo_chauffeurs_type import construire_ledger, parametres_clotur
 from axelcompta.demo_identites import IDENTITES_DEMO
 from axelcompta.ingestion.providers.chauffeurs_demo import (
     PROFIL_KARIM,
+    PROFIL_SOPHIE,
     PROFIL_YANIS,
     ProfilChauffeurType,
 )
@@ -40,6 +41,28 @@ def test_karim_benefice_is_au_taux_reduit() -> None:
     assert _euros(liasse, "2065.BENEFICE_TAUX_REDUIT") == 1_234
     assert _euros(liasse, "2065.IMPOT") == _euros(liasse, "2033B.306") == 185  # 15 % × 1 234
     assert liasse.cases["2065"] == 1_234_00
+
+
+def test_amende_non_deductible_reduit_le_deficit_et_grossit_la_base_d_is() -> None:
+    """CGI art. 39-2, case 330 : l'amende est réintégrée. Chez Yanis elle
+    réduit le déficit (1 346 − 90 = 1 256) et l'IS reste à 0. Chez Karim
+    et Sophie elle entre dans la base, l'impôt se calcule après. Les 110 €
+    de Sophie sont l'IS (case 324), pas une amende : l'amende est de 45 €."""
+    yanis, _ = _cloturer(PROFIL_YANIS)
+    assert _euros(yanis, "2033B.330") == 90
+    assert _euros(yanis, "2033B.372") == 1_346 - 90
+    assert _euros(yanis, "2065.IMPOT") == 0
+
+    karim, _ = _cloturer(PROFIL_KARIM)
+    assert _euros(karim, "2033B.330") == 68
+    assert _euros(karim, "2033B.370") == 981 + 68 + 185
+    assert _euros(karim, "2065.IMPOT") == 185
+
+    sophie, _ = _cloturer(PROFIL_SOPHIE)
+    assert _euros(sophie, "2033B.330") == 45
+    assert _euros(sophie, "2033B.324") == 110
+    assert _euros(sophie, "2033B.370") == 581 + 110 + 45
+    assert _euros(sophie, "2065.IMPOT") == 110
 
 
 def test_yanis_deficit_reportable() -> None:
