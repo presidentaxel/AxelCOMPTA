@@ -31,6 +31,7 @@ import {
 } from "@/lib/filtres-portefeuille";
 import { formatDate, formatMontant } from "@/lib/format";
 import type { DossierAgregat } from "@/lib/types";
+import { Squelette } from "@/components/Squelette";
 
 type FiltreCompte = "tous" | "sans_compte" | "invite" | "ouvert";
 type FiltreResultat = "tous" | "negatif" | "positif";
@@ -129,12 +130,20 @@ export default function PortefeuillePage() {
         </Link>
       </div>
       <AlerteConnexions />
-      {dossiers && (
+      {dossiers ? (
         <dl className="mt-8 flex flex-wrap gap-x-12 gap-y-4">
           <Total libelle="Entreprises" valeur={String(totaux.nombre)} />
           <Total libelle="Sans compte" valeur={String(totaux.sansCompte)} />
           <Total libelle="Résultat" valeur={formatMontant(totaux.resultat)} montant={totaux.resultat} />
         </dl>
+      ) : (
+        !erreur && (
+          <div className="mt-8 flex gap-12" aria-hidden>
+            <Squelette className="h-12 w-28" />
+            <Squelette className="h-12 w-28" />
+            <Squelette className="h-12 w-36" />
+          </div>
+        )
       )}
 
       <div className="mt-8 flex items-center gap-2">
@@ -194,7 +203,13 @@ export default function PortefeuillePage() {
       </div>
 
       {erreur && <p className="mt-6 text-sm text-danger">{erreur}</p>}
-      {!dossiers && !erreur && <p className="mt-8 text-sm text-subtle">Chargement…</p>}
+      {!dossiers && !erreur && (
+        <div className="mt-8 space-y-3" aria-hidden>
+          <Squelette className="h-16 w-full" />
+          <Squelette className="h-16 w-full" />
+          <Squelette className="h-16 w-full" />
+        </div>
+      )}
 
       <ul className="mt-4">
         {visibles.map((dossier) => (

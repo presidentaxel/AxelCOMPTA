@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { useDossierChauffeur } from "@/app/chauffeur/use-dossier";
 import { FormulaireCompte } from "@/components/FormulaireCompte";
+import { Squelette } from "@/components/Squelette";
 import {
   changerEmailAvecJeton,
   deconnecter,
@@ -32,7 +33,14 @@ export default function CompteChauffeurPage() {
   }, [router]);
 
   if (!email || !jeton) {
-    return <p className="text-sm text-subtle">Chargement…</p>;
+    return (
+      <div>
+        <Squelette className="h-4 w-48" />
+        <Squelette className="mt-8 h-10 w-full" />
+        <Squelette className="mt-4 h-10 w-full" />
+        <Squelette className="mt-6 h-9 w-32" />
+      </div>
+    );
   }
 
   return (
@@ -58,11 +66,14 @@ export default function CompteChauffeurPage() {
 }
 
 function StatutDossier({ dossierId }: { dossierId: string }) {
-  const { charge } = useDossierChauffeur(dossierId);
-  if (charge.statut !== "pret") return null;
+  const { dossier } = useDossierChauffeur(dossierId);
+  if (dossier.statut === "en_cours") return <Squelette className="mb-6 h-4 w-64" />;
+  if (dossier.statut === "erreur") {
+    return <p className="mb-6 text-sm text-danger">{dossier.message}</p>;
+  }
   return (
     <p className="mb-6 text-sm text-subtle">
-      {charge.dossier.nom} · {charge.dossier.forme_juridique} · {charge.dossier.regime_libelle}
+      {dossier.valeur.nom} · {dossier.valeur.forme_juridique} · {dossier.valeur.regime_libelle}
     </p>
   );
 }

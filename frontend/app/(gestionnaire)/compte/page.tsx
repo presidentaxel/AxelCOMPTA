@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { FormulaireCompte } from "@/components/FormulaireCompte";
+import { Squelette } from "@/components/Squelette";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -35,7 +36,20 @@ export default function CompteGestionnairePage() {
   }, [router]);
 
   if (!email) {
-    return <p className="text-sm text-subtle">Chargement…</p>;
+    return (
+      <div className="mx-auto grid max-w-5xl items-start gap-12 lg:grid-cols-3">
+        <div className="space-y-4 lg:col-span-2" aria-hidden>
+          <Squelette className="h-4 w-40" />
+          <Squelette className="h-10 w-full" />
+          <Squelette className="h-9 w-28" />
+        </div>
+        <div className="space-y-4" aria-hidden>
+          <Squelette className="h-4 w-24" />
+          <Squelette className="h-10 w-full" />
+          <Squelette className="h-10 w-full" />
+        </div>
+      </div>
+    );
   }
 
   return (
