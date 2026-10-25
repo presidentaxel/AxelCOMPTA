@@ -137,7 +137,7 @@ Une fois, puis à chaque nouveau schéma :
 set -a && . ../.env && set +a
 .venv/bin/alembic upgrade head
 .venv/bin/python -m axelcompta.demo_seed      # idempotent, 3 dossiers de démo
-.venv/bin/uvicorn axelcompta.demo_api:app --port 8000
+.venv/bin/uvicorn axelcompta.api.app:app --port 8000
 ```
 
 **RLS depuis le 2026-09-22** (doc 03 §7, doc 12 §1.1) : `alembic upgrade

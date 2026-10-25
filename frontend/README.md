@@ -4,9 +4,9 @@ TypeScript / React / Next.js (App Router) — back-office riche + pages de
 signature publiques en SSR (doc 03 §2). Design system : voir
 [DESIGN.md](../DESIGN.md).
 
-**Dépendances :** consomme `axelcompta.demo_api` pour la démo (voir
-Statuts ci-dessous) ; consommera uniquement `api/` (backend réel) en V1,
-aucun accès direct à la base ou aux modules métier.
+**Dépendances :** le frontend parle à `axelcompta.api.app` (voir
+Statuts ci-dessous). Les routes sont encore câblées dans `demo_api`.
+Aucun accès direct à la base ou aux modules métier.
 
 ## Démarrer en local (démo)
 
@@ -20,7 +20,7 @@ avant, elle tournait entièrement en mémoire.
 
 # 1. L'API démo (backend/)
 set -a && . ../.env && set +a
-.venv/bin/uvicorn axelcompta.demo_api:app --reload --port 8000
+.venv/bin/uvicorn axelcompta.api.app:app --reload --port 8000
 
 # 2. Le frontend (frontend/)
 cd frontend && npm install && npm run dev
@@ -54,8 +54,8 @@ chauffeur (mobile) est cadré dans [doc 19](../docs/19-parcours-utilisateur.md).
 ## Statuts
 
 - **Démo (doc 17 §9)** : **une vraie UI**, plus un rapport HTML statique —
-  Next.js + Tailwind, tokens `DESIGN.md`, consomme `axelcompta.demo_api`
-  en direct. Fait côté gestionnaire : dashboard, fiche dossier, file de
+  Next.js + Tailwind, tokens `DESIGN.md`, parle à `axelcompta.api.app`
+  (`demo_api` câble encore les routes). Fait côté gestionnaire : dashboard, fiche dossier, file de
   revue réelle sur la dépense de Sophie (bloc C), invitation chauffeur
   (bloc B). Interface chauffeur : connexion réelle via Supabase Auth
   (appels REST directs, pas le SDK JS), session en `localStorage`.

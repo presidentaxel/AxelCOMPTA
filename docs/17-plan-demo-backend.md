@@ -98,7 +98,7 @@ Commandes détaillées : [backend/README.md](../backend/README.md), section
 ```bash
 # backend/
 set -a && . ../.env && set +a
-.venv/bin/uvicorn axelcompta.demo_api:app --port 8000
+.venv/bin/uvicorn axelcompta.api.app:app --port 8000
 # frontend/
 npm run dev
 ```

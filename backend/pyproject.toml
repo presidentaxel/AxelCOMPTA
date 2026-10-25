@@ -137,6 +137,10 @@ forbidden_modules = [
     "axelcompta.categorize.models",
     "axelcompta.closing.models",
 ]
+# Temporaire (AXE-428) : api.app délègue au composition root demo_api,
+# qui importe ces modèles. L'arête disparaît quand chaque route aura
+# sa façade. api/ n'importe toujours pas ces modèles lui-même.
+ignore_imports = ["axelcompta.api.app -> axelcompta.demo_api"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

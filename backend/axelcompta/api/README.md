@@ -8,13 +8,11 @@ vérifiée par import-linter en CI, doc 03 §3).
 
 ## Statuts
 
-- **Démo (doc 17, pivot 2026-09-06)** : toujours un squelette, aucune route.
-  L'API qui sert le frontend de démo est volontairement **ailleurs** —
-  `axelcompta.demo_api` (composition root comme `demo.py`, doc 18) — pas
-  ici, pour ne pas mélanger la vraie API produit (façades des modules
-  métier uniquement, cf. contrat import-linter ci-dessous) avec du câblage
-  démo qui importe des composition roots. Ce module reste à écrire pour de
-  vrai en V1.
+- **Démo (doc 17, pivot 2026-09-06)** : `create_app` est le point
+  d'entrée (`uvicorn axelcompta.api.app:app`). Il délègue encore à
+  `axelcompta.demo_api`, le composition root, et ajoute `GET /sante`.
+  Les corps de routes restent là-bas jusqu'à l'extraction de chaque
+  façade (`module/service.py`). Rien de métier n'est copié ici.
 - **V1 (doc 12, phase 1.1 + 3)** : auth/MFA, permissions par rôle,
   isolation multi-tenant appliquée au niveau des routes.
 
