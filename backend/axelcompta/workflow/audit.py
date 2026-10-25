@@ -14,6 +14,12 @@ from axelcompta.core.ids import DossierId, UserId
 
 from .orm import journal_audit
 
+# Décisions et signatures existent déjà. Connexion, export et consultation
+# sont les actes V1 encore à tracer (doc 12) : même journal, mêmes colonnes.
+ACTE_CONNEXION = "connexion"
+ACTE_EXPORT = "export"
+ACTE_CONSULTATION = "consultation"
+
 
 def noter(
     connexion: Connection,

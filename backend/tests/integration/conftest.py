@@ -47,6 +47,11 @@ def engine() -> Iterator[Engine]:
             returncode=2,
         )
     yield moteur
+    # `jobs` vient d'Alembic et référence `tenants`, sans être dans
+    # `metadata`. drop_all échoue sur tenants tant que cette clé étrangère
+    # existe, et le test suivant retrouve les lignes du précédent.
+    with moteur.begin() as connexion:
+        connexion.execute(text("DROP TABLE IF EXISTS jobs"))
     metadata.drop_all(moteur)  # nettoyage après chaque test, no-op si rien à supprimer
     # `alembic_version` n'est pas dans `metadata` (bookkeeping propre à
     # Alembic) : sans ce DROP, un test suivant qui utilise Alembic
