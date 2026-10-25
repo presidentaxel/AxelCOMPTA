@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from axelcompta.api.app import create_app
 
-ROUTES_FASTAPI_PAR_DEFAUT = {"/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect"}
 
-
-def test_create_app_ne_declare_encore_aucune_route() -> None:
+def test_le_point_d_entree_sert_les_routes_et_repond_sante() -> None:
     app = create_app()
-    assert isinstance(app, FastAPI)
-    routes_metier = [
-        route for route in app.routes if getattr(route, "path", "") not in ROUTES_FASTAPI_PAR_DEFAUT
-    ]
-    assert routes_metier == []
+    chemins = {getattr(route, "path", "") for route in app.routes}
+    assert "/dossiers" in chemins
+    assert "/sante" in chemins
+
+    reponse = TestClient(app).get("/sante")
+    assert reponse.status_code == 200
+    assert reponse.json() == {"statut": "ok"}

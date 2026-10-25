@@ -1,11 +1,12 @@
 """API FastAPI dédiée à la démo produit (doc 17 §9, doc 19) — sert les 3
 chauffeurs type au frontend Next.js.
 
-Distincte de `axelcompta.api` (la vraie API produit, doc 03 §7, encore un
-squelette sans route) : ceci est une composition root comme
-`demo_chauffeurs_type.py` (doc 18), pas soumise aux mêmes contraintes de
-dépendance qu'un module métier — elle peut importer n'importe quoi
-directement, y compris une autre composition root.
+Distincte de `axelcompta.api.app`, le point d'entrée HTTP : celui-ci
+délègue ici tant que les routes n'ont pas chacune leur façade. Ceci est
+une composition root comme `demo_chauffeurs_type.py` (doc 18), pas
+soumise aux mêmes contraintes de dépendance qu'un module métier — elle
+peut importer n'importe quoi directement, y compris une autre composition
+root.
 
 **Bloc A/C (doc 17 §9) : la file de revue est maintenant réelle.**
 `POST /dossiers/{id}/transactions/{ecriture_id}/decision` accepte/reclasse
@@ -24,8 +25,9 @@ ledger persisté (`_ledger_avec_decisions`). `python -m axelcompta.demo_seed`
 amorce la base avec les 3 profils de démo ; le portefeuille visible d'un
 gestionnaire est celui de son `tenant_id` (jeton), pas une constante.
 
-Usage : `uvicorn axelcompta.demo_api:app --reload --port 8000` depuis
-backend/ (nécessite `pip install -e ".[dev]"` pour uvicorn).
+Usage : `uvicorn axelcompta.api.app:app --reload --port 8000` depuis
+backend/ (nécessite `pip install -e ".[dev]"` pour uvicorn). `api.app`
+délègue à `create_app` ci-dessous : les routes sont encore ici.
 """
 
 from __future__ import annotations
