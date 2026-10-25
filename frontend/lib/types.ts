@@ -97,6 +97,24 @@ export type AlerteAnomalie = {
   date: string;
 };
 
+export type SujetExpert = {
+  id: string;
+  dossier_id: string;
+  dossier_nom: string;
+  cote: "chauffeur" | "gestionnaire";
+  nature: "a_trancher" | "ticket" | "anomalie";
+  libelle: string;
+  detail: string;
+  montant_cts: number | null;
+  ecriture_id: string | null;
+  imputable: boolean;
+};
+
+export type FileExpert = {
+  sujets: SujetExpert[];
+  comptes: { compte: string; libelle: string }[];
+};
+
 // doc 17 §9 Semaine 4 + AXE-417/418 : exports de clôture (PDF + CSV),
 // servis en téléchargement direct par demo_api.py.
 export type DocumentCloture =
