@@ -16,7 +16,8 @@ from .renderer import FilingRenderer
 
 
 def _ligne(dessin: canvas.Canvas, x: int, y: int, libelle: str, centimes: int) -> None:
-    dessin.drawString(x, y, f"{libelle} : {centimes / 100:.2f} €")
+    montant = "" if centimes == 0 else f"{centimes / 100:.2f} €"
+    dessin.drawString(x, y, f"{libelle} : {montant}")
 
 
 class PdfLiasseSimplifieeRenderer(FilingRenderer):

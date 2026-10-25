@@ -83,6 +83,8 @@ def _dessiner_resultat(overlay: OverlayCerfa, liasse: LiassePivot) -> None:
     if "2065.IMPOT" not in liasse.cases:
         # Liasse historique : un seul chiffre, bénéfice au taux normal ou déficit.
         resultat = liasse.cases.get("2065", 0)
+        if resultat == 0:
+            return
         x = X_BENEFICE_TAUX_NORMAL if resultat >= 0 else X_DEFICIT
         texte = formater_euros(abs(resultat) // 100) + f",{abs(resultat) % 100:02d}"
         overlay.texte_droite(1, x, Y_LIGNE_RESULTAT_FISCAL, texte, taille=9, gras=True)
@@ -140,8 +142,8 @@ def _dessiner_signataire(
 
 
 def _dessiner_cadre_j(overlay: OverlayCerfa, liasse: LiassePivot) -> None:
-    """Cadre J (régime simplifié) : deux montants, écrits même nuls — la
-    DGFiP s'en sert pour recouper la DSN et les déclarations 2460."""
+    """Cadre J (régime simplifié) : deux montants. Une valeur à 0 reste
+    vide — `OverlayCerfa.montant` n'écrit pas la case."""
     salaires = (0.0, X_CADRE_J + 3, Y_SALAIRES)
     overlay.montant(2, salaires, _euros(liasse, "2065J.SALAIRES"))
     overlay.montant(2, (0.0, X_CADRE_J + 3, Y_RETROCESSIONS), _euros(liasse, "2065J.RETROCESSIONS"))

@@ -31,6 +31,13 @@ def formater_euros(euros: int) -> str:
     return f"{euros:,}".replace(",", " ")
 
 
+def texte_case(euros: int) -> str | None:
+    """Une case officielle à 0 reste vide. Un montant non nul est inchangé."""
+    if euros == 0:
+        return None
+    return formater_euros(euros)
+
+
 def formater_date(jour: int, mois: int, annee: int) -> str:
     return f"{jour:02d}{mois:02d}{annee:04d}"
 
@@ -93,8 +100,11 @@ class OverlayCerfa:
         dessin.drawRightString(x_droite, y, valeur)
 
     def montant(self, page: int, cellule: Cellule, euros: int, gras: bool = False) -> None:
+        texte = texte_case(euros)
+        if texte is None:
+            return
         _, x_droite, y = cellule
-        self.texte_droite(page, x_droite - MARGE_DROITE, y + 0.5, formater_euros(euros), gras=gras)
+        self.texte_droite(page, x_droite - MARGE_DROITE, y + 0.5, texte, gras=gras)
 
     def cases(self, page: int, bords: Sequence[float], y: float, caracteres: str) -> None:
         """Un caractère centré par case ; `bords` = abscisses des traits
