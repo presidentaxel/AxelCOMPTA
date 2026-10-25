@@ -5,7 +5,7 @@ import io
 from pypdf import PdfReader
 
 from axelcompta.filings.cerfa_2065 import CHEMIN_FORMULAIRE_OFFICIEL
-from axelcompta.filings.overlay_cerfa import OverlayCerfa, formater_date, formater_euros
+from axelcompta.filings.overlay_cerfa import OverlayCerfa, formater_date, formater_euros, texte_case
 
 
 def test_format_des_montants_de_la_liasse() -> None:
@@ -14,7 +14,9 @@ def test_format_des_montants_de_la_liasse() -> None:
     assert formater_euros(0) == "0"
 
 
-def test_format_de_date_en_cases() -> None:
+def test_une_case_a_zero_reste_vide() -> None:
+    assert texte_case(0) is None
+    assert texte_case(1_346) == "1 346"
     assert formater_date(31, 12, 2025) == "31122025"
 
 

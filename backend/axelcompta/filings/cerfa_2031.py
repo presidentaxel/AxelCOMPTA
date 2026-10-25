@@ -132,7 +132,7 @@ def _dessiner_associes(overlay: OverlayCerfa, liasse: LiassePivot) -> None:
         if "gérant" in associe.qualite.lower():
             overlay.croix(2, X_GERANT, y)
         overlay.texte(2, X_BIC, y, "B")
-        texte = ("-" if part < 0 else "") + formater_euros(abs(part))
+        texte = "" if part == 0 else ("-" if part < 0 else "") + formater_euros(abs(part))
         overlay.texte_droite(2, X_QUOTE_PART - 3, y, texte)
 
 
