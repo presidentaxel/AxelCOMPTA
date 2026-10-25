@@ -18,6 +18,13 @@ from axelcompta.ledger.models import Ecriture, Sens
 from .fec import libelle_compte
 
 
+def _montant_affiche(centimes: int) -> str:
+    """Un montant nul sort vide. Les calculs restent en centimes entiers."""
+    if centimes == 0:
+        return ""
+    return f"{centimes / 100:.2f}"
+
+
 def _totaux_par_compte(ecritures: tuple[Ecriture, ...]) -> dict[str, list[int]]:
     """compte → [débit_cts, crédit_cts]. Shared CSV + PDF (AXE-417/418)."""
     totaux: dict[str, list[int]] = {}
@@ -51,7 +58,7 @@ def exporter_grand_livre(ecritures: tuple[Ecriture, ...]) -> str:
                 ecriture.id,
                 ecriture.libelle,
                 ligne.sens.name,
-                f"{ligne.montant.centimes / 100:.2f}",
+                _montant_affiche(ligne.montant.centimes),
             ]
         )
     return tampon.getvalue()
@@ -69,9 +76,9 @@ def exporter_balance(ecritures: tuple[Ecriture, ...]) -> str:
             [
                 compte,
                 libelle_compte(compte),
-                f"{debit_cts / 100:.2f}",
-                f"{credit_cts / 100:.2f}",
-                f"{(debit_cts - credit_cts) / 100:.2f}",
+                _montant_affiche(debit_cts),
+                _montant_affiche(credit_cts),
+                _montant_affiche(debit_cts - credit_cts),
             ]
         )
     return tampon.getvalue()
