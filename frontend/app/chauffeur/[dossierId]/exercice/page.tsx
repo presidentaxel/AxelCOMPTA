@@ -8,6 +8,7 @@ import { ClotureSection } from "@/components/ClotureSection";
 import { GreffeInpiSection } from "@/components/GreffeInpiSection";
 import { PaieSection } from "@/components/PaieSection";
 import { useDossierChauffeur } from "@/app/chauffeur/use-dossier";
+import { Squelette, SqueletteLignes } from "@/components/Squelette";
 import { fetchAvecAuthChauffeur } from "@/lib/auth-chauffeur";
 import { formatDate } from "@/lib/format";
 import type { AffectationVue } from "@/lib/types";
@@ -20,38 +21,33 @@ export default function ExerciceChauffeurPage({
   params: Promise<{ dossierId: string }>;
 }) {
   const { dossierId } = use(params);
-  const { charge } = useDossierChauffeur(dossierId);
-
-  if (charge.statut === "en_cours") {
-    return <p className="text-sm text-subtle">Chargement…</p>;
-  }
-  if (charge.statut === "erreur") {
-    return <p className="text-sm text-danger">{charge.message}</p>;
-  }
-
-  const { dossier } = charge;
+  const { dossier } = useDossierChauffeur(dossierId);
+  const fiche = dossier.statut === "pret" ? dossier.valeur : null;
   const periode =
-    dossier.exercice_debut && dossier.exercice_fin
-      ? `${formatDate(dossier.exercice_debut)} – ${formatDate(dossier.exercice_fin)}`
+    fiche?.exercice_debut && fiche.exercice_fin
+      ? `${formatDate(fiche.exercice_debut)} – ${formatDate(fiche.exercice_fin)}`
       : null;
 
   return (
     <div>
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Exercice</h1>
+      {dossier.statut === "en_cours" && <Squelette className="mt-2 h-4 w-56" />}
       {periode && <p className="mt-2 text-sm text-subtle">{periode}</p>}
-      {[dossier.alerte_regime, dossier.alerte_tva]
-        .filter((alerte): alerte is string => alerte !== null)
-        .map((alerte) => (
-          <p
-            key={alerte}
-            className="mt-4 rounded-md border border-border bg-canvas p-3 text-sm text-ink"
-          >
-            {alerte}
-          </p>
-        ))}
-      {dossier.regimes_a_venir.length > 0 && (
+      {dossier.statut === "erreur" && <p className="mt-4 text-sm text-danger">{dossier.message}</p>}
+      {fiche &&
+        [fiche.alerte_regime, fiche.alerte_tva]
+          .filter((alerte): alerte is string => alerte !== null)
+          .map((alerte) => (
+            <p
+              key={alerte}
+              className="mt-4 rounded-md border border-border bg-canvas p-3 text-sm text-ink"
+            >
+              {alerte}
+            </p>
+          ))}
+      {fiche && fiche.regimes_a_venir.length > 0 && (
         <ul className="mt-3 space-y-1 text-sm text-subtle">
-          {dossier.regimes_a_venir.map((changement) => (
+          {fiche.regimes_a_venir.map((changement) => (
             <li key={changement.exercice}>
               Exercice {changement.exercice} : {changement.regime} ({changement.motif})
             </li>
@@ -59,11 +55,19 @@ export default function ExerciceChauffeurPage({
         </ul>
       )}
       <div className="mt-8">
-        <ClotureSection dossier={dossier} />
-        {dossier.depot_greffe && <GreffeInpiSection dossier={dossier} />}
-        <ClotureExerciceSection dossierId={dossierId} onClos={() => window.location.reload()} />
-        <LienAffectation dossierId={dossierId} />
-        {dossier.paie_par_bulletin && <PaieSection dossierId={dossierId} />}
+        {dossier.statut === "en_cours" ? (
+          <SqueletteLignes nombre={6} className="h-10 w-full" />
+        ) : (
+          fiche && (
+            <>
+              <ClotureSection dossier={fiche} />
+              {fiche.depot_greffe && <GreffeInpiSection dossier={fiche} />}
+              <ClotureExerciceSection dossierId={dossierId} onClos={() => window.location.reload()} />
+              <LienAffectation dossierId={dossierId} />
+              {fiche.paie_par_bulletin && <PaieSection dossierId={dossierId} />}
+            </>
+          )
+        )}
       </div>
     </div>
   );

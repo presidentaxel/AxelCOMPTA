@@ -11,7 +11,8 @@ import { useDossierChauffeur } from "@/app/chauffeur/use-dossier";
 import { ApiError } from "@/lib/api";
 import { joindreJustificatifChauffeur } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
-import type { TransactionVue } from "@/lib/types";
+import type { DossierResume, TransactionVue } from "@/lib/types";
+import { Squelette, SqueletteLignes } from "@/components/Squelette";
 
 const MOIS = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
 const JOUR = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
@@ -26,46 +27,22 @@ export default function DossierChauffeurPage({
   params: Promise<{ dossierId: string }>;
 }) {
   const { dossierId } = use(params);
-  const { charge, remplacer, recharger } = useDossierChauffeur(dossierId);
+  const { dossier, transactions, remplacer, recharger } = useDossierChauffeur(dossierId);
   const [vue, setVue] = useState<"traiter" | "mouvements">("traiter");
   const [moisChoisi, setMoisChoisi] = useState<string | null>(null);
 
-  if (charge.statut === "en_cours") {
-    return <p className="text-sm text-subtle">Chargement…</p>;
-  }
-  if (charge.statut === "erreur") {
-    return <p className="text-sm text-danger">{charge.message}</p>;
-  }
-
-  const { dossier, transactions } = charge;
-  const aVerifier = transactions
+  const operations = transactions.statut === "pret" ? transactions.valeur : [];
+  const aVerifier = operations
     .filter((transaction) => transaction.statut === "à trancher")
     .sort((a, b) => b.date.localeCompare(a.date));
-  const moisDispo = [
-    ...new Set(transactions.map((transaction) => transaction.date.slice(0, 7))),
-  ].sort();
+  const moisDispo = [...new Set(operations.map((transaction) => transaction.date.slice(0, 7)))].sort();
   const dernierMois = moisDispo.at(-1);
   const mois = moisChoisi && moisDispo.includes(moisChoisi) ? moisChoisi : dernierMois;
   const indexMois = mois ? moisDispo.indexOf(mois) : -1;
 
   return (
     <div>
-      <h1 className="text-[28px] font-bold tracking-tight text-ink">{dossier.nom}</h1>
-      <p className="mt-1 text-sm text-subtle">
-        {dossier.forme_juridique} · {dossier.regime_libelle}
-      </p>
-      <p
-        className={`mt-6 text-[28px] font-bold tabular-nums tracking-tight ${
-          dossier.resultat_cts < 0 ? "text-amount-negative" : "text-amount-positive"
-        }`}
-      >
-        {formatMontant(dossier.resultat_cts)}
-      </p>
-      <p className="text-sm text-subtle">Résultat de l&apos;exercice</p>
-      <ConnexionBancaire
-        peutConnecter={dossier.peut_connecter_sa_banque}
-        aDesTransactions={transactions.length > 0}
-      />
+      <Entete dossier={dossier} aDesTransactions={operations.length > 0} />
       <div className="mt-8 flex gap-2">
         <Onglet actif={vue === "traiter"} onClick={() => setVue("traiter")}>
           {aVerifier.length > 0 ? `À traiter · ${aVerifier.length}` : "À traiter"}
@@ -74,11 +51,15 @@ export default function DossierChauffeurPage({
           Mouvements
         </Onglet>
       </div>
-      {vue === "traiter" ? (
+      {transactions.statut === "erreur" ? (
+        <p className="mt-8 text-sm text-danger">{transactions.message}</p>
+      ) : transactions.statut === "en_cours" ? (
+        <SqueletteLignes nombre={4} className="mt-6 h-14 w-full" />
+      ) : vue === "traiter" ? (
         <Arriere
           aVerifier={aVerifier}
           dossierId={dossierId}
-          depenses={transactions.filter(ticketPrioritaire)}
+          depenses={operations.filter(ticketPrioritaire)}
           onChange={remplacer}
           onTranche={(transaction) => {
             remplacer(transaction);
@@ -90,7 +71,7 @@ export default function DossierChauffeurPage({
         <Mouvements
           dossierId={dossierId}
           onJointe={remplacer}
-          transactions={transactions.filter((transaction) => transaction.date.startsWith(mois ?? ""))}
+          transactions={operations.filter((transaction) => transaction.date.startsWith(mois ?? ""))}
           mois={mois}
           peutReculer={indexMois > 0}
           peutAvancer={indexMois >= 0 && indexMois < moisDispo.length - 1}
@@ -99,6 +80,49 @@ export default function DossierChauffeurPage({
         />
       )}
     </div>
+  );
+}
+
+function Entete({
+  dossier,
+  aDesTransactions,
+}: {
+  dossier: { statut: "en_cours" } | { statut: "pret"; valeur: DossierResume } | { statut: "erreur"; message: string };
+  aDesTransactions: boolean;
+}) {
+  if (dossier.statut === "erreur") {
+    return <p className="text-sm text-danger">{dossier.message}</p>;
+  }
+  if (dossier.statut === "en_cours") {
+    return (
+      <div>
+        <Squelette className="h-8 w-48" />
+        <Squelette className="mt-2 h-4 w-40" />
+        <Squelette className="mt-6 h-8 w-32" />
+        <Squelette className="mt-2 h-4 w-36" />
+      </div>
+    );
+  }
+  const fiche = dossier.valeur;
+  return (
+    <>
+      <h1 className="text-[28px] font-bold tracking-tight text-ink">{fiche.nom}</h1>
+      <p className="mt-1 text-sm text-subtle">
+        {fiche.forme_juridique} · {fiche.regime_libelle}
+      </p>
+      <p
+        className={`mt-6 text-[28px] font-bold tabular-nums tracking-tight ${
+          fiche.resultat_cts < 0 ? "text-amount-negative" : "text-amount-positive"
+        }`}
+      >
+        {formatMontant(fiche.resultat_cts)}
+      </p>
+      <p className="text-sm text-subtle">Résultat de l&apos;exercice</p>
+      <ConnexionBancaire
+        peutConnecter={fiche.peut_connecter_sa_banque}
+        aDesTransactions={aDesTransactions}
+      />
+    </>
   );
 }
 

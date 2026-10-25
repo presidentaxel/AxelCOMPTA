@@ -9,6 +9,7 @@ import { use, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { DividendesSection } from "@/components/DividendesSection";
+import { Squelette, SqueletteLignes } from "@/components/Squelette";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
 import {
@@ -53,8 +54,23 @@ export default function ResultatChauffeurPage({
       </div>
     );
   }
+  if (vue === null && erreur) {
+    return (
+      <div>
+        <p className="text-sm text-danger">{erreur}</p>
+        <div className="mt-4">{retour}</div>
+      </div>
+    );
+  }
   if (vue === null) {
-    return <p className="text-sm text-subtle">{erreur ?? "Chargement…"}</p>;
+    return (
+      <div>
+        <Squelette className="h-8 w-40" />
+        <SqueletteLignes nombre={4} className="h-5 w-full" />
+        <Squelette className="mt-8 h-24 w-full" />
+        <div className="mt-4">{retour}</div>
+      </div>
+    );
   }
   if (!vue.applicable) {
     return (

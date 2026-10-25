@@ -189,6 +189,10 @@ def _montant(centimes: int) -> str:
 
 def _ligne_fec(ecriture: Ecriture, numero: int, ligne: LigneEcriture) -> tuple[str, ...]:
     date_str = ecriture.date.strftime("%Y%m%d")
+    # AXE-557 : Debit et Credit sont des zones obligatoires (A.47 A-1).
+    # Une ligne d'écriture à sens unique n'est pas une case de formulaire
+    # inutilisée : le côté nul reste « 0,00 ». Les autres exports, eux,
+    # laissent vide toute valeur à 0.
     debit = _montant(ligne.montant.centimes) if ligne.sens is Sens.DEBIT else "0,00"
     credit = _montant(ligne.montant.centimes) if ligne.sens is Sens.CREDIT else "0,00"
     return (
