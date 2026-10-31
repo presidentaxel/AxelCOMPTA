@@ -655,14 +655,12 @@ def _verifier_acces_gestionnaire(
     return identite.tenant_id, identite
 
 
-def _preuves_exercice(signatures: SignatureRepository, dossier_id: DossierId) -> set[str]:
-    """Types de jalons déjà enregistrés pour ce dossier. Une lecture par
-    type : la table est append-only et indexée par dossier."""
-    return {
-        type_document
-        for type_document, _nom in JALONS_EXERCICE
-        if signatures.dernier(dossier_id, type_document) is not None
-    }
+def _preuves_exercice(
+    signatures: SignatureRepository, dossier_ids: Sequence[DossierId]
+) -> dict[DossierId, set[str]]:
+    """Types de jalons déjà enregistrés, par dossier, en une lecture pour
+    tout le portefeuille : la table est append-only et indexée par dossier."""
+    return signatures.types_presents(dossier_ids, [type_ for type_, _nom in JALONS_EXERCICE])
 
 
 def _frises(
@@ -1396,8 +1394,10 @@ def _agregats_portefeuille(
     """Une lecture des agrégats gardés, une lecture des comptes (Supabase,
     tous les dossiers d'un coup), puis par dossier ce qui change sans
     écriture : les preuves de l'exercice et la date du jour."""
-    lignes = agregats.lire([dossier.id for dossier in dossiers])
-    invitations = comptes.statuts([dossier.id for dossier in dossiers])
+    ids = [dossier.id for dossier in dossiers]
+    lignes = agregats.lire(ids)
+    invitations = comptes.statuts(ids)
+    preuves = _preuves_exercice(signatures, ids)
     resultat: list[DossierAgregat] = []
     for dossier in dossiers:
         invitation = invitations.get(dossier.id)
@@ -1408,7 +1408,7 @@ def _agregats_portefeuille(
                 ),
                 dossier,
                 _statut_invitation_vue(invitation.statut) if invitation else None,
-                _preuves_exercice(signatures, dossier.id),
+                preuves.get(dossier.id, set()),
             )
         )
     return resultat
