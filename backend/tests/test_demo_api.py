@@ -19,10 +19,12 @@ import io
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
+from typing import cast
 
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
@@ -472,7 +474,7 @@ def test_trancher_ne_relance_pas_la_categorisation_des_autres_lignes(
         return calculer(dossier_id, transactions)
 
     monkeypatch.setattr(pipeline, "_calculer", compter)
-    client.app.dependency_overrides[get_pipeline] = lambda: pipeline  # type: ignore[attr-defined]
+    cast(FastAPI, client.app).dependency_overrides[get_pipeline] = lambda: pipeline
     en_tete = _en_tete("DEMO_sophie")
     ecriture_id = _premiere_a_trancher(client, "DEMO_sophie")
     assert sum(calculees) > 0
