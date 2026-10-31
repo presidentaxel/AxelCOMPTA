@@ -29,7 +29,8 @@ from pypdf import PdfReader
 import axelcompta.demo_auth as demo_auth
 import axelcompta.demo_seed as demo_seed
 from axelcompta.anomaly.instruction import RegistreInstructions
-from axelcompta.categorize.models import Etage
+from axelcompta.categorize.models import Etage, ProposedEntry
+from axelcompta.categorize.rules_and_ml import RulesAndMlPipeline
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, UserId
 from axelcompta.core.money import Money
 from axelcompta.demo_api import (
@@ -49,6 +50,7 @@ from axelcompta.demo_api import (
     get_justificatifs,
     get_ledger,
     get_notifications,
+    get_pipeline,
     get_propositions,
     get_provisions_cloture,
     get_registre_anomalies,
@@ -60,10 +62,12 @@ from axelcompta.demo_chauffeurs_type import construire_ledger
 from axelcompta.demo_comptes_memory import InMemoryCompteRepository
 from axelcompta.demo_justificatifs import InMemoryJustificatifRepository
 from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion
+from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ingestion.providers.chauffeurs_demo import PROFILS_DEMO
 from axelcompta.ledger.contrepassation import contrepasser
 from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
+from axelcompta.packs.vtc_demo import charger_regles
 from axelcompta.tenants.affectations import InMemoryAffectationRepository
 from axelcompta.tenants.avenants import InMemoryAvenantRegimeRepository, programmer_bascules
 from axelcompta.tenants.exercices import InMemoryExerciceRepository
@@ -449,6 +453,40 @@ def test_trancher_est_reflete_par_un_get_ulterieur() -> None:
     ecriture = next(t for t in transactions if t["ecriture_id"] == ecriture_id)
     assert ecriture["statut"] == "validé"
     assert ecriture["compte"] == "455"
+
+
+def test_trancher_ne_relance_pas_la_categorisation_des_autres_lignes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AXE-565 : une décision ne change pas le résultat règles et modèle des
+    lignes restantes ; la lecture suivante le reprend de la mémoire."""
+    client = _client()
+    pipeline = RulesAndMlPipeline(regles=charger_regles())
+    calculees: list[int] = []
+    calculer = pipeline._calculer
+
+    def compter(
+        dossier_id: DossierId, transactions: Sequence[NormalizedTransaction]
+    ) -> list[ProposedEntry]:
+        calculees.append(len(transactions))
+        return calculer(dossier_id, transactions)
+
+    monkeypatch.setattr(pipeline, "_calculer", compter)
+    client.app.dependency_overrides[get_pipeline] = lambda: pipeline  # type: ignore[attr-defined]
+    en_tete = _en_tete("DEMO_sophie")
+    ecriture_id = _premiere_a_trancher(client, "DEMO_sophie")
+    assert sum(calculees) > 0
+
+    client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/decision",
+        json={"categorie": "usage_personnel"},
+        headers=en_tete,
+    )
+    avant = list(calculees)
+    reponse = client.get("/dossiers/DEMO_sophie/transactions", headers=en_tete)
+
+    assert reponse.status_code == 200
+    assert calculees == avant
 
 
 def test_trancher_diminue_le_compteur_nb_a_trancher() -> None:
