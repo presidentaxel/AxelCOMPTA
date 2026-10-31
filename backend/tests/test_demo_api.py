@@ -40,11 +40,11 @@ from axelcompta.demo_api import (
     GuideGreffeVue,
     TransactionVue,
     _avec_propositions,
-    _calculer_agregat,
     _frises,
     _ledger_avec_decisions,
     _provisions_saisies,
     _resume,
+    calculer_agregat,
     create_app,
     get_affectations,
     get_agregats,
@@ -1914,7 +1914,7 @@ def test_les_agregats_gardes_sont_ceux_que_calculait_le_resume() -> None:
             True,
             _provisions_saisies(dossier, provisions),
         )
-        assert _calculer_agregat(dossier, base, decisions, provisions) == AgregatStocke(
+        assert calculer_agregat(dossier, base, decisions, provisions) == AgregatStocke(
             ca_ht_cts=reference.ca_ht_cts,
             charges_cts=reference.charges_cts,
             resultat_cts=reference.resultat_cts,
@@ -1926,13 +1926,13 @@ def test_les_agregats_gardes_sont_ceux_que_calculait_le_resume() -> None:
 
 def _espionner_calculs(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     calcules: list[str] = []
-    calculer = demo_api._calculer_agregat
+    calculer = demo_api.calculer_agregat
 
     def espion(dossier: Dossier, *args: Any) -> AgregatStocke:
         calcules.append(str(dossier.id))
         return calculer(dossier, *args)
 
-    monkeypatch.setattr(demo_api, "_calculer_agregat", espion)
+    monkeypatch.setattr(demo_api, "calculer_agregat", espion)
     return calcules
 
 

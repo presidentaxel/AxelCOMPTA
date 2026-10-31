@@ -716,7 +716,7 @@ def _agregat(
     )
 
 
-def _calculer_agregat(
+def calculer_agregat(
     dossier: Dossier,
     base: LedgerService,
     decisions: DecisionRepository,
@@ -1375,7 +1375,7 @@ def _agregat_du_dossier(
     résultat est servi mais pas gardé (voir `AgregatsRepository.enregistrer`)."""
     if ligne is not None and ligne.valeur is not None:
         return ligne.valeur
-    valeur = _calculer_agregat(dossier, base, decisions, provisions)
+    valeur = calculer_agregat(dossier, base, decisions, provisions)
     agregats.enregistrer(
         dossier.tenant_id, dossier.id, valeur, None if ligne is None else ligne.version
     )

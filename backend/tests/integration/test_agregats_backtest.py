@@ -175,13 +175,13 @@ def _affiche(client: TestClient) -> dict[str, tuple[Any, ...]]:
 def calculs(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """Les dossiers recalculés depuis le dernier `clear()`."""
     calcules: list[str] = []
-    calculer = demo_api._calculer_agregat
+    calculer = demo_api.calculer_agregat
 
     def espion(dossier: Dossier, *args: Any) -> AgregatStocke:
         calcules.append(str(dossier.id))
         return calculer(dossier, *args)
 
-    monkeypatch.setattr(demo_api, "_calculer_agregat", espion)
+    monkeypatch.setattr(demo_api, "calculer_agregat", espion)
     return calcules
 
 
