@@ -60,6 +60,14 @@ class CompteDejaInviteError(ValueError):
     silencieuse (doc 08 §2.7)."""
 
 
+class InvitationAbsente(LookupError):
+    """Aucune invitation à renvoyer ou à annuler pour ce dossier."""
+
+
+class InvitationFermee(ValueError):
+    """Le compte est déjà ouvert : on ne renvoie ni n'annule l'invitation."""
+
+
 class CompteRepository(ABC):
     """Frontière vers le fournisseur de comptes — Supabase Auth pour la
     démo, implémentation maison prévue en V1 (doc 17 §9 bloc B)."""
@@ -80,6 +88,14 @@ class CompteRepository(ABC):
 
     def inviter_membre(self, tenant_id: str, email: str, role: str = "membre") -> None:
         """Ouvre un compte gestionnaire sur la même organisation."""
+        raise NotImplementedError
+
+    def renvoyer(self, dossier_id: DossierId) -> Invitation:
+        """Renvoie l'invitation tant que le compte n'est pas ouvert."""
+        raise NotImplementedError
+
+    def annuler(self, dossier_id: DossierId) -> None:
+        """Retire une invitation encore en attente. Un compte ouvert reste."""
         raise NotImplementedError
 
     def statuts(self, dossier_ids: Iterable[DossierId]) -> dict[DossierId, Invitation]:
@@ -191,6 +207,33 @@ class SupabaseCompteRepository(CompteRepository):
             json={"app_metadata": {"tenant_id": tenant_id, "role": role}},
         )
         lien.raise_for_status()
+
+    def renvoyer(self, dossier_id: DossierId) -> Invitation:
+        utilisateur = self._utilisateur_du_dossier(dossier_id)
+        if utilisateur is None:
+            raise InvitationAbsente(f"aucune invitation : {dossier_id}")
+        if utilisateur.get("email_confirmed_at") or utilisateur.get("confirmed_at"):
+            raise InvitationFermee("Le compte est déjà ouvert.")
+        email = str(utilisateur["email"])
+        reponse = self._client.post("/resend", json={"type": "signup", "email": email})
+        reponse.raise_for_status()
+        return Invitation(dossier_id=dossier_id, email=email, statut=StatutInvitation.INVITE)
+
+    def annuler(self, dossier_id: DossierId) -> None:
+        utilisateur = self._utilisateur_du_dossier(dossier_id)
+        if utilisateur is None:
+            raise InvitationAbsente(f"aucune invitation : {dossier_id}")
+        if utilisateur.get("email_confirmed_at") or utilisateur.get("confirmed_at"):
+            raise InvitationFermee("Le compte est déjà ouvert.")
+        reponse = self._client.delete(f"/admin/users/{utilisateur['id']}")
+        reponse.raise_for_status()
+
+    def _utilisateur_du_dossier(self, dossier_id: DossierId) -> dict[str, Any] | None:
+        for utilisateur in self._tous_les_utilisateurs():
+            meta = utilisateur.get("app_metadata") or {}
+            if str(meta.get("dossier_id") or "") == str(dossier_id):
+                return utilisateur
+        return None
 
     def _tous_les_utilisateurs(self) -> list[dict[str, Any]]:
         """`GET /admin/users` est **paginé** (50 par page par défaut) et n'a

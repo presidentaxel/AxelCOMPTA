@@ -99,6 +99,8 @@ from axelcompta.demo_auth import (
 from axelcompta.demo_comptes import (
     CompteDejaInviteError,
     CompteRepository,
+    InvitationAbsente,
+    InvitationFermee,
     StatutInvitation,
     SupabaseCompteRepository,
     SupabaseConfig,
@@ -2018,6 +2020,52 @@ def _enregistrer_routes_invitation(app: FastAPI) -> None:
             email=invitation.email,
             statut=_statut_invitation_vue(invitation.statut),
         )
+
+    app.post("/dossiers/{dossier_id}/invitation/renvoyer", response_model=InvitationVue)(
+        renvoyer_invitation
+    )
+    app.delete("/dossiers/{dossier_id}/invitation", status_code=204)(annuler_invitation)
+
+
+def _invitation_vue(invitation: Any) -> InvitationVue:
+    return InvitationVue(
+        dossier_id=str(invitation.dossier_id),
+        email=invitation.email,
+        statut=_statut_invitation_vue(invitation.statut),
+    )
+
+
+def renvoyer_invitation(
+    request: Request,
+    dossier: DossierPortefeuilleDep,
+    comptes: ComptesDep,
+    role: RoleMembreDep,
+) -> InvitationVue:
+    _exiger_ecriture(role, "La lecture seule n'invite pas.")
+    try:
+        invitation = comptes.renvoyer(dossier.id)
+    except InvitationAbsente as exc:
+        raise HTTPException(status_code=404, detail="Aucune invitation en attente.") from exc
+    except InvitationFermee as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    _vider_cache_agregats(request.app, str(dossier.tenant_id))
+    return _invitation_vue(invitation)
+
+
+def annuler_invitation(
+    request: Request,
+    dossier: DossierPortefeuilleDep,
+    comptes: ComptesDep,
+    role: RoleMembreDep,
+) -> None:
+    _exiger_ecriture(role, "La lecture seule n'invite pas.")
+    try:
+        comptes.annuler(dossier.id)
+    except InvitationAbsente as exc:
+        raise HTTPException(status_code=404, detail="Aucune invitation en attente.") from exc
+    except InvitationFermee as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    _vider_cache_agregats(request.app, str(dossier.tenant_id))
 
 
 def _inviter_en_masse(

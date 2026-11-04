@@ -464,6 +464,26 @@ export async function inviterChauffeur(
   return corps;
 }
 
+export async function renvoyerInvitation(dossierId: string): Promise<void> {
+  const reponse = await requeteGestionnaire(`/dossiers/${dossierId}/invitation/renvoyer`, {
+    method: "POST",
+  });
+  if (!reponse.ok) {
+    const corps = (await reponse.json().catch(() => ({}))) as { detail?: string };
+    throw new ApiError(corps.detail ?? "Impossible de renvoyer l'invitation.", reponse.status);
+  }
+}
+
+export async function annulerInvitation(dossierId: string): Promise<void> {
+  const reponse = await requeteGestionnaire(`/dossiers/${dossierId}/invitation`, {
+    method: "DELETE",
+  });
+  if (!reponse.ok) {
+    const corps = (await reponse.json().catch(() => ({}))) as { detail?: string };
+    throw new ApiError(corps.detail ?? "Impossible d'annuler l'invitation.", reponse.status);
+  }
+}
+
 export type ResultatInvitation =
   | "invité"
   | "deja_invite"
