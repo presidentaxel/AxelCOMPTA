@@ -5,7 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { InstructionAlerte } from "@/components/InstructionAlerte";
-import { ErreurAuthGestionnaire, instruireAlerte, listerAnomalies } from "@/lib/auth-gestionnaire";
+import { Squelette } from "@/components/Squelette";
+import { ErreurAuthGestionnaire, instruireAlerte, listerAnomalies, listerDossiers } from "@/lib/auth-gestionnaire";
 import type { AlerteAnomalie } from "@/lib/types";
 
 export default function AnomaliesPage() {
@@ -13,6 +14,7 @@ export default function AnomaliesPage() {
   const router = useRouter();
   const dossierId = params.dossierId;
   const [alertes, setAlertes] = useState<AlerteAnomalie[] | null>(null);
+  const [nom, setNom] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [envoi, setEnvoi] = useState<string | null>(null);
 
@@ -30,7 +32,10 @@ export default function AnomaliesPage() {
 
   useEffect(() => {
     charger();
-  }, [charger]);
+    listerDossiers()
+      .then((dossiers) => setNom(dossiers.find((dossier) => dossier.dossier_id === dossierId)?.nom ?? null))
+      .catch(() => setNom(null));
+  }, [charger, dossierId]);
 
   async function decider(alerteId: string, decision: AlerteAnomalie["etat"], commentaire: string) {
     setEnvoi(alerteId);
@@ -52,7 +57,15 @@ export default function AnomaliesPage() {
       <Link href="/portefeuille" className="text-sm font-medium text-primary hover:underline">
         Entreprises
       </Link>
-      <h1 className="mt-4 text-[28px] font-bold tracking-tight text-ink">Anomalies</h1>
+      <h1 className="mt-4 text-[28px] font-bold tracking-tight text-ink">
+        Anomalies{nom ? ` · ${nom}` : ""}
+      </h1>
+      {!alertes && !erreur && (
+        <div className="mt-8 space-y-3" aria-hidden>
+          <Squelette className="h-16 w-full" />
+          <Squelette className="h-16 w-full" />
+        </div>
+      )}
       {erreur && <p className="mt-4 text-sm text-danger">{erreur}</p>}
       {alertes && alertes.length === 0 && (
         <p className="mt-8 text-sm text-subtle">Aucune dépense à qualifier.</p>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
@@ -93,6 +94,14 @@ export default function ModeExpertPage() {
                 </span>
               )}
             </div>
+            {sujet.nature === "anomalie" && (
+              <Link
+                href={`/anomalies/${sujet.dossier_id}`}
+                className="mt-3 inline-block text-sm font-medium text-primary hover:underline"
+              >
+                Instruire
+              </Link>
+            )}
             {sujet.imputable && sujet.ecriture_id && file && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <select
