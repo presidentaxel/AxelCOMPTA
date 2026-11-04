@@ -465,7 +465,14 @@ export async function creerRegle(regle: {
     body: JSON.stringify(regle),
   });
   if (!reponse.ok) {
-    throw new ApiError("Impossible d'enregistrer la règle.", reponse.status);
+    let detail = "Impossible d'enregistrer la règle.";
+    try {
+      const corps = (await reponse.json()) as { detail?: string };
+      if (corps.detail) detail = corps.detail;
+    } catch {
+      // Le message par défaut suffit.
+    }
+    throw new ApiError(detail, reponse.status);
   }
 }
 
