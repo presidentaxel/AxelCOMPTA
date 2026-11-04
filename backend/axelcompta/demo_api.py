@@ -126,7 +126,7 @@ from axelcompta.filings.pdf_export_comptable import rendre_balance_pdf, rendre_g
 from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion, classer
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
 from axelcompta.ingestion.providers.base import NormalizedTransaction
-from axelcompta.ledger.contrepassation import annulees
+from axelcompta.ledger.contrepassation import annulees, contrepasser
 from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.ledger.models import Ecriture, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
@@ -366,6 +366,27 @@ class SujetExpertVue(BaseModel):
     montant_cts: int | None
     ecriture_id: str | None
     imputable: bool
+    compte_actuel: str | None = None
+    compte_suggere: str | None = None
+
+
+class LigneImputationVue(BaseModel):
+    sens: Literal["debit", "credit"]
+    compte: str
+    montant_cts: int
+
+
+class ImputationVue(BaseModel):
+    ecriture_id: str
+    contrepassation_id: str
+    lignes: list[LigneImputationVue]
+    sujets: list[SujetExpertVue]
+
+
+class AnnulationImputationEntree(BaseModel):
+    dossier_id: str
+    ecriture_id: str
+    contrepassation_id: str
 
 
 class FileExpertVue(BaseModel):
@@ -2973,6 +2994,30 @@ def _ticket_necessaire(vue: TransactionVue) -> bool:
     return categorie in _CATEGORIES_TICKET or categorie.startswith("a_verifier")
 
 
+def _compte_chiffre(compte: str) -> str | None:
+    return compte if compte.isdigit() else None
+
+
+def _compte_suggere(proposition: str | None) -> str | None:
+    if not proposition:
+        return None
+    compte = charger_compte_par_categorie().get(proposition)
+    if compte and compte != "512" and not compte.startswith("445"):
+        return compte
+    return None
+
+
+def _lignes_imputation(ecriture: Ecriture) -> list[LigneImputationVue]:
+    return [
+        LigneImputationVue(
+            sens="debit" if ligne.sens is Sens.DEBIT else "credit",
+            compte=ligne.compte,
+            montant_cts=ligne.montant.centimes,
+        )
+        for ligne in ecriture.lignes
+    ]
+
+
 def _comptes_expert() -> list[CompteChoix]:
     comptes = sorted(
         {
@@ -2984,47 +3029,47 @@ def _comptes_expert() -> list[CompteChoix]:
     return [CompteChoix(compte=compte, libelle=libelle_compte(compte)) for compte in comptes]
 
 
-def _sujets_expert(
+def _sujet_depuis_vue(dossier: Dossier, vue: TransactionVue) -> SujetExpertVue | None:
+    if vue.statut == "à trancher":
+        return _sujet(
+            dossier,
+            f"trancher:{vue.ecriture_id}",
+            "chauffeur",
+            "a_trancher",
+            vue.libelle,
+            "Écriture en attente, côté chauffeur",
+            vue.montant_cts,
+            vue.ecriture_id,
+            _compte_chiffre(vue.compte),
+            _compte_suggere(vue.proposition),
+        )
+    if not _ticket_necessaire(vue):
+        return None
+    return _sujet(
+        dossier,
+        f"ticket:{vue.ecriture_id}",
+        "chauffeur",
+        "ticket",
+        vue.libelle,
+        "Ticket manquant pour classer la dépense",
+        vue.montant_cts,
+        vue.ecriture_id,
+        _compte_chiffre(vue.compte),
+        _compte_suggere(vue.proposition),
+    )
+
+
+def _sujets_anomalies(
     dossier: Dossier,
-    base: LedgerService,
+    ledger: InMemoryLedgerService,
     decisions: DecisionRepository,
     justificatifs: JustificatifRepository,
     registre: RegistreInstructions,
+    exclues: frozenset[EcritureId],
 ) -> list[SujetExpertVue]:
-    ledger = _ledger_avec_decisions(dossier, base, decisions)
-    vues = _vues_dossier(dossier, ledger, justificatifs)
-    exclues = annulees(ledger.grand_livre(dossier.id))
     sujets: list[SujetExpertVue] = []
-    for vue in vues:
-        if EcritureId(vue.ecriture_id) in exclues:
-            continue
-        if vue.statut == "à trancher":
-            sujets.append(
-                _sujet(
-                    dossier,
-                    f"trancher:{vue.ecriture_id}",
-                    "chauffeur",
-                    "a_trancher",
-                    vue.libelle,
-                    "Écriture en attente, côté chauffeur",
-                    vue.montant_cts,
-                    vue.ecriture_id,
-                )
-            )
-        elif _ticket_necessaire(vue):
-            sujets.append(
-                _sujet(
-                    dossier,
-                    f"ticket:{vue.ecriture_id}",
-                    "chauffeur",
-                    "ticket",
-                    vue.libelle,
-                    "Ticket manquant pour classer la dépense",
-                    vue.montant_cts,
-                    vue.ecriture_id,
-                )
-            )
-    for alerte in _alertes_du_ledger(dossier, ledger, decisions, justificatifs).values():
+    alertes = _alertes_du_ledger(dossier, ledger, decisions, justificatifs)
+    for alerte in alertes.values():
         if alerte.ecriture_id in exclues:
             continue
         if registre.etat(alerte.id) not in ("ouverte", "en_instruction"):
@@ -3044,6 +3089,25 @@ def _sujets_expert(
     return sujets
 
 
+def _sujets_expert(
+    dossier: Dossier,
+    base: LedgerService,
+    decisions: DecisionRepository,
+    justificatifs: JustificatifRepository,
+    registre: RegistreInstructions,
+) -> list[SujetExpertVue]:
+    ledger = _ledger_avec_decisions(dossier, base, decisions)
+    exclues = annulees(ledger.grand_livre(dossier.id))
+    sujets = [
+        sujet
+        for vue in _vues_dossier(dossier, ledger, justificatifs)
+        if EcritureId(vue.ecriture_id) not in exclues
+        if (sujet := _sujet_depuis_vue(dossier, vue)) is not None
+    ]
+    sujets.extend(_sujets_anomalies(dossier, ledger, decisions, justificatifs, registre, exclues))
+    return sujets
+
+
 def _sujet(
     dossier: Dossier,
     sujet_id: str,
@@ -3053,6 +3117,8 @@ def _sujet(
     detail: str,
     montant_cts: int,
     ecriture_id: str,
+    compte_actuel: str | None = None,
+    compte_suggere: str | None = None,
 ) -> SujetExpertVue:
     return SujetExpertVue(
         id=sujet_id,
@@ -3065,7 +3131,66 @@ def _sujet(
         montant_cts=montant_cts,
         ecriture_id=ecriture_id,
         imputable=True,
+        compte_actuel=compte_actuel,
+        compte_suggere=compte_suggere,
     )
+
+
+def imputer_ecriture(
+    entree: ImputationEntree,
+    dossiers: DossiersDep,
+    base: LedgerBaseDep,
+    decisions: DecisionsDep,
+    justificatifs: JustificatifsDep,
+    registre: RegistreAnomaliesDep,
+    identite: IdentiteDep,
+) -> ImputationVue:
+    """Pose la contre-passation et la nouvelle écriture. L'originale reste.
+    La réponse dit ce qui a été écrit, et les sujets à jour de ce dossier seul."""
+    tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+    dossier = dossiers.obtenir(DossierId(entree.dossier_id))
+    if dossier is None or dossier.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Dossier inconnu.")
+    connus = {ecriture.id: ecriture for ecriture in base.grand_livre(dossier.id)}
+    ecriture = connus.get(EcritureId(entree.ecriture_id))
+    if ecriture is None:
+        raise HTTPException(status_code=404, detail="Écriture inconnue.")
+    try:
+        inverse, nouvelle = preparer_imputation(ecriture, entree.compte, set(connus))
+    except ImputationRefusee as erreur:
+        raise HTTPException(status_code=400, detail=str(erreur)) from erreur
+    base.enregistrer(inverse)
+    base.enregistrer(nouvelle)
+    sujets = _sujets_expert(dossier, base, decisions, justificatifs, registre)
+    return ImputationVue(
+        ecriture_id=nouvelle.id,
+        contrepassation_id=inverse.id,
+        lignes=_lignes_imputation(nouvelle),
+        sujets=sujets,
+    )
+
+
+def annuler_imputation(
+    entree: AnnulationImputationEntree,
+    dossiers: DossiersDep,
+    base: LedgerBaseDep,
+    identite: IdentiteDep,
+) -> None:
+    """Contre-passe la nouvelle écriture et l'inverse posé par l'imputation.
+    Le solde revient à l'écriture d'origine."""
+    tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+    dossier = dossiers.obtenir(DossierId(entree.dossier_id))
+    if dossier is None or dossier.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Dossier inconnu.")
+    connus = {ecriture.id: ecriture for ecriture in base.grand_livre(dossier.id)}
+    for identifiant in (entree.ecriture_id, entree.contrepassation_id):
+        ecriture = connus.get(EcritureId(identifiant))
+        if ecriture is None:
+            raise HTTPException(status_code=404, detail="Écriture inconnue.")
+        inverse = contrepasser(ecriture)
+        if inverse.id not in connus:
+            base.enregistrer(inverse)
+            connus[inverse.id] = inverse
 
 
 def _enregistrer_routes_expert(app: FastAPI) -> None:
@@ -3086,35 +3211,8 @@ def _enregistrer_routes_expert(app: FastAPI) -> None:
             sujets.extend(_sujets_expert(dossier, base, decisions, justificatifs, registre))
         return FileExpertVue(sujets=sujets, comptes=_comptes_expert())
 
-    @app.post("/expert/imputations", response_model=list[SujetExpertVue])
-    def imputer_ecriture(
-        entree: ImputationEntree,
-        dossiers: DossiersDep,
-        base: LedgerBaseDep,
-        decisions: DecisionsDep,
-        justificatifs: JustificatifsDep,
-        registre: RegistreAnomaliesDep,
-        identite: IdentiteDep,
-    ) -> list[SujetExpertVue]:
-        """Pose la contre-passation et la nouvelle écriture. L'originale reste.
-        Retourne les sujets à jour de ce dossier seul : l'imputation en retire
-        un et peut en faire apparaître un (ticket de la nouvelle écriture),
-        sans relire les autres dossiers du portefeuille."""
-        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
-        dossier = dossiers.obtenir(DossierId(entree.dossier_id))
-        if dossier is None or dossier.tenant_id != tenant_id:
-            raise HTTPException(status_code=404, detail="Dossier inconnu.")
-        connus = {ecriture.id: ecriture for ecriture in base.grand_livre(dossier.id)}
-        ecriture = connus.get(EcritureId(entree.ecriture_id))
-        if ecriture is None:
-            raise HTTPException(status_code=404, detail="Écriture inconnue.")
-        try:
-            inverse, nouvelle = preparer_imputation(ecriture, entree.compte, set(connus))
-        except ImputationRefusee as erreur:
-            raise HTTPException(status_code=400, detail=str(erreur)) from erreur
-        base.enregistrer(inverse)
-        base.enregistrer(nouvelle)
-        return _sujets_expert(dossier, base, decisions, justificatifs, registre)
+    app.post("/expert/imputations", response_model=ImputationVue)(imputer_ecriture)
+    app.post("/expert/imputations/annuler", status_code=204)(annuler_imputation)
 
 
 def create_app() -> FastAPI:

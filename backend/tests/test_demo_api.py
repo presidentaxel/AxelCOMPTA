@@ -2108,7 +2108,9 @@ def test_imputer_retourne_les_sujets_a_jour_du_seul_dossier_impute() -> None:
     )
 
     assert reponse.status_code == 200
-    sujets = reponse.json()
+    corps = reponse.json()
+    assert corps["lignes"]
+    sujets = corps["sujets"]
     assert {sujet["dossier_id"] for sujet in sujets} <= {"DEMO_sophie"}
     assert cible["id"] not in {sujet["id"] for sujet in sujets}
     relu = client.get("/expert/file", headers=_en_tete_gestionnaire()).json()["sujets"]

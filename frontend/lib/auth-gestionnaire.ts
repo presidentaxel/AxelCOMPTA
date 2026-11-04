@@ -23,7 +23,7 @@ import {
   extraireErreurSupabase,
   URL_SUPABASE,
 } from "./auth-chauffeur";
-import type { AlerteAnomalie, DossierAgregat, FileExpert, SujetExpert } from "./types";
+import type { AlerteAnomalie, DossierAgregat, FileExpert, ImputationFaite } from "./types";
 
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
@@ -230,14 +230,14 @@ export async function imputerExpert(
   dossierId: string,
   ecritureId: string,
   compte: string,
-): Promise<SujetExpert[]> {
+): Promise<ImputationFaite> {
   const reponse = await requeteGestionnaire("/expert/imputations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dossier_id: dossierId, ecriture_id: ecritureId, compte }),
   });
   if (reponse.status === 401 || reponse.status === 403) {
-    throw new ErreurAuthGestionnaire();
+    throw new ErreurAuthGestionnaire("Session expirée.");
   }
   if (!reponse.ok) {
     let detail = `HTTP ${reponse.status}`;
@@ -249,7 +249,36 @@ export async function imputerExpert(
     }
     throw new ApiError(detail, reponse.status);
   }
-  return (await reponse.json()) as SujetExpert[];
+  return (await reponse.json()) as ImputationFaite;
+}
+
+export async function annulerImputation(
+  dossierId: string,
+  ecritureId: string,
+  contrepassationId: string,
+): Promise<void> {
+  const reponse = await requeteGestionnaire("/expert/imputations/annuler", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      dossier_id: dossierId,
+      ecriture_id: ecritureId,
+      contrepassation_id: contrepassationId,
+    }),
+  });
+  if (reponse.status === 401 || reponse.status === 403) {
+    throw new ErreurAuthGestionnaire("Session expirée.");
+  }
+  if (!reponse.ok) {
+    let detail = "Impossible d'annuler l'imputation.";
+    try {
+      const corps = (await reponse.json()) as { detail?: string };
+      if (corps.detail) detail = corps.detail;
+    } catch {
+      // Le message par défaut suffit.
+    }
+    throw new ApiError(detail, reponse.status);
+  }
 }
 
 export async function listerAnomalies(dossierId: string): Promise<AlerteAnomalie[]> {
