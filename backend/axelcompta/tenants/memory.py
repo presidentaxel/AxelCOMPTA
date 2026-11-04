@@ -89,5 +89,23 @@ class InMemoryDossierRepository(DossierRepository):
             raise ValueError(f"dossier inconnu : {dossier_id}")
         self._dossiers[dossier_id] = replace(dossier, retire_le=date.today())
 
+    def lister_retires(self, tenant_id: TenantId) -> tuple[Dossier, ...]:
+        return tuple(
+            sorted(
+                (
+                    d
+                    for d in self._dossiers.values()
+                    if d.tenant_id == tenant_id and d.retire_le is not None
+                ),
+                key=lambda d: d.id,
+            )
+        )
+
+    def restaurer(self, dossier_id: DossierId) -> None:
+        dossier = self._dossiers.get(dossier_id)
+        if dossier is None:
+            raise ValueError(f"dossier inconnu : {dossier_id}")
+        self._dossiers[dossier_id] = replace(dossier, retire_le=None)
+
     def par_contact_nr(self, contact_nr: str) -> Dossier | None:
         return next((d for d in self._dossiers.values() if d.contact_nr == contact_nr), None)

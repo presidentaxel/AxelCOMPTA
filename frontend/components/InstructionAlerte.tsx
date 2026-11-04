@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
+
 import { Button } from "@/components/ui/button";
-import { formatMontant } from "@/lib/format";
+import { formatDate, formatMontant } from "@/lib/format";
 import type { AlerteAnomalie } from "@/lib/types";
 
 const SUITE: Record<AlerteAnomalie["etat"], string> = {
@@ -16,10 +18,12 @@ const SUITE: Record<AlerteAnomalie["etat"], string> = {
 export function InstructionAlerte({
   alerte,
   envoi,
+  lecture = false,
   onDecider,
 }: {
   alerte: AlerteAnomalie;
   envoi: boolean;
+  lecture?: boolean;
   onDecider: (decision: AlerteAnomalie["etat"], commentaire: string) => void;
 }) {
   return (
@@ -32,19 +36,21 @@ export function InstructionAlerte({
           {formatMontant(alerte.montant_centimes)}
         </span>
       </p>
-      <p className="mt-2 text-xs text-subtle">{SUITE[alerte.etat]}</p>
+      <p className="mt-2 text-xs text-subtle">
+        {formatDate(alerte.date)} · {SUITE[alerte.etat]}
+      </p>
       {alerte.etat === "ouverte" && (
         <Button
           type="button"
           className="mt-3"
-          disabled={envoi}
+          disabled={envoi || lecture}
           onClick={() => onDecider("en_instruction", "")}
         >
           Prendre en instruction
         </Button>
       )}
       {alerte.etat === "en_instruction" && (
-        <Qualification alerteId={alerte.id} envoi={envoi} onDecider={onDecider} />
+        <Qualification alerteId={alerte.id} envoi={envoi || lecture} onDecider={onDecider} />
       )}
     </article>
   );
@@ -60,13 +66,22 @@ function Qualification({
   onDecider: (decision: AlerteAnomalie["etat"], commentaire: string) => void;
 }) {
   const champ = `commentaire-${alerteId}`;
+  const [commentaire, setCommentaire] = useState("");
+  const [manque, setManque] = useState(false);
+  function decider(decision: "justifiee" | "usage_personnel" | "faux_positif") {
+    if (decision === "justifiee" && !commentaire.trim()) {
+      setManque(true);
+      return;
+    }
+    setManque(false);
+    onDecider(decision, commentaire.trim());
+  }
   return (
     <form
       className="mt-3 flex flex-col gap-2"
       onSubmit={(evenement) => {
         evenement.preventDefault();
-        const donnees = new FormData(evenement.currentTarget);
-        onDecider("justifiee", String(donnees.get("commentaire") ?? ""));
+        decider("justifiee");
       }}
     >
       <label className="text-sm text-ink" htmlFor={champ}>
@@ -76,15 +91,18 @@ function Qualification({
         id={champ}
         name="commentaire"
         rows={2}
+        value={commentaire}
+        onChange={(evenement) => setCommentaire(evenement.target.value)}
         className="rounded-md border border-hairline px-3 py-2 text-sm text-ink"
       />
+      {manque && <p className="text-sm text-danger">Un commentaire est nécessaire pour justifier.</p>}
       <Button type="submit" disabled={envoi}>
         Justifier
       </Button>
-      <Button type="button" variant="secondary" disabled={envoi} onClick={() => onDecider("usage_personnel", "")}>
+      <Button type="button" variant="secondary" disabled={envoi} onClick={() => decider("usage_personnel")}>
         Confirmer un usage personnel
       </Button>
-      <Button type="button" variant="secondary" disabled={envoi} onClick={() => onDecider("faux_positif", "")}>
+      <Button type="button" variant="secondary" disabled={envoi} onClick={() => decider("faux_positif")}>
         Marquer comme faux positif
       </Button>
     </form>

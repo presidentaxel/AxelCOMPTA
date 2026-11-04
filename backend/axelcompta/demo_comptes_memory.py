@@ -12,6 +12,8 @@ from .demo_comptes import (
     CompteDejaInviteError,
     CompteRepository,
     Invitation,
+    InvitationAbsente,
+    InvitationFermee,
     MembreCompte,
     StatutInvitation,
 )
@@ -45,3 +47,19 @@ class InMemoryCompteRepository(CompteRepository):
         if any(propre in emails for emails in self._membres.values()):
             raise CompteDejaInviteError(f"un compte existe déjà : {email}")
         self._membres.setdefault(tenant_id, {})[propre] = False
+
+    def renvoyer(self, dossier_id: DossierId) -> Invitation:
+        invitation = self._invitations.get(dossier_id)
+        if invitation is None:
+            raise InvitationAbsente(f"aucune invitation : {dossier_id}")
+        if invitation.statut is StatutInvitation.ACTIF:
+            raise InvitationFermee("Le compte est déjà ouvert.")
+        return invitation
+
+    def annuler(self, dossier_id: DossierId) -> None:
+        invitation = self._invitations.get(dossier_id)
+        if invitation is None:
+            raise InvitationAbsente(f"aucune invitation : {dossier_id}")
+        if invitation.statut is StatutInvitation.ACTIF:
+            raise InvitationFermee("Le compte est déjà ouvert.")
+        del self._invitations[dossier_id]

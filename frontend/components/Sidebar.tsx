@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Bell, FlaskConical, Landmark, LayoutGrid, Plug, Scale, Users } from "lucide-react";
+import { Bell, FlaskConical, Landmark, LayoutGrid, Mail, Plug, Scale, Users } from "lucide-react";
 
 import { Marque } from "@/components/Marque";
 import {
@@ -13,18 +13,21 @@ import {
   obtenirSessionGestionnaire,
   renommerPortefeuille,
 } from "@/lib/auth-gestionnaire";
+import { useDroitGestionnaire } from "@/lib/use-droit";
 
 const LIENS = [
   { href: "/portefeuille", libelle: "Entreprises", Icone: LayoutGrid },
   { href: "/expert", libelle: "Mode expert", Icone: Scale },
   { href: "/connexions-bancaires", libelle: "Connexions bancaires", Icone: Landmark },
   { href: "/rappels", libelle: "Rappels", Icone: Bell },
+  { href: "/invitations", libelle: "Invitations", Icone: Mail },
   { href: "/equipe", libelle: "Équipe", Icone: Users },
   { href: "/integrations", libelle: "Intégrations", Icone: Plug },
 ];
 
 export function Sidebar() {
   const chemin = usePathname();
+  const droit = useDroitGestionnaire();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [nom, setNom] = useState("Organisation");
@@ -43,8 +46,13 @@ export function Sidebar() {
   }, []);
 
   async function enregistrerNom() {
+    if (!droit.admin) return;
     const propre = nom.trim();
-    if (!propre) return;
+    if (!propre) {
+      const relu = await lireNomPortefeuille().catch(() => "");
+      if (relu) setNom(relu);
+      return;
+    }
     setErreurNom(null);
     try {
       setNom(await renommerPortefeuille(propre));
@@ -73,15 +81,15 @@ export function Sidebar() {
           <input
             value={nom}
             onChange={(evenement) => setNom(evenement.target.value)}
-            onBlur={enregistrerNom}
+            onBlur={() => void enregistrerNom()}
             onKeyDown={(evenement) => {
-              if (evenement.key === "Enter") {
-                evenement.preventDefault();
-                void enregistrerNom();
-              }
+              if (evenement.key !== "Enter") return;
+              evenement.preventDefault();
+              void enregistrerNom();
             }}
+            readOnly={!droit.admin}
             aria-label="Nom de l'organisation"
-            className="w-full truncate bg-transparent text-sm font-semibold text-ink outline-none focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)]"
+            className="w-full truncate bg-transparent text-sm font-semibold text-ink outline-none read-only:cursor-default focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)]"
           />
           <span className="block text-xs text-subtle">Organisation</span>
           {erreurNom && <span className="mt-1 block text-xs text-danger">{erreurNom}</span>}

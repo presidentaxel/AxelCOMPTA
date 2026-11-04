@@ -25,6 +25,12 @@ d'héritage implicite (doc 03 §3bis, doc 06 §7).
 ## Fichiers
 
 - `models.py` — domaine pur (`Tenant`, `Dossier`).
+- `agregats.py` / `agregats_postgres.py` (**fait, AXE-566**) : les agrégats de
+  la vue portefeuille (montants de la liasse, exercice, alerte de franchise)
+  gardés par dossier dans `agregats_dossier`. Périmés par des triggers
+  Postgres (migration `e7b3d9a15c42`), recalculés dossier par dossier avec un
+  compare-and-set sur `version`. `VERSION_CALCUL` invalide tout. Voir
+  `axelcompta/agregats_portefeuille.py` pour réchauffer et vérifier.
 - `affectations.py` / `affectations_postgres.py` (**fait, 2026-09-26**) :
   décisions d'affectation du résultat, une par exercice clos, append-only
   (table `affectations_resultat`, verrou en base, journal d'audit).
