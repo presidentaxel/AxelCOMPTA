@@ -21,6 +21,7 @@ se faire passer pour un vrai document officiel.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -82,3 +83,19 @@ class SignatureRepository(ABC):
     def lister(self, dossier_id: DossierId, type_document: str) -> tuple[DocumentSigne, ...]:
         """Tout l'historique des signatures pour ce dossier/type, triées
         par date — la preuve elle-même, jamais purgée."""
+
+    def types_presents(
+        self, dossier_ids: Sequence[DossierId], types_document: Sequence[str]
+    ) -> dict[DossierId, set[str]]:
+        """Pour chaque dossier, ceux des `types_document` qui ont au moins une
+        signature. Un portefeuille entier d'un coup : par défaut un `dernier`
+        par dossier et par type, une implémentation en base le fait en une
+        requête, sans lire les PDF."""
+        return {
+            dossier_id: {
+                type_document
+                for type_document in types_document
+                if self.dernier(dossier_id, type_document) is not None
+            }
+            for dossier_id in dossier_ids
+        }

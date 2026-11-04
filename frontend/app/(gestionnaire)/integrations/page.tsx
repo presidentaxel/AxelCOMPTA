@@ -10,23 +10,24 @@ import {
   obtenirSessionGestionnaire,
   reglerDigifactoryDemo,
 } from "@/lib/auth-gestionnaire";
+import { useDroitGestionnaire } from "@/lib/use-droit";
 
 const PREVUES = [
   {
     nom: "Bridge",
-    detail: "Connexion bancaire directe, en plus du canal déjà utilisé pour le pilote.",
+    detail: "Connecterait la banque en direct, en plus du canal déjà utilisé pour le pilote.",
   },
   {
     nom: "Volubile",
-    detail: "Appels automatiques pour les rappels configurés dans Rappels.",
+    detail: "Passerait les appels des relances configurées dans Rappels.",
   },
   {
     nom: "SMS",
-    detail: "Envoi des rappels par SMS.",
+    detail: "Enverrait les relances par SMS.",
   },
   {
     nom: "E-mail",
-    detail: "Envoi des rappels par e-mail, distinct de l'invitation de compte.",
+    detail: "Enverrait les relances par e-mail, à part de l'invitation de compte.",
   },
 ];
 
@@ -34,6 +35,7 @@ const PREVUES = [
  * propose pas de connecter sa banque. Le réglage se change ici. */
 export default function IntegrationsPage() {
   const router = useRouter();
+  const droit = useDroitGestionnaire();
   const [branche, setBranche] = useState<boolean | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
@@ -55,7 +57,10 @@ export default function IntegrationsPage() {
   }, [router]);
 
   async function basculer() {
-    if (branche === null) return;
+    if (branche === null || !droit.ecriture) return;
+    if (branche && !window.confirm("Débrancher Digifactory ? Les entreprises verront « Connecter ma banque ».")) {
+      return;
+    }
     setEnCours(true);
     setErreur(null);
     try {
@@ -94,7 +99,7 @@ export default function IntegrationsPage() {
           <Button
             type="button"
             variant="secondary"
-            disabled={branche === null || enCours}
+            disabled={branche === null || enCours || !droit.ecriture}
             onClick={basculer}
           >
             {branche === null ? "…" : branche ? "Débrancher" : "Brancher"}

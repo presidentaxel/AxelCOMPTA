@@ -17,11 +17,13 @@ import {
 import { libelleCompte } from "@/lib/dossier-libelles";
 import type { DossierAgregat } from "@/lib/types";
 import { Squelette } from "@/components/Squelette";
+import { useDroitGestionnaire } from "@/lib/use-droit";
 
 /** Une ligne par entreprise sans compte, plus un collage pour plusieurs.
  * Plus de liste déroulante : l'e-mail se saisit en face du nom. */
 export default function InvitationsPage() {
   const router = useRouter();
+  const droit = useDroitGestionnaire();
   const [dossiers, setDossiers] = useState<DossierAgregat[] | null>(null);
   const [emails, setEmails] = useState<Record<string, string>>({});
   const [erreur, setErreur] = useState<string | null>(null);
@@ -82,7 +84,7 @@ export default function InvitationsPage() {
               <Button
                 type="button"
                 size="sm"
-                disabled={enCours === dossier.dossier_id || !(emails[dossier.dossier_id] ?? "").includes("@")}
+                disabled={!droit.ecriture || enCours === dossier.dossier_id || !(emails[dossier.dossier_id] ?? "").includes("@")}
                 onClick={async () => {
                   setEnCours(dossier.dossier_id);
                   setErreur(null);
@@ -124,7 +126,7 @@ export default function InvitationsPage() {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        disabled={enCours === dossier.dossier_id}
+                        disabled={!droit.ecriture || enCours === dossier.dossier_id}
                         onClick={async () => {
                           setEnCours(dossier.dossier_id);
                           setErreur(null);
@@ -146,7 +148,7 @@ export default function InvitationsPage() {
                         variant="ghost"
                         size="sm"
                         className="text-danger"
-                        disabled={enCours === dossier.dossier_id}
+                        disabled={!droit.ecriture || enCours === dossier.dossier_id}
                         onClick={async () => {
                           setEnCours(dossier.dossier_id);
                           setErreur(null);
@@ -177,7 +179,11 @@ export default function InvitationsPage() {
         <section className="mt-10">
           <h2 className="text-sm font-semibold text-ink">Plusieurs à la fois</h2>
           <div className="mt-3">
-            <InvitationsEnMasse dossiers={dossiers} onTermine={charger} />
+            <InvitationsEnMasse
+              dossiers={dossiers}
+              desactive={!droit.ecriture}
+              onTermine={charger}
+            />
           </div>
         </section>
       )}

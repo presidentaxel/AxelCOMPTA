@@ -33,9 +33,11 @@ function lireLignes(texte: string): { dossier_id: string; email: string }[] {
  * les lignes en échec n'empêchent pas les autres. */
 export function InvitationsEnMasse({
   dossiers,
+  desactive = false,
   onTermine,
 }: {
   dossiers: DossierAgregat[];
+  desactive?: boolean;
   onTermine: () => void;
 }) {
   const [texte, setTexte] = useState("");
@@ -76,16 +78,26 @@ export function InvitationsEnMasse({
       <p className="mb-3 text-sm text-subtle">
         Une ligne par entreprise : nom ou identifiant, e-mail. {MAX_LIGNES} lignes au plus.
       </p>
-      <label className="mb-3 inline-flex h-9 cursor-pointer items-center rounded-md border border-border-strong bg-canvas px-4 text-sm font-semibold text-ink hover:bg-canvas-app">
+      <label
+        className={`mb-3 inline-flex h-9 items-center rounded-md border border-border-strong bg-canvas px-4 text-sm font-semibold text-ink ${
+          desactive ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-canvas-app"
+        }`}
+      >
         Choisir un fichier
-        <input type="file" accept=".csv,.txt" onChange={charger} className="sr-only" />
+        <input
+          type="file"
+          accept=".csv,.txt"
+          onChange={charger}
+          disabled={desactive || enCours}
+          className="sr-only"
+        />
       </label>
       <textarea
         value={texte}
         onChange={(evenement) => setTexte(evenement.target.value)}
         rows={5}
         placeholder="Nom de l'entreprise, email@exemple.fr"
-        disabled={enCours}
+        disabled={desactive || enCours}
         className="w-full rounded-md border border-border px-3 py-2 font-mono text-xs"
       />
       <div className="mt-2 flex items-center gap-3">
@@ -93,7 +105,7 @@ export function InvitationsEnMasse({
           type="button"
           variant="secondary"
           onClick={envoyer}
-          disabled={enCours || lignes.length === 0 || troploin}
+          disabled={desactive || enCours || lignes.length === 0 || troploin}
         >
           {enCours ? "Envoi…" : `Inviter ${lignes.length}`}
         </Button>

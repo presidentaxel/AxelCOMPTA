@@ -14,9 +14,11 @@ import {
   listerMembres,
   obtenirSessionGestionnaire,
   publierEquipeSession,
+  retirerMembre,
   type MembrePortefeuille,
   type RoleMembre,
 } from "@/lib/auth-gestionnaire";
+import { useDroitGestionnaire } from "@/lib/use-droit";
 
 const ROLES: { id: RoleMembre; libelle: string; detail: string }[] = [
   { id: "admin", libelle: "Admin", detail: "Nom, équipe, retraits, règles" },
@@ -26,6 +28,7 @@ const ROLES: { id: RoleMembre; libelle: string; detail: string }[] = [
 
 export default function EquipePage() {
   const router = useRouter();
+  const droit = useDroitGestionnaire();
   const [email, setEmail] = useState("");
   const [membres, setMembres] = useState<MembrePortefeuille[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -117,10 +120,17 @@ export default function EquipePage() {
           value={emailInvite}
           onChange={(evenement) => setEmailInvite(evenement.target.value)}
           placeholder="E-mail"
-          disabled={enCours}
+          disabled={enCours || !droit.admin}
         />
-        <Segment valeur={roleInvite} onChoisir={setRoleInvite} />
-        <Button type="submit" disabled={enCours} className="w-full">
+        <Segment valeur={roleInvite} onChoisir={setRoleInvite} desactive={!droit.admin} />
+        <ul className="space-y-1">
+          {ROLES.map((role) => (
+            <li key={role.id} className="text-sm text-subtle">
+              <span className="font-medium text-ink">{role.libelle}.</span> {role.detail}
+            </li>
+          ))}
+        </ul>
+        <Button type="submit" disabled={enCours || !droit.admin} className="w-full">
           Envoyer l&apos;invitation
         </Button>
       </form>
@@ -138,8 +148,14 @@ export default function EquipePage() {
             <div className="mt-3">
               <Segment
                 valeur={membre.role}
+                desactive={!droit.admin}
                 onChoisir={async (role) => {
-                  if (role === membre.role) return;
+                  if (role === membre.role || !droit.admin) return;
+                  const soi = membre.email === email;
+                  const phrase = soi
+                    ? `Changer votre propre rôle en ${role} ?`
+                    : `Donner le rôle ${role} à ${membre.email} ?`;
+                  if (!window.confirm(phrase)) return;
                   try {
                     const misAJour = await changerRole(membre.email, role);
                     retenir(misAJour);
@@ -149,6 +165,45 @@ export default function EquipePage() {
                 }}
               />
             </div>
+            {droit.admin && membre.email !== email && (
+              <div className="mt-2 flex gap-2">
+                {membre.statut !== "actif" && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        const renvoye = await inviterMembre(membre.email, membre.role);
+                        retenir(renvoye);
+                      } catch (exception) {
+                        setErreur(exception instanceof Error ? exception.message : "Échec du renvoi.");
+                      }
+                    }}
+                  >
+                    Renvoyer
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-danger"
+                  onClick={async () => {
+                    if (!window.confirm(`Retirer l'accès de ${membre.email} ?`)) return;
+                    try {
+                      await retirerMembre(membre.email);
+                      requeteCourante.current += 1;
+                      setMembres((actuel) => actuel?.filter((ligne) => ligne.email !== membre.email) ?? null);
+                    } catch (exception) {
+                      setErreur(exception instanceof Error ? exception.message : "Échec du retrait.");
+                    }
+                  }}
+                >
+                  Retirer l&apos;accès
+                </Button>
+              </div>
+            )}
           </li>
         ))}
       </ul>
@@ -160,9 +215,11 @@ export default function EquipePage() {
 function Segment({
   valeur,
   onChoisir,
+  desactive = false,
 }: {
   valeur: RoleMembre;
   onChoisir: (role: RoleMembre) => void;
+  desactive?: boolean;
 }) {
   return (
     <div className="flex w-full overflow-hidden rounded-md border border-border">
@@ -171,8 +228,10 @@ function Segment({
           key={role.id}
           type="button"
           title={role.detail}
+          aria-pressed={valeur === role.id}
+          disabled={desactive}
           onClick={() => onChoisir(role.id)}
-          className={`h-9 flex-1 border-l border-border text-sm first:border-l-0 ${
+          className={`h-9 flex-1 border-l border-border text-sm first:border-l-0 disabled:opacity-50 ${
             valeur === role.id ? "bg-surface-soft font-medium text-ink" : "text-subtle hover:bg-canvas-app"
           }`}
         >

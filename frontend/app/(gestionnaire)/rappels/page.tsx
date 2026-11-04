@@ -13,6 +13,7 @@ import {
   type RegleRappel,
 } from "@/lib/auth-gestionnaire";
 import type { DossierAgregat } from "@/lib/types";
+import { useDroitGestionnaire } from "@/lib/use-droit";
 
 const CANAUX = [
   { id: "sms", libelle: "SMS" },
@@ -20,40 +21,11 @@ const CANAUX = [
   { id: "appel", libelle: "Appel" },
 ];
 
-const PREFAITS: {
-  libelle: string;
-  message: string;
-  canaux: string[];
-  declencheur: string;
-  jours_avant: number | null;
-}[] = [
-  {
-    libelle: "15 jours avant la clôture",
-    message: "La clôture approche. Relis les pièces de l'exercice.",
-    canaux: ["mail"],
-    declencheur: "avant_cloture",
-    jours_avant: 15,
-  },
-  {
-    libelle: "Compte à ouvrir",
-    message: "Ouvre ton compte pour suivre l'exercice.",
-    canaux: ["mail", "sms"],
-    declencheur: "manuel",
-    jours_avant: null,
-  },
-  {
-    libelle: "Pièces à compléter",
-    message: "Il reste des pièces à ajouter avant la clôture.",
-    canaux: ["sms"],
-    declencheur: "manuel",
-    jours_avant: null,
-  },
-];
-
 /** Réglages. Une règle « avant clôture » part seule pour les entreprises
  * concernées. L'envoi réel attend le branchement du canal. */
 export default function RappelsPage() {
   const router = useRouter();
+  const droit = useDroitGestionnaire();
   const [regles, setRegles] = useState<RegleRappel[] | null>(null);
   const [dossiers, setDossiers] = useState<DossierAgregat[]>([]);
   const [libelle, setLibelle] = useState("");
@@ -68,17 +40,7 @@ export default function RappelsPage() {
 
   useEffect(() => {
     listerRegles()
-      .then(async (liste) => {
-        const manquantes = PREFAITS.filter(
-          (modele) => !liste.some((regle) => regle.libelle === modele.libelle),
-        );
-        // Seul un admin crée les règles préfaites ; un membre ou une
-        // lecture voit la liste telle quelle.
-        for (const modele of manquantes) {
-          await creerRegle({ ...modele, portee: "tous" }).catch(() => undefined);
-        }
-        setRegles(manquantes.length > 0 ? await listerRegles() : liste);
-      })
+      .then(setRegles)
       .catch((exception) => {
         if (exception instanceof ErreurAuthGestionnaire) router.replace("/connexion");
         else setErreur("Impossible de charger les rappels.");
@@ -121,6 +83,7 @@ export default function RappelsPage() {
         className="space-y-4 lg:col-span-2"
         onSubmit={(evenement) => {
           evenement.preventDefault();
+          if (!droit.admin) return;
           void ajouter({
             libelle: libelle.trim(),
             message: message.trim(),
@@ -220,7 +183,7 @@ export default function RappelsPage() {
             ))}
           </ul>
         )}
-        <Button type="submit" disabled={enCours || canaux.length === 0}>
+        <Button type="submit" disabled={!droit.admin || enCours || canaux.length === 0}>
           Enregistrer la règle
         </Button>
       </form>
