@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmationGroupee } from "@/components/ConfirmationGroupee";
 import { QuestionCategorisation } from "@/components/QuestionCategorisation";
 import { StationTickets, ticketPrioritaire } from "@/components/StationTickets";
-import { useDossierChauffeur } from "@/app/chauffeur/use-dossier";
+import { useDossierChauffeur, useOperationsChauffeur } from "@/app/chauffeur/use-dossier";
 import { ApiError } from "@/lib/api";
 import { joindreJustificatifChauffeur } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
@@ -27,7 +27,8 @@ export default function DossierChauffeurPage({
   params: Promise<{ dossierId: string }>;
 }) {
   const { dossierId } = use(params);
-  const { dossier, transactions, remplacer, recharger } = useDossierChauffeur(dossierId);
+  const { dossier } = useDossierChauffeur(dossierId);
+  const { transactions, remplacer, recharger } = useOperationsChauffeur(dossierId);
   const [vue, setVue] = useState<"traiter" | "mouvements">("traiter");
   const [moisChoisi, setMoisChoisi] = useState<string | null>(null);
 
