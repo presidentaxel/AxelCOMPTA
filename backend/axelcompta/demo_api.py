@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import dataclasses
 import re
-import time
 import uuid
 from collections.abc import Callable, Sequence
 from collections.abc import Set as AbstractSet
@@ -135,6 +134,8 @@ from axelcompta.ledger.service import LedgerService
 from axelcompta.packs.vtc_demo import charger_compte_par_categorie, charger_regles
 from axelcompta.tenants.affectations import AffectationRepository
 from axelcompta.tenants.affectations_postgres import PostgresAffectationRepository
+from axelcompta.tenants.agregats import AgregatsRepository, AgregatStocke, LigneAgregat
+from axelcompta.tenants.agregats_postgres import PostgresAgregatsRepository
 from axelcompta.tenants.avenants import (
     AvenantRegime,
     AvenantRegimeRepository,
@@ -654,18 +655,16 @@ def _verifier_acces_gestionnaire(
     return identite.tenant_id, identite
 
 
-def _preuves_exercice(signatures: SignatureRepository, dossier_id: DossierId) -> set[str]:
-    """Types de jalons déjà enregistrés pour ce dossier. Une lecture par
-    type : la table est append-only et indexée par dossier."""
-    return {
-        type_document
-        for type_document, _nom in JALONS_EXERCICE
-        if signatures.dernier(dossier_id, type_document) is not None
-    }
+def _preuves_exercice(
+    signatures: SignatureRepository, dossier_ids: Sequence[DossierId]
+) -> dict[DossierId, set[str]]:
+    """Types de jalons déjà enregistrés, par dossier, en une lecture pour
+    tout le portefeuille : la table est append-only et indexée par dossier."""
+    return signatures.types_presents(dossier_ids, [type_ for type_, _nom in JALONS_EXERCICE])
 
 
 def _frises(
-    resume: DossierResume, dossier: Dossier, preuves: set[str]
+    statut_invitation: str | None, dossier: Dossier, preuves: set[str]
 ) -> tuple[int, str, int, str]:
     """doc 19 §2.1 : deux frises, l'exercice en cours et celui d'avant, que
     l'on traite pendant le début de l'année suivante. L'exercice du dossier
@@ -674,29 +673,37 @@ def _frises(
     celui en cours et rien n'est connu de l'exercice d'avant. Retourne
     (année en cours, étape, année d'avant, étape)."""
     fin = dossier.fin_exercice()
-    compte = "Suivi" if resume.statut_invitation == "actif" else "Compte"
+    compte = "Suivi" if statut_invitation == "actif" else "Compte"
     if fin < datetime.now(UTC).date():
-        etape = etape_depuis_preuves(resume.statut_invitation, preuves)
+        etape = etape_depuis_preuves(statut_invitation, preuves)
         return fin.year + 1, compte, fin.year, etape
     return fin.year, compte, fin.year - 1, "Sans exercice"
 
 
-def _agregat(resume: DossierResume, dossier: Dossier, preuves: set[str]) -> DossierAgregat:
+def _agregat(
+    stocke: AgregatStocke,
+    dossier: Dossier,
+    statut_invitation: str | None,
+    preuves: set[str],
+) -> DossierAgregat:
+    """Ce que le gestionnaire voit : les montants gardés en base, et tout ce
+    qui change sans écriture lu à l'affichage (le dossier, l'invitation, les
+    preuves, la date du jour)."""
     annee_courante, etape_courante, annee_precedente, etape_precedente = _frises(
-        resume, dossier, preuves
+        statut_invitation, dossier, preuves
     )
     return DossierAgregat(
-        dossier_id=resume.dossier_id,
-        nom=resume.nom,
-        tva_recettes_regime=resume.tva_recettes_regime,
-        plateformes=resume.plateformes,
-        exercice_debut=resume.exercice_debut,
-        exercice_fin=resume.exercice_fin,
-        ca_ht_cts=resume.ca_ht_cts,
-        charges_cts=resume.charges_cts,
-        resultat_cts=resume.resultat_cts,
-        statut_invitation=resume.statut_invitation,
-        mode_acces_bancaire=resume.mode_acces_bancaire,
+        dossier_id=dossier.id,
+        nom=dossier.nom,
+        tva_recettes_regime=dossier.tva_recettes_regime,
+        plateformes=list(dossier.plateformes),
+        exercice_debut=stocke.exercice_debut,
+        exercice_fin=stocke.exercice_fin,
+        ca_ht_cts=stocke.ca_ht_cts,
+        charges_cts=stocke.charges_cts,
+        resultat_cts=stocke.resultat_cts,
+        statut_invitation=statut_invitation,
+        mode_acces_bancaire=dossier.mode_acces_bancaire,
         forme_juridique=dossier.forme_juridique,
         regime_imposition=dossier.regime_imposition,
         regime_tva=dossier.regime_tva,
@@ -705,7 +712,29 @@ def _agregat(resume: DossierResume, dossier: Dossier, preuves: set[str]) -> Doss
         annee_precedente=annee_precedente,
         etape_precedente=etape_precedente,
         alerte_regime=alerte_option_ir(dossier),
-        alerte_tva=resume.alerte_tva,
+        alerte_tva=stocke.alerte_tva,
+    )
+
+
+def calculer_agregat(
+    dossier: Dossier,
+    base: LedgerService,
+    decisions: DecisionRepository,
+    provisions: ProvisionsClotureRepository,
+) -> AgregatStocke:
+    """Les valeurs qui coûtent, calculées pour un seul dossier : celles que
+    `_resume` met dans `ca_ht_cts`, `charges_cts`, `resultat_cts`,
+    `exercice_debut`, `exercice_fin` et `alerte_tva`, sans ce qu'il lit en
+    plus (invitation, preuves, guide du greffe)."""
+    ledger = _ledger_avec_decisions(dossier, base, decisions)
+    liasse = _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
+    return AgregatStocke(
+        ca_ht_cts=liasse.cases.get("CA_HT", 0),
+        charges_cts=liasse.cases.get("CHARGES", 0),
+        resultat_cts=liasse.cases.get("RESULTAT", 0),
+        exercice_debut=liasse.exercice_debut.isoformat() if liasse.exercice_debut else None,
+        exercice_fin=liasse.exercice_fin.isoformat() if liasse.exercice_fin else None,
+        alerte_tva=_alerte_franchise_tva(dossier, ledger.grand_livre(dossier.id)),
     )
 
 
@@ -1112,6 +1141,15 @@ def get_provisions_cloture() -> ProvisionsClotureRepository:
 ProvisionsDep = Annotated[ProvisionsClotureRepository, Depends(get_provisions_cloture)]
 
 
+def get_agregats() -> AgregatsRepository:
+    """Dépendance FastAPI — agrégats du portefeuille. Surchargée en mémoire
+    dans les tests."""
+    return PostgresAgregatsRepository(_engine())
+
+
+AgregatsDep = Annotated[AgregatsRepository, Depends(get_agregats)]
+
+
 def _trancher(
     dossier: Dossier,
     ecriture_id: str,
@@ -1319,40 +1357,6 @@ def _configurer_contexte_rls(app: FastAPI) -> None:
             return await call_next(request)
 
 
-_DUREE_CACHE_AGREGATS_S = 600
-
-
-def _lire_cache_agregats(app: FastAPI, tenant_id: str) -> list[DossierAgregat] | None:
-    cache: dict[str, tuple[float, list[DossierAgregat]]] | None = getattr(
-        app.state, "cache_agregats", None
-    )
-    if not cache or tenant_id not in cache:
-        return None
-    expire, valeur = cache[tenant_id]
-    if time.monotonic() > expire:
-        del cache[tenant_id]
-        return None
-    return valeur
-
-
-def _ecrire_cache_agregats(app: FastAPI, tenant_id: str, valeur: list[DossierAgregat]) -> None:
-    cache: dict[str, tuple[float, list[DossierAgregat]]] | None = getattr(
-        app.state, "cache_agregats", None
-    )
-    if cache is None:
-        cache = {}
-        app.state.cache_agregats = cache
-    cache[tenant_id] = (time.monotonic() + _DUREE_CACHE_AGREGATS_S, valeur)
-
-
-def _vider_cache_agregats(app: FastAPI, tenant_id: str) -> None:
-    cache: dict[str, tuple[float, list[DossierAgregat]]] | None = getattr(
-        app.state, "cache_agregats", None
-    )
-    if cache is not None:
-        cache.pop(str(tenant_id), None)
-
-
 def _enregistrer_routes_parametres_demo(app: FastAPI) -> None:
     @app.get("/demo/parametres", response_model=ParametresDemoVue)
     def lire_parametres_demo(request: Request, identite: IdentiteDep) -> ParametresDemoVue:
@@ -1368,6 +1372,26 @@ def _enregistrer_routes_parametres_demo(app: FastAPI) -> None:
         return corps
 
 
+def _agregat_du_dossier(
+    dossier: Dossier,
+    ligne: LigneAgregat | None,
+    base: LedgerService,
+    decisions: DecisionRepository,
+    provisions: ProvisionsClotureRepository,
+    agregats: AgregatsRepository,
+) -> AgregatStocke:
+    """Le dossier est relu depuis la base ; seul un dossier périmé, ou jamais
+    calculé, est recalculé. Si une écriture l'a périmé pendant le calcul, le
+    résultat est servi mais pas gardé (voir `AgregatsRepository.enregistrer`)."""
+    if ligne is not None and ligne.valeur is not None:
+        return ligne.valeur
+    valeur = calculer_agregat(dossier, base, decisions, provisions)
+    agregats.enregistrer(
+        dossier.tenant_id, dossier.id, valeur, None if ligne is None else ligne.version
+    )
+    return valeur
+
+
 def _agregats_portefeuille(
     dossiers: Sequence[Dossier],
     base: LedgerService,
@@ -1375,56 +1399,58 @@ def _agregats_portefeuille(
     comptes: CompteRepository,
     signatures: SignatureRepository,
     provisions: ProvisionsClotureRepository,
-    branche: bool,
+    agregats: AgregatsRepository,
 ) -> list[DossierAgregat]:
-    return [
-        _agregat(
-            _resume(
+    """Une lecture des agrégats gardés, une lecture des comptes (Supabase,
+    tous les dossiers d'un coup), puis par dossier ce qui change sans
+    écriture : les preuves de l'exercice et la date du jour."""
+    ids = [dossier.id for dossier in dossiers]
+    lignes = agregats.lire(ids)
+    invitations = comptes.statuts(ids)
+    preuves = _preuves_exercice(signatures, ids)
+    resultat: list[DossierAgregat] = []
+    for dossier in dossiers:
+        invitation = invitations.get(dossier.id)
+        resultat.append(
+            _agregat(
+                _agregat_du_dossier(
+                    dossier, lignes.get(dossier.id), base, decisions, provisions, agregats
+                ),
                 dossier,
-                _ledger_avec_decisions(dossier, base, decisions),
-                comptes,
-                signatures,
-                branche,
-                _provisions_saisies(dossier, provisions),
-            ),
-            dossier,
-            _preuves_exercice(signatures, dossier.id),
+                _statut_invitation_vue(invitation.statut) if invitation else None,
+                preuves.get(dossier.id, set()),
+            )
         )
-        for dossier in dossiers
-    ]
+    return resultat
 
 
 def _enregistrer_routes_dossiers(app: FastAPI) -> None:
     @app.get("/dossiers", response_model=list[DossierAgregat])
     def lister_dossiers(
-        request: Request,
         dossiers: DossiersDep,
         base: LedgerBaseDep,
         decisions: DecisionsDep,
         comptes: ComptesDep,
         signatures: SignaturesInpiDep,
         provisions: ProvisionsDep,
+        agregats: AgregatsDep,
         identite: IdentiteDep,
     ) -> list[DossierAgregat]:
         """Vue gestionnaire (doc 19 §2.1) : agrégats des dossiers **de son
-        portefeuille** seulement (`tenant_id` du jeton), rien d'autre.
-        Les montants changent peu : on les garde dix minutes par portefeuille."""
+        portefeuille** seulement (`tenant_id` du jeton), rien d'autre. Les
+        montants viennent de la base (`agregats_dossier`, périmés par des
+        triggers) : ouvrir la liste ne reparcourt pas le grand livre de
+        chaque dossier."""
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
-        en_cache = _lire_cache_agregats(request.app, str(tenant_id))
-        if en_cache is not None:
-            return en_cache
-        branche = _digifactory_branche(request.app)
-        agregats = _agregats_portefeuille(
+        return _agregats_portefeuille(
             dossiers.lister_par_tenant(tenant_id),
             base,
             decisions,
             comptes,
             signatures,
             provisions,
-            branche,
+            agregats,
         )
-        _ecrire_cache_agregats(request.app, str(tenant_id), agregats)
-        return agregats
 
     @app.get("/dossiers/{dossier_id}", response_model=DossierResume)
     def obtenir_dossier(
@@ -1471,7 +1497,6 @@ def _enregistrer_routes_revue(app: FastAPI) -> None:
 
     @app.post("/dossiers/{dossier_id}/decisions-groupees", response_model=list[TransactionVue])
     def trancher_en_groupe(
-        request: Request,
         entree: DecisionsGroupeesEntree,
         dossier: DossierDep,
         base: LedgerBaseDep,
@@ -1487,7 +1512,6 @@ def _enregistrer_routes_revue(app: FastAPI) -> None:
         ecritures = _trancher_groupe(
             dossier, entree, base, decisions, propositions, identite.user_id
         )
-        _vider_cache_agregats(request.app, str(dossier.tenant_id))
         avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
         return [_transaction_vue(e, e.id in avec_photo, annulee=False) for e in ecritures]
 
@@ -1498,7 +1522,6 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
         response_model=TransactionVue,
     )
     def trancher_transaction(
-        request: Request,
         ecriture_id: str,
         entree: DecisionEntree,
         dossier: DossierDep,
@@ -1515,8 +1538,6 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
         ecriture = _trancher(
             dossier, ecriture_id, entree.categorie, base, decisions, propositions, identite.user_id
         )
-        # Le résultat de l'agrégat change : la liste gestionnaire se recalcule.
-        _vider_cache_agregats(request.app, str(dossier.tenant_id))
         # `_trancher` refuse une écriture contre-passée : celle-ci ne l'est pas.
         return _transaction_vue(
             ecriture,
@@ -1728,7 +1749,6 @@ def _enregistrer_routes_portefeuille(app: FastAPI) -> None:
 
     @app.post("/dossiers/{dossier_id}/retirer")
     def retirer_dossier(
-        request: Request,
         dossier: DossierPortefeuilleDep,
         dossiers: DossiersDep,
         identite: IdentiteDep,
@@ -1736,7 +1756,6 @@ def _enregistrer_routes_portefeuille(app: FastAPI) -> None:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_admin(identite, tenant_id)
         dossiers.retirer(dossier.id)
-        _vider_cache_agregats(request.app, str(tenant_id))
         return {"dossier_id": dossier.id}
 
 
@@ -1988,7 +2007,6 @@ def _enregistrer_routes_membres(app: FastAPI) -> None:
 def _enregistrer_routes_invitation(app: FastAPI) -> None:
     @app.post("/invitations/en-masse", response_model=InvitationsMasseVue)
     def inviter_en_masse(
-        request: Request,
         entree: InvitationsMasseEntree,
         dossiers: DossiersDep,
         comptes: ComptesDep,
@@ -2002,12 +2020,10 @@ def _enregistrer_routes_invitation(app: FastAPI) -> None:
         _exiger_ecriture(role, "La lecture seule n'invite pas.")
         du_portefeuille = {str(d.id) for d in dossiers.lister_par_tenant(tenant_id)}
         vue = _inviter_en_masse(entree.invitations, du_portefeuille, comptes)
-        _vider_cache_agregats(request.app, str(tenant_id))
         return vue
 
     @app.post("/dossiers/{dossier_id}/inviter", response_model=InvitationVue)
     def inviter_chauffeur(
-        request: Request,
         entree: InvitationEntree,
         dossier: DossierPortefeuilleDep,
         comptes: ComptesDep,
@@ -2022,7 +2038,6 @@ def _enregistrer_routes_invitation(app: FastAPI) -> None:
             invitation = comptes.inviter(dossier.id, entree.email)
         except CompteDejaInviteError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        _vider_cache_agregats(request.app, str(dossier.tenant_id))
         return InvitationVue(
             dossier_id=invitation.dossier_id,
             email=invitation.email,
@@ -2255,7 +2270,6 @@ def _enregistrer_routes_greffe_inpi(app: FastAPI) -> None:
 
     @app.post("/dossiers/{dossier_id}/greffe-inpi/signature", response_model=SignatureGreffeVue)
     def signer_greffe_inpi(
-        request: Request,
         dossier: DossierDep,
         ledger: LedgerDossierDep,
         signatures: SignaturesInpiDep,
@@ -2271,7 +2285,6 @@ def _enregistrer_routes_greffe_inpi(app: FastAPI) -> None:
         signatures.enregistrer(dossier.id, TYPE_DOCUMENT_GREFFE_INPI, document)
         # Preuve greffe enregistrée. La frise n'avance que si clôture et
         # signature de validation sont déjà là (préfixe, demo_jalons).
-        _vider_cache_agregats(request.app, str(dossier.tenant_id))
         return SignatureGreffeVue(
             dossier_id=dossier.id,
             signe=True,
@@ -2422,7 +2435,6 @@ def _enregistrer_routes_provisions(app: FastAPI) -> None:
 
     @app.put("/dossiers/{dossier_id}/provisions-cloture", response_model=ProvisionsVue)
     def enregistrer_provisions(
-        request: Request,
         corps: ProvisionsVue,
         dossier: DossierDep,
         provisions: ProvisionsDep,
@@ -2431,7 +2443,6 @@ def _enregistrer_routes_provisions(app: FastAPI) -> None:
         _verifier_acces_dossier(dossier.id, identite)
         saisies = _lire_provisions(corps)
         provisions.remplacer(dossier.tenant_id, dossier.id, dossier.fin_exercice().year, saisies)
-        _vider_cache_agregats(request.app, str(dossier.tenant_id))
         return _vue_provisions(saisies)
 
 
@@ -2479,7 +2490,6 @@ def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
 
     @app.post("/dossiers/{dossier_id}/cloture-exercice", response_model=ClotureExerciceVue)
     def valider_cloture(
-        request: Request,
         corps: ValidationClotureEntree,
         dossier: DossierDep,
         ledger: LedgerBaseDep,
@@ -2499,7 +2509,6 @@ def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
         passage = _passage_cloture(dossier, ledger, decisions, avenants, provisions)
         maintenant = datetime.now(UTC).replace(tzinfo=None)
         executer_passage(passage, ledger, dossiers, exercices, maintenant, identite.user_id, texte)
-        _vider_cache_agregats(request.app, str(dossier.tenant_id))
         return ClotureExerciceVue(
             possible=False,
             raison="Exercice clos.",
@@ -2852,7 +2861,6 @@ def _enregistrer_routes_demo(app: FastAPI) -> None:
 
     @app.post("/demo/reinitialiser", response_model=RemiseANeufVue)
     def reinitialiser(
-        request: Request,
         entree: RemiseANeufEntree,
         identite: IdentiteDep,
         role: RoleMembreDep,
@@ -2865,7 +2873,6 @@ def _enregistrer_routes_demo(app: FastAPI) -> None:
         if not parties or not parties <= CLES_PARTIES:
             raise HTTPException(status_code=400, detail="Choisis au moins une partie connue.")
         dossiers = reinitialiseur(tenant_id, parties)
-        _vider_cache_agregats(request.app, str(tenant_id))
         return RemiseANeufVue(parties=sorted(parties), dossiers=dossiers)
 
 

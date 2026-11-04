@@ -6,7 +6,20 @@ repository (`DossierRepository.lister_par_tenant`) ; la RLS Postgres de la V1
 
 from __future__ import annotations
 
-from sqlalchemy import JSON, Column, Date, DateTime, ForeignKey, Integer, String, Table, Text
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Table,
+    Text,
+    false,
+)
 
 from axelcompta.core.db import metadata
 
@@ -139,4 +152,24 @@ droits_membre = Table(
     # admin : nom, équipe, retraits, règles. membre : invitations et envois.
     # lecture : consultation seule.
     Column("role", String, nullable=False),
+)
+
+# Agrégats de la vue portefeuille (AXE-566, migration `e7b3d9a15c42`). Périmés
+# par des triggers Postgres à chaque écriture qui les concerne : `version`
+# monte, `a_jour` retombe. Voir `tenants/agregats.py`.
+agregats_dossier = Table(
+    "agregats_dossier",
+    metadata,
+    Column("dossier_id", String, ForeignKey("dossiers.id", ondelete="CASCADE"), primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False, index=True),
+    Column("version", Integer, nullable=False, server_default="0"),
+    Column("a_jour", Boolean, nullable=False, server_default=false()),
+    Column("version_calcul", Integer, nullable=True),
+    Column("ca_ht_cts", BigInteger, nullable=False, server_default="0"),
+    Column("charges_cts", BigInteger, nullable=False, server_default="0"),
+    Column("resultat_cts", BigInteger, nullable=False, server_default="0"),
+    Column("exercice_debut", Date, nullable=True),
+    Column("exercice_fin", Date, nullable=True),
+    Column("alerte_tva", Text, nullable=True),
+    Column("calcule_le", DateTime(timezone=True), nullable=True),
 )
