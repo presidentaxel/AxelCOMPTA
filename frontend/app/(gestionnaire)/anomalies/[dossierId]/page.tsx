@@ -7,10 +7,12 @@ import { useCallback, useEffect, useState } from "react";
 import { InstructionAlerte } from "@/components/InstructionAlerte";
 import { ErreurAuthGestionnaire, instruireAlerte, listerAnomalies } from "@/lib/auth-gestionnaire";
 import type { AlerteAnomalie } from "@/lib/types";
+import { useDroitGestionnaire } from "@/lib/use-droit";
 
 export default function AnomaliesPage() {
   const params = useParams<{ dossierId: string }>();
   const router = useRouter();
+  const droit = useDroitGestionnaire();
   const dossierId = params.dossierId;
   const [alertes, setAlertes] = useState<AlerteAnomalie[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -63,6 +65,7 @@ export default function AnomaliesPage() {
             key={alerte.id}
             alerte={alerte}
             envoi={envoi === alerte.id}
+            lecture={!droit.ecriture}
             onDecider={(decision, commentaire) => void decider(alerte.id, decision, commentaire)}
           />
         ))}

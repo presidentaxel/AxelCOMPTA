@@ -13,6 +13,7 @@ import {
   type RegleRappel,
 } from "@/lib/auth-gestionnaire";
 import type { DossierAgregat } from "@/lib/types";
+import { useDroitGestionnaire } from "@/lib/use-droit";
 
 const CANAUX = [
   { id: "sms", libelle: "SMS" },
@@ -54,6 +55,7 @@ const PREFAITS: {
  * concernées. L'envoi réel attend le branchement du canal. */
 export default function RappelsPage() {
   const router = useRouter();
+  const droit = useDroitGestionnaire();
   const [regles, setRegles] = useState<RegleRappel[] | null>(null);
   const [dossiers, setDossiers] = useState<DossierAgregat[]>([]);
   const [libelle, setLibelle] = useState("");
@@ -121,6 +123,7 @@ export default function RappelsPage() {
         className="space-y-4 lg:col-span-2"
         onSubmit={(evenement) => {
           evenement.preventDefault();
+          if (!droit.admin) return;
           void ajouter({
             libelle: libelle.trim(),
             message: message.trim(),
@@ -220,7 +223,7 @@ export default function RappelsPage() {
             ))}
           </ul>
         )}
-        <Button type="submit" disabled={enCours || canaux.length === 0}>
+        <Button type="submit" disabled={!droit.admin || enCours || canaux.length === 0}>
           Enregistrer la règle
         </Button>
       </form>

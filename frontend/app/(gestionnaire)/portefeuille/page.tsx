@@ -31,6 +31,7 @@ import {
 } from "@/lib/filtres-portefeuille";
 import { formatDate, formatMontant } from "@/lib/format";
 import type { DossierAgregat } from "@/lib/types";
+import { useDroitGestionnaire } from "@/lib/use-droit";
 import { Squelette } from "@/components/Squelette";
 
 type FiltreCompte = "tous" | "sans_compte" | "invite" | "ouvert";
@@ -38,6 +39,7 @@ type FiltreResultat = "tous" | "negatif" | "positif";
 
 export default function PortefeuillePage() {
   const router = useRouter();
+  const droit = useDroitGestionnaire();
   const [dossiers, setDossiers] = useState<DossierAgregat[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [recherche, setRecherche] = useState("");
@@ -273,6 +275,7 @@ export default function PortefeuillePage() {
         <aside className="flex w-96 shrink-0 flex-col overflow-y-auto border-l border-border bg-canvas p-6">
           <div className="flex items-start justify-between gap-4">
             <h2 className="text-lg font-semibold text-ink">{choisi.nom}</h2>
+            {droit.admin && (
             <Button
               type="button"
               variant="ghost"
@@ -282,6 +285,7 @@ export default function PortefeuillePage() {
             >
               Retirer
             </Button>
+            )}
           </div>
           <p className="mt-1 text-sm text-subtle">{libelleCompte(choisi.statut_invitation)}</p>
           <Link
@@ -332,6 +336,7 @@ export default function PortefeuillePage() {
                   type="button"
                   variant="secondary"
                   size="sm"
+                  disabled={!droit.ecriture}
                   onClick={async () => {
                     setInfoRappel(null);
                     try {

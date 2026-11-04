@@ -10,6 +10,7 @@ import {
   obtenirSessionGestionnaire,
   reglerDigifactoryDemo,
 } from "@/lib/auth-gestionnaire";
+import { useDroitGestionnaire } from "@/lib/use-droit";
 
 const PREVUES = [
   {
@@ -34,6 +35,7 @@ const PREVUES = [
  * propose pas de connecter sa banque. Le réglage se change ici. */
 export default function IntegrationsPage() {
   const router = useRouter();
+  const droit = useDroitGestionnaire();
   const [branche, setBranche] = useState<boolean | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
@@ -55,7 +57,10 @@ export default function IntegrationsPage() {
   }, [router]);
 
   async function basculer() {
-    if (branche === null) return;
+    if (branche === null || !droit.ecriture) return;
+    if (branche && !window.confirm("Débrancher Digifactory ? Les entreprises verront « Connecter ma banque ».")) {
+      return;
+    }
     setEnCours(true);
     setErreur(null);
     try {
@@ -94,7 +99,7 @@ export default function IntegrationsPage() {
           <Button
             type="button"
             variant="secondary"
-            disabled={branche === null || enCours}
+            disabled={branche === null || enCours || !droit.ecriture}
             onClick={basculer}
           >
             {branche === null ? "…" : branche ? "Débrancher" : "Brancher"}

@@ -13,6 +13,7 @@ import {
   obtenirSessionGestionnaire,
   renommerPortefeuille,
 } from "@/lib/auth-gestionnaire";
+import { useDroitGestionnaire } from "@/lib/use-droit";
 
 const LIENS = [
   { href: "/portefeuille", libelle: "Entreprises", Icone: LayoutGrid },
@@ -25,6 +26,7 @@ const LIENS = [
 
 export function Sidebar() {
   const chemin = usePathname();
+  const droit = useDroitGestionnaire();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [nom, setNom] = useState("Organisation");
@@ -70,8 +72,9 @@ export function Sidebar() {
             value={nom}
             onChange={(evenement) => setNom(evenement.target.value)}
             onBlur={enregistrerNom}
+            readOnly={!droit.admin}
             aria-label="Nom de l'organisation"
-            className="w-full truncate bg-transparent text-sm font-semibold text-ink outline-none"
+            className="w-full truncate bg-transparent text-sm font-semibold text-ink outline-none read-only:cursor-default"
           />
           <span className="block text-xs text-subtle">Organisation</span>
         </span>
