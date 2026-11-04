@@ -119,3 +119,84 @@ def test_un_modele_calibre_propose_et_fixe_le_seuil_par_categorie() -> None:
     proposition = pipeline.categoriser(DossierId("d1"), _transaction("SANEF A10"))
     assert proposition.categorie == "peage_stationnement"
     assert proposition.seuil_imputation == 0.95
+
+
+class _ModeleCompteur(_ModeleBidon):
+    """Compte les lignes qui arrivent jusqu'au modèle."""
+
+    def __init__(self) -> None:
+        self.lignes = 0
+
+    def predict_proba(self, x: list[str]) -> list[list[float]]:
+        self.lignes += len(x)
+        return super().predict_proba(x)
+
+
+def _transaction_numero(
+    identifiant: str, libelle: str, montant_cts: int = -4_500
+) -> NormalizedTransaction:
+    return dataclasses.replace(_transaction(libelle, montant_cts), id=TransactionId(identifiant))
+
+
+def test_une_operation_deja_vue_ne_repasse_ni_par_les_regles_ni_par_le_modele() -> None:
+    modele = _ModeleCompteur()
+    pipeline = RulesAndMlPipeline(regles=REGLES_TEST, modele=modele)
+    premiere = pipeline.categoriser_lot(DossierId("d1"), [_transaction("SANEF A10")])
+    assert modele.lignes == 1
+    seconde = pipeline.categoriser_lot(DossierId("d2"), [_transaction_numero("tx2", "SANEF A10")])
+    assert modele.lignes == 1
+    assert seconde == [
+        dataclasses.replace(
+            premiere[0], dossier_id=DossierId("d2"), transaction_id=TransactionId("tx2")
+        )
+    ]
+
+
+def test_le_meme_libelle_n_est_calcule_qu_une_fois_dans_un_lot() -> None:
+    modele = _ModeleCompteur()
+    pipeline = RulesAndMlPipeline(regles=REGLES_TEST, modele=modele)
+    lot = [_transaction_numero(f"tx{i}", "SANEF A10") for i in range(3)]
+    propositions = pipeline.categoriser_lot(DossierId("d1"), lot)
+    assert modele.lignes == 1
+    assert [p.transaction_id for p in propositions] == ["tx0", "tx1", "tx2"]
+    assert {p.categorie for p in propositions} == {"peage_stationnement"}
+
+
+def test_un_autre_montant_est_recalcule() -> None:
+    """Le sens du montant peut changer la proposition : il fait partie de la clé."""
+    modele = _ModeleCompteur()
+    pipeline = RulesAndMlPipeline(regles=REGLES_TEST, modele=modele)
+    pipeline.categoriser_lot(DossierId("d1"), [_transaction("SANEF A10", -4_500)])
+    pipeline.categoriser_lot(DossierId("d1"), [_transaction("SANEF A10", 4_500)])
+    assert modele.lignes == 2
+
+
+def test_avec_ou_sans_memoire_les_propositions_sont_les_memes() -> None:
+    lot = [
+        _transaction_numero("a", "CB TOTAL A6"),
+        _transaction_numero("b", "SANEF A10"),
+        _transaction_numero("c", "SANEF A10"),
+        _transaction_numero("d", "CB TOTAL A6", -9_000),
+    ]
+    pipeline = RulesAndMlPipeline(regles=REGLES_TEST, modele=_ModeleBidon())
+    attendu = [
+        RulesAndMlPipeline(regles=REGLES_TEST, modele=_ModeleBidon()).categoriser(
+            DossierId("d1"), transaction
+        )
+        for transaction in lot
+    ]
+    assert pipeline.categoriser_lot(DossierId("d1"), lot) == attendu
+    assert pipeline.categoriser_lot(DossierId("d1"), lot) == attendu
+
+
+def test_la_memoire_est_bornee(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("axelcompta.categorize.rules_and_ml.CAPACITE_MEMOIRE", 2)
+    modele = _ModeleCompteur()
+    pipeline = RulesAndMlPipeline(regles=REGLES_TEST, modele=modele)
+    for libelle in ("SANEF A10", "SANEF A11", "SANEF A12"):
+        pipeline.categoriser_lot(DossierId("d1"), [_transaction(libelle)])
+    assert modele.lignes == 3
+    pipeline.categoriser_lot(DossierId("d1"), [_transaction("SANEF A10")])  # oubliée
+    assert modele.lignes == 4
+    pipeline.categoriser_lot(DossierId("d1"), [_transaction("SANEF A12")])  # encore là
+    assert modele.lignes == 4
