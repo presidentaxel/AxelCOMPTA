@@ -225,6 +225,7 @@ export async function lireFileExpert(): Promise<FileExpert> {
   return (await reponse.json()) as FileExpert;
 }
 
+/** Impute l'écriture et retourne les sujets à jour de ce dossier seul. */
 export async function imputerExpert(
   dossierId: string,
   ecritureId: string,

@@ -122,6 +122,7 @@ export type ImputationFaite = {
   ecriture_id: string;
   contrepassation_id: string;
   lignes: LigneImputation[];
+  sujets: SujetExpert[];
 };
 
 export type FileExpert = {
