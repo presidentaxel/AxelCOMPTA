@@ -1707,7 +1707,7 @@ RoleMembreDep = Annotated[str, Depends(get_role_membre)]
 
 def _exiger_ecriture(role: str, detail: str) -> None:
     """doc 19 §2.1 : Lecture consulte, n'invite pas et ne relance pas."""
-    if role == "lecture":
+    if role in {"lecture", "retire"}:
         raise HTTPException(status_code=403, detail=detail)
 
 
@@ -2072,14 +2072,19 @@ def _enregistrer_routes_membres(app: FastAPI) -> None:
     @app.get("/portefeuille/membres", response_model=list[MembrePortefeuille])
     def lister_membres(comptes: ComptesDep, identite: IdentiteDep) -> list[MembrePortefeuille]:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
-        return [
-            MembrePortefeuille(
-                email=membre.email,
-                role=_role_membre(tenant_id, membre.email),
-                statut="actif" if membre.accepte else "invité",
+        vues: list[MembrePortefeuille] = []
+        for membre in comptes.membres(str(tenant_id)):
+            role = _role_membre(tenant_id, membre.email)
+            if role == "retire":
+                continue
+            vues.append(
+                MembrePortefeuille(
+                    email=membre.email,
+                    role=role,
+                    statut="actif" if membre.accepte else "invité",
+                )
             )
-            for membre in comptes.membres(str(tenant_id))
-        ]
+        return vues
 
     @app.post("/portefeuille/membres", response_model=MembrePortefeuille)
     def inviter_membre(
@@ -2113,6 +2118,29 @@ def _enregistrer_routes_membres(app: FastAPI) -> None:
         return MembrePortefeuille(
             email=email, role=entree.role, statut=_statut_membre(comptes, str(tenant_id), email)
         )
+
+    app.delete("/portefeuille/membres", status_code=204)(retirer_membre)
+
+
+def retirer_membre(
+    entree: InvitationMembreEntree, comptes: ComptesDep, identite: IdentiteDep
+) -> None:
+    """Garde la ligne de droit : sans ligne, `_role_membre` rendrait le compte admin."""
+    tenant_id, identite = _verifier_acces_gestionnaire(identite)
+    _exiger_admin(identite, tenant_id)
+    email = entree.email.strip().lower()
+    if email == identite.email.lower():
+        raise HTTPException(
+            status_code=400, detail="Vous ne pouvez pas retirer votre propre accès."
+        )
+    admins = [
+        membre.email
+        for membre in comptes.membres(str(tenant_id))
+        if _role_membre(tenant_id, membre.email) == "admin"
+    ]
+    if email in [admin.lower() for admin in admins] and len(admins) <= 1:
+        raise HTTPException(status_code=400, detail="Il reste un seul administrateur.")
+    _ecrire_role(tenant_id, email, "retire")
 
 
 def _enregistrer_routes_invitation(app: FastAPI) -> None:

@@ -487,6 +487,18 @@ export async function declencherRappel(regleId: string, dossierId: string): Prom
   }
 }
 
+export async function retirerMembre(email: string): Promise<void> {
+  const reponse = await requeteGestionnaire("/portefeuille/membres", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  if (!reponse.ok) {
+    const corps = (await reponse.json().catch(() => ({}))) as { detail?: string };
+    throw new ApiError(corps.detail ?? "Impossible de retirer cet accès.", reponse.status);
+  }
+}
+
 export async function changerRole(email: string, role: RoleMembre): Promise<MembrePortefeuille> {
   const reponse = await requeteGestionnaire("/portefeuille/membres", {
     method: "PATCH",

@@ -33,6 +33,7 @@ import {
 } from "@/lib/filtres-portefeuille";
 import { formatDate, formatMontant } from "@/lib/format";
 import type { DossierAgregat } from "@/lib/types";
+import { useDroitGestionnaire } from "@/lib/use-droit";
 import { Squelette } from "@/components/Squelette";
 
 type FiltreCompte = "tous" | "sans_compte" | "invite" | "ouvert";
@@ -44,6 +45,7 @@ export function EcranEntreprises() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
+  const droit = useDroitGestionnaire();
   const [dossiers, setDossiers] = useState<DossierAgregat[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const recherche = params.get("q") ?? "";
@@ -183,19 +185,21 @@ export function EcranEntreprises() {
                 className="flex items-center justify-between border-b border-hairline py-2"
               >
                 <span className="text-sm text-ink">{dossier.nom}</span>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    void restaurerDossier(dossier.dossier_id).then(async () => {
-                      setRetires(await listerDossiersRetires());
-                      charger();
-                    });
-                  }}
-                >
-                  Remettre
-                </Button>
+                {droit.admin && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      void restaurerDossier(dossier.dossier_id).then(async () => {
+                        setRetires(await listerDossiersRetires());
+                        charger();
+                      });
+                    }}
+                  >
+                    Remettre
+                  </Button>
+                )}
               </li>
             ))}
           </ul>
@@ -394,15 +398,17 @@ export function EcranEntreprises() {
           <div className="flex shrink-0 items-start justify-between gap-4 p-6 pb-4">
             <h2 className="min-w-0 truncate text-lg font-semibold text-ink">{choisi.nom}</h2>
             <span className="flex shrink-0 flex-nowrap gap-1">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="text-danger"
-                onClick={() => setConfirmerRetrait(true)}
-              >
-                Retirer
-              </Button>
+              {droit.admin && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-danger"
+                  onClick={() => setConfirmerRetrait(true)}
+                >
+                  Retirer
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="ghost"
@@ -464,6 +470,7 @@ export function EcranEntreprises() {
                     type="button"
                     variant="secondary"
                     size="sm"
+                    disabled={!droit.ecriture}
                     onClick={async () => {
                       setInfoRappel(null);
                       try {

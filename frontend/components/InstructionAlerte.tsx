@@ -18,10 +18,12 @@ const SUITE: Record<AlerteAnomalie["etat"], string> = {
 export function InstructionAlerte({
   alerte,
   envoi,
+  lecture = false,
   onDecider,
 }: {
   alerte: AlerteAnomalie;
   envoi: boolean;
+  lecture?: boolean;
   onDecider: (decision: AlerteAnomalie["etat"], commentaire: string) => void;
 }) {
   return (
@@ -41,14 +43,14 @@ export function InstructionAlerte({
         <Button
           type="button"
           className="mt-3"
-          disabled={envoi}
+          disabled={envoi || lecture}
           onClick={() => onDecider("en_instruction", "")}
         >
           Prendre en instruction
         </Button>
       )}
       {alerte.etat === "en_instruction" && (
-        <Qualification alerteId={alerte.id} envoi={envoi} onDecider={onDecider} />
+        <Qualification alerteId={alerte.id} envoi={envoi || lecture} onDecider={onDecider} />
       )}
     </article>
   );

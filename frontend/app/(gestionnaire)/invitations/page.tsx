@@ -13,11 +13,13 @@ import {
 import { libelleCompte } from "@/lib/dossier-libelles";
 import type { DossierAgregat } from "@/lib/types";
 import { Squelette } from "@/components/Squelette";
+import { useDroitGestionnaire } from "@/lib/use-droit";
 
 /** Une ligne par entreprise sans compte, plus un collage pour plusieurs.
  * Plus de liste déroulante : l'e-mail se saisit en face du nom. */
 export default function InvitationsPage() {
   const router = useRouter();
+  const droit = useDroitGestionnaire();
   const [dossiers, setDossiers] = useState<DossierAgregat[] | null>(null);
   const [emails, setEmails] = useState<Record<string, string>>({});
   const [cible, setCible] = useState("");
@@ -89,7 +91,7 @@ export default function InvitationsPage() {
           placeholder="E-mail"
           className="max-w-64"
         />
-        <Button type="submit" disabled={!cible || enCours !== null}>
+        <Button type="submit" disabled={!cible || enCours !== null || !droit.ecriture}>
           Inviter
         </Button>
       </form>
@@ -120,7 +122,7 @@ export default function InvitationsPage() {
               <Button
                 type="button"
                 size="sm"
-                disabled={enCours === dossier.dossier_id || !(emails[dossier.dossier_id] ?? "").includes("@")}
+                disabled={!droit.ecriture || enCours === dossier.dossier_id || !(emails[dossier.dossier_id] ?? "").includes("@")}
                 onClick={async () => {
                   setEnCours(dossier.dossier_id);
                   setErreur(null);
