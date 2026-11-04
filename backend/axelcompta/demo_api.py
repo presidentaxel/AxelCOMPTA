@@ -3029,51 +3029,47 @@ def _comptes_expert() -> list[CompteChoix]:
     return [CompteChoix(compte=compte, libelle=libelle_compte(compte)) for compte in comptes]
 
 
-def _sujets_expert(
+def _sujet_depuis_vue(dossier: Dossier, vue: TransactionVue) -> SujetExpertVue | None:
+    if vue.statut == "à trancher":
+        return _sujet(
+            dossier,
+            f"trancher:{vue.ecriture_id}",
+            "chauffeur",
+            "a_trancher",
+            vue.libelle,
+            "Écriture en attente, côté chauffeur",
+            vue.montant_cts,
+            vue.ecriture_id,
+            _compte_chiffre(vue.compte),
+            _compte_suggere(vue.proposition),
+        )
+    if not _ticket_necessaire(vue):
+        return None
+    return _sujet(
+        dossier,
+        f"ticket:{vue.ecriture_id}",
+        "chauffeur",
+        "ticket",
+        vue.libelle,
+        "Ticket manquant pour classer la dépense",
+        vue.montant_cts,
+        vue.ecriture_id,
+        _compte_chiffre(vue.compte),
+        _compte_suggere(vue.proposition),
+    )
+
+
+def _sujets_anomalies(
     dossier: Dossier,
-    base: LedgerService,
+    ledger: InMemoryLedgerService,
     decisions: DecisionRepository,
     justificatifs: JustificatifRepository,
     registre: RegistreInstructions,
+    exclues: frozenset[EcritureId],
 ) -> list[SujetExpertVue]:
-    ledger = _ledger_avec_decisions(dossier, base, decisions)
-    vues = _vues_dossier(dossier, ledger, justificatifs)
-    exclues = annulees(ledger.grand_livre(dossier.id))
     sujets: list[SujetExpertVue] = []
-    for vue in vues:
-        if EcritureId(vue.ecriture_id) in exclues:
-            continue
-        if vue.statut == "à trancher":
-            sujets.append(
-                _sujet(
-                    dossier,
-                    f"trancher:{vue.ecriture_id}",
-                    "chauffeur",
-                    "a_trancher",
-                    vue.libelle,
-                    "Écriture en attente, côté chauffeur",
-                    vue.montant_cts,
-                    vue.ecriture_id,
-                    _compte_chiffre(vue.compte),
-                    _compte_suggere(vue.proposition),
-                )
-            )
-        elif _ticket_necessaire(vue):
-            sujets.append(
-                _sujet(
-                    dossier,
-                    f"ticket:{vue.ecriture_id}",
-                    "chauffeur",
-                    "ticket",
-                    vue.libelle,
-                    "Ticket manquant pour classer la dépense",
-                    vue.montant_cts,
-                    vue.ecriture_id,
-                    _compte_chiffre(vue.compte),
-                    _compte_suggere(vue.proposition),
-                )
-            )
-    for alerte in _alertes_du_ledger(dossier, ledger, decisions, justificatifs).values():
+    alertes = _alertes_du_ledger(dossier, ledger, decisions, justificatifs)
+    for alerte in alertes.values():
         if alerte.ecriture_id in exclues:
             continue
         if registre.etat(alerte.id) not in ("ouverte", "en_instruction"):
@@ -3090,6 +3086,25 @@ def _sujets_expert(
                 str(alerte.ecriture_id),
             )
         )
+    return sujets
+
+
+def _sujets_expert(
+    dossier: Dossier,
+    base: LedgerService,
+    decisions: DecisionRepository,
+    justificatifs: JustificatifRepository,
+    registre: RegistreInstructions,
+) -> list[SujetExpertVue]:
+    ledger = _ledger_avec_decisions(dossier, base, decisions)
+    exclues = annulees(ledger.grand_livre(dossier.id))
+    sujets = [
+        sujet
+        for vue in _vues_dossier(dossier, ledger, justificatifs)
+        if EcritureId(vue.ecriture_id) not in exclues
+        if (sujet := _sujet_depuis_vue(dossier, vue)) is not None
+    ]
+    sujets.extend(_sujets_anomalies(dossier, ledger, decisions, justificatifs, registre, exclues))
     return sujets
 
 
