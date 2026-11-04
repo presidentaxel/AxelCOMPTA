@@ -1994,6 +1994,7 @@ REGLES_PREFAITES: tuple[dict[str, object], ...] = (
     },
 )
 
+
 def _assurer_regles_prefaites(tenant_id: TenantId) -> None:
     """Crée les règles manquantes. `ON CONFLICT DO NOTHING` : un second
     appel, même concurrent, ne rajoute aucune ligne."""
