@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { Aide, POURQUOI_RIEN_N_EST_ENVOYE } from "@/components/Aide";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -451,7 +452,10 @@ export function EcranEntreprises() {
             )}
           </dl>
           <div className="mt-8">
-            <p className="text-sm font-medium text-ink">Rappels</p>
+            <p className="text-sm font-medium text-ink">
+              Rappels
+              <Aide texte={POURQUOI_RIEN_N_EST_ENVOYE} />
+            </p>
             {regles.length === 0 && (
               <p className="mt-2 text-sm text-subtle">
                 Aucune règle. Elles se préparent dans Rappels.

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { Aide, POURQUOI_RIEN_N_EST_ENVOYE } from "@/components/Aide";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -93,6 +94,7 @@ export default function RappelsPage() {
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Rappels</h1>
       <p className="mt-2 text-sm text-subtle">
         Les relances se préparent ici. L&apos;envoi n&apos;est pas branché : aucun SMS, e-mail ou appel ne part.
+        <Aide texte={POURQUOI_RIEN_N_EST_ENVOYE} />
       </p>
 
       <div className="mt-8 grid items-start gap-12 lg:grid-cols-3">
@@ -288,7 +290,9 @@ export default function RappelsPage() {
               {regle.portee === "selection" ? `${regle.dossier_ids.length} entreprise(s)` : "Toutes"}
               {" · "}
               {regle.actif ? "Active" : "Suspendue"}
-              {" · Envoi non branché · "}
+              {" · Envoi non branché"}
+              <Aide texte={POURQUOI_RIEN_N_EST_ENVOYE} />
+              {" · "}
               {regle.canaux.map(libelleCanal).join(", ")}
             </p>
           </li>
