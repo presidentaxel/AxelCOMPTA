@@ -738,6 +738,19 @@ def calculer_agregat(
     )
 
 
+def _vues_dossier(
+    dossier: Dossier,
+    ledger: InMemoryLedgerService,
+    justificatifs: JustificatifRepository,
+) -> list[TransactionVue]:
+    """Une vue par écriture, sans proposition. La file expert n'en affiche
+    aucune : elle ne paie pas leur calcul."""
+    ecritures = ledger.grand_livre(dossier.id)
+    exclues = annulees(ecritures)
+    avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
+    return [_transaction_vue(e, e.id in avec_photo, e.id in exclues) for e in ecritures]
+
+
 def _transactions_dossier(
     dossier: Dossier,
     ledger: InMemoryLedgerService,
@@ -746,10 +759,7 @@ def _transactions_dossier(
     pipeline: RulesAndMlPipeline | None = None,
 ) -> list[TransactionVue]:
     """Extrait de la route (doc 08 §2 : longueur de fonction)."""
-    ecritures = ledger.grand_livre(dossier.id)
-    exclues = annulees(ecritures)
-    avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
-    vues = [_transaction_vue(e, e.id in avec_photo, e.id in exclues) for e in ecritures]
+    vues = _vues_dossier(dossier, ledger, justificatifs)
     return _avec_propositions(dossier, vues, decisions, pipeline)
 
 
@@ -2879,6 +2889,18 @@ def _alerte_vue(alerte: Alerte, etat: str) -> AlerteAnomalieVue:
     )
 
 
+def _alertes_du_ledger(
+    dossier: Dossier,
+    ledger: InMemoryLedgerService,
+    decisions: DecisionRepository,
+    justificatifs: JustificatifRepository,
+) -> dict[str, Alerte]:
+    """Les alertes d'un ledger déjà construit avec les décisions : qui en a
+    déjà un ne le relit pas en base."""
+    mouvements = _mouvements_surveilles(dossier, ledger, justificatifs, decisions)
+    return {alerte.id: alerte for alerte in analyser(mouvements)}
+
+
 def _alertes_du_dossier(
     dossier: Dossier,
     base: LedgerService,
@@ -2886,8 +2908,7 @@ def _alertes_du_dossier(
     justificatifs: JustificatifRepository,
 ) -> dict[str, Alerte]:
     ledger = _ledger_avec_decisions(dossier, base, decisions)
-    mouvements = _mouvements_surveilles(dossier, ledger, justificatifs, decisions)
-    return {alerte.id: alerte for alerte in analyser(mouvements)}
+    return _alertes_du_ledger(dossier, ledger, decisions, justificatifs)
 
 
 def _enregistrer_routes_anomalies(app: FastAPI) -> None:
@@ -2971,8 +2992,7 @@ def _sujets_expert(
     registre: RegistreInstructions,
 ) -> list[SujetExpertVue]:
     ledger = _ledger_avec_decisions(dossier, base, decisions)
-    prises = decisions.lister_decisions(dossier.id)
-    vues = _transactions_dossier(dossier, ledger, justificatifs, prises)
+    vues = _vues_dossier(dossier, ledger, justificatifs)
     exclues = annulees(ledger.grand_livre(dossier.id))
     sujets: list[SujetExpertVue] = []
     for vue in vues:
@@ -3004,7 +3024,7 @@ def _sujets_expert(
                     vue.ecriture_id,
                 )
             )
-    for alerte in _alertes_du_dossier(dossier, base, decisions, justificatifs).values():
+    for alerte in _alertes_du_ledger(dossier, ledger, decisions, justificatifs).values():
         if alerte.ecriture_id in exclues:
             continue
         if registre.etat(alerte.id) not in ("ouverte", "en_instruction"):
@@ -3066,14 +3086,20 @@ def _enregistrer_routes_expert(app: FastAPI) -> None:
             sujets.extend(_sujets_expert(dossier, base, decisions, justificatifs, registre))
         return FileExpertVue(sujets=sujets, comptes=_comptes_expert())
 
-    @app.post("/expert/imputations", status_code=204)
+    @app.post("/expert/imputations", response_model=list[SujetExpertVue])
     def imputer_ecriture(
         entree: ImputationEntree,
         dossiers: DossiersDep,
         base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        justificatifs: JustificatifsDep,
+        registre: RegistreAnomaliesDep,
         identite: IdentiteDep,
-    ) -> None:
-        """Pose la contre-passation et la nouvelle écriture. L'originale reste."""
+    ) -> list[SujetExpertVue]:
+        """Pose la contre-passation et la nouvelle écriture. L'originale reste.
+        Retourne les sujets à jour de ce dossier seul : l'imputation en retire
+        un et peut en faire apparaître un (ticket de la nouvelle écriture),
+        sans relire les autres dossiers du portefeuille."""
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
         dossier = dossiers.obtenir(DossierId(entree.dossier_id))
         if dossier is None or dossier.tenant_id != tenant_id:
@@ -3088,6 +3114,7 @@ def _enregistrer_routes_expert(app: FastAPI) -> None:
             raise HTTPException(status_code=400, detail=str(erreur)) from erreur
         base.enregistrer(inverse)
         base.enregistrer(nouvelle)
+        return _sujets_expert(dossier, base, decisions, justificatifs, registre)
 
 
 def create_app() -> FastAPI:

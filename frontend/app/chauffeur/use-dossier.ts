@@ -11,36 +11,35 @@ export type Bloc<T> =
   | { statut: "pret"; valeur: T }
   | { statut: "erreur"; message: string };
 
-/** Charge le dossier du chauffeur connecté. Le résumé et les opérations
- * arrivent chacun à leur tour : l'un n'attend pas l'autre. Une autre
- * adresse que la sienne renvoie vers son dossier. `remplacer` met à jour
- * une opération déjà affichée (photo, réponse) sans recharger la page. */
-export function useDossierChauffeur(dossierId: string): {
-  dossier: Bloc<DossierResume>;
-  transactions: Bloc<TransactionVue[]>;
-  remplacer: (transaction: TransactionVue) => void;
-  recharger: () => void;
-} {
+/** Vrai si la session ouvre ce dossier. Sinon, renvoie vers la connexion ou
+ * vers le dossier du chauffeur : une autre adresse que la sienne ne charge rien. */
+function sessionOuvreLeDossier(dossierId: string, router: ReturnType<typeof useRouter>): boolean {
+  const session = obtenirSession();
+  if (session === null) {
+    router.push("/chauffeur/login");
+    return false;
+  }
+  if (session.dossierId !== dossierId) {
+    router.replace(`/chauffeur/${session.dossierId}`);
+    return false;
+  }
+  return true;
+}
+
+/** Charge le résumé du dossier du chauffeur connecté. Les opérations ont
+ * leur propre chargement (`useOperationsChauffeur`) : les écrans qui n'en ont
+ * pas besoin, comme Exercice et Compte, ne les demandent pas. */
+export function useDossierChauffeur(dossierId: string): { dossier: Bloc<DossierResume> } {
   const router = useRouter();
   const [dossier, setDossier] = useState<Bloc<DossierResume>>({ statut: "en_cours" });
-  const [transactions, setTransactions] = useState<Bloc<TransactionVue[]>>({ statut: "en_cours" });
   const [cle, setCle] = useState(dossierId);
   if (cle !== dossierId) {
     setCle(dossierId);
     setDossier({ statut: "en_cours" });
-    setTransactions({ statut: "en_cours" });
   }
 
   useEffect(() => {
-    const session = obtenirSession();
-    if (session === null) {
-      router.push("/chauffeur/login");
-      return;
-    }
-    if (session.dossierId !== dossierId) {
-      router.replace(`/chauffeur/${session.dossierId}`);
-      return;
-    }
+    if (!sessionOuvreLeDossier(dossierId, router)) return;
     let annule = false;
     fetchAvecAuthChauffeur<DossierResume>(`/dossiers/${dossierId}`)
       .then((valeur) => {
@@ -49,6 +48,33 @@ export function useDossierChauffeur(dossierId: string): {
       .catch(() => {
         if (!annule) setDossier({ statut: "erreur", message: "Impossible de charger le dossier." });
       });
+    return () => {
+      annule = true;
+    };
+  }, [dossierId, router]);
+
+  return { dossier };
+}
+
+/** Charge les opérations du dossier. Seul l'écran Activité s'en sert.
+ * `remplacer` met à jour une opération déjà affichée (photo, réponse) sans
+ * recharger la page. */
+export function useOperationsChauffeur(dossierId: string): {
+  transactions: Bloc<TransactionVue[]>;
+  remplacer: (transaction: TransactionVue) => void;
+  recharger: () => void;
+} {
+  const router = useRouter();
+  const [transactions, setTransactions] = useState<Bloc<TransactionVue[]>>({ statut: "en_cours" });
+  const [cle, setCle] = useState(dossierId);
+  if (cle !== dossierId) {
+    setCle(dossierId);
+    setTransactions({ statut: "en_cours" });
+  }
+
+  useEffect(() => {
+    if (!sessionOuvreLeDossier(dossierId, router)) return;
+    let annule = false;
     fetchAvecAuthChauffeur<TransactionVue[]>(`/dossiers/${dossierId}/transactions`)
       .then((valeur) => {
         if (!annule) setTransactions({ statut: "pret", valeur });
@@ -86,5 +112,5 @@ export function useDossierChauffeur(dossierId: string): {
       .catch(() => undefined);
   }
 
-  return { dossier, transactions, remplacer, recharger };
+  return { transactions, remplacer, recharger };
 }

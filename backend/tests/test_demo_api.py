@@ -32,7 +32,8 @@ import axelcompta.demo_api as demo_api
 import axelcompta.demo_auth as demo_auth
 import axelcompta.demo_seed as demo_seed
 from axelcompta.anomaly.instruction import RegistreInstructions
-from axelcompta.categorize.models import Etage
+from axelcompta.categorize.models import Etage, ProposedEntry
+from axelcompta.categorize.rules_and_ml import RulesAndMlPipeline
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, UserId
 from axelcompta.core.money import Money
 from axelcompta.demo_api import (
@@ -57,6 +58,7 @@ from axelcompta.demo_api import (
     get_justificatifs,
     get_ledger,
     get_notifications,
+    get_pipeline,
     get_propositions,
     get_provisions_cloture,
     get_registre_anomalies,
@@ -69,10 +71,12 @@ from axelcompta.demo_comptes import Invitation
 from axelcompta.demo_comptes_memory import InMemoryCompteRepository
 from axelcompta.demo_justificatifs import InMemoryJustificatifRepository
 from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion
+from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ingestion.providers.chauffeurs_demo import PROFILS_DEMO
 from axelcompta.ledger.contrepassation import contrepasser
 from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
+from axelcompta.packs.vtc_demo import charger_regles
 from axelcompta.tenants.affectations import InMemoryAffectationRepository
 from axelcompta.tenants.agregats import AgregatStocke, InMemoryAgregatsRepository
 from axelcompta.tenants.avenants import InMemoryAvenantRegimeRepository, programmer_bascules
@@ -478,6 +482,40 @@ def test_trancher_est_reflete_par_un_get_ulterieur() -> None:
     ecriture = next(t for t in transactions if t["ecriture_id"] == ecriture_id)
     assert ecriture["statut"] == "validé"
     assert ecriture["compte"] == "455"
+
+
+def test_trancher_ne_relance_pas_la_categorisation_des_autres_lignes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AXE-565 : une décision ne change pas le résultat règles et modèle des
+    lignes restantes ; la lecture suivante le reprend de la mémoire."""
+    client = _client()
+    pipeline = RulesAndMlPipeline(regles=charger_regles())
+    calculees: list[int] = []
+    calculer = pipeline._calculer
+
+    def compter(
+        dossier_id: DossierId, transactions: Sequence[NormalizedTransaction]
+    ) -> list[ProposedEntry]:
+        calculees.append(len(transactions))
+        return calculer(dossier_id, transactions)
+
+    monkeypatch.setattr(pipeline, "_calculer", compter)
+    cast(FastAPI, client.app).dependency_overrides[get_pipeline] = lambda: pipeline
+    en_tete = _en_tete("DEMO_sophie")
+    ecriture_id = _premiere_a_trancher(client, "DEMO_sophie")
+    assert sum(calculees) > 0
+
+    client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/decision",
+        json={"categorie": "usage_personnel"},
+        headers=en_tete,
+    )
+    avant = list(calculees)
+    reponse = client.get("/dossiers/DEMO_sophie/transactions", headers=en_tete)
+
+    assert reponse.status_code == 200
+    assert calculees == avant
 
 
 def test_trancher_diminue_le_compteur_nb_a_trancher() -> None:
@@ -2005,3 +2043,82 @@ def test_la_frise_suit_l_invitation_meme_sans_recalcul(monkeypatch: pytest.Monke
 
     assert apres["DEMO_sophie"]["statut_invitation"] == "invité"
     assert calcules == []
+
+
+def _ledger_du_client(client: TestClient) -> InMemoryLedgerService:
+    """Le ledger que les routes du client lisent (`get_ledger` surchargé)."""
+    app = cast(FastAPI, client.app)
+    return cast(InMemoryLedgerService, app.dependency_overrides[get_ledger]())
+
+
+def test_file_expert_ne_calcule_aucune_proposition(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AXE-567 : la file expert n'affiche aucune proposition, elle ne paie
+    pas leur calcul (TF-IDF sur tout le portefeuille)."""
+
+    def interdit(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("propositions calculées pour la file expert")
+
+    monkeypatch.setattr("axelcompta.demo_api.propositions_apprises", interdit)
+
+    reponse = _client().get("/expert/file", headers=_en_tete_gestionnaire())
+
+    assert reponse.status_code == 200
+    assert "a_trancher" in {sujet["nature"] for sujet in reponse.json()["sujets"]}
+
+
+def test_file_expert_lit_le_grand_livre_une_fois_par_dossier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client()
+    ledger = _ledger_du_client(client)
+    lectures: list[str] = []
+    lire = ledger.grand_livre
+
+    def compter(dossier_id: DossierId) -> tuple[Ecriture, ...]:
+        lectures.append(str(dossier_id))
+        return lire(dossier_id)
+
+    monkeypatch.setattr(ledger, "grand_livre", compter)
+
+    reponse = client.get("/expert/file", headers=_en_tete_gestionnaire())
+
+    assert reponse.status_code == 200
+    assert len(lectures) == len(set(lectures)) == len(PROFILS_DEMO)
+
+
+def _sujets_a_trancher(client: TestClient, dossier_id: str) -> list[dict[str, object]]:
+    sujets = client.get("/expert/file", headers=_en_tete_gestionnaire()).json()["sujets"]
+    return [s for s in sujets if s["dossier_id"] == dossier_id and s["nature"] == "a_trancher"]
+
+
+def test_imputer_retourne_les_sujets_a_jour_du_seul_dossier_impute() -> None:
+    client = _client()
+    avant = _sujets_a_trancher(client, "DEMO_sophie")
+    assert avant
+    cible = avant[0]
+
+    reponse = client.post(
+        "/expert/imputations",
+        json={
+            "dossier_id": "DEMO_sophie",
+            "ecriture_id": cible["ecriture_id"],
+            "compte": "6061",
+        },
+        headers=_en_tete_gestionnaire(),
+    )
+
+    assert reponse.status_code == 200
+    sujets = reponse.json()
+    assert {sujet["dossier_id"] for sujet in sujets} <= {"DEMO_sophie"}
+    assert cible["id"] not in {sujet["id"] for sujet in sujets}
+    relu = client.get("/expert/file", headers=_en_tete_gestionnaire()).json()["sujets"]
+    assert sujets == [s for s in relu if s["dossier_id"] == "DEMO_sophie"]
+
+
+def test_imputer_un_dossier_inconnu_ne_retourne_rien() -> None:
+    reponse = _client().post(
+        "/expert/imputations",
+        json={"dossier_id": "INCONNU", "ecriture_id": "x", "compte": "6061"},
+        headers=_en_tete_gestionnaire(),
+    )
+    assert reponse.status_code == 404
