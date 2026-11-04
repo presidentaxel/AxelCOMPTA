@@ -1,14 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { InvitationsEnMasse } from "@/components/InvitationsEnMasse";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  annulerInvitation,
   ErreurAuthGestionnaire,
   inviterChauffeur,
   listerDossiers,
+  renvoyerInvitation,
 } from "@/lib/auth-gestionnaire";
 import { libelleCompte } from "@/lib/dossier-libelles";
 import type { DossierAgregat } from "@/lib/types";
@@ -22,8 +26,6 @@ export default function InvitationsPage() {
   const droit = useDroitGestionnaire();
   const [dossiers, setDossiers] = useState<DossierAgregat[] | null>(null);
   const [emails, setEmails] = useState<Record<string, string>>({});
-  const [cible, setCible] = useState("");
-  const [emailNouveau, setEmailNouveau] = useState("");
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState<string | null>(null);
 
@@ -48,53 +50,13 @@ export default function InvitationsPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <h1 className="text-[28px] font-bold tracking-tight text-ink">Invitations</h1>
+      <Link href="/portefeuille" className="text-sm font-medium text-primary hover:underline">
+        Retour aux entreprises
+      </Link>
+      <h1 className="mt-4 text-[28px] font-bold tracking-tight text-ink">Invitations</h1>
       <p className="mt-2 text-sm text-subtle">
-        Choisis une entreprise et son e-mail. L&apos;invitation part tout de suite.
+        Un e-mail en face de chaque entreprise. L&apos;invitation part tout de suite.
       </p>
-      <form
-        className="mt-8 flex flex-wrap items-center gap-2"
-        onSubmit={async (evenement) => {
-          evenement.preventDefault();
-          if (!cible) return;
-          setEnCours(cible);
-          setErreur(null);
-          try {
-            await inviterChauffeur(cible, emailNouveau);
-            setEmailNouveau("");
-            charger();
-          } catch (exception) {
-            setErreur(exception instanceof Error ? exception.message : "Échec de l'invitation.");
-          } finally {
-            setEnCours(null);
-          }
-        }}
-      >
-        <select
-          value={cible}
-          onChange={(evenement) => setCible(evenement.target.value)}
-          aria-label="Entreprise à inviter"
-          className="h-9 min-w-48 rounded-md border border-border bg-canvas px-3 text-sm text-ink"
-        >
-          <option value="">Entreprise</option>
-          {(dossiers ?? []).map((dossier) => (
-            <option key={dossier.dossier_id} value={dossier.dossier_id}>
-              {dossier.nom}
-            </option>
-          ))}
-        </select>
-        <Input
-          type="email"
-          required
-          value={emailNouveau}
-          onChange={(evenement) => setEmailNouveau(evenement.target.value)}
-          placeholder="E-mail"
-          className="max-w-64"
-        />
-        <Button type="submit" disabled={!cible || enCours !== null || !droit.ecriture}>
-          Inviter
-        </Button>
-      </form>
       {erreur && <p className="mt-6 text-sm text-danger">{erreur}</p>}
       {!dossiers && !erreur && (
         <div className="mt-10 space-y-3" aria-hidden>
@@ -151,12 +113,78 @@ export default function InvitationsPage() {
           <h2 className="text-sm font-semibold text-ink">Déjà lancées</h2>
           <ul className="mt-3">
             {suivies.map((dossier) => (
-              <li key={dossier.dossier_id} className="flex justify-between border-b border-hairline py-3 text-sm">
+              <li
+                key={dossier.dossier_id}
+                className="flex items-center justify-between gap-3 border-b border-hairline py-3 text-sm"
+              >
                 <span className="text-ink">{dossier.nom}</span>
-                <span className="text-subtle">{libelleCompte(dossier.statut_invitation)}</span>
+                <span className="flex items-center gap-2">
+                  <span className="text-subtle">{libelleCompte(dossier.statut_invitation)}</span>
+                  {dossier.statut_invitation === "invité" && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={!droit.ecriture || enCours === dossier.dossier_id}
+                        onClick={async () => {
+                          setEnCours(dossier.dossier_id);
+                          setErreur(null);
+                          try {
+                            await renvoyerInvitation(dossier.dossier_id);
+                          } catch (exception) {
+                            setErreur(
+                              exception instanceof Error ? exception.message : "Échec du renvoi.",
+                            );
+                          } finally {
+                            setEnCours(null);
+                          }
+                        }}
+                      >
+                        Renvoyer
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-danger"
+                        disabled={!droit.ecriture || enCours === dossier.dossier_id}
+                        onClick={async () => {
+                          setEnCours(dossier.dossier_id);
+                          setErreur(null);
+                          try {
+                            await annulerInvitation(dossier.dossier_id);
+                            charger();
+                          } catch (exception) {
+                            setErreur(
+                              exception instanceof Error ? exception.message : "Échec de l'annulation.",
+                            );
+                          } finally {
+                            setEnCours(null);
+                          }
+                        }}
+                      >
+                        Annuler
+                      </Button>
+                    </>
+                  )}
+                </span>
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {dossiers && (
+        <section className="mt-10">
+          <h2 className="text-sm font-semibold text-ink">Plusieurs à la fois</h2>
+          <div className="mt-3">
+            <InvitationsEnMasse
+              dossiers={dossiers}
+              desactive={!droit.ecriture}
+              onTermine={charger}
+            />
+          </div>
         </section>
       )}
     </div>
