@@ -65,7 +65,7 @@ export default function DemoPage() {
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Démo</h1>
       <p className="mt-2 text-sm text-subtle">
         Remettre les données du portefeuille de démo dans leur état de départ, avant ou après une
-        présentation. Coche seulement ce que tu veux effacer.
+        présentation. Cochez seulement ce que vous voulez effacer.
       </p>
 
       {parties && (
