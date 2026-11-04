@@ -48,6 +48,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import insert, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Engine, Row
+from sqlalchemy.exc import IntegrityError
 
 from axelcompta.affectations import (
     AffectationImpossible,
@@ -1873,10 +1874,69 @@ def _enregistrer_routes_rappels(app: FastAPI) -> None:
         return vue
 
 
+# Posées une fois par portefeuille, par un admin. Le libellé est unique :
+# deux ouvertures simultanées de /rappels ne créent pas de doublon.
+REGLES_PREFAITES: tuple[dict[str, object], ...] = (
+    {
+        "libelle": "15 jours avant la clôture",
+        "message": "La clôture approche. Relis les pièces de l'exercice.",
+        "canaux": ["mail"],
+        "portee": "tous",
+        "dossier_ids": [],
+        "declencheur": "avant_cloture",
+        "jours_avant": 15,
+    },
+    {
+        "libelle": "Compte à ouvrir",
+        "message": "Ouvre ton compte pour suivre l'exercice.",
+        "canaux": ["mail", "sms"],
+        "portee": "tous",
+        "dossier_ids": [],
+        "declencheur": "manuel",
+        "jours_avant": None,
+    },
+    {
+        "libelle": "Pièces à compléter",
+        "message": "Il reste des pièces à ajouter avant la clôture.",
+        "canaux": ["sms"],
+        "portee": "tous",
+        "dossier_ids": [],
+        "declencheur": "manuel",
+        "jours_avant": None,
+    },
+)
+
+
+def _assurer_regles_prefaites(tenant_id: TenantId) -> None:
+    """Crée les règles manquantes. `ON CONFLICT DO NOTHING` : un second
+    appel, même concurrent, ne rajoute aucune ligne."""
+    with _engine().begin() as connexion:
+        appliquer_rls(connexion)
+        for modele in REGLES_PREFAITES:
+            connexion.execute(
+                pg_insert(regles_rappel)
+                .values(
+                    id=str(uuid.uuid4()),
+                    tenant_id=str(tenant_id),
+                    libelle=modele["libelle"],
+                    message=modele["message"],
+                    canaux=modele["canaux"],
+                    portee=modele["portee"],
+                    dossier_ids=modele["dossier_ids"],
+                    declencheur=modele["declencheur"],
+                    jours_avant=modele["jours_avant"],
+                )
+                .on_conflict_do_nothing(constraint="uq_regles_rappel_tenant_libelle")
+            )
+
+
 def _enregistrer_routes_regles(app: FastAPI) -> None:
     @app.get("/regles-rappel", response_model=list[RegleVue])
-    def lister_regles(identite: IdentiteDep) -> list[RegleVue]:
+    def lister_regles(identite: IdentiteDep, role: RoleMembreDep) -> list[RegleVue]:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        # Un membre ou une lecture ne crée rien : il voit la liste telle quelle.
+        if role == "admin":
+            _assurer_regles_prefaites(tenant_id)
         with _engine().connect() as connexion:
             appliquer_rls(connexion)
             lignes = connexion.execute(
@@ -1910,21 +1970,26 @@ def _enregistrer_routes_regles(app: FastAPI) -> None:
             declencheur=entree.declencheur,
             jours_avant=entree.jours_avant if entree.declencheur == "avant_cloture" else None,
         )
-        with _engine().begin() as connexion:
-            appliquer_rls(connexion)
-            connexion.execute(
-                insert(regles_rappel).values(
-                    id=vue.id,
-                    tenant_id=str(tenant_id),
-                    libelle=libelle,
-                    message=message,
-                    canaux=canaux,
-                    portee=vue.portee,
-                    dossier_ids=vue.dossier_ids,
-                    declencheur=vue.declencheur,
-                    jours_avant=vue.jours_avant,
+        try:
+            with _engine().begin() as connexion:
+                appliquer_rls(connexion)
+                connexion.execute(
+                    insert(regles_rappel).values(
+                        id=vue.id,
+                        tenant_id=str(tenant_id),
+                        libelle=libelle,
+                        message=message,
+                        canaux=canaux,
+                        portee=vue.portee,
+                        dossier_ids=vue.dossier_ids,
+                        declencheur=vue.declencheur,
+                        jours_avant=vue.jours_avant,
+                    )
                 )
-            )
+        except IntegrityError as exc:
+            raise HTTPException(
+                status_code=409, detail="Une règle porte déjà ce libellé."
+            ) from exc
         return vue
 
 
