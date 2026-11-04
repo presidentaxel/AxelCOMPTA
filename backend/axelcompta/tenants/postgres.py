@@ -155,6 +155,23 @@ class PostgresDossierRepository(DossierRepository):
                 update(dossiers).where(dossiers.c.id == dossier_id).values(retire_le=date.today())
             )
 
+    def lister_retires(self, tenant_id: TenantId) -> tuple[Dossier, ...]:
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            lignes = connexion.execute(
+                select(dossiers)
+                .where(dossiers.c.tenant_id == tenant_id, dossiers.c.retire_le.is_not(None))
+                .order_by(dossiers.c.id)
+            ).all()
+        return tuple(_vers_dossier(ligne) for ligne in lignes)
+
+    def restaurer(self, dossier_id: DossierId) -> None:
+        with self._engine.begin() as connexion:
+            appliquer_rls(connexion)
+            connexion.execute(
+                update(dossiers).where(dossiers.c.id == dossier_id).values(retire_le=None)
+            )
+
     def par_contact_nr(self, contact_nr: str) -> Dossier | None:
         # Utilisé uniquement par `synchro_digifactory` (rôle `user`,
         # administratif, jamais un utilisateur final) : pas de dossier_id

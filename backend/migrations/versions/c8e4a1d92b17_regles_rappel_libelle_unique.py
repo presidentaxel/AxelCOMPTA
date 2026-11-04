@@ -5,7 +5,7 @@ les trois règles préfaites. La contrainte empêche le doublon ; les lignes
 déjà en double sont rattachées à la plus ancienne puis retirées.
 
 Revision ID: c8e4a1d92b17
-Revises: b6d1e9a43c20
+Revises: e7b3d9a15c42
 """
 
 from collections.abc import Sequence
@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "c8e4a1d92b17"
-down_revision: str | Sequence[str] | None = "b6d1e9a43c20"
+down_revision: str | Sequence[str] | None = "e7b3d9a15c42"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

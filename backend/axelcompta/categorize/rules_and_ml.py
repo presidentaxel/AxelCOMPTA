@@ -4,8 +4,10 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
+from threading import Lock
 
 from axelcompta.core.ids import DossierId
 from axelcompta.ingestion.providers.base import NormalizedTransaction
@@ -28,6 +30,9 @@ CATEGORIE_PAR_DEFAUT = "non_categorise_a_verifier"
 # du seuil d'imputation automatique (`workflow/synchro.py`, 0,90).
 SEUIL_PROPOSITION_ML = 0.5
 
+# Bornée : au-delà, les résultats les moins récemment lus sont oubliés.
+CAPACITE_MEMOIRE = 50_000
+
 
 @dataclass
 class RulesAndMlPipeline(CategorizationPipeline):
@@ -42,6 +47,14 @@ class RulesAndMlPipeline(CategorizationPipeline):
     modele: ModeleSklearn | None = None
     # Sans calibration, confiance brute et seuils historiques.
     calibration: Calibration | None = None
+    # Résultat par (libellé, montant), le plus récemment lu en dernier. Propre
+    # à cette instance : règles, modèle et calibration ne changent pas après
+    # sa construction, donc la mémoire ne périme pas. Elle ne survit pas à un
+    # redémarrage et n'est pas partagée entre workers.
+    _memoire: OrderedDict[tuple[str, int], ProposedEntry] = field(
+        default_factory=OrderedDict, init=False, repr=False, compare=False
+    )
+    _verrou: Lock = field(default_factory=Lock, init=False, repr=False, compare=False)
 
     def categoriser(
         self, dossier_id: DossierId, transaction: NormalizedTransaction
@@ -51,8 +64,45 @@ class RulesAndMlPipeline(CategorizationPipeline):
     def categoriser_lot(
         self, dossier_id: DossierId, transactions: Sequence[NormalizedTransaction]
     ) -> list[ProposedEntry]:
-        """Même résultat que `categoriser` ligne par ligne, avec un seul appel
-        au modèle pour toutes les transactions qu'aucune règle ne couvre."""
+        """Même résultat que `categoriser` ligne par ligne. Le résultat ne
+        dépend que du libellé et du montant : une opération déjà vue les
+        reprend de la mémoire, sans règle ni modèle. Seules les autres vont à
+        `_calculer`, une fois par couple (libellé, montant)."""
+        cles = [(t.libelle, t.montant_cts) for t in transactions]
+        with self._verrou:
+            connues = {cle: self._memoire[cle] for cle in set(cles) if cle in self._memoire}
+            for cle in connues:
+                self._memoire.move_to_end(cle)
+        inconnues: dict[tuple[str, int], NormalizedTransaction] = {}
+        for cle, transaction in zip(cles, transactions, strict=True):
+            if cle not in connues:
+                inconnues.setdefault(cle, transaction)
+        if inconnues:
+            calculees = dict(
+                zip(
+                    inconnues,
+                    self._calculer(dossier_id, list(inconnues.values())),
+                    strict=True,
+                )
+            )
+            self._retenir(calculees)
+            connues = {**connues, **calculees}
+        return [
+            replace(connues[cle], dossier_id=dossier_id, transaction_id=transaction.id)
+            for cle, transaction in zip(cles, transactions, strict=True)
+        ]
+
+    def _retenir(self, calculees: dict[tuple[str, int], ProposedEntry]) -> None:
+        with self._verrou:
+            self._memoire.update(calculees)
+            while len(self._memoire) > CAPACITE_MEMOIRE:
+                self._memoire.popitem(last=False)
+
+    def _calculer(
+        self, dossier_id: DossierId, transactions: Sequence[NormalizedTransaction]
+    ) -> list[ProposedEntry]:
+        """Règles d'abord, puis un seul appel au modèle pour toutes les
+        transactions qu'aucune règle ne couvre."""
         propositions: list[ProposedEntry | None] = [
             self._via_regles(dossier_id, transaction) for transaction in transactions
         ]

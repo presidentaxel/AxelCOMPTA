@@ -23,7 +23,7 @@ import {
   extraireErreurSupabase,
   URL_SUPABASE,
 } from "./auth-chauffeur";
-import type { AlerteAnomalie, DossierAgregat, FileExpert } from "./types";
+import type { AlerteAnomalie, DossierAgregat, FileExpert, ImputationFaite } from "./types";
 
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
@@ -225,18 +225,19 @@ export async function lireFileExpert(): Promise<FileExpert> {
   return (await reponse.json()) as FileExpert;
 }
 
+/** Impute l'écriture et retourne les sujets à jour de ce dossier seul. */
 export async function imputerExpert(
   dossierId: string,
   ecritureId: string,
   compte: string,
-): Promise<void> {
+): Promise<ImputationFaite> {
   const reponse = await requeteGestionnaire("/expert/imputations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dossier_id: dossierId, ecriture_id: ecritureId, compte }),
   });
   if (reponse.status === 401 || reponse.status === 403) {
-    throw new ErreurAuthGestionnaire();
+    throw new ErreurAuthGestionnaire("Session expirée.");
   }
   if (!reponse.ok) {
     let detail = `HTTP ${reponse.status}`;
@@ -245,6 +246,36 @@ export async function imputerExpert(
       if (corps.detail) detail = corps.detail;
     } catch {
       // Le message HTTP suffit.
+    }
+    throw new ApiError(detail, reponse.status);
+  }
+  return (await reponse.json()) as ImputationFaite;
+}
+
+export async function annulerImputation(
+  dossierId: string,
+  ecritureId: string,
+  contrepassationId: string,
+): Promise<void> {
+  const reponse = await requeteGestionnaire("/expert/imputations/annuler", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      dossier_id: dossierId,
+      ecriture_id: ecritureId,
+      contrepassation_id: contrepassationId,
+    }),
+  });
+  if (reponse.status === 401 || reponse.status === 403) {
+    throw new ErreurAuthGestionnaire("Session expirée.");
+  }
+  if (!reponse.ok) {
+    let detail = "Impossible d'annuler l'imputation.";
+    try {
+      const corps = (await reponse.json()) as { detail?: string };
+      if (corps.detail) detail = corps.detail;
+    } catch {
+      // Le message par défaut suffit.
     }
     throw new ApiError(detail, reponse.status);
   }
@@ -384,6 +415,19 @@ export async function retirerDossier(dossierId: string): Promise<void> {
   const reponse = await requeteGestionnaire(`/dossiers/${dossierId}/retirer`, { method: "POST" });
   if (!reponse.ok) {
     throw new ApiError("Impossible de retirer ce dossier.", reponse.status);
+  }
+}
+
+export async function listerDossiersRetires(): Promise<{ dossier_id: string; nom: string }[]> {
+  const reponse = await requeteGestionnaire("/portefeuille/retires");
+  if (!reponse.ok) return [];
+  return (await reponse.json()) as { dossier_id: string; nom: string }[];
+}
+
+export async function restaurerDossier(dossierId: string): Promise<void> {
+  const reponse = await requeteGestionnaire(`/dossiers/${dossierId}/restaurer`, { method: "POST" });
+  if (!reponse.ok) {
+    throw new ApiError("Impossible de remettre ce dossier dans la liste.", reponse.status);
   }
 }
 
