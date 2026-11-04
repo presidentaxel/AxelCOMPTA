@@ -10,6 +10,7 @@ import {
   imputerExpert,
   lireFileExpert,
 } from "@/lib/auth-gestionnaire";
+import { remplacerSujetsDuDossier } from "@/lib/file-expert";
 import { formatMontant } from "@/lib/format";
 import type { FileExpert, SujetExpert } from "@/lib/types";
 
@@ -78,8 +79,13 @@ export default function ModeExpertPage() {
     setEnCours(sujet.id);
     setErreur(null);
     try {
-      await imputerExpert(sujet.dossier_id, sujet.ecriture_id, compte);
-      charger();
+      const dossierMisAJour = await imputerExpert(sujet.dossier_id, sujet.ecriture_id, compte);
+      setFile((actuelle) =>
+        actuelle && {
+          ...actuelle,
+          sujets: remplacerSujetsDuDossier(actuelle.sujets, sujet.dossier_id, dossierMisAJour),
+        },
+      );
     } catch (exception) {
       setErreur(exception instanceof Error ? exception.message : "Échec de l'imputation.");
     } finally {

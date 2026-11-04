@@ -16,20 +16,24 @@ from __future__ import annotations
 
 import functools
 import io
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Sequence
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
+from typing import Any, cast
 
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
+import axelcompta.demo_api as demo_api
 import axelcompta.demo_auth as demo_auth
 import axelcompta.demo_seed as demo_seed
 from axelcompta.anomaly.instruction import RegistreInstructions
-from axelcompta.categorize.models import Etage
+from axelcompta.categorize.models import Etage, ProposedEntry
+from axelcompta.categorize.rules_and_ml import RulesAndMlPipeline
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, UserId
 from axelcompta.core.money import Money
 from axelcompta.demo_api import (
@@ -38,8 +42,13 @@ from axelcompta.demo_api import (
     TransactionVue,
     _avec_propositions,
     _frises,
+    _ledger_avec_decisions,
+    _provisions_saisies,
+    _resume,
+    calculer_agregat,
     create_app,
     get_affectations,
+    get_agregats,
     get_avenants,
     get_comptes,
     get_consentements,
@@ -49,6 +58,7 @@ from axelcompta.demo_api import (
     get_justificatifs,
     get_ledger,
     get_notifications,
+    get_pipeline,
     get_propositions,
     get_provisions_cloture,
     get_registre_anomalies,
@@ -57,14 +67,18 @@ from axelcompta.demo_api import (
     get_signatures_inpi,
 )
 from axelcompta.demo_chauffeurs_type import construire_ledger
+from axelcompta.demo_comptes import Invitation
 from axelcompta.demo_comptes_memory import InMemoryCompteRepository
 from axelcompta.demo_justificatifs import InMemoryJustificatifRepository
 from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion
+from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ingestion.providers.chauffeurs_demo import PROFILS_DEMO
 from axelcompta.ledger.contrepassation import contrepasser
 from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
+from axelcompta.packs.vtc_demo import charger_regles
 from axelcompta.tenants.affectations import InMemoryAffectationRepository
+from axelcompta.tenants.agregats import AgregatStocke, InMemoryAgregatsRepository
 from axelcompta.tenants.avenants import InMemoryAvenantRegimeRepository, programmer_bascules
 from axelcompta.tenants.exercices import InMemoryExerciceRepository
 from axelcompta.tenants.memory import InMemoryDossierRepository
@@ -190,6 +204,8 @@ def _client_et_stubs(
     app.dependency_overrides[get_affectations] = lambda: affectations_stub
     provisions_stub = InMemoryProvisionsClotureRepository()
     app.dependency_overrides[get_provisions_cloture] = lambda: provisions_stub
+    agregats_stub = InMemoryAgregatsRepository()
+    app.dependency_overrides[get_agregats] = lambda: agregats_stub
     # `droits_membre` est en Postgres : le rôle est fixé ici.
     app.dependency_overrides[get_role_membre] = lambda: role
     app.dependency_overrides[get_consentements] = lambda: _ConsentementsStub()
@@ -260,28 +276,45 @@ def test_frise_davant_suit_les_preuves_dans_l_ordre() -> None:
     dossier = _dossier_finissant_le(fin)
     resume = _resume_actif(False)
 
-    assert _frises(resume, dossier, set()) == (fin.year + 1, "Suivi", fin.year, "Suivi")
-    assert _frises(resume, dossier, {"cloture"}) == (fin.year + 1, "Suivi", fin.year, "Clôture")
-    assert _frises(resume, dossier, {"cloture", "validation_comptes"}) == (
+    assert _frises(resume.statut_invitation, dossier, set()) == (
+        fin.year + 1,
+        "Suivi",
+        fin.year,
+        "Suivi",
+    )
+    assert _frises(resume.statut_invitation, dossier, {"cloture"}) == (
+        fin.year + 1,
+        "Suivi",
+        fin.year,
+        "Clôture",
+    )
+    assert _frises(resume.statut_invitation, dossier, {"cloture", "validation_comptes"}) == (
         fin.year + 1,
         "Suivi",
         fin.year,
         "Signature",
     )
-    assert _frises(resume, dossier, {"cloture", "validation_comptes", "greffe_inpi"}) == (
+    assert _frises(
+        resume.statut_invitation, dossier, {"cloture", "validation_comptes", "greffe_inpi"}
+    ) == (
         fin.year + 1,
         "Suivi",
         fin.year,
         "Greffe",
     )
     # Le greffe seul ne coche pas les étapes d'avant.
-    assert _frises(resume, dossier, {"greffe_inpi"}) == (fin.year + 1, "Suivi", fin.year, "Suivi")
+    assert _frises(resume.statut_invitation, dossier, {"greffe_inpi"}) == (
+        fin.year + 1,
+        "Suivi",
+        fin.year,
+        "Suivi",
+    )
 
 
 def test_frise_sans_exercice_davant_si_lexercice_nest_pas_termine() -> None:
     fin = datetime.now(UTC).date() + timedelta(days=30)
 
-    frises = _frises(_resume_actif(True), _dossier_finissant_le(fin), set())
+    frises = _frises(_resume_actif(True).statut_invitation, _dossier_finissant_le(fin), set())
 
     assert frises == (fin.year, "Suivi", fin.year - 1, "Sans exercice")
 
@@ -449,6 +482,40 @@ def test_trancher_est_reflete_par_un_get_ulterieur() -> None:
     ecriture = next(t for t in transactions if t["ecriture_id"] == ecriture_id)
     assert ecriture["statut"] == "validé"
     assert ecriture["compte"] == "455"
+
+
+def test_trancher_ne_relance_pas_la_categorisation_des_autres_lignes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AXE-565 : une décision ne change pas le résultat règles et modèle des
+    lignes restantes ; la lecture suivante le reprend de la mémoire."""
+    client = _client()
+    pipeline = RulesAndMlPipeline(regles=charger_regles())
+    calculees: list[int] = []
+    calculer = pipeline._calculer
+
+    def compter(
+        dossier_id: DossierId, transactions: Sequence[NormalizedTransaction]
+    ) -> list[ProposedEntry]:
+        calculees.append(len(transactions))
+        return calculer(dossier_id, transactions)
+
+    monkeypatch.setattr(pipeline, "_calculer", compter)
+    cast(FastAPI, client.app).dependency_overrides[get_pipeline] = lambda: pipeline
+    en_tete = _en_tete("DEMO_sophie")
+    ecriture_id = _premiere_a_trancher(client, "DEMO_sophie")
+    assert sum(calculees) > 0
+
+    client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/decision",
+        json={"categorie": "usage_personnel"},
+        headers=en_tete,
+    )
+    avant = list(calculees)
+    reponse = client.get("/dossiers/DEMO_sophie/transactions", headers=en_tete)
+
+    assert reponse.status_code == 200
+    assert calculees == avant
 
 
 def test_trancher_diminue_le_compteur_nb_a_trancher() -> None:
@@ -1851,3 +1918,207 @@ def test_la_lecture_ne_qualifie_pas_une_alerte() -> None:
         headers=_en_tete_gestionnaire(),
     )
     assert reponse.status_code == 403
+
+
+def _depot_du_client[T](client: TestClient, dependance: Callable[..., T]) -> T:
+    """L'implémentation que les routes du client reçoivent (dépendance surchargée)."""
+    app = cast(FastAPI, client.app)
+    return cast(T, app.dependency_overrides[dependance]())
+
+
+def _dossiers_du_portefeuille(client: TestClient) -> list[Dossier]:
+    depot = _depot_du_client(client, get_dossiers)
+    return list(depot.lister_par_tenant(TenantId("TENANT_DEMO")))
+
+
+def test_les_agregats_gardes_sont_ceux_que_calculait_le_resume() -> None:
+    """Les montants gardés en base doivent rester ceux de `_resume`, le calcul
+    d'avant : même liasse, mêmes décisions, mêmes provisions."""
+    client = _client()
+    base = _depot_du_client(client, get_ledger)
+    decisions = _depot_du_client(client, get_decisions)
+    comptes = _depot_du_client(client, get_comptes)
+    signatures = _depot_du_client(client, get_signatures_inpi)
+    provisions = _depot_du_client(client, get_provisions_cloture)
+
+    dossiers = _dossiers_du_portefeuille(client)
+    assert len(dossiers) == 3
+    for dossier in dossiers:
+        reference = _resume(
+            dossier,
+            _ledger_avec_decisions(dossier, base, decisions),
+            comptes,
+            signatures,
+            True,
+            _provisions_saisies(dossier, provisions),
+        )
+        assert calculer_agregat(dossier, base, decisions, provisions) == AgregatStocke(
+            ca_ht_cts=reference.ca_ht_cts,
+            charges_cts=reference.charges_cts,
+            resultat_cts=reference.resultat_cts,
+            exercice_debut=reference.exercice_debut,
+            exercice_fin=reference.exercice_fin,
+            alerte_tva=reference.alerte_tva,
+        )
+
+
+def _espionner_calculs(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    calcules: list[str] = []
+    calculer = demo_api.calculer_agregat
+
+    def espion(dossier: Dossier, *args: Any) -> AgregatStocke:
+        calcules.append(str(dossier.id))
+        return calculer(dossier, *args)
+
+    monkeypatch.setattr(demo_api, "calculer_agregat", espion)
+    return calcules
+
+
+def test_ouvrir_la_liste_ne_recalcule_que_les_dossiers_perimes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client()
+    calcules = _espionner_calculs(monkeypatch)
+    en_tete = _en_tete_gestionnaire()
+
+    premiere = client.get("/dossiers", headers=en_tete).json()
+    assert sorted(calcules) == ["DEMO_karim", "DEMO_sophie", "DEMO_yanis"]
+
+    calcules.clear()
+    seconde = client.get("/dossiers", headers=en_tete).json()
+    assert calcules == []
+    assert seconde == premiere
+
+    agregats = cast(InMemoryAgregatsRepository, _depot_du_client(client, get_agregats))
+    agregats.invalider(DossierId("DEMO_sophie"))
+    client.get("/dossiers", headers=en_tete)
+    assert calcules == ["DEMO_sophie"]
+
+
+def test_la_liste_lit_les_comptes_une_seule_fois(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`statut()` relit toute la liste des comptes Supabase : une fois par
+    dossier, c'était 200 lectures pour 200 dossiers. La liste passe par
+    `statuts()`, qui les lit d'un coup."""
+    client = _client()
+    comptes = _depot_du_client(client, get_comptes)
+    appels: list[str] = []
+    dans_statuts = False
+    statuts, statut = comptes.statuts, comptes.statut
+
+    def espion_statuts(dossier_ids: Iterable[DossierId]) -> dict[DossierId, Invitation]:
+        nonlocal dans_statuts
+        appels.append("statuts")
+        dans_statuts = True
+        try:
+            return statuts(dossier_ids)
+        finally:
+            dans_statuts = False
+
+    def espion_statut(dossier_id: DossierId) -> Invitation | None:
+        if not dans_statuts:  # le bouchon en mémoire délègue de statuts à statut
+            appels.append("statut")
+        return statut(dossier_id)
+
+    monkeypatch.setattr(comptes, "statuts", espion_statuts)
+    monkeypatch.setattr(comptes, "statut", espion_statut)
+
+    client.get("/dossiers", headers=_en_tete_gestionnaire())
+
+    assert appels == ["statuts"]
+
+
+def test_la_frise_suit_l_invitation_meme_sans_recalcul(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Le statut d'invitation n'est pas gardé : il change chez Supabase sans
+    écriture chez nous."""
+    client = _client()
+    calcules = _espionner_calculs(monkeypatch)
+    en_tete = _en_tete_gestionnaire()
+    avant = {d["dossier_id"]: d for d in client.get("/dossiers", headers=en_tete).json()}
+    assert avant["DEMO_sophie"]["statut_invitation"] is None
+
+    comptes = _depot_du_client(client, get_comptes)
+    comptes.inviter(DossierId("DEMO_sophie"), "sophie@example.com")
+    calcules.clear()
+    apres = {d["dossier_id"]: d for d in client.get("/dossiers", headers=en_tete).json()}
+
+    assert apres["DEMO_sophie"]["statut_invitation"] == "invité"
+    assert calcules == []
+
+
+def _ledger_du_client(client: TestClient) -> InMemoryLedgerService:
+    """Le ledger que les routes du client lisent (`get_ledger` surchargé)."""
+    app = cast(FastAPI, client.app)
+    return cast(InMemoryLedgerService, app.dependency_overrides[get_ledger]())
+
+
+def test_file_expert_ne_calcule_aucune_proposition(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AXE-567 : la file expert n'affiche aucune proposition, elle ne paie
+    pas leur calcul (TF-IDF sur tout le portefeuille)."""
+
+    def interdit(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("propositions calculées pour la file expert")
+
+    monkeypatch.setattr("axelcompta.demo_api.propositions_apprises", interdit)
+
+    reponse = _client().get("/expert/file", headers=_en_tete_gestionnaire())
+
+    assert reponse.status_code == 200
+    assert "a_trancher" in {sujet["nature"] for sujet in reponse.json()["sujets"]}
+
+
+def test_file_expert_lit_le_grand_livre_une_fois_par_dossier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client()
+    ledger = _ledger_du_client(client)
+    lectures: list[str] = []
+    lire = ledger.grand_livre
+
+    def compter(dossier_id: DossierId) -> tuple[Ecriture, ...]:
+        lectures.append(str(dossier_id))
+        return lire(dossier_id)
+
+    monkeypatch.setattr(ledger, "grand_livre", compter)
+
+    reponse = client.get("/expert/file", headers=_en_tete_gestionnaire())
+
+    assert reponse.status_code == 200
+    assert len(lectures) == len(set(lectures)) == len(PROFILS_DEMO)
+
+
+def _sujets_a_trancher(client: TestClient, dossier_id: str) -> list[dict[str, object]]:
+    sujets = client.get("/expert/file", headers=_en_tete_gestionnaire()).json()["sujets"]
+    return [s for s in sujets if s["dossier_id"] == dossier_id and s["nature"] == "a_trancher"]
+
+
+def test_imputer_retourne_les_sujets_a_jour_du_seul_dossier_impute() -> None:
+    client = _client()
+    avant = _sujets_a_trancher(client, "DEMO_sophie")
+    assert avant
+    cible = avant[0]
+
+    reponse = client.post(
+        "/expert/imputations",
+        json={
+            "dossier_id": "DEMO_sophie",
+            "ecriture_id": cible["ecriture_id"],
+            "compte": "6061",
+        },
+        headers=_en_tete_gestionnaire(),
+    )
+
+    assert reponse.status_code == 200
+    sujets = reponse.json()
+    assert {sujet["dossier_id"] for sujet in sujets} <= {"DEMO_sophie"}
+    assert cible["id"] not in {sujet["id"] for sujet in sujets}
+    relu = client.get("/expert/file", headers=_en_tete_gestionnaire()).json()["sujets"]
+    assert sujets == [s for s in relu if s["dossier_id"] == "DEMO_sophie"]
+
+
+def test_imputer_un_dossier_inconnu_ne_retourne_rien() -> None:
+    reponse = _client().post(
+        "/expert/imputations",
+        json={"dossier_id": "INCONNU", "ecriture_id": "x", "compte": "6061"},
+        headers=_en_tete_gestionnaire(),
+    )
+    assert reponse.status_code == 404
