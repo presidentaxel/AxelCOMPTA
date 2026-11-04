@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.pool import StaticPool
 
@@ -10,7 +11,7 @@ from axelcompta.core.ids import TenantId
 from axelcompta.tenants.orm import regles_rappel
 
 
-def test_cent_ouvertures_ne_creent_que_trois_regles(monkeypatch) -> None:
+def test_cent_ouvertures_ne_creent_que_trois_regles(monkeypatch: pytest.MonkeyPatch) -> None:
     moteur = create_engine("sqlite://", poolclass=StaticPool)
     regles_rappel.create(moteur)
     monkeypatch.setattr(demo_api, "appliquer_rls", lambda connexion: None)
