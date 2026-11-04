@@ -9,7 +9,11 @@ import {
   creerRegle,
   ErreurAuthGestionnaire,
   listerDossiers,
+  listerMembres,
   listerRegles,
+  modifierRegle,
+  obtenirSessionGestionnaire,
+  supprimerRegle,
   type RegleRappel,
 } from "@/lib/auth-gestionnaire";
 import type { DossierAgregat } from "@/lib/types";
@@ -19,6 +23,10 @@ const CANAUX = [
   { id: "mail", libelle: "E-mail" },
   { id: "appel", libelle: "Appel" },
 ];
+
+function libelleCanal(id: string): string {
+  return CANAUX.find((canal) => canal.id === id)?.libelle ?? id;
+}
 
 const PREFAITS: {
   libelle: string;
@@ -65,6 +73,7 @@ export default function RappelsPage() {
   const [choisis, setChoisis] = useState<string[]>([]);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
+  const [admin, setAdmin] = useState(false);
 
   useEffect(() => {
     listerRegles()
@@ -86,6 +95,13 @@ export default function RappelsPage() {
     listerDossiers()
       .then(setDossiers)
       .catch(() => undefined);
+    const session = obtenirSessionGestionnaire();
+    listerMembres()
+      .then((membres) => {
+        const moi = membres.find((membre) => membre.email.toLowerCase() === session?.email.toLowerCase());
+        setAdmin(moi ? moi.role === "admin" : true);
+      })
+      .catch(() => setAdmin(false));
   }, [router]);
 
   async function ajouter(regle: {
@@ -97,10 +113,20 @@ export default function RappelsPage() {
     portee?: string;
     dossier_ids?: string[];
   }) {
+    if (regle.declencheur === "avant_cloture" && (!regle.jours_avant || regle.jours_avant < 1)) {
+      setErreur("Indiquez un nombre de jours supérieur à zéro.");
+      return;
+    }
+    if (regle.portee === "selection" && (regle.dossier_ids?.length ?? 0) === 0) {
+      setErreur("Choisissez au moins une entreprise.");
+      return;
+    }
     setEnCours(true);
     setErreur(null);
     try {
       await creerRegle(regle);
+      setLibelle("");
+      setMessage("");
       setRegles(await listerRegles());
     } catch (exception) {
       setErreur(exception instanceof Error ? exception.message : "Échec de l'enregistrement.");
@@ -113,7 +139,7 @@ export default function RappelsPage() {
     <div className="mx-auto max-w-5xl">
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Rappels</h1>
       <p className="mt-2 text-sm text-subtle">
-        Les trois règles de base sont déjà en place. À gauche, une règle en plus.
+        Les relances se préparent ici. L&apos;envoi n&apos;est pas branché : aucun SMS, e-mail ou appel ne part.
       </p>
 
       <div className="mt-8 grid items-start gap-12 lg:grid-cols-3">
@@ -130,13 +156,14 @@ export default function RappelsPage() {
             portee,
             dossier_ids: choisis,
           });
-          setLibelle("");
-          setMessage("");
         }}
       >
-        <p className="text-sm font-medium text-ink">Règle à toi</p>
-        <Input value={libelle} onChange={(e) => setLibelle(e.target.value)} placeholder="Nom" required disabled={enCours} />
-        <Input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Message" required disabled={enCours} />
+        <p className="text-sm font-medium text-ink">Votre règle</p>
+        {!admin && (
+          <p className="text-sm text-subtle">Seule une personne administratrice crée ou modifie une règle.</p>
+        )}
+        <Input value={libelle} onChange={(e) => setLibelle(e.target.value)} placeholder="Nom" aria-label="Nom de la règle" required disabled={enCours || !admin} />
+        <Input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Message" aria-label="Message de la règle" required disabled={enCours || !admin} />
         <div className="flex flex-wrap gap-2">
           {CANAUX.map((canal) => {
             const actif = canaux.includes(canal.id);
@@ -144,6 +171,8 @@ export default function RappelsPage() {
               <button
                 key={canal.id}
                 type="button"
+                aria-pressed={actif}
+                disabled={!admin}
                 onClick={() =>
                   setCanaux((actuel) => (actif ? actuel.filter((id) => id !== canal.id) : [...actuel, canal.id]))
                 }
@@ -157,6 +186,8 @@ export default function RappelsPage() {
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
             type="button"
+            aria-pressed={declencheur === "avant_cloture"}
+            disabled={!admin}
             onClick={() => setDeclencheur("avant_cloture")}
             className={`rounded-full border px-3 py-1.5 ${declencheur === "avant_cloture" ? "border-primary bg-primary-subtle text-primary" : "border-border text-subtle"}`}
           >
@@ -164,6 +195,8 @@ export default function RappelsPage() {
           </button>
           <button
             type="button"
+            aria-pressed={declencheur === "manuel"}
+            disabled={!admin}
             onClick={() => setDeclencheur("manuel")}
             className={`rounded-full border px-3 py-1.5 ${declencheur === "manuel" ? "border-primary bg-primary-subtle text-primary" : "border-border text-subtle"}`}
           >
@@ -185,6 +218,8 @@ export default function RappelsPage() {
         <div className="flex gap-2">
           <button
             type="button"
+            aria-pressed={portee === "tous"}
+            disabled={!admin}
             onClick={() => setPortee("tous")}
             className={`rounded-full border px-3 py-1.5 text-sm ${portee === "tous" ? "border-primary bg-primary-subtle text-primary" : "border-border text-subtle"}`}
           >
@@ -192,6 +227,8 @@ export default function RappelsPage() {
           </button>
           <button
             type="button"
+            aria-pressed={portee === "selection"}
+            disabled={!admin}
             onClick={() => setPortee("selection")}
             className={`rounded-full border px-3 py-1.5 text-sm ${portee === "selection" ? "border-primary bg-primary-subtle text-primary" : "border-border text-subtle"}`}
           >
@@ -220,7 +257,7 @@ export default function RappelsPage() {
             ))}
           </ul>
         )}
-        <Button type="submit" disabled={enCours || canaux.length === 0}>
+        <Button type="submit" disabled={enCours || !admin || canaux.length === 0}>
           Enregistrer la règle
         </Button>
       </form>
@@ -232,6 +269,32 @@ export default function RappelsPage() {
           <li key={regle.id} className="border-b border-hairline py-4">
             <p className="text-sm font-medium text-ink">{regle.libelle}</p>
             <p className="mt-1 text-sm text-subtle">{regle.message}</p>
+            {admin && (
+              <div className="mt-2 flex gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={async () => {
+                    await modifierRegle(regle.id, { actif: !regle.actif });
+                    setRegles(await listerRegles());
+                  }}
+                >
+                  {regle.actif ? "Suspendre" : "Activer"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    await supprimerRegle(regle.id);
+                    setRegles(await listerRegles());
+                  }}
+                >
+                  Supprimer
+                </Button>
+              </div>
+            )}
             <p className="mt-1 text-xs text-subtle">
               {regle.declencheur === "avant_cloture"
                 ? `${regle.jours_avant} jours avant la clôture`
@@ -239,7 +302,9 @@ export default function RappelsPage() {
               {" · "}
               {regle.portee === "selection" ? `${regle.dossier_ids.length} entreprise(s)` : "Toutes"}
               {" · "}
-              {regle.canaux.join(", ")}
+              {regle.actif ? "Active" : "Suspendue"}
+              {" · Envoi non branché · "}
+              {regle.canaux.map(libelleCanal).join(", ")}
             </p>
           </li>
         ))}

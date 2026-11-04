@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
@@ -30,14 +31,15 @@ const SANTES: Partial<Record<ConnexionDossier["sante"], string>> = {
 const MODES: { mode: ModeRelance; titre: string; detail: string }[] = [
   {
     mode: "auto",
-    titre: "Automatique",
+    titre: "Relance automatique",
     detail:
-      "AxeLCompta prévient le chauffeur dans son application : deux semaines avant, une semaine avant, à l'expiration, puis tous les 3 jours.",
+      "AxeLCompta prévient l'entreprise dans son application : deux semaines avant, une semaine avant, à l'expiration, puis tous les 3 jours. Aucun SMS ni e-mail ne part.",
   },
   {
     mode: "manuel",
-    titre: "Manuel",
-    detail: "Rien n'est envoyé au chauffeur. Vous suivez cette page et le contactez vous-même.",
+    titre: "Relance manuelle",
+    detail:
+      "Rien n'est envoyé. Vous suivez cette page et vous contactez l'entreprise vous-même. L'envoi par SMS ou e-mail n'est pas branché.",
   },
 ];
 
@@ -79,7 +81,8 @@ export default function ConnexionsBancairesPage() {
     <div className="mx-auto max-w-5xl">
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Connexions bancaires</h1>
       <p className="mt-2 text-sm text-subtle">
-        Sans connexion valide, les opérations d&apos;un chauffeur n&apos;arrivent plus.
+        Sans connexion valide, les opérations d&apos;une entreprise n&apos;arrivent plus. L&apos;envoi
+        d&apos;une relance par SMS ou e-mail n&apos;est pas branché.
       </p>
       {erreur && <p className="mt-4 text-sm text-danger">{erreur}</p>}
       {donnees && (
@@ -93,7 +96,7 @@ export default function ConnexionsBancairesPage() {
           </dl>
 
           <section className="mt-10">
-            <h2 className="text-sm font-medium text-ink">Relances des chauffeurs</h2>
+            <h2 className="text-sm font-medium text-ink">Relances des entreprises</h2>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {MODES.map(({ mode, titre, detail }) => {
                 const actif = donnees.relance_portefeuille === mode;
@@ -145,6 +148,11 @@ export default function ConnexionsBancairesPage() {
                       : "—"}
                   </td>
                   <td className="py-3">
+                    {(dossier.statut === "expire" || dossier.statut === "a_renouveler") && (
+                      <Link href="/rappels" className="mb-2 block text-sm font-medium text-primary hover:underline">
+                        Relancer
+                      </Link>
+                    )}
                     <select
                       aria-label={`Relances pour ${dossier.nom}`}
                       disabled={enCours}

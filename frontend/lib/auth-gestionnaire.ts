@@ -396,6 +396,7 @@ export type RegleRappel = {
   dossier_ids: string[];
   declencheur: string;
   jours_avant: number | null;
+  actif: boolean;
 };
 
 export async function listerRegles(): Promise<RegleRappel[]> {
@@ -422,6 +423,28 @@ export async function creerRegle(regle: {
   });
   if (!reponse.ok) {
     throw new ApiError("Impossible d'enregistrer la règle.", reponse.status);
+  }
+}
+
+export async function modifierRegle(
+  regleId: string,
+  maj: Partial<Pick<RegleRappel, "message" | "canaux" | "portee" | "dossier_ids" | "declencheur" | "jours_avant" | "actif">>,
+): Promise<void> {
+  const reponse = await requeteGestionnaire(`/regles-rappel/${regleId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(maj),
+  });
+  if (!reponse.ok) {
+    const corps = (await reponse.json().catch(() => null)) as { detail?: string } | null;
+    throw new ApiError(corps?.detail ?? "Impossible de modifier la règle.", reponse.status);
+  }
+}
+
+export async function supprimerRegle(regleId: string): Promise<void> {
+  const reponse = await requeteGestionnaire(`/regles-rappel/${regleId}`, { method: "DELETE" });
+  if (!reponse.ok) {
+    throw new ApiError("Impossible de supprimer la règle.", reponse.status);
   }
 }
 

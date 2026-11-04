@@ -6,7 +6,18 @@ repository (`DossierRepository.lister_par_tenant`) ; la RLS Postgres de la V1
 
 from __future__ import annotations
 
-from sqlalchemy import JSON, Column, Date, DateTime, ForeignKey, Integer, String, Table, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Table,
+    Text,
+)
 
 from axelcompta.core.db import metadata
 
@@ -117,6 +128,7 @@ regles_rappel = Table(
     # manuel : bouton sur la fiche. avant_cloture : part seul N jours avant la fin.
     Column("declencheur", String, nullable=False, server_default="manuel"),
     Column("jours_avant", Integer, nullable=True),
+    Column("actif", Boolean, nullable=False, server_default="true"),
 )
 
 rappels = Table(
