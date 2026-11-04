@@ -26,14 +26,14 @@ const NATURE: Record<SujetExpert["nature"], string> = {
   anomalie: "Anomalie",
 };
 
-/** File à part du portefeuille : une page de lignes, filtrable, avec un
- * seul sélecteur de compte pour toute la page. */
+/** File à part du portefeuille : une page de lignes, filtrable. Le compte
+ * se choisit sur la ligne : seules les lignes affichées ont un sélecteur. */
 export default function ModeExpertPage() {
   const router = useRouter();
   const [file, setFile] = useState<FileExpert | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [chargement, setChargement] = useState(true);
-  const [compte, setCompte] = useState("");
+  const [compte, setCompte] = useState<Record<string, string>>({});
   const [enCours, setEnCours] = useState<string | null>(null);
   const [entreprise, setEntreprise] = useState("toutes");
   const [nature, setNature] = useState("toutes");
@@ -75,11 +75,12 @@ export default function ModeExpertPage() {
   const page = filtres.slice(0, visible);
 
   async function imputer(sujet: SujetExpert) {
-    if (!compte || !sujet.ecriture_id) return;
+    const choisi = compte[sujet.id];
+    if (!choisi || !sujet.ecriture_id) return;
     setEnCours(sujet.id);
     setErreur(null);
     try {
-      const dossierMisAJour = await imputerExpert(sujet.dossier_id, sujet.ecriture_id, compte);
+      const dossierMisAJour = await imputerExpert(sujet.dossier_id, sujet.ecriture_id, choisi);
       setFile((actuelle) =>
         actuelle && {
           ...actuelle,
@@ -168,24 +169,6 @@ export default function ModeExpertPage() {
               {filtres.length !== file.sujets.length ? ` (${file.sujets.length} au total)` : ""}
             </p>
           </div>
-          {filtres.length > 0 && (
-            <label className="mt-4 flex items-center gap-2 text-sm text-ink">
-              Compte pour les lignes affichées
-              <select
-                aria-label="Compte partagé"
-                value={compte}
-                onChange={(evenement) => setCompte(evenement.target.value)}
-                className="h-9 min-w-56 rounded-md border border-border bg-canvas px-3 text-sm text-ink"
-              >
-                <option value="">Compte</option>
-                {file.comptes.map((choix) => (
-                  <option key={choix.compte} value={choix.compte}>
-                    {choix.compte} — {choix.libelle}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
           {filtres.length === 0 && (
             <p className="mt-8 text-sm text-subtle">
               {file.sujets.length === 0 ? "Rien en attente." : "Aucun sujet pour ce filtre."}
@@ -213,11 +196,26 @@ export default function ModeExpertPage() {
                   )}
                 </div>
                 {sujet.imputable && sujet.ecriture_id && (
-                  <div className="mt-3">
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <select
+                      aria-label={`Compte pour ${sujet.libelle}`}
+                      value={compte[sujet.id] ?? ""}
+                      onChange={(evenement) =>
+                        setCompte((actuel) => ({ ...actuel, [sujet.id]: evenement.target.value }))
+                      }
+                      className="h-9 min-w-56 rounded-md border border-border bg-canvas px-3 text-sm text-ink"
+                    >
+                      <option value="">Compte</option>
+                      {file.comptes.map((choix) => (
+                        <option key={choix.compte} value={choix.compte}>
+                          {choix.compte} — {choix.libelle}
+                        </option>
+                      ))}
+                    </select>
                     <Button
                       type="button"
                       size="sm"
-                      disabled={!compte || enCours === sujet.id}
+                      disabled={!compte[sujet.id] || enCours === sujet.id}
                       onClick={() => void imputer(sujet)}
                     >
                       Imputer
