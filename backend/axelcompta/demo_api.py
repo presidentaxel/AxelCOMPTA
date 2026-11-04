@@ -1779,6 +1779,30 @@ def _enregistrer_routes_portefeuille(app: FastAPI) -> None:
         dossiers.retirer(dossier.id)
         return {"dossier_id": dossier.id}
 
+    @app.get("/portefeuille/retires")
+    def lister_dossiers_retires(
+        dossiers: DossiersDep, identite: IdentiteDep
+    ) -> list[dict[str, str]]:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return [
+            {"dossier_id": str(dossier.id), "nom": dossier.nom}
+            for dossier in dossiers.lister_retires(tenant_id)
+        ]
+
+    @app.post("/dossiers/{dossier_id}/restaurer")
+    def restaurer_dossier(
+        dossier_id: str,
+        dossiers: DossiersDep,
+        identite: IdentiteDep,
+    ) -> dict[str, str]:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_admin(identite, tenant_id)
+        dossier = dossiers.obtenir(DossierId(dossier_id))
+        if dossier is None or dossier.tenant_id != tenant_id or dossier.retire_le is None:
+            raise HTTPException(status_code=404, detail="Dossier retiré introuvable.")
+        dossiers.restaurer(dossier.id)
+        return {"dossier_id": dossier.id}
+
 
 _URGENCE = {"expire": 0, "a_renouveler": 1, "jamais_connecte": 3, "actif": 4}
 

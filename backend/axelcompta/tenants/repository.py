@@ -70,6 +70,14 @@ class DossierRepository(ABC):
         """Sort le dossier de la liste du portefeuille. Les écritures restent."""
 
     @abstractmethod
+    def lister_retires(self, tenant_id: TenantId) -> tuple[Dossier, ...]:
+        """Dossiers sortis de la liste, pour les y remettre."""
+
+    @abstractmethod
+    def restaurer(self, dossier_id: DossierId) -> None:
+        """Remet un dossier retiré dans la liste. Les écritures n'ont pas bougé."""
+
+    @abstractmethod
     def par_contact_nr(self, contact_nr: str) -> Dossier | None:
         """Table de correspondance Digifactory `contact_nr -> dossier`
         (doc 16 §9 point 5)."""
