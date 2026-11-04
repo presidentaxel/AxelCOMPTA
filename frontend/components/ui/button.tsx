@@ -9,7 +9,7 @@ import { Slot } from "radix-ui"
  * maximum (règle DESIGN.md, pas imposée ici — au développeur de l'écran de
  * la respecter). */
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap font-semibold transition-colors duration-150 ease-out outline-none disabled:pointer-events-none disabled:opacity-50 focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.12)] focus-visible:border-border-focus [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap font-semibold transition-colors duration-150 ease-out outline-none disabled:pointer-events-none disabled:opacity-50 focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)] focus-visible:border-border-focus [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {

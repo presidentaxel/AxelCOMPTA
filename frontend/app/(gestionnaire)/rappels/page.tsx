@@ -97,7 +97,7 @@ export default function RappelsPage() {
           setMessage("");
         }}
       >
-        <p className="text-sm font-medium text-ink">Règle à toi</p>
+        <p className="text-sm font-medium text-ink">Votre règle</p>
         <Input value={libelle} onChange={(e) => setLibelle(e.target.value)} placeholder="Nom" required disabled={enCours} />
         <Input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Message" required disabled={enCours} />
         <div className="flex flex-wrap gap-2">
