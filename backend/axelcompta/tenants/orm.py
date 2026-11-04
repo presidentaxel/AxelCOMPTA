@@ -20,6 +20,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     false,
+    true,
 )
 
 from axelcompta.core.db import metadata
@@ -131,6 +132,7 @@ regles_rappel = Table(
     # manuel : bouton sur la fiche. avant_cloture : part seul N jours avant la fin.
     Column("declencheur", String, nullable=False, server_default="manuel"),
     Column("jours_avant", Integer, nullable=True),
+    Column("actif", Boolean, nullable=False, server_default=true()),
     UniqueConstraint("tenant_id", "libelle", name="uq_regles_rappel_tenant_libelle"),
 )
 

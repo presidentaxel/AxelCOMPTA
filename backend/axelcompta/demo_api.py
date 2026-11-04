@@ -44,7 +44,7 @@ from typing import Annotated, Any, Literal, Protocol
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import insert, select
+from sqlalchemy import delete, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Engine, Row
 from sqlalchemy.exc import IntegrityError
@@ -1653,6 +1653,17 @@ class RegleVue(BaseModel):
     dossier_ids: list[str]
     declencheur: str
     jours_avant: int | None
+    actif: bool = True
+
+
+class RegleMaj(BaseModel):
+    message: str | None = None
+    canaux: list[str] | None = None
+    portee: str | None = None
+    dossier_ids: list[str] | None = None
+    declencheur: str | None = None
+    jours_avant: int | None = None
+    actif: bool | None = None
 
 
 class RappelEntree(BaseModel):
@@ -1749,6 +1760,7 @@ def _regle_vue(ligne: Row[Any]) -> RegleVue:
         dossier_ids=list(ligne.dossier_ids or []),
         declencheur=ligne.declencheur,
         jours_avant=ligne.jours_avant,
+        actif=bool(ligne.actif),
     )
 
 
@@ -2034,6 +2046,8 @@ def creer_regle(entree: RegleEntree, identite: IdentiteDep) -> RegleVue:
         raise HTTPException(status_code=400, detail="Déclencheur ou portée inconnue.")
     if entree.declencheur == "avant_cloture" and not entree.jours_avant:
         raise HTTPException(status_code=400, detail="Indique le nombre de jours.")
+    if entree.portee == "selection" and not entree.dossier_ids:
+        raise HTTPException(status_code=400, detail="Choisissez au moins une entreprise.")
     vue = RegleVue(
         id=str(uuid.uuid4()),
         libelle=libelle,
@@ -2058,6 +2072,7 @@ def creer_regle(entree: RegleEntree, identite: IdentiteDep) -> RegleVue:
                     dossier_ids=vue.dossier_ids,
                     declencheur=vue.declencheur,
                     jours_avant=vue.jours_avant,
+                    actif=True,
                 )
             )
     except IntegrityError as exc:
@@ -2068,6 +2083,93 @@ def creer_regle(entree: RegleEntree, identite: IdentiteDep) -> RegleVue:
 def _enregistrer_routes_regles(app: FastAPI) -> None:
     app.get("/regles-rappel", response_model=list[RegleVue])(lister_regles)
     app.post("/regles-rappel", response_model=RegleVue)(creer_regle)
+
+    app.patch("/regles-rappel/{regle_id}", response_model=RegleVue)(modifier_regle)
+    app.delete("/regles-rappel/{regle_id}", status_code=204)(supprimer_regle)
+
+
+def _valeur_message(message: str) -> str:
+    propre = message.strip()
+    if not propre:
+        raise HTTPException(status_code=400, detail="Le message est vide.")
+    return propre
+
+
+def _valeur_canaux(canaux: list[str]) -> list[str]:
+    gardes = [canal for canal in canaux if canal in _CANAUX]
+    if not gardes:
+        raise HTTPException(status_code=400, detail="Au moins un canal.")
+    return gardes
+
+
+def _valeur_portee(portee: str, dossier_ids: list[str]) -> dict[str, object]:
+    if portee not in {"tous", "selection"}:
+        raise HTTPException(status_code=400, detail="Portée inconnue.")
+    if portee == "selection" and not dossier_ids:
+        raise HTTPException(status_code=400, detail="Choisissez au moins une entreprise.")
+    return {"portee": portee, "dossier_ids": dossier_ids if portee == "selection" else []}
+
+
+def _valeur_declencheur(declencheur: str, jours_avant: int | None) -> dict[str, object]:
+    if declencheur not in {"manuel", "avant_cloture"}:
+        raise HTTPException(status_code=400, detail="Déclencheur inconnu.")
+    if declencheur == "avant_cloture" and not jours_avant:
+        raise HTTPException(status_code=400, detail="Indique le nombre de jours.")
+    jours = jours_avant if declencheur == "avant_cloture" else None
+    return {"declencheur": declencheur, "jours_avant": jours}
+
+
+def _valeurs_regle(entree: RegleMaj) -> dict[str, object]:
+    valeurs: dict[str, object] = {}
+    if entree.message is not None:
+        valeurs["message"] = _valeur_message(entree.message)
+    if entree.canaux is not None:
+        valeurs["canaux"] = _valeur_canaux(entree.canaux)
+    if entree.portee is not None:
+        valeurs.update(_valeur_portee(entree.portee, entree.dossier_ids or []))
+    if entree.declencheur is not None:
+        valeurs.update(_valeur_declencheur(entree.declencheur, entree.jours_avant))
+    if entree.actif is not None:
+        valeurs["actif"] = entree.actif
+    if not valeurs:
+        raise HTTPException(status_code=400, detail="Rien à modifier.")
+    return valeurs
+
+
+def modifier_regle(regle_id: str, entree: RegleMaj, identite: IdentiteDep) -> RegleVue:
+    tenant_id, identite = _verifier_acces_gestionnaire(identite)
+    _exiger_admin(identite, tenant_id)
+    valeurs = _valeurs_regle(entree)
+    with _engine().begin() as connexion:
+        appliquer_rls(connexion)
+        resultat = connexion.execute(
+            update(regles_rappel)
+            .where(regles_rappel.c.id == regle_id, regles_rappel.c.tenant_id == str(tenant_id))
+            .values(**valeurs)
+            .returning(regles_rappel)
+        ).first()
+    if resultat is None:
+        raise HTTPException(status_code=404, detail="Règle introuvable.")
+    return _regle_vue(resultat)
+
+
+def supprimer_regle(regle_id: str, identite: IdentiteDep) -> None:
+    tenant_id, identite = _verifier_acces_gestionnaire(identite)
+    _exiger_admin(identite, tenant_id)
+    with _engine().begin() as connexion:
+        appliquer_rls(connexion)
+        connexion.execute(
+            update(rappels)
+            .where(rappels.c.regle_id == regle_id, rappels.c.tenant_id == str(tenant_id))
+            .values(regle_id=None)
+        )
+        resultat = connexion.execute(
+            delete(regles_rappel).where(
+                regles_rappel.c.id == regle_id, regles_rappel.c.tenant_id == str(tenant_id)
+            )
+        )
+    if resultat.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Règle introuvable.")
 
 
 def _enregistrer_routes_membres(app: FastAPI) -> None:
