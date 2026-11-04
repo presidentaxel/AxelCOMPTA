@@ -108,6 +108,20 @@ export type SujetExpert = {
   montant_cts: number | null;
   ecriture_id: string | null;
   imputable: boolean;
+  compte_actuel?: string | null;
+  compte_suggere?: string | null;
+};
+
+export type LigneImputation = {
+  sens: "debit" | "credit";
+  compte: string;
+  montant_cts: number;
+};
+
+export type ImputationFaite = {
+  ecriture_id: string;
+  contrepassation_id: string;
+  lignes: LigneImputation[];
 };
 
 export type FileExpert = {
