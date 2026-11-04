@@ -1891,3 +1891,82 @@ def test_la_lecture_ne_qualifie_pas_une_alerte() -> None:
         headers=_en_tete_gestionnaire(),
     )
     assert reponse.status_code == 403
+
+
+def _ledger_du_client(client: TestClient) -> InMemoryLedgerService:
+    """Le ledger que les routes du client lisent (`get_ledger` surchargé)."""
+    app = cast(FastAPI, client.app)
+    return cast(InMemoryLedgerService, app.dependency_overrides[get_ledger]())
+
+
+def test_file_expert_ne_calcule_aucune_proposition(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AXE-567 : la file expert n'affiche aucune proposition, elle ne paie
+    pas leur calcul (TF-IDF sur tout le portefeuille)."""
+
+    def interdit(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("propositions calculées pour la file expert")
+
+    monkeypatch.setattr("axelcompta.demo_api.propositions_apprises", interdit)
+
+    reponse = _client().get("/expert/file", headers=_en_tete_gestionnaire())
+
+    assert reponse.status_code == 200
+    assert "a_trancher" in {sujet["nature"] for sujet in reponse.json()["sujets"]}
+
+
+def test_file_expert_lit_le_grand_livre_une_fois_par_dossier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client()
+    ledger = _ledger_du_client(client)
+    lectures: list[str] = []
+    lire = ledger.grand_livre
+
+    def compter(dossier_id: DossierId) -> tuple[Ecriture, ...]:
+        lectures.append(str(dossier_id))
+        return lire(dossier_id)
+
+    monkeypatch.setattr(ledger, "grand_livre", compter)
+
+    reponse = client.get("/expert/file", headers=_en_tete_gestionnaire())
+
+    assert reponse.status_code == 200
+    assert len(lectures) == len(set(lectures)) == len(PROFILS_DEMO)
+
+
+def _sujets_a_trancher(client: TestClient, dossier_id: str) -> list[dict[str, object]]:
+    sujets = client.get("/expert/file", headers=_en_tete_gestionnaire()).json()["sujets"]
+    return [s for s in sujets if s["dossier_id"] == dossier_id and s["nature"] == "a_trancher"]
+
+
+def test_imputer_retourne_les_sujets_a_jour_du_seul_dossier_impute() -> None:
+    client = _client()
+    avant = _sujets_a_trancher(client, "DEMO_sophie")
+    assert avant
+    cible = avant[0]
+
+    reponse = client.post(
+        "/expert/imputations",
+        json={
+            "dossier_id": "DEMO_sophie",
+            "ecriture_id": cible["ecriture_id"],
+            "compte": "6061",
+        },
+        headers=_en_tete_gestionnaire(),
+    )
+
+    assert reponse.status_code == 200
+    sujets = reponse.json()
+    assert {sujet["dossier_id"] for sujet in sujets} <= {"DEMO_sophie"}
+    assert cible["id"] not in {sujet["id"] for sujet in sujets}
+    relu = client.get("/expert/file", headers=_en_tete_gestionnaire()).json()["sujets"]
+    assert sujets == [s for s in relu if s["dossier_id"] == "DEMO_sophie"]
+
+
+def test_imputer_un_dossier_inconnu_ne_retourne_rien() -> None:
+    reponse = _client().post(
+        "/expert/imputations",
+        json={"dossier_id": "INCONNU", "ecriture_id": "x", "compte": "6061"},
+        headers=_en_tete_gestionnaire(),
+    )
+    assert reponse.status_code == 404

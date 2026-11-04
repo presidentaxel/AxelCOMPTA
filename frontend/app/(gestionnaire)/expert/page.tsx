@@ -3,12 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { SqueletteLignes } from "@/components/Squelette";
 import { Button } from "@/components/ui/button";
 import {
   ErreurAuthGestionnaire,
   imputerExpert,
   lireFileExpert,
 } from "@/lib/auth-gestionnaire";
+import { remplacerSujetsDuDossier } from "@/lib/file-expert";
 import { formatMontant } from "@/lib/format";
 import type { FileExpert, SujetExpert } from "@/lib/types";
 
@@ -51,8 +53,13 @@ export default function ModeExpertPage() {
     setEnCours(sujet.id);
     setErreur(null);
     try {
-      await imputerExpert(sujet.dossier_id, sujet.ecriture_id, choisi);
-      charger();
+      const dossierMisAJour = await imputerExpert(sujet.dossier_id, sujet.ecriture_id, choisi);
+      setFile((actuelle) =>
+        actuelle && {
+          ...actuelle,
+          sujets: remplacerSujetsDuDossier(actuelle.sujets, sujet.dossier_id, dossierMisAJour),
+        },
+      );
     } catch (exception) {
       setErreur(exception instanceof Error ? exception.message : "Échec de l'imputation.");
     } finally {
@@ -68,7 +75,12 @@ export default function ModeExpertPage() {
         des entreprises ne change pas.
       </p>
       {erreur && <p className="mt-6 text-sm text-danger">{erreur}</p>}
-      {!file && !erreur && <p className="mt-8 text-sm text-subtle">Chargement…</p>}
+      {!file && !erreur && (
+        <div className="mt-6">
+          <p className="sr-only">Chargement de la file…</p>
+          <SqueletteLignes nombre={5} className="h-20 w-full" />
+        </div>
+      )}
       {file && file.sujets.length === 0 && (
         <p className="mt-8 text-sm text-subtle">Rien en attente.</p>
       )}

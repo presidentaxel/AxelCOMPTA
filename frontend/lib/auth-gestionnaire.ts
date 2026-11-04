@@ -23,7 +23,7 @@ import {
   extraireErreurSupabase,
   URL_SUPABASE,
 } from "./auth-chauffeur";
-import type { AlerteAnomalie, DossierAgregat, FileExpert } from "./types";
+import type { AlerteAnomalie, DossierAgregat, FileExpert, SujetExpert } from "./types";
 
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
@@ -225,11 +225,12 @@ export async function lireFileExpert(): Promise<FileExpert> {
   return (await reponse.json()) as FileExpert;
 }
 
+/** Impute l'écriture et retourne les sujets à jour de ce dossier seul. */
 export async function imputerExpert(
   dossierId: string,
   ecritureId: string,
   compte: string,
-): Promise<void> {
+): Promise<SujetExpert[]> {
   const reponse = await requeteGestionnaire("/expert/imputations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -248,6 +249,7 @@ export async function imputerExpert(
     }
     throw new ApiError(detail, reponse.status);
   }
+  return (await reponse.json()) as SujetExpert[];
 }
 
 export async function listerAnomalies(dossierId: string): Promise<AlerteAnomalie[]> {
