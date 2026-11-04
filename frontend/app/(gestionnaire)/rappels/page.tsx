@@ -42,6 +42,7 @@ export default function RappelsPage() {
   const [portee, setPortee] = useState("tous");
   const [choisis, setChoisis] = useState<string[]>([]);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [erreurRegle, setErreurRegle] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
 
   useEffect(() => {
@@ -226,13 +227,14 @@ export default function RappelsPage() {
             ))}
           </ul>
         )}
+        {erreur && <p className="text-sm text-danger">{erreur}</p>}
         <Button type="submit" disabled={!droit.admin || enCours || canaux.length === 0}>
           Enregistrer la règle
         </Button>
       </form>
       <div>
-      {erreur && <p className="mb-4 text-sm text-danger">{erreur}</p>}
       <p className="text-sm font-medium text-ink">Règles</p>
+      {erreurRegle && <p className="mt-3 text-sm text-danger">{erreurRegle}</p>}
       <ul className="mt-3">
         {regles?.map((regle) => (
           <li key={regle.id} className="border-b border-hairline py-4">
@@ -245,8 +247,15 @@ export default function RappelsPage() {
                   variant="secondary"
                   size="sm"
                   onClick={async () => {
-                    await modifierRegle(regle.id, { actif: !regle.actif });
-                    setRegles(await listerRegles());
+                    setErreurRegle(null);
+                    try {
+                      await modifierRegle(regle.id, { actif: !regle.actif });
+                      setRegles(await listerRegles());
+                    } catch (exception) {
+                      setErreurRegle(
+                        exception instanceof Error ? exception.message : "Impossible de modifier la règle.",
+                      );
+                    }
                   }}
                 >
                   {regle.actif ? "Suspendre" : "Activer"}
@@ -256,8 +265,15 @@ export default function RappelsPage() {
                   variant="ghost"
                   size="sm"
                   onClick={async () => {
-                    await supprimerRegle(regle.id);
-                    setRegles(await listerRegles());
+                    setErreurRegle(null);
+                    try {
+                      await supprimerRegle(regle.id);
+                      setRegles(await listerRegles());
+                    } catch (exception) {
+                      setErreurRegle(
+                        exception instanceof Error ? exception.message : "Impossible de supprimer la règle.",
+                      );
+                    }
                   }}
                 >
                   Supprimer
