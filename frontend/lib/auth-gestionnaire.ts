@@ -387,6 +387,19 @@ export async function retirerDossier(dossierId: string): Promise<void> {
   }
 }
 
+export async function listerDossiersRetires(): Promise<{ dossier_id: string; nom: string }[]> {
+  const reponse = await requeteGestionnaire("/portefeuille/retires");
+  if (!reponse.ok) return [];
+  return (await reponse.json()) as { dossier_id: string; nom: string }[];
+}
+
+export async function restaurerDossier(dossierId: string): Promise<void> {
+  const reponse = await requeteGestionnaire(`/dossiers/${dossierId}/restaurer`, { method: "POST" });
+  if (!reponse.ok) {
+    throw new ApiError("Impossible de remettre ce dossier dans la liste.", reponse.status);
+  }
+}
+
 export type RegleRappel = {
   id: string;
   libelle: string;

@@ -12,7 +12,9 @@ import {
   lireConnexionsBancaires,
   lirePortefeuilleSession,
   listerDossiers,
+  listerDossiersRetires,
   listerRegles,
+  restaurerDossier,
   retirerDossier,
   type RegleRappel,
 } from "@/lib/auth-gestionnaire";
@@ -51,6 +53,8 @@ export default function PortefeuillePage() {
   const [regles, setRegles] = useState<RegleRappel[]>([]);
   const [infoRappel, setInfoRappel] = useState<string | null>(null);
   const [confirmerRetrait, setConfirmerRetrait] = useState(false);
+  const [erreurRetrait, setErreurRetrait] = useState<string | null>(null);
+  const [retires, setRetires] = useState<{ dossier_id: string; nom: string }[]>([]);
 
   const charger = useCallback(() => {
     listerDossiers()
@@ -71,7 +75,16 @@ export default function PortefeuillePage() {
     if (memo) setDossiers(memo);
     charger();
     listerRegles().then(setRegles).catch(() => setRegles([]));
+    listerDossiersRetires().then(setRetires).catch(() => setRetires([]));
   }, [charger]);
+
+  useEffect(() => {
+    // Le message d'un rappel ne doit pas rester affiché sur l'entreprise suivante.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setInfoRappel(null);
+    setErreurRetrait(null);
+    setConfirmerRetrait(false);
+  }, [selection]);
 
   const formes = useMemo(
     () => [...new Set((dossiers ?? []).map((dossier) => dossier.forme_juridique))].sort(),
@@ -216,7 +229,10 @@ export default function PortefeuillePage() {
           <li key={dossier.dossier_id} className="border-b border-hairline">
             <button
               type="button"
-              className="flex w-full items-start justify-between gap-8 rounded-lg px-3 py-5 text-left hover:bg-surface-soft"
+              aria-current={selection === dossier.dossier_id ? "true" : undefined}
+              className={`flex w-full items-start justify-between gap-8 rounded-lg px-3 py-5 text-left hover:bg-surface-soft ${
+                selection === dossier.dossier_id ? "bg-surface-soft" : ""
+              }`}
               onClick={() => {
                 setConfirmerRetrait(false);
                 setSelection((actuel) => (actuel === dossier.dossier_id ? null : dossier.dossier_id));
@@ -267,23 +283,53 @@ export default function PortefeuillePage() {
       {dossiers && visibles.length === 0 && (
         <p className="py-10 text-sm text-subtle">Aucune entreprise pour cette recherche.</p>
       )}
+      {retires.length > 0 && (
+        <section className="mt-10">
+          <h2 className="text-sm font-semibold text-ink">Retirées de la liste</h2>
+          <ul className="mt-2">
+            {retires.map((dossier) => (
+              <li key={dossier.dossier_id} className="flex items-center justify-between border-b border-hairline py-2">
+                <span className="text-sm text-ink">{dossier.nom}</span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={async () => {
+                    await restaurerDossier(dossier.dossier_id);
+                    setRetires(await listerDossiersRetires());
+                    charger();
+                  }}
+                >
+                  Remettre
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       </div>
       {choisi ? (
-        <aside className="flex w-96 shrink-0 flex-col overflow-y-auto border-l border-border bg-canvas p-6">
-          <div className="flex items-start justify-between gap-4">
+        <aside className="sticky top-0 flex h-screen w-96 shrink-0 flex-col overflow-hidden border-l border-border bg-canvas">
+          <div className="flex items-start justify-between gap-4 p-6 pb-0">
             <h2 className="text-lg font-semibold text-ink">{choisi.nom}</h2>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="text-danger"
-              onClick={() => setConfirmerRetrait(true)}
-            >
-              Retirer
-            </Button>
+            <span className="flex gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-danger"
+                onClick={() => setConfirmerRetrait(true)}
+              >
+                Retirer
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setSelection(null)}>
+                Fermer
+              </Button>
+            </span>
           </div>
-          <p className="mt-1 text-sm text-subtle">{libelleCompte(choisi.statut_invitation)}</p>
+          <p className="mt-1 px-6 text-sm text-subtle">{libelleCompte(choisi.statut_invitation)}</p>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
           <Link
             href={`/anomalies/${choisi.dossier_id}`}
             className="mt-3 inline-block text-sm font-medium text-primary hover:underline"
@@ -320,37 +366,48 @@ export default function PortefeuillePage() {
                 Aucune règle. Elles se préparent dans Rappels.
               </p>
             )}
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-2 flex flex-col gap-2">
               {regles
+                .filter((regle) => regle.declencheur === "manuel")
                 .filter(
                   (regle) =>
                     regle.portee !== "selection" || regle.dossier_ids.includes(choisi.dossier_id),
                 )
                 .map((regle) => (
-                <Button
-                  key={regle.id}
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={async () => {
-                    setInfoRappel(null);
-                    try {
-                      await declencherRappel(regle.id, choisi.dossier_id);
-                      setInfoRappel(`${regle.libelle} enregistré. Envoi prévu quand le canal sera branché.`);
-                    } catch (exception) {
-                      setInfoRappel(exception instanceof Error ? exception.message : "Échec du rappel.");
-                    }
-                  }}
-                >
-                  {regle.libelle}
-                </Button>
+                <div key={regle.id}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={async () => {
+                      setInfoRappel(null);
+                      try {
+                        await declencherRappel(regle.id, choisi.dossier_id);
+                        setInfoRappel(`${regle.libelle} enregistré. Envoi prévu quand le canal sera branché.`);
+                      } catch (exception) {
+                        setInfoRappel(exception instanceof Error ? exception.message : "Échec du rappel.");
+                      }
+                    }}
+                  >
+                    {regle.libelle}
+                  </Button>
+                  <p className="mt-1 text-xs text-subtle">
+                    {regle.canaux.map((canal) => (canal === "mail" ? "E-mail" : canal === "sms" ? "SMS" : canal === "appel" ? "Appel" : canal)).join(", ")}
+                    {" — "}
+                    {regle.message}
+                  </p>
+                </div>
               ))}
             </div>
             {infoRappel && <p className="mt-2 text-sm text-subtle">{infoRappel}</p>}
           </div>
           {confirmerRetrait && (
             <div className="mt-6 rounded-lg border border-border bg-canvas-app p-4">
-              <p className="text-sm text-ink">Retirer {choisi.nom} de la liste ?</p>
+              <p className="text-sm text-ink">
+                Retirer {choisi.nom} de la liste ? Les écritures restent. Vous pourrez remettre
+                l&apos;entreprise dans la liste.
+              </p>
+              {erreurRetrait && <p className="mt-2 text-sm text-danger">{erreurRetrait}</p>}
               <div className="mt-3 flex justify-end gap-2">
                 <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmerRetrait(false)}>
                   Annuler
@@ -360,10 +417,18 @@ export default function PortefeuillePage() {
                   variant="danger"
                   size="sm"
                   onClick={async () => {
-                    await retirerDossier(choisi.dossier_id);
-                    setConfirmerRetrait(false);
-                    setSelection(null);
-                    charger();
+                    setErreurRetrait(null);
+                    try {
+                      await retirerDossier(choisi.dossier_id);
+                      setConfirmerRetrait(false);
+                      setSelection(null);
+                      charger();
+                      setRetires(await listerDossiersRetires());
+                    } catch (exception) {
+                      setErreurRetrait(
+                        exception instanceof Error ? exception.message : "Échec du retrait.",
+                      );
+                    }
                   }}
                 >
                   Retirer
@@ -371,10 +436,6 @@ export default function PortefeuillePage() {
               </div>
             </div>
           )}
-          <div className="mt-auto flex justify-end pt-8">
-            <Button type="button" variant="ghost" size="sm" onClick={() => setSelection(null)}>
-              Fermer
-            </Button>
           </div>
         </aside>
       ) : null}
