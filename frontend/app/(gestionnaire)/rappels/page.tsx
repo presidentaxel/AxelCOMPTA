@@ -20,36 +20,6 @@ const CANAUX = [
   { id: "appel", libelle: "Appel" },
 ];
 
-const PREFAITS: {
-  libelle: string;
-  message: string;
-  canaux: string[];
-  declencheur: string;
-  jours_avant: number | null;
-}[] = [
-  {
-    libelle: "15 jours avant la clôture",
-    message: "La clôture approche. Relis les pièces de l'exercice.",
-    canaux: ["mail"],
-    declencheur: "avant_cloture",
-    jours_avant: 15,
-  },
-  {
-    libelle: "Compte à ouvrir",
-    message: "Ouvre ton compte pour suivre l'exercice.",
-    canaux: ["mail", "sms"],
-    declencheur: "manuel",
-    jours_avant: null,
-  },
-  {
-    libelle: "Pièces à compléter",
-    message: "Il reste des pièces à ajouter avant la clôture.",
-    canaux: ["sms"],
-    declencheur: "manuel",
-    jours_avant: null,
-  },
-];
-
 /** Réglages. Une règle « avant clôture » part seule pour les entreprises
  * concernées. L'envoi réel attend le branchement du canal. */
 export default function RappelsPage() {
@@ -68,17 +38,7 @@ export default function RappelsPage() {
 
   useEffect(() => {
     listerRegles()
-      .then(async (liste) => {
-        const manquantes = PREFAITS.filter(
-          (modele) => !liste.some((regle) => regle.libelle === modele.libelle),
-        );
-        // Seul un admin crée les règles préfaites ; un membre ou une
-        // lecture voit la liste telle quelle.
-        for (const modele of manquantes) {
-          await creerRegle({ ...modele, portee: "tous" }).catch(() => undefined);
-        }
-        setRegles(manquantes.length > 0 ? await listerRegles() : liste);
-      })
+      .then(setRegles)
       .catch((exception) => {
         if (exception instanceof ErreurAuthGestionnaire) router.replace("/connexion");
         else setErreur("Impossible de charger les rappels.");

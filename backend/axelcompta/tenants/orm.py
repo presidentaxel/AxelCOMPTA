@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
     false,
 )
 
@@ -130,6 +131,7 @@ regles_rappel = Table(
     # manuel : bouton sur la fiche. avant_cloture : part seul N jours avant la fin.
     Column("declencheur", String, nullable=False, server_default="manuel"),
     Column("jours_avant", Integer, nullable=True),
+    UniqueConstraint("tenant_id", "libelle", name="uq_regles_rappel_tenant_libelle"),
 )
 
 rappels = Table(
