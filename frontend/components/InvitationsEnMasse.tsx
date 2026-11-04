@@ -18,6 +18,8 @@ const LIBELLES: Record<string, string> = {
   erreur: "Échec d'envoi",
 };
 
+const MODELE = "Nom de l'entreprise, email@exemple.fr";
+
 /** Lit « dossier_id,email » (ou séparé par point-virgule / tabulation), une
  * paire par ligne ; ignore les lignes vides et un éventuel en-tête. */
 function lireLignes(texte: string): { dossier_id: string; email: string }[] {
@@ -26,6 +28,23 @@ function lireLignes(texte: string): { dossier_id: string; email: string }[] {
     .map((ligne) => ligne.split(/[,;\t]/).map((partie) => partie.trim()))
     .filter(([dossier, email]) => dossier && email && dossier.toLowerCase() !== "dossier_id")
     .map(([dossier_id, email]) => ({ dossier_id, email }));
+}
+
+/** Dit pourquoi le collage n'a donné aucune invitation, pour l'afficher au clic. */
+function motifIllisible(texte: string): string {
+  const brutes = texte
+    .split(/\r?\n/)
+    .map((ligne) => ligne.trim())
+    .filter((ligne) => ligne.length > 0)
+    .filter((ligne) => ligne.split(/[,;\t]/)[0]?.trim().toLowerCase() !== "dossier_id");
+  const premiere = brutes[0]?.split(/[,;\t]/).map((partie) => partie.trim()).filter(Boolean) ?? [];
+  if (premiere.length < 2 && premiere[0]?.includes("@")) {
+    return `Il manque le nom de l'entreprise. Écrivez « ${MODELE} ».`;
+  }
+  if (premiere.length < 2) {
+    return `Il manque l'e-mail. Écrivez « ${MODELE} ».`;
+  }
+  return `Aucune invitation reconnue. Écrivez « ${MODELE} ».`;
 }
 
 /** doc 19 §3.1 : invitation en masse depuis une base clients. Un fichier ou un
@@ -61,6 +80,11 @@ export function InvitationsEnMasse({
   }
 
   async function envoyer() {
+    if (lignes.length === 0) {
+      setResultat(null);
+      setErreur(motifIllisible(texte));
+      return;
+    }
     setEnCours(true);
     setErreur(null);
     try {
@@ -94,7 +118,10 @@ export function InvitationsEnMasse({
       </label>
       <textarea
         value={texte}
-        onChange={(evenement) => setTexte(evenement.target.value)}
+        onChange={(evenement) => {
+          setTexte(evenement.target.value);
+          setErreur(null);
+        }}
         rows={5}
         placeholder="Nom de l'entreprise, email@exemple.fr"
         disabled={desactive || enCours}
@@ -105,9 +132,9 @@ export function InvitationsEnMasse({
           type="button"
           variant="secondary"
           onClick={envoyer}
-          disabled={desactive || enCours || lignes.length === 0 || troploin}
+          disabled={desactive || enCours || texte.trim().length === 0 || troploin}
         >
-          {enCours ? "Envoi…" : `Inviter ${lignes.length}`}
+          {enCours ? "Envoi…" : lignes.length > 0 ? `Inviter ${lignes.length}` : "Inviter"}
         </Button>
         {troploin && <span className="text-sm text-danger">Trop de lignes ({lignes.length}).</span>}
         {erreur && <span className="text-sm text-danger">{erreur}</span>}
