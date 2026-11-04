@@ -9,14 +9,13 @@ import {
   creerRegle,
   ErreurAuthGestionnaire,
   listerDossiers,
-  listerMembres,
   listerRegles,
   modifierRegle,
-  obtenirSessionGestionnaire,
   supprimerRegle,
   type RegleRappel,
 } from "@/lib/auth-gestionnaire";
 import type { DossierAgregat } from "@/lib/types";
+import { useDroitGestionnaire } from "@/lib/use-droit";
 
 const CANAUX = [
   { id: "sms", libelle: "SMS" },
@@ -28,40 +27,11 @@ function libelleCanal(id: string): string {
   return CANAUX.find((canal) => canal.id === id)?.libelle ?? id;
 }
 
-const PREFAITS: {
-  libelle: string;
-  message: string;
-  canaux: string[];
-  declencheur: string;
-  jours_avant: number | null;
-}[] = [
-  {
-    libelle: "15 jours avant la clôture",
-    message: "La clôture approche. Relis les pièces de l'exercice.",
-    canaux: ["mail"],
-    declencheur: "avant_cloture",
-    jours_avant: 15,
-  },
-  {
-    libelle: "Compte à ouvrir",
-    message: "Ouvre ton compte pour suivre l'exercice.",
-    canaux: ["mail", "sms"],
-    declencheur: "manuel",
-    jours_avant: null,
-  },
-  {
-    libelle: "Pièces à compléter",
-    message: "Il reste des pièces à ajouter avant la clôture.",
-    canaux: ["sms"],
-    declencheur: "manuel",
-    jours_avant: null,
-  },
-];
-
 /** Réglages. Une règle « avant clôture » part seule pour les entreprises
  * concernées. L'envoi réel attend le branchement du canal. */
 export default function RappelsPage() {
   const router = useRouter();
+  const droit = useDroitGestionnaire();
   const [regles, setRegles] = useState<RegleRappel[] | null>(null);
   const [dossiers, setDossiers] = useState<DossierAgregat[]>([]);
   const [libelle, setLibelle] = useState("");
@@ -73,21 +43,10 @@ export default function RappelsPage() {
   const [choisis, setChoisis] = useState<string[]>([]);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
-  const [admin, setAdmin] = useState(false);
 
   useEffect(() => {
     listerRegles()
-      .then(async (liste) => {
-        const manquantes = PREFAITS.filter(
-          (modele) => !liste.some((regle) => regle.libelle === modele.libelle),
-        );
-        // Seul un admin crée les règles préfaites ; un membre ou une
-        // lecture voit la liste telle quelle.
-        for (const modele of manquantes) {
-          await creerRegle({ ...modele, portee: "tous" }).catch(() => undefined);
-        }
-        setRegles(manquantes.length > 0 ? await listerRegles() : liste);
-      })
+      .then(setRegles)
       .catch((exception) => {
         if (exception instanceof ErreurAuthGestionnaire) router.replace("/connexion");
         else setErreur("Impossible de charger les rappels.");
@@ -95,13 +54,6 @@ export default function RappelsPage() {
     listerDossiers()
       .then(setDossiers)
       .catch(() => undefined);
-    const session = obtenirSessionGestionnaire();
-    listerMembres()
-      .then((membres) => {
-        const moi = membres.find((membre) => membre.email.toLowerCase() === session?.email.toLowerCase());
-        setAdmin(moi ? moi.role === "admin" : true);
-      })
-      .catch(() => setAdmin(false));
   }, [router]);
 
   async function ajouter(regle: {
@@ -147,6 +99,7 @@ export default function RappelsPage() {
         className="space-y-4 lg:col-span-2"
         onSubmit={(evenement) => {
           evenement.preventDefault();
+          if (!droit.admin) return;
           void ajouter({
             libelle: libelle.trim(),
             message: message.trim(),
@@ -159,11 +112,27 @@ export default function RappelsPage() {
         }}
       >
         <p className="text-sm font-medium text-ink">Votre règle</p>
-        {!admin && (
-          <p className="text-sm text-subtle">Seule une personne administratrice crée ou modifie une règle.</p>
+        {!droit.admin && (
+          <p className="text-sm text-subtle">
+            Seule une personne administratrice crée ou modifie une règle.
+          </p>
         )}
-        <Input value={libelle} onChange={(e) => setLibelle(e.target.value)} placeholder="Nom" aria-label="Nom de la règle" required disabled={enCours || !admin} />
-        <Input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Message" aria-label="Message de la règle" required disabled={enCours || !admin} />
+        <Input
+          value={libelle}
+          onChange={(e) => setLibelle(e.target.value)}
+          placeholder="Nom"
+          aria-label="Nom de la règle"
+          required
+          disabled={enCours || !droit.admin}
+        />
+        <Input
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Message"
+          aria-label="Message de la règle"
+          required
+          disabled={enCours || !droit.admin}
+        />
         <div className="flex flex-wrap gap-2">
           {CANAUX.map((canal) => {
             const actif = canaux.includes(canal.id);
@@ -172,7 +141,7 @@ export default function RappelsPage() {
                 key={canal.id}
                 type="button"
                 aria-pressed={actif}
-                disabled={!admin}
+                disabled={!droit.admin}
                 onClick={() =>
                   setCanaux((actuel) => (actif ? actuel.filter((id) => id !== canal.id) : [...actuel, canal.id]))
                 }
@@ -187,7 +156,7 @@ export default function RappelsPage() {
           <button
             type="button"
             aria-pressed={declencheur === "avant_cloture"}
-            disabled={!admin}
+            disabled={!droit.admin}
             onClick={() => setDeclencheur("avant_cloture")}
             className={`rounded-full border px-3 py-1.5 ${declencheur === "avant_cloture" ? "border-primary bg-primary-subtle text-primary" : "border-border text-subtle"}`}
           >
@@ -196,7 +165,7 @@ export default function RappelsPage() {
           <button
             type="button"
             aria-pressed={declencheur === "manuel"}
-            disabled={!admin}
+            disabled={!droit.admin}
             onClick={() => setDeclencheur("manuel")}
             className={`rounded-full border px-3 py-1.5 ${declencheur === "manuel" ? "border-primary bg-primary-subtle text-primary" : "border-border text-subtle"}`}
           >
@@ -219,7 +188,7 @@ export default function RappelsPage() {
           <button
             type="button"
             aria-pressed={portee === "tous"}
-            disabled={!admin}
+            disabled={!droit.admin}
             onClick={() => setPortee("tous")}
             className={`rounded-full border px-3 py-1.5 text-sm ${portee === "tous" ? "border-primary bg-primary-subtle text-primary" : "border-border text-subtle"}`}
           >
@@ -228,7 +197,7 @@ export default function RappelsPage() {
           <button
             type="button"
             aria-pressed={portee === "selection"}
-            disabled={!admin}
+            disabled={!droit.admin}
             onClick={() => setPortee("selection")}
             className={`rounded-full border px-3 py-1.5 text-sm ${portee === "selection" ? "border-primary bg-primary-subtle text-primary" : "border-border text-subtle"}`}
           >
@@ -257,7 +226,7 @@ export default function RappelsPage() {
             ))}
           </ul>
         )}
-        <Button type="submit" disabled={enCours || !admin || canaux.length === 0}>
+        <Button type="submit" disabled={!droit.admin || enCours || canaux.length === 0}>
           Enregistrer la règle
         </Button>
       </form>
@@ -269,7 +238,7 @@ export default function RappelsPage() {
           <li key={regle.id} className="border-b border-hairline py-4">
             <p className="text-sm font-medium text-ink">{regle.libelle}</p>
             <p className="mt-1 text-sm text-subtle">{regle.message}</p>
-            {admin && (
+            {droit.admin && (
               <div className="mt-2 flex gap-2">
                 <Button
                   type="button"

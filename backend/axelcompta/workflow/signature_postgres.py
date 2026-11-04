@@ -9,6 +9,7 @@ preuve, jamais écrasé.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.engine import Engine, Row
@@ -65,6 +66,26 @@ class PostgresSignatureRepository(SignatureRepository):
                 .limit(1)
             ).fetchone()
         return _ligne_vers_document(ligne) if ligne is not None else None
+
+    def types_presents(
+        self, dossier_ids: Sequence[DossierId], types_document: Sequence[str]
+    ) -> dict[DossierId, set[str]]:
+        presents: dict[DossierId, set[str]] = {dossier_id: set() for dossier_id in dossier_ids}
+        if not dossier_ids or not types_document:
+            return presents
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            lignes = connexion.execute(
+                select(documents_signes.c.dossier_id, documents_signes.c.type_document)
+                .where(
+                    documents_signes.c.dossier_id.in_(list(dossier_ids)),
+                    documents_signes.c.type_document.in_(list(types_document)),
+                )
+                .distinct()
+            )
+            for ligne in lignes:
+                presents[DossierId(ligne.dossier_id)].add(ligne.type_document)
+        return presents
 
     def lister(self, dossier_id: DossierId, type_document: str) -> tuple[DocumentSigne, ...]:
         with self._engine.connect() as connexion:

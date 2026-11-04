@@ -18,7 +18,7 @@ function Input({
       data-size={uiSize}
       className={cn(
         "w-full min-w-0 rounded-md border border-border bg-canvas text-ink outline-none transition-colors duration-100 placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-50",
-        "focus-visible:border-border-focus focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.12)]",
+        "focus-visible:border-border-focus focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)]",
         uiSize === "lg" ? "h-11 px-3.5 text-base" : "h-9 px-3 text-sm",
         className
       )}

@@ -14,6 +14,7 @@ import {
   reglerRelancePortefeuille,
 } from "@/lib/auth-gestionnaire";
 import { formatDate } from "@/lib/format";
+import { useDroitGestionnaire } from "@/lib/use-droit";
 
 const STATUTS: Record<ConnexionDossier["statut"], string> = {
   expire: "Expirée",
@@ -47,6 +48,7 @@ const MODES: { mode: ModeRelance; titre: string; detail: string }[] = [
  * rang, et le mode de relance du portefeuille ou d'un dossier. */
 export default function ConnexionsBancairesPage() {
   const router = useRouter();
+  const droit = useDroitGestionnaire();
   const [donnees, setDonnees] = useState<ConnexionsBancaires | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
@@ -104,7 +106,7 @@ export default function ConnexionsBancairesPage() {
                   <button
                     key={mode}
                     type="button"
-                    disabled={enCours || actif}
+                    disabled={!droit.ecriture || enCours || actif}
                     onClick={() => void regler(() => reglerRelancePortefeuille(mode))}
                     aria-pressed={actif}
                     className={`rounded-md border p-4 text-left ${actif ? "border-primary bg-primary-subtle" : "border-border hover:border-ink"}`}
@@ -155,7 +157,7 @@ export default function ConnexionsBancairesPage() {
                     )}
                     <select
                       aria-label={`Relances pour ${dossier.nom}`}
-                      disabled={enCours}
+                      disabled={!droit.ecriture || enCours}
                       value={dossier.relance_propre ? dossier.relance : "portefeuille"}
                       onChange={(evenement) => {
                         const valeur = evenement.target.value;

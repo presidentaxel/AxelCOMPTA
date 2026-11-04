@@ -1,7 +1,7 @@
 """Une règle de rappel peut être suspendue sans être supprimée.
 
 Revision ID: a1d4e8c72b09
-Revises: b6d1e9a43c20
+Revises: c8e4a1d92b17
 """
 
 from collections.abc import Sequence
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "a1d4e8c72b09"
-down_revision: str | Sequence[str] | None = "b6d1e9a43c20"
+down_revision: str | Sequence[str] | None = "c8e4a1d92b17"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

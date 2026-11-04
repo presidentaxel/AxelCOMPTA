@@ -18,6 +18,8 @@ const LIBELLES: Record<string, string> = {
   erreur: "Échec d'envoi",
 };
 
+const MODELE = "Nom de l'entreprise, email@exemple.fr";
+
 /** Lit « dossier_id,email » (ou séparé par point-virgule / tabulation), une
  * paire par ligne ; ignore les lignes vides et un éventuel en-tête. */
 function lireLignes(texte: string): { dossier_id: string; email: string }[] {
@@ -28,14 +30,33 @@ function lireLignes(texte: string): { dossier_id: string; email: string }[] {
     .map(([dossier_id, email]) => ({ dossier_id, email }));
 }
 
+/** Dit pourquoi le collage n'a donné aucune invitation, pour l'afficher au clic. */
+function motifIllisible(texte: string): string {
+  const brutes = texte
+    .split(/\r?\n/)
+    .map((ligne) => ligne.trim())
+    .filter((ligne) => ligne.length > 0)
+    .filter((ligne) => ligne.split(/[,;\t]/)[0]?.trim().toLowerCase() !== "dossier_id");
+  const premiere = brutes[0]?.split(/[,;\t]/).map((partie) => partie.trim()).filter(Boolean) ?? [];
+  if (premiere.length < 2 && premiere[0]?.includes("@")) {
+    return `Il manque le nom de l'entreprise. Écrivez « ${MODELE} ».`;
+  }
+  if (premiere.length < 2) {
+    return `Il manque l'e-mail. Écrivez « ${MODELE} ».`;
+  }
+  return `Aucune invitation reconnue. Écrivez « ${MODELE} ».`;
+}
+
 /** doc 19 §3.1 : invitation en masse depuis une base clients. Un fichier ou un
  * collage, un aperçu du nombre de lignes, puis un résultat ligne par ligne :
  * les lignes en échec n'empêchent pas les autres. */
 export function InvitationsEnMasse({
   dossiers,
+  desactive = false,
   onTermine,
 }: {
   dossiers: DossierAgregat[];
+  desactive?: boolean;
   onTermine: () => void;
 }) {
   const [texte, setTexte] = useState("");
@@ -59,6 +80,11 @@ export function InvitationsEnMasse({
   }
 
   async function envoyer() {
+    if (lignes.length === 0) {
+      setResultat(null);
+      setErreur(motifIllisible(texte));
+      return;
+    }
     setEnCours(true);
     setErreur(null);
     try {
@@ -76,16 +102,29 @@ export function InvitationsEnMasse({
       <p className="mb-3 text-sm text-subtle">
         Une ligne par entreprise : nom ou identifiant, e-mail. {MAX_LIGNES} lignes au plus.
       </p>
-      <label className="mb-3 inline-flex h-9 cursor-pointer items-center rounded-md border border-border-strong bg-canvas px-4 text-sm font-semibold text-ink hover:bg-canvas-app">
+      <label
+        className={`mb-3 inline-flex h-9 items-center rounded-md border border-border-strong bg-canvas px-4 text-sm font-semibold text-ink ${
+          desactive ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-canvas-app"
+        }`}
+      >
         Choisir un fichier
-        <input type="file" accept=".csv,.txt" onChange={charger} className="sr-only" />
+        <input
+          type="file"
+          accept=".csv,.txt"
+          onChange={charger}
+          disabled={desactive || enCours}
+          className="sr-only"
+        />
       </label>
       <textarea
         value={texte}
-        onChange={(evenement) => setTexte(evenement.target.value)}
+        onChange={(evenement) => {
+          setTexte(evenement.target.value);
+          setErreur(null);
+        }}
         rows={5}
         placeholder="Nom de l'entreprise, email@exemple.fr"
-        disabled={enCours}
+        disabled={desactive || enCours}
         className="w-full rounded-md border border-border px-3 py-2 font-mono text-xs"
       />
       <div className="mt-2 flex items-center gap-3">
@@ -93,9 +132,9 @@ export function InvitationsEnMasse({
           type="button"
           variant="secondary"
           onClick={envoyer}
-          disabled={enCours || lignes.length === 0 || troploin}
+          disabled={desactive || enCours || texte.trim().length === 0 || troploin}
         >
-          {enCours ? "Envoi…" : `Inviter ${lignes.length}`}
+          {enCours ? "Envoi…" : lignes.length > 0 ? `Inviter ${lignes.length}` : "Inviter"}
         </Button>
         {troploin && <span className="text-sm text-danger">Trop de lignes ({lignes.length}).</span>}
         {erreur && <span className="text-sm text-danger">{erreur}</span>}
