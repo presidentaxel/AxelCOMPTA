@@ -54,6 +54,14 @@ export function gardeEtape(dossier: DossierAgregat, cible: string): boolean {
   );
 }
 
+/** Première étape pas encore faite. « À jour » quand la frise est complète. */
+export function etapeBloquante(etape: string, compteOuvert: boolean): string {
+  if (etape === "Sans exercice") return "Sans exercice";
+  const rang = rangEtape(etape, compteOuvert);
+  if (rang >= ETAPES_FRISE.length - 1) return "À jour";
+  return ETAPES_FRISE[rang + 1] ?? ETAPES_FRISE[0];
+}
+
 export function nonDeclarePourAnnee(dossier: DossierAgregat, annee: number): boolean {
   const ouvert = dossier.statut_invitation === "actif";
   if (dossier.annee_courante === annee && impotsNonDeclares(dossier.etape_courante, ouvert)) {

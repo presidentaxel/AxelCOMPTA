@@ -6,7 +6,12 @@ import { useCallback, useEffect, useState } from "react";
 
 import { InstructionAlerte } from "@/components/InstructionAlerte";
 import { Squelette } from "@/components/Squelette";
-import { ErreurAuthGestionnaire, instruireAlerte, listerAnomalies, listerDossiers } from "@/lib/auth-gestionnaire";
+import {
+  ErreurAuthGestionnaire,
+  instruireAlerte,
+  listerAnomalies,
+  listerDossiers,
+} from "@/lib/auth-gestionnaire";
 import type { AlerteAnomalie } from "@/lib/types";
 
 export default function AnomaliesPage() {
@@ -33,7 +38,9 @@ export default function AnomaliesPage() {
   useEffect(() => {
     charger();
     listerDossiers()
-      .then((dossiers) => setNom(dossiers.find((dossier) => dossier.dossier_id === dossierId)?.nom ?? null))
+      .then((dossiers) =>
+        setNom(dossiers.find((dossier) => dossier.dossier_id === dossierId)?.nom ?? null),
+      )
       .catch(() => setNom(null));
   }, [charger, dossierId]);
 
@@ -54,7 +61,10 @@ export default function AnomaliesPage() {
 
   return (
     <div>
-      <Link href="/portefeuille" className="text-sm font-medium text-primary hover:underline">
+      <Link
+        href={`/portefeuille?ouvert=${dossierId}`}
+        className="text-sm font-medium text-primary hover:underline"
+      >
         Entreprises
       </Link>
       <h1 className="mt-4 text-[28px] font-bold tracking-tight text-ink">

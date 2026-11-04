@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy.engine import Engine
 
 from axelcompta.core.ids import DossierId, UserId
-from axelcompta.workflow.signature import DocumentSigne
+from axelcompta.workflow.signature import DocumentSigne, SignatureRepository
 from axelcompta.workflow.signature_postgres import PostgresSignatureRepository
 
 pytestmark = pytest.mark.integration
@@ -63,3 +63,25 @@ def test_signatures_isolees_par_type_de_document(
     )
 
     assert repo.dernier(DossierId(id_unique), "autre") is None
+
+
+def test_types_presents_en_une_lecture_comme_le_defaut_du_contrat(
+    engine: Engine, id_unique: str, creer_dossier: Callable[[str], None]
+) -> None:
+    premier, second = f"{id_unique}-a", f"{id_unique}-b"
+    creer_dossier(premier)
+    creer_dossier(second)
+    repo = PostgresSignatureRepository(engine)
+    quand = datetime(2026, 9, 24, 10, 0, tzinfo=UTC)
+    repo.enregistrer(DossierId(premier), "cloture", _document(quand))
+    repo.enregistrer(DossierId(premier), "cloture", _document(quand.replace(hour=11)))
+    repo.enregistrer(DossierId(premier), "greffe_inpi", _document(quand))
+    repo.enregistrer(DossierId(premier), "hors_frise", _document(quand))
+    ids = [DossierId(premier), DossierId(second)]
+    types = ["cloture", "validation_comptes", "greffe_inpi"]
+
+    presents = repo.types_presents(ids, types)
+
+    assert presents == {DossierId(premier): {"cloture", "greffe_inpi"}, DossierId(second): set()}
+    assert presents == SignatureRepository.types_presents(repo, ids, types)
+    assert repo.types_presents([], types) == {}

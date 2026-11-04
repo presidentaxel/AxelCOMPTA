@@ -196,6 +196,43 @@ de régime en vigueur, sortie de franchise de TVA le cas échéant). Rejouable
 sans doublon. Le menu Démo ne sait pas effacer des à-nouveaux : une clôture
 faite sur la démo reste.
 
+### Agrégats du portefeuille (AXE-566)
+
+La page Entreprises ne reconstruit plus chaque dossier : elle lit les montants
+de la liasse, l'exercice et l'alerte de franchise de TVA dans la table
+`agregats_dossier`. Un trigger Postgres périme la ligne d'un dossier à chaque
+écriture qui le concerne (écriture comptable, décision, provision de clôture,
+modification du dossier), d'où qu'elle vienne : une route, la synchro
+Digifactory, un script. Le statut d'invitation, les preuves de l'exercice et
+la date du jour ne sont pas gardés, ils sont lus à l'affichage.
+
+**Migration `e7b3d9a15c42` à appliquer avant de déployer l'API** (sans la
+table, `GET /dossiers` échoue) :
+
+```bash
+set -a && . ../.env && set +a
+.venv/bin/alembic upgrade head
+.venv/bin/python -m axelcompta.agregats_portefeuille --tenant <tenant_id> --recalculer
+```
+
+La seconde commande remplit la table. Elle est facultative, mais sans elle la
+première ouverture de chaque portefeuille calcule tous ses dossiers (mesuré :
+huit secondes pour 200 dossiers de 300 écritures). Rejouable à tout moment,
+même pendant que l'API tourne.
+
+Pour contrôler qu'aucune invalidation n'a été manquée (lecture seule, code de
+sortie 1 s'il y a un écart) :
+
+```bash
+.venv/bin/python -m axelcompta.agregats_portefeuille --tenant <tenant_id> --verifier
+```
+
+Si le calcul change sans qu'aucune écriture n'ait lieu (formule de la liasse,
+matrice des statuts, seuils de franchise, pack métier), monter
+`VERSION_CALCUL` dans `tenants/agregats.py` : les lignes calculées avec
+l'ancienne version sont ignorées et recalculées au fil des ouvertures, ou
+tout de suite avec `--recalculer --tout`.
+
 ### Tâches planifiées (cron)
 
 `python -m axelcompta.taches` enchaîne, pour chaque portefeuille, la synchro
