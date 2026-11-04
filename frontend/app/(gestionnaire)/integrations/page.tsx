@@ -15,19 +15,19 @@ import { useDroitGestionnaire } from "@/lib/use-droit";
 const PREVUES = [
   {
     nom: "Bridge",
-    detail: "Connexion bancaire directe, en plus du canal déjà utilisé pour le pilote.",
+    detail: "Connecterait la banque en direct, en plus du canal déjà utilisé pour le pilote.",
   },
   {
     nom: "Volubile",
-    detail: "Appels automatiques pour les rappels configurés dans Rappels.",
+    detail: "Passerait les appels des relances configurées dans Rappels.",
   },
   {
     nom: "SMS",
-    detail: "Envoi des rappels par SMS.",
+    detail: "Enverrait les relances par SMS.",
   },
   {
     nom: "E-mail",
-    detail: "Envoi des rappels par e-mail, distinct de l'invitation de compte.",
+    detail: "Enverrait les relances par e-mail, à part de l'invitation de compte.",
   },
 ];
 
