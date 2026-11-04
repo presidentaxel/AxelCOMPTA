@@ -163,8 +163,8 @@ export function EcranEntreprises() {
   const choisi = dossiers?.find((dossier) => dossier.dossier_id === selection) ?? null;
 
   return (
-    <div className="-m-8 flex min-h-screen">
-    <div className="min-w-0 flex-1 p-8">
+    <div className="sticky top-0 -m-8 flex h-screen overflow-hidden">
+    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-8">
       <div className="flex items-start justify-between gap-6">
         <h1 className="text-[28px] font-bold tracking-tight text-ink">Entreprises</h1>
         <Link href="/invitations" className="mt-2 text-sm font-medium text-primary hover:underline">
@@ -172,6 +172,35 @@ export function EcranEntreprises() {
         </Link>
       </div>
       <AlerteConnexions />
+      {retires.length > 0 && (
+        <section className="mt-6 rounded-lg border border-border bg-canvas p-4">
+          <h2 className="text-sm font-semibold text-ink">Retirées de la liste</h2>
+          <p className="mt-1 text-sm text-subtle">Les écritures sont gardées.</p>
+          <ul className="mt-3">
+            {retires.map((dossier) => (
+              <li
+                key={dossier.dossier_id}
+                className="flex items-center justify-between border-b border-hairline py-2"
+              >
+                <span className="text-sm text-ink">{dossier.nom}</span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    void restaurerDossier(dossier.dossier_id).then(async () => {
+                      setRetires(await listerDossiersRetires());
+                      charger();
+                    });
+                  }}
+                >
+                  Remettre
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {dossiers ? (
         <dl className="mt-8 flex flex-wrap gap-x-12 gap-y-4">
           <Total
@@ -359,41 +388,12 @@ export function EcranEntreprises() {
           </Button>
         </div>
       )}
-      {retires.length > 0 && (
-        <section className="mt-10">
-          <h2 className="text-sm font-semibold text-ink">Retirées de la liste</h2>
-          <ul className="mt-2">
-            {retires.map((dossier) => (
-              <li
-                key={dossier.dossier_id}
-                className="flex items-center justify-between border-b border-hairline py-2"
-              >
-                <span className="text-sm text-ink">{dossier.nom}</span>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    void restaurerDossier(dossier.dossier_id).then(async () => {
-                      setRetires(await listerDossiersRetires());
-                      charger();
-                    });
-                  }}
-                >
-                  Remettre
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
       </div>
       {choisi ? (
-        <aside className="sticky top-0 flex h-screen w-96 shrink-0 flex-col overflow-hidden border-l border-border bg-canvas">
-          <div className="flex items-start justify-between gap-4 p-6 pb-0">
-            <h2 className="text-lg font-semibold text-ink">{choisi.nom}</h2>
-            <span className="flex gap-1">
+        <aside className="flex h-full w-96 shrink-0 flex-col overflow-hidden border-l border-border bg-canvas">
+          <div className="flex shrink-0 items-start justify-between gap-4 p-6 pb-4">
+            <h2 className="min-w-0 truncate text-lg font-semibold text-ink">{choisi.nom}</h2>
+            <span className="flex shrink-0 flex-nowrap gap-1">
               <Button
                 type="button"
                 variant="ghost"
