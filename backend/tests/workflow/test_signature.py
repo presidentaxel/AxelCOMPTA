@@ -85,3 +85,16 @@ def test_repository_memoire_isole_par_type_document() -> None:
     repo.enregistrer(DOSSIER, "greffe_inpi", document)
 
     assert repo.dernier(DOSSIER, "autre_type_document") is None
+
+
+def test_types_presents_regroupe_un_portefeuille_et_ignore_les_autres_types() -> None:
+    repo = InMemorySignatureRepository()
+    autre = DossierId("d2")
+    document = SignatureDemoProvider().signer(_pdf_factice(), GESTIONNAIRE)
+    repo.enregistrer(DOSSIER, "cloture", document)
+    repo.enregistrer(DOSSIER, "cloture", document)  # un historique ne compte qu'une fois
+    repo.enregistrer(DOSSIER, "hors_frise", document)
+
+    presents = repo.types_presents([DOSSIER, autre], ["cloture", "greffe_inpi"])
+
+    assert presents == {DOSSIER: {"cloture"}, autre: set()}
