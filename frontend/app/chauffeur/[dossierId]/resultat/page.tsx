@@ -7,8 +7,10 @@
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
 
+import { useDossierChauffeur, type Bloc } from "@/app/chauffeur/use-dossier";
 import { Button } from "@/components/ui/button";
 import { DividendesSection } from "@/components/DividendesSection";
+import { ResultatACeJour } from "@/components/ResultatACeJour";
 import { Squelette, SqueletteLignes } from "@/components/Squelette";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
@@ -18,7 +20,8 @@ import {
   fetchAvecAuthChauffeur,
 } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
-import type { AffectationVue, ScenarioAffectation } from "@/lib/types";
+import { lireMontantEuros } from "@/lib/montant";
+import type { AffectationVue, DossierResume, ScenarioAffectation } from "@/lib/types";
 
 export default function ResultatChauffeurPage({
   params,
@@ -26,6 +29,7 @@ export default function ResultatChauffeurPage({
   params: Promise<{ dossierId: string }>;
 }) {
   const { dossierId } = use(params);
+  const { dossier } = useDossierChauffeur(dossierId);
   const [vue, setVue] = useState<AffectationVue | null>(null);
   const [choix, setChoix] = useState<string | null>(null);
   const [montantLibre, setMontantLibre] = useState("");
@@ -85,12 +89,13 @@ export default function ResultatChauffeurPage({
     );
   }
 
-  const libreCts = Math.round(Number(montantLibre.replace(",", ".")) * 100);
+  const lecture = lireMontantEuros(montantLibre);
   const dividendes =
     choix === "libre"
-      ? libreCts
+      ? lecture.centimes
       : (vue.scenarios.find((scenario) => scenario.cle === choix)?.dividendes_cts ?? null);
-  const pret = choix !== null && dividendes !== null && !Number.isNaN(dividendes) && confirme;
+  const messageMontant = choix === "libre" ? lecture.message : null;
+  const pret = choix !== null && dividendes !== null && confirme;
 
   async function decider() {
     if (choix === null || dividendes === null) return;
@@ -115,8 +120,10 @@ export default function ResultatChauffeurPage({
       <h1 className="text-[28px] font-bold tracking-tight text-ink">
         Mon résultat {vue.annee_exercice}
       </h1>
+      <div className="mt-4">
+        <BlocResultat dossier={dossier} />
+      </div>
       <dl className="mt-4 space-y-1 text-sm">
-        <Ligne libelle="Résultat" cents={vue.resultat_cts} />
         <Ligne libelle="Réserve légale à doter" cents={vue.reserve_legale_cts} />
         <Ligne libelle="Distribuable" cents={vue.distribuable_cts} />
         <Ligne libelle="Trésorerie disponible" cents={vue.disponible_cts} />
@@ -131,28 +138,13 @@ export default function ResultatChauffeurPage({
             onChoisir={() => setChoix(scenario.cle)}
           />
         ))}
-        <li>
-          <label className="flex min-h-11 flex-col gap-3 rounded-md border border-border bg-canvas p-3 text-base">
-            <span className="flex min-h-11 items-center gap-3">
-              <input
-                type="radio"
-                className="size-6 shrink-0"
-                checked={choix === "libre"}
-                onChange={() => setChoix("libre")}
-              />
-              <span className="flex-1 text-ink">Un autre montant de dividendes</span>
-            </span>
-            <Input
-              inputMode="decimal"
-              className="h-11 text-base"
-              placeholder="€"
-              aria-label="Montant libre de dividendes"
-              value={montantLibre}
-              onFocus={() => setChoix("libre")}
-              onChange={(evenement) => setMontantLibre(evenement.target.value)}
-            />
-          </label>
-        </li>
+        <ChampMontantLibre
+          choisi={choix === "libre"}
+          montant={montantLibre}
+          message={messageMontant}
+          onChoisir={() => setChoix("libre")}
+          onMontant={setMontantLibre}
+        />
       </ul>
       <ul className="mt-4 space-y-1 text-xs text-subtle">
         {vue.avertissements.map((avertissement) => (
@@ -177,6 +169,75 @@ export default function ResultatChauffeurPage({
       {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}
       <div className="mt-6">{retour}</div>
     </div>
+  );
+}
+
+function BlocResultat({ dossier }: { dossier: Bloc<DossierResume> }) {
+  if (dossier.statut === "en_cours") {
+    return (
+      <div>
+        <Squelette className="h-8 w-32" />
+        <Squelette className="mt-2 h-4 w-56" />
+      </div>
+    );
+  }
+  if (dossier.statut === "erreur") {
+    return <p className="text-sm text-danger">{dossier.message}</p>;
+  }
+  return <ResultatACeJour dossier={dossier.valeur} />;
+}
+
+function ChampMontantLibre({
+  choisi,
+  montant,
+  message,
+  onChoisir,
+  onMontant,
+}: {
+  choisi: boolean;
+  montant: string;
+  message: string | null;
+  onChoisir: () => void;
+  onMontant: (valeur: string) => void;
+}) {
+  return (
+    <li className={`rounded-md border bg-canvas p-3 text-base ${choisi ? "border-ink" : "border-border"}`}>
+      <div className="flex min-h-11 items-center gap-3 text-sm">
+        <input
+          id="scenario-libre"
+          type="radio"
+          name="scenario"
+          value="libre"
+          className="size-6 shrink-0"
+          checked={choisi}
+          onChange={onChoisir}
+        />
+        <label htmlFor="scenario-libre" className="text-ink">
+          Un autre montant de dividendes
+        </label>
+      </div>
+      <div className="mt-3 pl-7">
+        <label htmlFor="montant-dividendes" className="mb-1 block text-sm font-medium text-ink">
+          Montant (€)
+        </label>
+        <Input
+          id="montant-dividendes"
+          name="montant-dividendes"
+          uiSize="lg"
+          inputMode="decimal"
+          value={montant}
+          aria-invalid={message !== null}
+          aria-describedby={message ? "montant-dividendes-message" : undefined}
+          onFocus={onChoisir}
+          onChange={(evenement) => onMontant(evenement.target.value)}
+        />
+        {message && (
+          <p id="montant-dividendes-message" role="alert" className="mt-1 text-sm text-danger">
+            {message}
+          </p>
+        )}
+      </div>
+    </li>
   );
 }
 
@@ -206,7 +267,14 @@ function CarteScenario({
         }`}
       >
         <span className="flex min-h-11 items-center gap-3">
-          <input type="radio" className="size-6 shrink-0" checked={choisi} onChange={onChoisir} />
+          <input
+            type="radio"
+            name="scenario"
+            value={scenario.cle}
+            className="size-6 shrink-0"
+            checked={choisi}
+            onChange={onChoisir}
+          />
           <span className="flex-1 font-medium text-ink">{scenario.libelle}</span>
           <span className="tabular-nums text-ink">{formatMontant(scenario.dividendes_cts)}</span>
         </span>

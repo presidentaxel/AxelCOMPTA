@@ -29,11 +29,13 @@ const DOSSIER = {
   tresorerie_cts: 20_00,
   tva_a_payer_cts: 0,
   nb_transactions: 2,
-  nb_a_trancher: 1,
+  // Activité garde une ligne à classer. L'exercice, lui, est clos : la liasse
+  // s'ouvre, ce que la PR 76 interdit tant qu'il reste une opération.
+  nb_a_trancher: 0,
   statut_invitation: "actif",
   mode_acces_bancaire: "gestionnaire",
   peut_connecter_sa_banque: false,
-  cloture_faite: false,
+  cloture_faite: true,
   greffe_inpi_signe: false,
   guide_greffe: {
     depose: true,

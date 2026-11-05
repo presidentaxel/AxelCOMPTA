@@ -88,7 +88,7 @@ export function ProvisionsCloture({
   }
 
   return (
-    <div className="mt-4 rounded-md border border-border bg-canvas p-3">
+    <div className="mt-8 rounded-md border border-border bg-canvas p-3">
       <p className="text-sm text-ink">Une charge de cet exercice n&apos;est pas encore passée ?</p>
       <p className="mt-1 text-sm text-subtle">
         Donnez votre estimation. Elle sera prise dans la clôture. Rien n&apos;est deviné.

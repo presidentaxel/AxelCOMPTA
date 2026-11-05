@@ -14,9 +14,11 @@ import { Download } from "lucide-react";
 import { useState } from "react";
 
 import { Dialogue } from "@/components/Dialogue";
+import { ResultatACeJour } from "@/components/ResultatACeJour";
 import { Button } from "@/components/ui/button";
 import { cheminTelechargementCloture } from "@/lib/api";
 import { ErreurAuthChauffeur, telechargerAvecAuthChauffeur } from "@/lib/auth-chauffeur";
+import { phraseOperationsRestantes } from "@/lib/etapes-exercice";
 import { formatMontant } from "@/lib/format";
 import type { DocumentCloture, DossierResume } from "@/lib/types";
 
@@ -49,14 +51,47 @@ function pieceDeclaration(dossier: DossierResume) {
   };
 }
 
-export function ClotureSection({ dossier }: { dossier: DossierResume }) {
+function texteDocuments(operationsRestantes: number, comptesClos: boolean): string {
+  if (operationsRestantes > 0) {
+    return phraseOperationsRestantes(operationsRestantes);
+  }
+  const etat = comptesClos ? "Les comptes sont clôturés." : "Les comptes ne sont pas clôturés.";
+  const suite = comptesClos
+    ? "À télécharger et à conserver."
+    : "La liasse définitive sera disponible une fois l'exercice clos.";
+  return `${etat} ${suite} La déclaration n'est pas envoyée d'ici.`;
+}
+
+export function ChiffresExercice({ dossier }: { dossier: DossierResume }) {
+  return (
+    <section>
+      <ResultatACeJour dossier={dossier} />
+      <dl className="mt-4 space-y-2 text-sm">
+        <Ligne label="CA HT" cents={dossier.ca_ht_cts} />
+        <Ligne label="Charges" cents={dossier.charges_cts} />
+        <Ligne label="Trésorerie" cents={dossier.tresorerie_cts} />
+        <Ligne label="TVA à payer" cents={dossier.tva_a_payer_cts} />
+      </dl>
+    </section>
+  );
+}
+
+export function ClotureSection({
+  dossier,
+  comptesClos,
+  operationsRestantes,
+}: {
+  dossier: DossierResume;
+  comptesClos: boolean;
+  operationsRestantes: number;
+}) {
   const [erreur, setErreur] = useState<string | null>(null);
   const [avertissementLiasse, setAvertissementLiasse] = useState(false);
-  const [avertissementLu, setAvertissementLu] = useState(false);
   const [liasseLue, setLiasseLue] = useState(false);
+  const bloque = operationsRestantes > 0 || !comptesClos;
 
   function ouvrirAvertissement() {
-    setAvertissementLu(false);
+    if (bloque) return;
     setLiasseLue(false);
     setAvertissementLiasse(true);
   }
@@ -64,8 +99,6 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
   function fermerAvertissement() {
     setAvertissementLiasse(false);
   }
-
-  const telechargementPret = avertissementLu && (!dossier.cloture_faite || liasseLue);
 
   async function telecharger(document: DocumentCloture) {
     setErreur(null);
@@ -89,54 +122,34 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
   }
 
   return (
-    <section>
-      <h2 className="text-sm font-medium text-ink">Résultat</h2>
-      <dl className="mt-3 space-y-2 text-sm">
-        <Ligne label="CA HT" cents={dossier.ca_ht_cts} />
-        <Ligne label="Charges" cents={dossier.charges_cts} />
-        <Ligne label="Résultat" cents={dossier.resultat_cts} emphasise />
-        <Ligne label="Trésorerie" cents={dossier.tresorerie_cts} />
-        <Ligne label="TVA à payer" cents={dossier.tva_a_payer_cts} />
-      </dl>
-      <h2 className="mt-8 text-base font-semibold text-ink">Pour les impôts</h2>
-      <p className="mt-1 text-sm text-subtle">
-        Les comptes ne sont pas clôturés. À télécharger et à conserver. La déclaration
-        n&apos;est pas envoyée d&apos;ici.
-      </p>
-      <Button type="button" variant="secondary" className="mt-4 w-full" onClick={ouvrirAvertissement}>
+    <section className="mt-8">
+      <h2 className="text-base font-semibold text-ink">Pour les impôts</h2>
+      <p className="mt-1 text-sm text-ink">{texteDocuments(operationsRestantes, comptesClos)}</p>
+      <div className={bloque ? "opacity-50" : undefined}>
+      <Button
+        type="button"
+        variant="secondary"
+        className="mt-4 w-full"
+        disabled={bloque}
+        onClick={ouvrirAvertissement}
+      >
         Récupérer la liasse
       </Button>
       {avertissementLiasse && (
-        <Dialogue titre="Comptes non clôturés" titreId="titre-liasse" onFermer={fermerAvertissement}>
+        <Dialogue titre="Liasse de l'exercice" titreId="titre-liasse" onFermer={fermerAvertissement}>
+          <p className="mt-4 text-sm text-subtle">
+            La signature électronique arrivera plus tard. En attendant, cette validation engage
+            sur la liasse telle qu&apos;elle est.
+          </p>
           <label className="mt-4 flex min-h-11 items-start gap-3 text-sm text-ink">
             <input
               type="checkbox"
               className="mt-0.5 size-6 shrink-0"
-              checked={avertissementLu}
-              onChange={(event) => setAvertissementLu(event.target.checked)}
+              checked={liasseLue}
+              onChange={(event) => setLiasseLue(event.target.checked)}
             />
-            <span>
-              On ne sait pas si vous garderez cette version pour les impôts. AxeLCompta
-              n&apos;est pas responsable de cette liasse.
-            </span>
+            <span>Je reconnais avoir lu et validé la liasse.</span>
           </label>
-          {dossier.cloture_faite && (
-            <>
-              <p className="mt-4 text-sm text-subtle">
-                La signature électronique arrivera plus tard. En attendant, cette
-                validation engage sur la liasse telle qu&apos;elle est.
-              </p>
-              <label className="mt-4 flex min-h-11 items-start gap-3 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 size-6 shrink-0"
-                  checked={liasseLue}
-                  onChange={(event) => setLiasseLue(event.target.checked)}
-                />
-                <span>Je reconnais avoir lu et validé la liasse.</span>
-              </label>
-            </>
-          )}
           <div className="mt-5 flex gap-2">
             <Button type="button" variant="ghost" className="h-11 flex-1" onClick={fermerAvertissement}>
               Annuler
@@ -144,7 +157,7 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
             <Button
               type="button"
               className="h-11 flex-1"
-              disabled={!telechargementPret}
+              disabled={!liasseLue}
               onClick={() => {
                 fermerAvertissement();
                 void telecharger(LIASSE);
@@ -165,8 +178,9 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
             <button
               type="button"
               aria-label={`Télécharger ${label} (${detail})`}
+              disabled={bloque}
               onClick={() => void telecharger(document)}
-              className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-4 rounded-md px-2 py-3 text-left outline-none hover:bg-primary-subtle focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]"
+              className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-4 rounded-md px-2 py-3 text-left outline-none hover:bg-primary-subtle focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb] disabled:cursor-not-allowed"
             >
               <span className="text-sm font-medium text-primary">{label}</span>
               <span className="flex shrink-0 items-center gap-2 text-sm text-subtle">
@@ -177,29 +191,17 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
           </li>
         ))}
       </ul>
+      </div>
       {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}
     </section>
   );
 }
 
-function Ligne({
-  label,
-  cents,
-  emphasise,
-}: {
-  label: string;
-  cents: number;
-  emphasise?: boolean;
-}) {
-  const negatif = cents < 0;
+function Ligne({ label, cents }: { label: string; cents: number }) {
   return (
     <div className="flex items-baseline justify-between">
       <dt className="text-subtle">{label}</dt>
-      <dd
-        className={`tabular-nums text-right ${emphasise ? "font-semibold" : ""} ${
-          negatif ? "text-amount-negative" : emphasise ? "text-amount-positive" : "text-ink"
-        }`}
-      >
+      <dd className={`tabular-nums text-right ${cents < 0 ? "text-amount-negative" : "text-ink"}`}>
         {formatMontant(cents)}
       </dd>
     </div>
