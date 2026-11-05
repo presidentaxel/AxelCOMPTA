@@ -17,7 +17,7 @@ export type DecisionEnAttente = {
  * Quitter la page l'envoie tout de suite : elle ne reste pas en suspens. */
 export function useDecisionDifferee(
   dossierId: string,
-  onEnregistree: (transaction: TransactionVue) => void,
+  onEnregistree: (transaction: TransactionVue, decision: DecisionEnAttente) => void,
   onEchec: (original: TransactionVue, message: string) => void,
 ): {
   enAttente: DecisionEnAttente | null;
@@ -38,7 +38,7 @@ export function useDecisionDifferee(
   const envoyer = useCallback(
     (decision: DecisionEnAttente) => {
       trancherTransactionChauffeur(dossierId, decision.original.ecriture_id, decision.categorie)
-        .then((transaction) => onEnregistreeRef.current(transaction))
+        .then((transaction) => onEnregistreeRef.current(transaction, decision))
         .catch((exception: unknown) => {
           const message = exception instanceof ApiError ? exception.message : "Échec de l'envoi.";
           onEchecRef.current(decision.original, message);

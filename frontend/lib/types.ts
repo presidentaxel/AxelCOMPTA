@@ -202,6 +202,7 @@ export type ClotureExerciceVue = {
   ecritures: string[];
   changements: string[];
   attestation: string | null;
+  code: string | null;
 };
 
 /** Affectation du résultat : scénarios chiffrés par l'API, choix du

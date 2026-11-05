@@ -163,7 +163,12 @@ from axelcompta.tenants.statuts import (
     charger_matrice,
     configuration_de,
 )
-from axelcompta.workflow.decisions import DecisionHumaine, DecisionRepository
+from axelcompta.workflow.decisions import (
+    CATEGORIE_ANNULATION,
+    DecisionHumaine,
+    DecisionRepository,
+    decision_en_vigueur,
+)
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
 from axelcompta.workflow.expert import ImputationRefusee, preparer_imputation
 from axelcompta.workflow.notifications import (
@@ -639,12 +644,7 @@ def _resume(
 ) -> DossierResume:
     ecritures = ledger.grand_livre(dossier.id)
     liasse = _construire_liasse(dossier, ledger, provisions)
-    exclues = annulees(ecritures)
-    nb_a_trancher = sum(
-        1
-        for e in ecritures
-        if e.id not in exclues and any(ligne.compte == COMPTE_ATTENTE for ligne in e.lignes)
-    )
+    nb_a_trancher = _nb_a_trancher(ecritures)
     invitation = comptes.statut(dossier.id)
     document_cloture = signatures.dernier(dossier.id, TYPE_DOCUMENT_CLOTURE)
     document_greffe = signatures.dernier(dossier.id, TYPE_DOCUMENT_GREFFE_INPI)
@@ -898,6 +898,15 @@ def _avec_propositions(
         else vue
         for vue in vues
     ]
+
+
+def _nb_a_trancher(ecritures: tuple[Ecriture, ...] | list[Ecriture]) -> int:
+    exclues = annulees(ecritures)
+    return sum(
+        1
+        for e in ecritures
+        if e.id not in exclues and any(ligne.compte == COMPTE_ATTENTE for ligne in e.lignes)
+    )
 
 
 def _montant_512(ecriture: Ecriture) -> int:
@@ -1249,7 +1258,10 @@ def _trancher(
         raise HTTPException(status_code=404, detail="Cette opération est introuvable.")
     if ecriture.id in annulees(ecritures):
         raise HTTPException(status_code=409, detail="Cette opération a déjà été annulée.")
-    if decisions.decision_courante(dossier.id, EcritureId(ecriture_id)) is not None:
+    if (
+        decision_en_vigueur(decisions.decision_courante(dossier.id, EcritureId(ecriture_id)))
+        is not None
+    ):
         raise HTTPException(
             status_code=409,
             detail="Cette opération a déjà été classée. Le choix ne se modifie pas.",
@@ -1332,6 +1344,55 @@ def _ecriture_decidee(
 ) -> Ecriture:
     ledger_a_jour = _ledger_avec_decisions(dossier, base, decisions)
     return next(e for e in ledger_a_jour.grand_livre(dossier.id) if e.id == ecriture_id)
+
+
+def _decision_suivante(
+    dossier: Dossier,
+    ecriture_id: str,
+    categorie: str,
+    base: LedgerService,
+    decisions: DecisionRepository,
+    justificatifs: JustificatifRepository,
+    decide_par: UserId,
+) -> TransactionVue:
+    """Enregistre une décision qui en remplace une déjà en vigueur."""
+    courante = decisions.decision_courante(dossier.id, EcritureId(ecriture_id))
+    en_vigueur = decision_en_vigueur(courante)
+    if en_vigueur is None:
+        raise HTTPException(status_code=409, detail="Cette opération n'a pas encore été classée.")
+    if categorie != CATEGORIE_ANNULATION:
+        ecritures = base.grand_livre(dossier.id)
+        ecriture = next((e for e in ecritures if e.id == ecriture_id), None)
+        if ecriture is None:
+            raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
+        try:
+            resoudre_ecriture_a_trancher(
+                ecriture,
+                categorie,
+                configuration_de(dossier).comptes_categories_statut(),
+                charger_compte_par_categorie(),
+            )
+        except CategorieInconnueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    decisions.enregistrer_decision(
+        DecisionHumaine(
+            dossier_id=dossier.id,
+            ecriture_id=EcritureId(ecriture_id),
+            categorie=categorie,
+            etage_origine=en_vigueur.etage_origine,
+            confiance_origine=en_vigueur.confiance_origine,
+            decide_par=decide_par,
+            decide_le=datetime.now(UTC),
+        )
+    )
+    ledger = _ledger_avec_decisions(dossier, base, decisions)
+    ecritures_vues = ledger.grand_livre(dossier.id)
+    ecriture_vue = next(e for e in ecritures_vues if e.id == ecriture_id)
+    return _transaction_vue(
+        ecriture_vue,
+        justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture_vue.id),
+        ecriture_vue.id in annulees(ecritures_vues),
+    )
 
 
 def _a_trancher_ou_refus(
@@ -1717,6 +1778,35 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
             ecriture,
             justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture.id),
             ecriture.id in annulees(ledger.grand_livre(dossier.id)),
+        )
+
+
+def _enregistrer_routes_annulation(app: FastAPI) -> None:
+    """Annuler : une nouvelle décision, l'ancienne reste en historique.
+    L'opération redevient à traiter. La correction passe par
+    `_enregistrer_route_correction`."""
+
+    @app.post(
+        "/dossiers/{dossier_id}/transactions/{ecriture_id}/annulation",
+        response_model=TransactionVue,
+    )
+    def annuler_decision(
+        ecriture_id: str,
+        dossier: DossierDep,
+        base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        justificatifs: JustificatifsDep,
+        identite: IdentiteDep,
+    ) -> TransactionVue:
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        return _decision_suivante(
+            dossier,
+            ecriture_id,
+            CATEGORIE_ANNULATION,
+            base,
+            decisions,
+            justificatifs,
+            identite.user_id,
         )
 
 
@@ -2777,7 +2867,7 @@ def _enregistrer_routes_notifications(app: FastAPI) -> None:
     ) -> NotificationLueVue:
         maintenant = datetime.now(UTC).replace(tzinfo=None)
         if not notifications.marquer_lue(dossier.id, notification_id, maintenant):
-            raise HTTPException(status_code=404, detail="Notification inconnue")
+            raise HTTPException(status_code=404, detail="Notification introuvable.")
         return NotificationLueVue(id=notification_id, lue=True)
 
     @app.post("/dossiers/{dossier_id}/notifications/lues", response_model=NotificationsLuesVue)
@@ -2800,6 +2890,8 @@ class ClotureExerciceVue(BaseModel):
     changements: list[str] = []
     # Texte à accepter tel quel ; renvoyé à l'identique pour valider.
     attestation: str | None = None
+    # pas_termine | operations | clos | autre. Le texte seul ne sert pas de drapeau.
+    code: str | None = None
 
 
 class ValidationClotureEntree(BaseModel):
@@ -2830,7 +2922,9 @@ def _preparer_cloture(
             provisions,
         )
     except PassageRefuse as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        erreur = HTTPException(status_code=409, detail=str(exc))
+        erreur.code_metier = exc.code  # type: ignore[attr-defined]
+        raise erreur from exc
 
 
 class ProvisionVue(BaseModel):
@@ -2931,6 +3025,16 @@ def _passage_cloture(
     )
 
 
+def _vue_cloture_impossible(refus: HTTPException, debut: str, fin: str) -> ClotureExerciceVue:
+    return ClotureExerciceVue(
+        possible=False,
+        raison=str(refus.detail),
+        code=getattr(refus, "code_metier", None),
+        exercice_debut=debut,
+        exercice_fin=fin,
+    )
+
+
 def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
     """Le chauffeur seul valide la clôture. L'attestation est gardée mot pour mot."""
 
@@ -2948,9 +3052,7 @@ def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
         try:
             passage = _passage_cloture(dossier, ledger, decisions, avenants, provisions)
         except HTTPException as refus:
-            return ClotureExerciceVue(
-                possible=False, raison=str(refus.detail), exercice_debut=debut, exercice_fin=fin
-            )
+            return _vue_cloture_impossible(refus, debut, fin)
         return ClotureExerciceVue(
             possible=True,
             exercice_debut=debut,
@@ -2986,7 +3088,8 @@ def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
         _prouver_cloture(dossier, signatures, identite.user_id, datetime.now(UTC))
         return ClotureExerciceVue(
             possible=False,
-            raison="Exercice clos.",
+            raison="L'exercice est clos.",
+            code="clos",
             exercice_debut=passage.apres.exercice_debut.isoformat(),
             exercice_fin=passage.apres.fin_exercice().isoformat(),
         )
@@ -3681,6 +3784,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_dossiers(app)
     _enregistrer_routes_transactions(app)
     _enregistrer_route_correction(app)
+    _enregistrer_routes_annulation(app)
     _enregistrer_routes_anomalies(app)
     _enregistrer_routes_expert(app)
     _enregistrer_routes_revue(app)

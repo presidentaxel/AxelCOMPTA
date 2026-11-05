@@ -18,6 +18,7 @@ import {
 } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
 import { phrasePourChauffeur } from "@/lib/langage-chauffeur";
+import { lireEuros } from "@/lib/saisie-chauffeur";
 import type { BulletinVue } from "@/lib/types";
 
 const CHAMPS = [
@@ -35,8 +36,11 @@ const CHAMPS = [
   ["pas", "Impôt prélevé", "Le prélèvement à la source : l'impôt sur le revenu retenu sur le salaire."],
 ] as const;
 
-function enCentimes(valeur: string): number {
-  return Math.round(Number(valeur.replace(",", ".") || "0") * 100);
+function lireEurosOuZero(saisie: string): number | string {
+  const texte = saisie.replace(/[\s\u00a0\u202f]/g, "").replace(",", ".");
+  if (texte === "" || texte === "0" || texte === "0.0" || texte === "0.00") return 0;
+  const lu = lireEuros(saisie);
+  return "centimes" in lu ? lu.centimes : lu.message;
 }
 
 export function PaieSection({ dossierId }: { dossierId: string }) {
@@ -53,15 +57,24 @@ export function PaieSection({ dossierId }: { dossierId: string }) {
   }, [dossierId]);
 
   async function enregistrer() {
+    const brut = lireEuros(montants.brut ?? "");
+    const salariales = lireEurosOuZero(montants.salariales ?? "");
+    const patronales = lireEurosOuZero(montants.patronales ?? "");
+    const pas = lireEurosOuZero(montants.pas ?? "");
+    const illisible = [brut, salariales, patronales, pas].find((lu) => typeof lu === "string");
+    if (typeof illisible === "string" || !("centimes" in brut)) {
+      setErreur(typeof illisible === "string" ? illisible : "Indiquez le salaire avant retenues.");
+      return;
+    }
     setEnCours(true);
     setErreur(null);
     try {
       const bulletin = await saisirBulletinChauffeur(dossierId, {
         mois,
-        brut_cts: enCentimes(montants.brut ?? ""),
-        cotisations_salariales_cts: enCentimes(montants.salariales ?? ""),
-        cotisations_patronales_cts: enCentimes(montants.patronales ?? ""),
-        prelevement_a_la_source_cts: enCentimes(montants.pas ?? ""),
+        brut_cts: brut.centimes,
+        cotisations_salariales_cts: salariales as number,
+        cotisations_patronales_cts: patronales as number,
+        prelevement_a_la_source_cts: pas as number,
       });
       setBulletins((liste) => [...liste, bulletin]);
       setMois("");

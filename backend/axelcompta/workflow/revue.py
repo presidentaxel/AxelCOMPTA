@@ -12,7 +12,7 @@ import dataclasses
 from axelcompta.ledger.contrepassation import origine
 from axelcompta.ledger.models import Ecriture
 
-from .decisions import DecisionHumaine
+from .decisions import CATEGORIE_ANNULATION, DecisionHumaine
 
 COMPTE_ATTENTE = "471"
 CATEGORIE_USAGE_PERSONNEL = "usage_personnel"
@@ -101,7 +101,7 @@ def appliquer_decisions(
     resultat = []
     for ecriture in ecritures:
         decision = dernieres.get(origine(ecriture.id) or ecriture.id)
-        if decision is not None:
+        if decision is not None and decision.categorie != CATEGORIE_ANNULATION:
             ecriture = resoudre_ecriture_a_trancher(
                 ecriture, decision.categorie, comptes_statut, comptes_par_categorie
             )

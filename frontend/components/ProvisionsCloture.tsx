@@ -14,20 +14,11 @@ import {
 } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
 import { CHARGES_CLOTURE, NOM_NATURE, phrasePourChauffeur } from "@/lib/langage-chauffeur";
+import { lireEuros, listeAEnregistrer, listeSans } from "@/lib/saisie-chauffeur";
 import type { ProvisionClotureVue } from "@/lib/types";
 
 const CHAMP =
   "h-11 w-full rounded-md border border-border bg-canvas px-3 text-base text-ink outline-none placeholder:text-muted focus-visible:border-border-focus focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)]";
-
-function eurosEnCentimes(saisie: string): number | null {
-  const texte = saisie.trim().replace(/\s/g, "").replace(",", ".");
-  const morceaux = /^(\d+)(?:\.(\d{1,2}))?$/.exec(texte);
-  if (morceaux === null) {
-    return null;
-  }
-  const cents = (morceaux[2] ?? "").padEnd(2, "0");
-  return Number(morceaux[1]) * 100 + Number(cents);
-}
 
 export function ProvisionsCloture({
   dossierId,
@@ -37,6 +28,13 @@ export function ProvisionsCloture({
   onChange: () => void;
 }) {
   const [lignes, setLignes] = useState<ProvisionClotureVue[]>([]);
+  const [chargees, setChargees] = useState(false);
+  const [cle, setCle] = useState(dossierId);
+  if (cle !== dossierId) {
+    setCle(dossierId);
+    setLignes([]);
+    setChargees(false);
+  }
   const [nature, setNature] = useState<"cca" | "fnp">("fnp");
   const [compte, setCompte] = useState<string>(CHARGES_CLOTURE[0].compte);
   const [montant, setMontant] = useState("");
@@ -45,9 +43,19 @@ export function ProvisionsCloture({
   const [enCours, setEnCours] = useState(false);
 
   useEffect(() => {
+    let annule = false;
     lireProvisionsCloture(dossierId)
-      .then(setLignes)
-      .catch(() => setLignes([]));
+      .then((lues) => {
+        if (annule) return;
+        setLignes(lues);
+        setChargees(true);
+      })
+      .catch(() => {
+        if (!annule) setErreur("Impossible de charger les charges déjà notées.");
+      });
+    return () => {
+      annule = true;
+    };
   }, [dossierId]);
 
   async function envoyer(suivantes: ProvisionClotureVue[]): Promise<boolean> {
@@ -73,21 +81,33 @@ export function ProvisionsCloture({
   }
 
   async function ajouter() {
-    const centimes = eurosEnCentimes(montant);
-    if (centimes === null || centimes <= 0 || libelle.trim() === "") {
-      setErreur("Indiquez de quoi il s'agit, un montant et un libellé.");
+    const lu = lireEuros(montant);
+    if (!chargees) {
+      setErreur("Les charges déjà notées ne sont pas chargées. Réessayez avant d'en ajouter.");
       return;
     }
-    const ok = await envoyer([
-      ...lignes,
-      { nature, compte_charge: compte, centimes, libelle: libelle.trim() },
-    ]);
+    if ("message" in lu || libelle.trim() === "") {
+      setErreur("message" in lu ? lu.message : "Indiquez de quoi il s'agit.");
+      return;
+    }
+    const suivantes = listeAEnregistrer(
+      { statut: "pret", lignes },
+      { nature, compte_charge: compte, centimes: lu.centimes, libelle: libelle.trim() },
+    );
+    if (suivantes === null) return;
+    const ok = await envoyer(suivantes);
     if (!ok) {
       return;
     }
     setCompte(CHARGES_CLOTURE[0].compte);
     setMontant("");
     setLibelle("");
+  }
+
+  async function retirer(index: number) {
+    const suivantes = listeSans({ statut: "pret", lignes }, index);
+    if (suivantes === null || !chargees) return;
+    await envoyer(suivantes);
   }
 
   return (
@@ -98,12 +118,22 @@ export function ProvisionsCloture({
       </p>
       {lignes.length > 0 && (
         <ul className="mt-3 space-y-1 text-sm text-ink">
-          {lignes.map((ligne) => (
-            <li key={`${ligne.nature}-${ligne.compte_charge}-${ligne.libelle}`} className="flex justify-between gap-3">
+          {lignes.map((ligne, index) => (
+            <li key={`${ligne.nature}-${ligne.compte_charge}-${ligne.libelle}`} className="flex items-center justify-between gap-3">
               <span>
                 {NOM_NATURE[ligne.nature]} — {ligne.libelle}
               </span>
-              <span>{formatMontant(ligne.centimes)}</span>
+              <span className="flex items-center gap-2">
+                <span>{formatMontant(ligne.centimes)}</span>
+                <button
+                  type="button"
+                  className="min-h-11 text-sm font-medium text-primary"
+                  disabled={enCours}
+                  onClick={() => void retirer(index)}
+                >
+                  Retirer
+                </button>
+              </span>
             </li>
           ))}
         </ul>

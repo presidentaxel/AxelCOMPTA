@@ -11,7 +11,10 @@ import {
   questionsRestantes,
   ticketsSeuls,
 } from "@/app/chauffeur/file-a-traiter";
-import { useDecisionDifferee } from "@/app/chauffeur/use-decision-differee";
+import {
+  useDecisionDifferee,
+  type DecisionEnAttente,
+} from "@/app/chauffeur/use-decision-differee";
 import { useDossierChauffeur, useOperationsChauffeur } from "@/app/chauffeur/use-dossier";
 import { ConfirmationGroupee } from "@/components/ConfirmationGroupee";
 import { QuestionCategorisation } from "@/components/QuestionCategorisation";
@@ -29,7 +32,11 @@ import {
   type EtatActivite,
   type SensActivite,
 } from "@/lib/activite-url";
-import { corrigerTransactionChauffeur, joindreJustificatifChauffeur } from "@/lib/auth-chauffeur";
+import {
+  annulerDecisionChauffeur,
+  corrigerTransactionChauffeur,
+  joindreJustificatifChauffeur,
+} from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
 import { libelleCategorie, phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import { ticketPrioritaire } from "@/lib/tickets";
@@ -75,10 +82,12 @@ function Activite({
   const [correction, setCorrection] = useState<CorrectionAffichee | null>(null);
   const [enCoursCorrection, setEnCoursCorrection] = useState(false);
   const [ouverte, setOuverte] = useState<string | null>(null);
+  const [annulation, setAnnulation] = useState<{ ids: string[]; libelle: string } | null>(null);
 
-  function enregistree(transaction: TransactionVue) {
+  function enregistree(transaction: TransactionVue, decision: DecisionEnAttente) {
     remplacer(transaction);
     recharger();
+    setAnnulation({ ids: [transaction.ecriture_id], libelle: decision.libelle });
   }
 
   function echec(original: TransactionVue, message: string) {
@@ -128,11 +137,14 @@ function Activite({
     ? { libelle: enAttente.libelle, onAnnuler: annulerDecision }
     : correction
       ? { libelle: correction.libelle, onAnnuler: annulerDecision }
-      : null;
+      : annulation
+        ? { libelle: annulation.libelle, onAnnuler: () => void annulerSurLeServeur() }
+        : null;
 
   function classer(transaction: TransactionVue, categorie: string, libelle: string) {
     setErreurAction(null);
     setCorrection(null);
+    setAnnulation(null);
     if (transaction.statut === "validé") {
       void lancerCorrection(transaction, categorie, libelle);
       return;
@@ -208,6 +220,24 @@ function Activite({
     }
   }
 
+  async function annulerSurLeServeur() {
+    if (!annulation) return;
+    const enCours = annulation;
+    setAnnulation(null);
+    try {
+      for (const id of enCours.ids) {
+        await annulerDecisionChauffeur(dossierId, id);
+      }
+      setHorsFile((ids) => ids.filter((id) => !enCours.ids.includes(id)));
+      setAnnonce("Décision annulée. L'opération est de nouveau à traiter.");
+      recharger();
+    } catch (exception) {
+      setAnnulation(enCours);
+      const message = exception instanceof ApiError ? exception.message : "Impossible d'annuler.";
+      setErreurAction(phrasePourChauffeur(message));
+    }
+  }
+
   function confirmerGroupe(ids: string[], libelle: string) {
     setHorsFile((liste) => {
       const connus = new Set(liste);
@@ -220,6 +250,7 @@ function Activite({
         : `1 opération classée en « ${libelle} ».`,
     );
     setSuit(true);
+    setAnnulation({ ids, libelle });
     recharger();
   }
 

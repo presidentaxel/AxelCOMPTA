@@ -21,7 +21,7 @@ export function ConfirmationGroupee({
   categorie: string;
   libelle: string;
   operations: { ecritureId: string; nom: string; montantCts: number }[];
-  onConfirme: () => void;
+  onConfirme: (ids: string[]) => void;
 }) {
   const [ouvert, setOuvert] = useState(false);
   const [enCours, setEnCours] = useState(false);
@@ -36,7 +36,7 @@ export function ConfirmationGroupee({
         operations.map((operation) => operation.ecritureId),
         categorie,
       );
-      onConfirme();
+      onConfirme(operations.map((operation) => operation.ecritureId));
     } catch (exception) {
       setErreur(exception instanceof ApiError ? exception.message : "Échec de l'envoi.");
     } finally {

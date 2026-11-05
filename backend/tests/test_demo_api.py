@@ -659,6 +659,74 @@ def test_trancher_deux_fois_la_meme_ecriture_est_refuse() -> None:
     assert reponse.status_code == 409
 
 
+def test_annuler_une_decision_remet_l_operation_a_traiter() -> None:
+    client = _client()
+    en_tete = _en_tete("DEMO_sophie")
+    avant = client.get("/dossiers/DEMO_sophie", headers=en_tete).json()["nb_a_trancher"]
+    ecriture_id = _premiere_a_trancher(client, "DEMO_sophie")
+    decision = client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/decision",
+        json={"categorie": "usage_personnel"},
+        headers=en_tete,
+    )
+    assert decision.status_code == 200
+    assert client.get("/dossiers/DEMO_sophie", headers=en_tete).json()["nb_a_trancher"] == avant - 1
+
+    annulation = client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/annulation",
+        headers=en_tete,
+    )
+
+    assert annulation.status_code == 200
+    assert annulation.json()["statut"] == "à trancher"
+    assert client.get("/dossiers/DEMO_sophie", headers=en_tete).json()["nb_a_trancher"] == avant
+    a_nouveau = client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/decision",
+        json={"categorie": "carburant"},
+        headers=en_tete,
+    )
+    assert a_nouveau.status_code == 200
+
+
+def test_corriger_une_decision_enregistre_la_nouvelle_sans_ecraser_la_premiere_voie() -> None:
+    client = _client()
+    en_tete = _en_tete("DEMO_sophie")
+    ecriture_id = _premiere_a_trancher(client, "DEMO_sophie")
+    client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/decision",
+        json={"categorie": "usage_personnel"},
+        headers=en_tete,
+    )
+
+    correction = client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/correction",
+        json={"categorie": "carburant"},
+        headers=en_tete,
+    )
+    refuse = client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/decision",
+        json={"categorie": "repas_et_receptions"},
+        headers=en_tete,
+    )
+
+    assert correction.status_code == 200
+    assert correction.json()["statut"] == "validé"
+    assert refuse.status_code == 409
+
+
+def test_liasse_definitive_et_signature_refusent_s_il_reste_des_operations() -> None:
+    client = _client()
+    en_tete = _en_tete("DEMO_sophie")
+    assert client.get("/dossiers/DEMO_sophie", headers=en_tete).json()["nb_a_trancher"] > 0
+
+    liasse = client.get("/dossiers/DEMO_sophie/liasse-fiscale.pdf", headers=en_tete)
+    signature = client.post("/dossiers/DEMO_sophie/greffe-inpi/signature", headers=en_tete)
+
+    assert liasse.status_code == 409
+    assert "à traiter" in liasse.json()["detail"]
+    assert signature.status_code == 409
+
+
 def test_trancher_une_ecriture_deja_validee_est_refuse() -> None:
     client = _client()
     en_tete = _en_tete("DEMO_karim")
@@ -1397,13 +1465,19 @@ def test_remise_a_neuf_reservee_a_un_admin_du_portefeuille_demo() -> None:
     assert appels_membre == appels_autre == []
 
 
-def _poser_notification(client: TestClient, dossier_id: str, id_: str, heure: int) -> None:
+def _poser_notification(
+    client: TestClient,
+    dossier_id: str,
+    id_: str,
+    heure: int,
+    type_: str = "a_trancher",
+) -> None:
     depot = client.app.dependency_overrides[get_notifications]()  # type: ignore[attr-defined]
     depot.enregistrer(
         NotificationEnvoyee(
             id=id_,
             dossier_id=DossierId(dossier_id),
-            type="a_trancher",
+            type=type_,
             envoye_le=datetime(2026, 9, 26, heure, 0),
             ecriture_ids=(EcritureId("e1"), EcritureId("e2")),
         )

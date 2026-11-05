@@ -453,6 +453,30 @@ export async function marquerNotificationLueChauffeur(
   }
 }
 
+/** Pose une décision d'annulation : l'opération redevient à traiter.
+ * L'ancienne décision reste dans l'historique. */
+export async function annulerDecisionChauffeur(
+  dossierId: string,
+  ecritureId: string,
+): Promise<TransactionVue> {
+  return envoyerChauffeur(
+    `/dossiers/${dossierId}/transactions/${ecritureId}/annulation`,
+    {},
+  );
+}
+
+/** Nouvelle décision sur une opération déjà classée. */
+export async function corrigerDecisionChauffeur(
+  dossierId: string,
+  ecritureId: string,
+  categorie: string,
+): Promise<TransactionVue> {
+  return envoyerChauffeur(
+    `/dossiers/${dossierId}/transactions/${ecritureId}/correction`,
+    { categorie },
+  );
+}
+
 export async function lireProvisionsCloture(dossierId: string): Promise<ProvisionClotureVue[]> {
   const vue = await fetchAvecAuthChauffeur<{ lignes: ProvisionClotureVue[] }>(
     `/dossiers/${dossierId}/provisions-cloture`,

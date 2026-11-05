@@ -24,4 +24,9 @@ def engine_depuis_env(variable: str = VARIABLE_URL_PAR_DEFAUT) -> Engine:
     url = os.environ.get(variable)
     if not url:
         raise RuntimeError(f"variable d'environnement {variable} manquante (voir .env.example)")
+    if "pooler.supabase.com" in url:
+        # Session pooler : 15 clients au plus. Le pool SQLAlchemy par défaut
+        # (5 permanents + 10 de débordement) les occupe tous, et la requête
+        # suivante reçoit EMAXCONNSESSION — l'API répond alors 500.
+        return create_engine(url, pool_size=3, max_overflow=4, pool_pre_ping=True)
     return create_engine(url)
