@@ -156,7 +156,7 @@ function LigneTicket({
         type="button"
         disabled={envoi}
         onClick={() => inputRef.current?.click()}
-        className={`mt-1 rounded-md px-1 py-1 text-sm font-medium text-primary disabled:opacity-50 ${ANNEAU}`}
+        className={`mt-1 inline-flex min-h-11 items-center rounded-md px-1 text-sm font-medium text-primary disabled:opacity-50 ${ANNEAU}`}
       >
         {envoi ? "Envoi…" : `Ajouter le ticket de ${nom}`}
       </button>

@@ -86,7 +86,12 @@ from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.provisions_cloture import InMemoryProvisionsClotureRepository
 from axelcompta.workflow.decisions import DecisionHumaine
 from axelcompta.workflow.decisions_memory import InMemoryDecisionRepository
-from axelcompta.workflow.notifications import InMemoryNotificationRepository, NotificationEnvoyee
+from axelcompta.workflow.notifications import (
+    InMemoryNotificationRepository,
+    NotificationEnvoyee,
+    ecritures_a_trancher,
+    message,
+)
 from axelcompta.workflow.propositions import InMemoryPropositionRepository
 from axelcompta.workflow.signature import DocumentSigne
 from axelcompta.workflow.signature_memory import InMemorySignatureRepository
@@ -1009,6 +1014,26 @@ def test_telecharger_la_liasse_fiscale_complete() -> None:
     assert reponse.content.startswith(b"%PDF-")
 
 
+def test_liasse_definitive_et_signature_greffe_attendent_les_operations() -> None:
+    """Tant qu'une opération est à trancher, les chiffres bougeraient.
+    La liasse fiscale et la signature du greffe refusent. Les pièces de
+    travail (FEC, synthèse) restent disponibles."""
+    client = _client()
+    en_tete = _en_tete("DEMO_sophie")
+    reste = client.get("/dossiers/DEMO_sophie", headers=en_tete).json()["nb_a_trancher"]
+    assert reste > 0
+    nom = "opération" if reste == 1 else "opérations"
+    attendu = f"Il reste {reste} {nom} à traiter."
+
+    liasse = client.get("/dossiers/DEMO_sophie/liasse-fiscale.pdf", headers=en_tete)
+    signature = client.post("/dossiers/DEMO_sophie/greffe-inpi/signature", headers=en_tete)
+
+    assert liasse.status_code == 409 and liasse.json()["detail"] == attendu
+    assert signature.status_code == 409 and signature.json()["detail"] == attendu
+    assert client.get("/dossiers/DEMO_sophie/fec.txt", headers=en_tete).status_code == 200
+    assert client.get("/dossiers/DEMO_sophie/liasse.pdf", headers=en_tete).status_code == 200
+
+
 # --- Greffe/INPI (doc 20, Louis 2026-09-11) --------------------------------
 
 
@@ -1286,22 +1311,82 @@ def _poser_notification(client: TestClient, dossier_id: str, id_: str, heure: in
     )
 
 
-def test_notifications_du_chauffeur_les_plus_recentes_dabord_puis_lues() -> None:
+def _cloche_sophie() -> tuple[TestClient, str, dict[str, str], int]:
+    """Deux rappels « à traiter », deux rappels bancaires, une clôture."""
     client = _client()
+    ledger = client.app.dependency_overrides[get_ledger]()  # type: ignore[attr-defined]
+    decisions = client.app.dependency_overrides[get_decisions]()  # type: ignore[attr-defined]
+    sophie = DossierId("DEMO_sophie")
+    ledger.enregistrer(
+        Ecriture(
+            id=EcritureId("notif-test-471"),
+            dossier_id=sophie,
+            journal=Journal.BQ,
+            date=date(2026, 3, 1),
+            libelle="secret",
+            reference_piece=None,
+            lignes=(
+                LigneEcriture(compte="512", sens=Sens.CREDIT, montant=Money(1000)),
+                LigneEcriture(compte="471", sens=Sens.DEBIT, montant=Money(1000)),
+            ),
+        )
+    )
+    nb = len(ecritures_a_trancher(ledger, decisions, sophie))
+    assert nb >= 1
     _poser_notification(client, "DEMO_sophie", "n1", 9)
     _poser_notification(client, "DEMO_sophie", "n2", 15)
-    _poser_notification(client, "DEMO_karim", "n3", 10)
-    url = "/dossiers/DEMO_sophie/notifications"
-    en_tete = _en_tete("DEMO_sophie")
+    depot = client.app.dependency_overrides[get_notifications]()  # type: ignore[attr-defined]
+    for id_, type_, jour in (
+        ("cloture", "cloture_a_valider", 20),
+        ("banque-ancienne", "connexion_j14", 10),
+        ("banque", "connexion_a_refaire", 16),
+    ):
+        depot.enregistrer(
+            NotificationEnvoyee(
+                id=id_,
+                dossier_id=sophie,
+                type=type_,
+                envoye_le=datetime(2026, 9, jour, 9, 0),
+                ecriture_ids=(),
+            )
+        )
+    return client, "/dossiers/DEMO_sophie/notifications", _en_tete("DEMO_sophie"), nb
+
+
+def test_la_cloche_regroupe_et_recalcule_le_nombre_a_traiter() -> None:
+    client, url, en_tete, nb = _cloche_sophie()
 
     liste = client.get(url, headers=en_tete).json()
-    assert [(n["id"], n["lue"]) for n in liste] == [("n2", False), ("n1", False)]
-    assert liste[0]["message"] == "2 opérations attendent votre confirmation"
 
-    assert client.post(f"{url}/lues", headers=en_tete).json() == {"lues": 2}
-    assert all(n["lue"] for n in client.get(url, headers=en_tete).json())
+    assert [(n["id"], n["type"], n["lue"]) for n in liste] == [
+        ("n2", "a_trancher", False),
+        ("cloture", "cloture_a_valider", False),
+        ("banque", "connexion_a_refaire", False),
+    ]
+    assert liste[0]["message"] == message(nb)
+    assert "confirmation" not in liste[0]["message"]
+
+
+def test_une_notification_lue_ne_marque_pas_les_autres() -> None:
+    client, url, en_tete, _nb = _cloche_sophie()
+
+    lu = client.post(f"{url}/cloture/lue", headers=en_tete)
+    assert lu.json() == {"id": "cloture", "lue": True}
+    apres = {n["id"]: n["lue"] for n in client.get(url, headers=en_tete).json()}
+    assert apres == {"n2": False, "cloture": True, "banque": False}
+    assert client.post(f"{url}/inconnue/lue", headers=en_tete).status_code == 404
+    depot = client.app.dependency_overrides[get_notifications]()  # type: ignore[attr-defined]
+    depot.enregistrer(
+        NotificationEnvoyee(
+            id="cloture-karim",
+            dossier_id=DossierId("DEMO_karim"),
+            type="cloture_a_valider",
+            envoye_le=datetime(2026, 9, 26, 10, 0),
+            ecriture_ids=(),
+        )
+    )
     karim = client.get("/dossiers/DEMO_karim/notifications", headers=_en_tete("DEMO_karim"))
-    assert [n["lue"] for n in karim.json()] == [False]
+    assert [(n["id"], n["lue"]) for n in karim.json()] == [("cloture-karim", False)]
 
 
 def test_notifications_exigent_le_jeton_du_dossier() -> None:
@@ -1311,6 +1396,8 @@ def test_notifications_exigent_le_jeton_du_dossier() -> None:
     assert client.get(url).status_code == 401
     assert client.get(url, headers=_en_tete("DEMO_karim")).status_code == 403
     assert client.post(f"{url}/lues", headers=_en_tete("DEMO_karim")).status_code == 403
+    assert client.post(f"{url}/n1/lue").status_code == 401
+    assert client.post(f"{url}/n1/lue", headers=_en_tete("DEMO_karim")).status_code == 403
 
 
 def test_un_dossier_a_l_ir_n_a_ni_2065_ni_depot_au_greffe_mais_garde_sa_2033() -> None:
@@ -1484,10 +1571,12 @@ def test_la_cloture_se_prepare_puis_se_valide_par_le_chauffeur_lui_meme() -> Non
     refus = client.post(url, headers=en_tete, json={"attestation": "j'accepte"})
     assert refus.status_code == 422
 
+    assert client.get("/dossiers/DEMO_karim", headers=en_tete).json()["cloture_faite"] is False
     valide = client.post(url, headers=en_tete, json={"attestation": apercu["attestation"]})
     assert valide.status_code == 200
     fiche = client.get("/dossiers/DEMO_karim", headers=en_tete).json()
     assert fiche["exercice_debut"] == "2026-01-01"
+    assert fiche["cloture_faite"] is True
     exercices = client.app.dependency_overrides[get_exercices]()  # type: ignore[attr-defined]
     (clos,) = exercices.lister(DossierId("DEMO_karim"))
     assert (clos.clos_par, clos.attestation) == ("user-123", apercu["attestation"])

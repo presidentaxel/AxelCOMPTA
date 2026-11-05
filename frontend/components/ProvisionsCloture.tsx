@@ -16,6 +16,9 @@ import { formatMontant } from "@/lib/format";
 import { CHARGES_CLOTURE, NOM_NATURE, phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import type { ProvisionClotureVue } from "@/lib/types";
 
+const CHAMP =
+  "h-11 w-full rounded-md border border-border bg-canvas px-3 text-base text-ink outline-none placeholder:text-muted focus-visible:border-border-focus focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)]";
+
 function eurosEnCentimes(saisie: string): number | null {
   const texte = saisie.trim().replace(/\s/g, "").replace(",", ".");
   const morceaux = /^(\d+)(?:\.(\d{1,2}))?$/.exec(texte);
@@ -88,7 +91,7 @@ export function ProvisionsCloture({
   }
 
   return (
-    <div className="mt-4 rounded-md border border-border bg-canvas p-3">
+    <div className="mt-8 rounded-md border border-border bg-canvas p-3">
       <p className="text-sm text-ink">Une charge de cet exercice n&apos;est pas encore passée ?</p>
       <p className="mt-1 text-sm text-subtle">
         Donnez votre estimation. Elle sera prise dans la clôture. Rien n&apos;est deviné.
@@ -105,9 +108,9 @@ export function ProvisionsCloture({
           ))}
         </ul>
       )}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="mt-3 flex flex-col gap-2">
         <select
-          className="h-8 rounded-sm border border-border bg-canvas px-2 text-sm"
+          className={CHAMP}
           value={nature}
           onChange={(evenement) => setNature(evenement.target.value === "cca" ? "cca" : "fnp")}
         >
@@ -115,7 +118,7 @@ export function ProvisionsCloture({
           <option value="cca">{NOM_NATURE.cca}</option>
         </select>
         <select
-          className="h-8 rounded-sm border border-border bg-canvas px-2 text-sm"
+          className={CHAMP}
           aria-label="De quoi s'agit-il ?"
           value={compte}
           onChange={(evenement) => setCompte(evenement.target.value)}
@@ -127,7 +130,7 @@ export function ProvisionsCloture({
           ))}
         </select>
         <input
-          className="h-8 w-24 rounded-sm border border-border px-2 text-sm"
+          className={CHAMP}
           inputMode="decimal"
           placeholder="Montant"
           aria-label="Montant"
@@ -135,13 +138,13 @@ export function ProvisionsCloture({
           onChange={(evenement) => setMontant(evenement.target.value)}
         />
         <input
-          className="h-8 min-w-40 flex-1 rounded-sm border border-border px-2 text-sm"
+          className={CHAMP}
           placeholder="Libellé"
           aria-label="Libellé"
           value={libelle}
           onChange={(evenement) => setLibelle(evenement.target.value)}
         />
-        <Button type="button" variant="secondary" disabled={enCours} onClick={ajouter}>
+        <Button type="button" variant="secondary" className="h-11 w-full" disabled={enCours} onClick={ajouter}>
           Ajouter
         </Button>
       </div>

@@ -99,13 +99,13 @@ export function PaieSection({ dossierId }: { dossierId: string }) {
           ))}
         </ul>
       )}
-      <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+      <div className="mt-3 grid grid-cols-1 gap-2 text-sm">
         <label className="block text-subtle">
           Mois du bulletin
           <Input
             type="month"
             aria-label="Mois du bulletin"
-            className="mt-1"
+            className="mt-1 h-11 text-base"
             value={mois}
             onChange={(evenement) => setMois(evenement.target.value)}
           />
@@ -118,7 +118,7 @@ export function PaieSection({ dossierId }: { dossierId: string }) {
               inputMode="decimal"
               aria-label={libelle}
               placeholder="€"
-              className="mt-1"
+              className="mt-1 h-11 text-base"
               value={montants[cle] ?? ""}
               onChange={(evenement) =>
                 setMontants((actuels) => ({ ...actuels, [cle]: evenement.target.value }))
@@ -127,7 +127,7 @@ export function PaieSection({ dossierId }: { dossierId: string }) {
           </label>
         ))}
       </div>
-      <Button className="mt-3" disabled={enCours || !mois || !montants.brut} onClick={enregistrer}>
+      <Button className="mt-3 h-11" disabled={enCours || !mois || !montants.brut} onClick={enregistrer}>
         {enCours ? "Enregistrement…" : "Enregistrer le bulletin"}
       </Button>
       {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}

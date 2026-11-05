@@ -24,7 +24,7 @@ colors:
   ink: "#0F172A"
   body: "#1E293B"
   subtle: "#475569"
-  muted: "#94A3B8"
+  muted: "#5E6C84"
   faint: "#CBD5E1"
   on-dark: "#F8FAFC"
   on-dark-mute: "rgba(248,250,252,0.65)"
@@ -45,36 +45,36 @@ colors:
   hairline: "#F1F5F9"
 
   # --- Sémantiques générales ---
-  success: "#16A34A"
+  success: "#15803D"
   success-subtle: "#F0FDF4"
   success-border: "#86EFAC"
-  warning: "#D97706"
+  warning: "#B45309"
   warning-subtle: "#FFFBEB"
   warning-border: "#FCD34D"
-  danger: "#DC2626"
+  danger: "#D42626"
   danger-subtle: "#FEF2F2"
   danger-border: "#FCA5A5"
-  info: "#0284C7"
+  info: "#0369A1"
   info-subtle: "#F0F9FF"
   info-border: "#7DD3FC"
 
   # --- Sémantiques comptables ---
-  amount-positive: "#16A34A"
-  amount-negative: "#DC2626"
+  amount-positive: "#15803D"
+  amount-negative: "#D42626"
   amount-neutral: "#0F172A"
-  validated: "#16A34A"
+  validated: "#15803D"
   validated-subtle: "#F0FDF4"
-  pending: "#D97706"
+  pending: "#B45309"
   pending-subtle: "#FFFBEB"
-  auto-rule: "#0284C7"
+  auto-rule: "#0369A1"
   auto-rule-subtle: "#F0F9FF"
   auto-ml: "#7C3AED"
   auto-ml-subtle: "#F5F3FF"
   auto-llm: "#9333EA"
   auto-llm-subtle: "#FAF5FF"
-  alert-anomaly: "#DC2626"
+  alert-anomaly: "#D42626"
   alert-anomaly-subtle: "#FEF2F2"
-  missing: "#94A3B8"
+  missing: "#5E6C84"
   closed: "#475569"
   closed-subtle: "#F8FAFC"
 
@@ -691,7 +691,7 @@ Toute la gamme est issue du continuum **Slate** (froid, précis) :
 - `{colors.ink}` (`#0F172A`) : titres, texte principal.
 - `{colors.body}` (`#1E293B`) : corps de texte long.
 - `{colors.subtle}` (`#475569`) : labels, métadonnées, en-têtes de colonnes.
-- `{colors.muted}` (`#94A3B8`) : placeholders, texte désactivé, états vides.
+- `{colors.muted}` (`#5E6C84`) : placeholders, texte désactivé, états vides. Assombri pour le contraste AA (4,5:1) sur blanc et sur `surface-soft`.
 - `{colors.faint}` (`#CBD5E1`) : icônes d'état vide, éléments quasi-invisibles.
 
 ### Surfaces
@@ -708,15 +708,15 @@ Ces couleurs ont un sens métier précis — ne jamais les détourner :
 
 | Token | Hex | Usage strict |
 |---|---|---|
-| `{colors.amount-positive}` | `#16A34A` | Recettes, soldes créditeurs, montants positifs |
-| `{colors.amount-negative}` | `#DC2626` | Charges, soldes débiteurs, montants négatifs |
-| `{colors.validated}` | `#16A34A` | Badge « validé », écriture confirmée par un humain |
-| `{colors.pending}` | `#D97706` | Badge « à valider », en attente de décision |
-| `{colors.auto-rule}` | `#0284C7` | Catégorisé par une règle déterministe |
+| `{colors.amount-positive}` | `#15803D` | Recettes, soldes créditeurs, montants positifs |
+| `{colors.amount-negative}` | `#D42626` | Charges, soldes débiteurs, montants négatifs |
+| `{colors.validated}` | `#15803D` | Badge « validé », écriture confirmée par un humain |
+| `{colors.pending}` | `#B45309` | Badge « à valider », en attente de décision |
+| `{colors.auto-rule}` | `#0369A1` | Catégorisé par une règle déterministe |
 | `{colors.auto-ml}` | `#7C3AED` | Catégorisé par le modèle ML |
 | `{colors.auto-llm}` | `#9333EA` | Catégorisé par le LLM |
-| `{colors.alert-anomaly}` | `#DC2626` | Alerte anomalie / abus potentiel |
-| `{colors.missing}` | `#94A3B8` | Justificatif manquant (neutre, non bloquant) |
+| `{colors.alert-anomaly}` | `#D42626` | Alerte anomalie / abus potentiel |
+| `{colors.missing}` | `#5E6C84` | Justificatif manquant (neutre, non bloquant) |
 | `{colors.closed}` | `#475569` | Exercice clôturé (lecture seule) |
 
 ## Typographie
@@ -971,7 +971,7 @@ signature, qui est une page publique autonome sans sidebar.
   avec `focusRing` à 3px (`box-shadow: 0 0 0 3px rgba(37,99,235,0.12)`).
 - Navigation clavier complète — les professionnels vivent au clavier, notamment
   dans la file de revue.
-- Touch targets minimum 44px sur les éléments mobiles (page de signature).
+- Touch targets minimum 44px sur les éléments mobiles (page de signature et habillage chauffeur). Les champs du chauffeur font 16px : en dessous, iOS zoome au focus. Aucun texte chauffeur sous 12px.
 - Pas de couleur comme seul vecteur d'information : les montants négatifs ont
   la couleur ET le signe `-` ; les badges ont la couleur ET le texte.
 

@@ -6,6 +6,7 @@ import { use, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmationGroupee } from "@/components/ConfirmationGroupee";
 import { QuestionCategorisation } from "@/components/QuestionCategorisation";
+import { ResultatACeJour } from "@/components/ResultatACeJour";
 import { StationTickets, ticketPrioritaire } from "@/components/StationTickets";
 import { useDossierChauffeur, useOperationsChauffeur } from "@/app/chauffeur/use-dossier";
 import { ApiError } from "@/lib/api";
@@ -101,7 +102,7 @@ function Entete({
         <Squelette className="h-8 w-48" />
         <Squelette className="mt-2 h-4 w-40" />
         <Squelette className="mt-6 h-8 w-32" />
-        <Squelette className="mt-2 h-4 w-36" />
+        <Squelette className="mt-2 h-4 w-56" />
       </div>
     );
   }
@@ -112,14 +113,9 @@ function Entete({
       <p className="mt-1 text-sm text-subtle">
         {fiche.forme_juridique} · {fiche.regime_libelle}
       </p>
-      <p
-        className={`mt-6 text-[28px] font-bold tabular-nums tracking-tight ${
-          fiche.resultat_cts < 0 ? "text-amount-negative" : "text-amount-positive"
-        }`}
-      >
-        {formatMontant(fiche.resultat_cts)}
-      </p>
-      <p className="text-sm text-subtle">Ce qui vous reste après charges</p>
+      <div className="mt-6">
+        <ResultatACeJour dossier={fiche} />
+      </div>
       <ConnexionBancaire
         peutConnecter={fiche.peut_connecter_sa_banque}
         aDesTransactions={aDesTransactions}
@@ -142,7 +138,7 @@ function Onglet({
       type="button"
       aria-pressed={actif}
       onClick={onClick}
-      className={`h-9 rounded-full px-4 text-sm font-medium ${ANNEAU} ${
+      className={`inline-flex h-11 items-center rounded-full px-4 text-sm font-medium ${ANNEAU} ${
         actif ? "bg-ink text-canvas" : "text-subtle"
       }`}
     >
@@ -388,7 +384,7 @@ function AjouterTicketSortie({
         type="button"
         disabled={envoi}
         onClick={() => inputRef.current?.click()}
-        className={`mt-1 rounded-md px-1 py-1 text-sm font-medium text-primary disabled:opacity-50 ${ANNEAU}`}
+        className={`mt-1 inline-flex min-h-11 items-center rounded-md px-1 text-sm font-medium text-primary disabled:opacity-50 ${ANNEAU}`}
       >
         {envoi ? "Envoi…" : "Ajouter un ticket"}
       </button>

@@ -15,9 +15,11 @@ import { useState } from "react";
 
 import { Aide } from "@/components/Aide";
 import { Dialogue } from "@/components/Dialogue";
+import { ResultatACeJour } from "@/components/ResultatACeJour";
 import { Button } from "@/components/ui/button";
 import { cheminTelechargementCloture } from "@/lib/api";
 import { ErreurAuthChauffeur, telechargerAvecAuthChauffeur } from "@/lib/auth-chauffeur";
+import { phraseOperationsRestantes } from "@/lib/etapes-exercice";
 import { formatMontant } from "@/lib/format";
 import { phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import type { DocumentCloture, DossierResume } from "@/lib/types";
@@ -83,14 +85,59 @@ function pieceDeclaration(dossier: DossierResume): Piece {
   };
 }
 
-export function ClotureSection({ dossier }: { dossier: DossierResume }) {
+function texteDocuments(operationsRestantes: number, comptesClos: boolean): string {
+  if (operationsRestantes > 0) {
+    return phraseOperationsRestantes(operationsRestantes);
+  }
+  const etat = comptesClos ? "Les comptes sont clôturés." : "Les comptes ne sont pas clôturés.";
+  const suite = comptesClos
+    ? "À télécharger et à conserver."
+    : "La liasse définitive sera disponible une fois l'exercice clos.";
+  return `${etat} ${suite} La déclaration n'est pas envoyée d'ici.`;
+}
+
+export function ChiffresExercice({ dossier }: { dossier: DossierResume }) {
+  return (
+    <section>
+      <ResultatACeJour dossier={dossier} />
+      <dl className="mt-4 space-y-2 text-sm">
+        <Ligne
+          label="Ce que vous avez encaissé"
+          cents={dossier.ca_ht_cts}
+          aide="Hors taxes : le chiffre d'affaires (CA HT), avant la taxe sur les courses."
+        />
+        <Ligne label="Ce que vous avez dépensé" cents={dossier.charges_cts} />
+        <Ligne
+          label="En banque"
+          cents={dossier.tresorerie_cts}
+          aide="La trésorerie : ce qu'il y a sur les comptes bancaires."
+        />
+        <Ligne
+          label="Taxe à reverser"
+          cents={dossier.tva_a_payer_cts}
+          aide="La TVA à payer à l'administration."
+        />
+      </dl>
+    </section>
+  );
+}
+
+export function ClotureSection({
+  dossier,
+  comptesClos,
+  operationsRestantes,
+}: {
+  dossier: DossierResume;
+  comptesClos: boolean;
+  operationsRestantes: number;
+}) {
   const [erreur, setErreur] = useState<string | null>(null);
   const [avertissementLiasse, setAvertissementLiasse] = useState(false);
-  const [avertissementLu, setAvertissementLu] = useState(false);
   const [liasseLue, setLiasseLue] = useState(false);
+  const bloque = operationsRestantes > 0 || !comptesClos;
 
   function ouvrirAvertissement() {
-    setAvertissementLu(false);
+    if (bloque) return;
     setLiasseLue(false);
     setAvertissementLiasse(true);
   }
@@ -98,8 +145,6 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
   function fermerAvertissement() {
     setAvertissementLiasse(false);
   }
-
-  const telechargementPret = avertissementLu && (!dossier.cloture_faite || liasseLue);
 
   async function telecharger(document: DocumentCloture) {
     setErreur(null);
@@ -125,72 +170,34 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
   }
 
   return (
-    <section>
-      <h2 className="text-sm font-medium text-ink">Vos chiffres</h2>
-      <dl className="mt-3 space-y-2 text-sm">
-        <Ligne
-          label="Ce que vous avez encaissé"
-          cents={dossier.ca_ht_cts}
-          aide="Hors taxes : le chiffre d'affaires (CA HT), avant la taxe sur les courses."
-        />
-        <Ligne label="Ce que vous avez dépensé" cents={dossier.charges_cts} />
-        <Ligne
-          label="Ce qui vous reste après charges"
-          cents={dossier.resultat_cts}
-          emphasise
-          aide="C'est le résultat de l'exercice."
-        />
-        <Ligne
-          label="En banque"
-          cents={dossier.tresorerie_cts}
-          aide="La trésorerie : ce qu'il y a sur les comptes bancaires."
-        />
-        <Ligne
-          label="Taxe à reverser"
-          cents={dossier.tva_a_payer_cts}
-          aide="La TVA à payer à l'administration."
-        />
-      </dl>
-      <h2 className="mt-8 text-base font-semibold text-ink">Pour les impôts</h2>
-      <p className="mt-1 text-sm text-subtle">
-        Les comptes ne sont pas clôturés. À télécharger et à conserver. La déclaration
-        n&apos;est pas envoyée d&apos;ici.
-      </p>
-      <Button type="button" variant="secondary" className="mt-4 w-full" onClick={ouvrirAvertissement}>
-        Récupérer le dossier fiscal
+    <section className="mt-8">
+      <h2 className="text-base font-semibold text-ink">Pour les impôts</h2>
+      <p className="mt-1 text-sm text-ink">{texteDocuments(operationsRestantes, comptesClos)}</p>
+      <div className={bloque ? "opacity-50" : undefined}>
+      <Button
+        type="button"
+        variant="secondary"
+        className="mt-4 w-full"
+        disabled={bloque}
+        onClick={ouvrirAvertissement}
+      >
+        Récupérer la liasse
       </Button>
       {avertissementLiasse && (
-        <Dialogue titre="Comptes non clôturés" titreId="titre-liasse" onFermer={fermerAvertissement}>
-          <label className="mt-4 flex items-start gap-3 text-sm text-ink">
+        <Dialogue titre="Liasse de l'exercice" titreId="titre-liasse" onFermer={fermerAvertissement}>
+          <p className="mt-4 text-sm text-subtle">
+            La signature électronique arrivera plus tard. En attendant, cette validation engage
+            sur la liasse telle qu&apos;elle est.
+          </p>
+          <label className="mt-4 flex min-h-11 items-start gap-3 text-sm text-ink">
             <input
               type="checkbox"
-              className="mt-0.5 size-4 shrink-0"
-              checked={avertissementLu}
-              onChange={(event) => setAvertissementLu(event.target.checked)}
+              className="mt-0.5 size-6 shrink-0"
+              checked={liasseLue}
+              onChange={(event) => setLiasseLue(event.target.checked)}
             />
-            <span>
-              On ne sait pas si vous garderez cette version pour les impôts. AxeLCompta
-              n&apos;est pas responsable de ce dossier fiscal (la liasse : les formulaires
-              de l&apos;année).
-            </span>
+            <span>Je reconnais avoir lu et validé le dossier fiscal (la liasse).</span>
           </label>
-          {dossier.cloture_faite && (
-            <>
-              <p className="mt-4 text-sm text-subtle">
-                La signature électronique arrivera plus tard. En attendant, cette
-                validation engage sur le dossier fiscal tel qu&apos;il est.
-              </p>
-              <label className="mt-4 flex items-start gap-3 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 size-4 shrink-0"
-                  checked={liasseLue}
-                  onChange={(event) => setLiasseLue(event.target.checked)}
-                />
-                <span>Je reconnais avoir lu et validé le dossier fiscal (la liasse).</span>
-              </label>
-            </>
-          )}
           <div className="mt-5 flex gap-2">
             <Button type="button" variant="ghost" className="h-11 flex-1" onClick={fermerAvertissement}>
               Annuler
@@ -198,7 +205,7 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
             <Button
               type="button"
               className="h-11 flex-1"
-              disabled={!telechargementPret}
+              disabled={!liasseLue}
               onClick={() => {
                 fermerAvertissement();
                 void telecharger(LIASSE);
@@ -223,8 +230,9 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
             <button
               type="button"
               aria-label={`Télécharger ${label} (${detail})`}
+              disabled={bloque}
               onClick={() => void telecharger(document)}
-              className="flex shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 py-3 text-sm text-subtle outline-none hover:bg-primary-subtle focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]"
+              className="flex min-h-11 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 py-3 text-sm text-subtle outline-none hover:bg-primary-subtle focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb] disabled:cursor-not-allowed"
             >
               {detail}
               <Download className="h-4 w-4 text-primary" aria-hidden />
@@ -232,6 +240,7 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
           </li>
         ))}
       </ul>
+      </div>
       {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}
     </section>
   );
@@ -240,26 +249,19 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
 function Ligne({
   label,
   cents,
-  emphasise,
   aide,
 }: {
   label: string;
   cents: number;
-  emphasise?: boolean;
   aide?: string;
 }) {
-  const negatif = cents < 0;
   return (
     <div className="flex items-baseline justify-between gap-3">
       <dt className="text-subtle">
         {label}
         {aide && <Aide texte={aide} />}
       </dt>
-      <dd
-        className={`tabular-nums text-right ${emphasise ? "font-semibold" : ""} ${
-          negatif ? "text-amount-negative" : emphasise ? "text-amount-positive" : "text-ink"
-        }`}
-      >
+      <dd className={`tabular-nums text-right ${cents < 0 ? "text-amount-negative" : "text-ink"}`}>
         {formatMontant(cents)}
       </dd>
     </div>
