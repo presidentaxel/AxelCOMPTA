@@ -51,6 +51,7 @@ from axelcompta.demo_api import (
     get_agregats,
     get_avenants,
     get_comptes,
+    get_comptes_bancaires,
     get_consentements,
     get_decisions,
     get_dossiers,
@@ -69,6 +70,7 @@ from axelcompta.demo_chauffeurs_type import construire_ledger
 from axelcompta.demo_comptes import Invitation
 from axelcompta.demo_comptes_memory import InMemoryCompteRepository
 from axelcompta.demo_justificatifs import InMemoryJustificatifRepository
+from axelcompta.ingestion.comptes_bancaires import CompteBancaireMemoire
 from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ingestion.providers.chauffeurs_demo import PROFILS_DEMO
@@ -196,6 +198,8 @@ def _client_et_stubs(
     app.dependency_overrides[get_decisions] = lambda: decisions_stub
     app.dependency_overrides[get_comptes] = lambda: comptes_stub
     app.dependency_overrides[get_justificatifs] = lambda: justificatifs_stub
+    comptes_bancaires_stub = CompteBancaireMemoire()
+    app.dependency_overrides[get_comptes_bancaires] = lambda: comptes_bancaires_stub
     app.dependency_overrides[get_registre_anomalies] = lambda: RegistreInstructions()
     app.dependency_overrides[get_signatures_inpi] = lambda: signatures_stub
     notifications_stub = InMemoryNotificationRepository()

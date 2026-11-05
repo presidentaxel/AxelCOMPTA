@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { useDossierChauffeur } from "@/app/chauffeur/use-dossier";
+import { ComptesBancaires } from "@/components/ComptesBancaires";
 import { Etat } from "@/components/Etat";
 import { FormulaireCompte } from "@/components/FormulaireCompte";
 import { Squelette } from "@/components/Squelette";
@@ -47,6 +48,7 @@ export default function CompteChauffeurPage() {
   return (
     <div>
       {dossierId && <StatutDossier dossierId={dossierId} />}
+      {dossierId && <ComptesBancaires dossierId={dossierId} />}
       <FormulaireCompte
         email={email}
         onMotDePasse={definirMotDePasse}

@@ -33,6 +33,7 @@ from axelcompta.closing.dividendes import (
     retenues,
 )
 from axelcompta.closing.paie import Bulletin, ecriture_bulletin, id_bulletin
+from axelcompta.core.pcg import COMPTE_BANQUE
 from axelcompta.ledger.models import Ecriture
 from axelcompta.ledger.service import LedgerService
 from axelcompta.tenants.affectations import (
@@ -103,7 +104,7 @@ def proposer(
         capital=-_solde(depuis_ouverture, "101"),
         reserve_legale=-_solde(depuis_ouverture, "1061"),
         report_a_nouveau=-_solde(depuis_ouverture, "110", "119"),
-        tresorerie=_solde(depuis_ouverture, "512"),
+        tresorerie=_solde(depuis_ouverture, COMPTE_BANQUE),
         dettes=sum(max(0, -_solde(depuis_ouverture, c)) for c in ("444", "44551", "457")),
         charges_mensuelles=max(0, charges) // 12,
         gerant_non_salarie=(

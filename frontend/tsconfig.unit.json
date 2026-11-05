@@ -8,7 +8,9 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "forceConsistentCasingInFileNames": true
   },
   "include": [
@@ -17,6 +19,10 @@
     "lib/activite-url.ts",
     "lib/activite-url.test.ts",
     "lib/saisie-chauffeur.ts",
-    "lib/saisie-chauffeur.test.ts"
+    "lib/saisie-chauffeur.test.ts",
+    "lib/montant.ts",
+    "lib/montant.test.ts",
+    "lib/comptes-bancaires.ts",
+    "lib/comptes-bancaires.test.ts"
   ]
 }

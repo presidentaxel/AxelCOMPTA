@@ -4,7 +4,20 @@ qu'avancer."""
 
 from __future__ import annotations
 
-from sqlalchemy import JSON, Boolean, Column, Date, DateTime, ForeignKey, String, Table
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    PrimaryKeyConstraint,
+    String,
+    Table,
+    UniqueConstraint,
+)
 
 from axelcompta.core.db import metadata
 
@@ -63,4 +76,22 @@ consentements_bancaires = Table(
     Column("en_pause", Boolean, nullable=False),
     Column("acces_donnees", Boolean, nullable=False),
     Column("dernier_rafraichissement", DateTime, nullable=True),
+)
+
+# Un compte bancaire du dossier et son sous-compte 512x (AXE-832). Le numéro
+# attribué ne change plus ; le nom et le solde suivent le relevé du
+# fournisseur.
+comptes_bancaires = Table(
+    "comptes_bancaires",
+    metadata,
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False),
+    Column("identifiant", String, nullable=False),
+    Column("compte_comptable", String, nullable=False),
+    Column("nom", String, nullable=True),
+    Column("solde_banque_cts", BigInteger, nullable=True),
+    Column("solde_releve_le", DateTime(timezone=True), nullable=True),
+    Column("cree_le", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint("dossier_id", "identifiant", name="comptes_bancaires_clef"),
+    UniqueConstraint("dossier_id", "compte_comptable", name="comptes_bancaires_compte_unique"),
+    CheckConstraint("compte_comptable LIKE '512_%'", name="comptes_bancaires_sous_compte"),
 )

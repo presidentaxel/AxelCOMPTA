@@ -53,6 +53,16 @@ seul module autorisé à transformer une `ProposedEntry` (sortie de
 - Journal d'audit des consultations et des exports (doc 10). Décisions et
   signatures sont déjà tracées (`audit.py`).
 
+## Ventilation bancaire (AXE-832)
+
+- `synchro.py` pose chaque opération sur le sous-compte 512x de son compte
+  bancaire quand on lui passe le registre `comptes_bancaires`.
+- `ventilation_bancaire.py` reprend les écritures restées au 512 : une
+  écriture de reclassement par opération (journal OD, `{id}:ventilation-banque`,
+  512x d'un côté, 512 de l'autre), sans toucher l'originale (I2) ni la
+  contre-passer (la synchro y verrait une transaction modifiée). Rejouable.
+  Lancement : `python scripts/ventiler_comptes_bancaires.py --tenant … [--appliquer]`.
+
 ## Statuts
 
 - **Démo (doc 17 §9)** : `auto_accept.py` reste actif pour les cas

@@ -21,6 +21,12 @@ reste.
 
 ## Fichiers
 
+- `banque.py` — lecture des lignes de banque d'une écriture (`ligne_banque`,
+  `montant_bancaire`, `comptes_hors_banque`, `est_reclassement_bancaire`).
+  Depuis AXE-832, une écriture bancaire porte 512 **ou un sous-compte 512x** :
+  on ne compare jamais un compte à la chaîne `"512"`, on passe par
+  `core.pcg.est_compte_banque`.
+
 - `models.py` — domaine pur (`Ecriture`, `LigneEcriture`, `Journal`, `Sens`).
 - `invariants.py` — `verifier_equilibre` : pur, sans I/O, la seule autorité sur
   l'équilibre débit/crédit.

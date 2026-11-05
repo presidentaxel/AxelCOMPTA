@@ -143,7 +143,17 @@ def _normaliser(tx: dict[str, Any], dossier_id: DossierId) -> NormalizedTransact
         libelle=str(tx.get("provider_description", "")),
         source_provider="digifactory",
         raw_payload=tx,
+        compte_bancaire=_identifiant_compte(tx.get("account_id")),
     )
+
+
+def _identifiant_compte(valeur: object) -> str | None:
+    """`account_id` de la transaction (doc 16 §3.1 : la clé du payload n'est
+    pas fiable, ce champ l'est). Absent ou vide : banque inconnue."""
+    if valeur is None:
+        return None
+    texte = str(valeur).strip()
+    return texte or None
 
 
 def fenetres_mensuelles(debut: date, jusqua: date) -> tuple[tuple[datetime, datetime], ...]:

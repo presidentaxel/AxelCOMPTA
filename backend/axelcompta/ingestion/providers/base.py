@@ -31,6 +31,10 @@ class NormalizedTransaction:
     libelle: str
     source_provider: str
     raw_payload: dict[str, object]
+    # Identifiant du compte bancaire chez le fournisseur (Digifactory :
+    # `account_id`). Sert à choisir le sous-compte 512x (AXE-832). `None`
+    # quand la source ne le donne pas : l'écriture va alors au 512.
+    compte_bancaire: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

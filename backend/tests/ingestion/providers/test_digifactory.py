@@ -273,3 +273,25 @@ def test_premier_chargement_decoupe_par_mois_puis_le_suivant_utilise_since() -> 
     client.appels.clear()
     asyncio.run(provider.lire_lot(_dossier(), datetime(2026, 9, 1, 8, 0, 0)))
     assert client.appels == [(datetime(2026, 9, 1, 8, 0, 0), None, None)]
+
+
+def test_le_compte_bancaire_vient_du_champ_account_id() -> None:
+    """AXE-832 : chaque transaction porte son compte, pour le sous-compte 512x."""
+    ligne = {
+        "date": "2026-06-01",
+        "updated_at": "2026-06-01T00:00:00",
+        "deleted": False,
+        "future": False,
+        "provider_description": "TOTAL",
+    }
+    payload = {
+        "cle_quelconque": [
+            {**ligne, "id": "a", "amount": -10.0, "account_id": 67078894},
+            {**ligne, "id": "b", "amount": -12.0, "account_id": "  "},
+            {**ligne, "id": "c", "amount": -14.0},
+        ]
+    }
+    par_id = {str(t.id): t for t in parser_transactions(payload, DOSSIER, DEPUIS, JUSQUA)}
+    assert par_id["a"].compte_bancaire == "67078894"
+    assert par_id["b"].compte_bancaire is None
+    assert par_id["c"].compte_bancaire is None

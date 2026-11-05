@@ -11,7 +11,13 @@ from sqlalchemy.engine import Engine
 from axelcompta.core.ids import DossierId
 from axelcompta.core.rls import appliquer_rls
 
-from .journal import EntreeQuarantaine, JournalIngestion, empreinte, maintenant
+from .journal import (
+    EntreeQuarantaine,
+    JournalIngestion,
+    compte_du_payload,
+    empreinte,
+    maintenant,
+)
 from .orm import curseurs_synchro, ingestion_brut, quarantaine_ingestion
 
 
@@ -110,3 +116,24 @@ class PostgresJournalIngestion(JournalIngestion):
                     where=curseurs_synchro.c.dernier_updated_at < valeur,
                 )
             )
+
+    def comptes_des_transactions(self, dossier_id: DossierId, source: str) -> dict[str, str]:
+        """Archive brute triée par réception : la dernière version d'une
+        transaction l'emporte."""
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            lignes = connexion.execute(
+                select(ingestion_brut.c.transaction_id, ingestion_brut.c.payload)
+                .where(
+                    ingestion_brut.c.dossier_id == dossier_id,
+                    ingestion_brut.c.source == source,
+                    ingestion_brut.c.transaction_id.is_not(None),
+                )
+                .order_by(ingestion_brut.c.recu_le)
+            ).all()
+        comptes: dict[str, str] = {}
+        for transaction_id, payload in lignes:
+            compte = compte_du_payload(payload) if isinstance(payload, dict) else None
+            if compte is not None:
+                comptes[str(transaction_id)] = compte
+        return comptes

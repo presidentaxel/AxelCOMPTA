@@ -19,6 +19,7 @@ import asyncio
 import sys
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
+from typing import Any, Protocol
 
 from sqlalchemy.engine import Engine
 
@@ -31,7 +32,18 @@ from axelcompta.categorize.pipeline import CategorizationPipeline
 from axelcompta.categorize.rules_and_ml import RulesAndMlPipeline
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.ingestion.consentement import classer, expiration_la_plus_proche, relever_sante
+from axelcompta.ingestion.comptes_bancaires import (
+    CompteBancaireRepository,
+    comptes_releves,
+    relever_comptes,
+)
+from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
+from axelcompta.ingestion.consentement import (
+    ConsentementRepository,
+    classer,
+    expiration_la_plus_proche,
+    relever_sante,
+)
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
 from axelcompta.ingestion.journal import JournalIngestion
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
@@ -46,6 +58,12 @@ from axelcompta.workflow.propositions_postgres import PostgresPropositionReposit
 from axelcompta.workflow.synchro import RapportSynchro, SourceTransactions, synchroniser_dossier
 
 SOURCE = "digifactory"
+
+
+class ClientComptes(Protocol):
+    """Ce que le relevé des consentements lit chez Digifactory."""
+
+    async def accounts(self, contact_nr: str | int) -> dict[str, Any] | list[Any]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +84,7 @@ async def synchroniser_dossiers(
     propositions: PropositionRepository,
     pipeline: CategorizationPipeline,
     comptes: dict[str, str],
+    comptes_bancaires: CompteBancaireRepository | None = None,
 ) -> list[ResultatDossier]:
     resultats: list[ResultatDossier] = []
     for dossier in dossiers:
@@ -74,7 +93,15 @@ async def synchroniser_dossiers(
             continue
         try:
             rapport = await synchroniser_dossier(
-                dossier, source, SOURCE, journal, ledger, propositions, pipeline, comptes
+                dossier,
+                source,
+                SOURCE,
+                journal,
+                ledger,
+                propositions,
+                pipeline,
+                comptes,
+                comptes_bancaires,
             )
         except Exception as exc:  # noqa: BLE001 — un dossier en échec ne bloque pas les autres
             resultats.append(ResultatDossier(dossier.id, erreur=f"{type(exc).__name__}: {exc}"))
@@ -100,14 +127,16 @@ def _afficher(resultat: ResultatDossier) -> None:
 
 
 async def _relever_consentements(
-    client: DigifactoryHttpClient,
+    client: ClientComptes,
     dossiers: tuple[Dossier, ...],
     resultats: list[ResultatDossier],
-    depot: PostgresConsentementRepository,
+    depots: tuple[ConsentementRepository, CompteBancaireRepository],
     aujourd_hui: date,
 ) -> list[ResultatDossier]:
-    """Après la synchro des transactions : lit `/accounts` et mémorise le
-    statut. Un échec ici n'annule pas les écritures déjà posées."""
+    """Après la synchro des transactions : lit `/accounts`, mémorise le
+    statut du consentement, et le nom et le solde de chaque compte bancaire
+    (AXE-832). Un échec ici n'annule pas les écritures déjà posées."""
+    depot, comptes_bancaires = depots
     releves: list[ResultatDossier] = []
     for dossier, resultat in zip(dossiers, resultats, strict=True):
         if dossier.contact_nr is None:
@@ -122,7 +151,9 @@ async def _relever_consentements(
         expire_le = expiration_la_plus_proche(payload)
         statut = classer(expire_le, aujourd_hui)
         sante = relever_sante(payload)
-        depot.enregistrer(dossier.id, expire_le, statut, datetime.now(UTC), sante)
+        maintenant = datetime.now(UTC)
+        depot.enregistrer(dossier.id, expire_le, statut, maintenant, sante)
+        relever_comptes(comptes_bancaires, dossier.id, comptes_releves(payload), maintenant)
         releves.append(replace(resultat, consentement=statut.value, sante=sante.statut.value))
     return releves
 
@@ -150,6 +181,7 @@ def synchroniser_portefeuille(
             if not sante.ok:
                 print(f"Digifactory indisponible : {sante.message}", file=sys.stderr)
                 return [ResultatDossier(d.id, erreur=sante.message) for d in dossiers]
+            comptes_bancaires = PostgresCompteBancaireRepository(engine)
             resultats = await synchroniser_dossiers(
                 dossiers,
                 DigifactoryProvider(client_reel=client),
@@ -158,9 +190,14 @@ def synchroniser_portefeuille(
                 PostgresPropositionRepository(engine),
                 pipeline,
                 charger_compte_par_categorie(),
+                comptes_bancaires,
             )
             return await _relever_consentements(
-                client, dossiers, resultats, PostgresConsentementRepository(engine), date.today()
+                client,
+                dossiers,
+                resultats,
+                (PostgresConsentementRepository(engine), comptes_bancaires),
+                date.today(),
             )
         finally:
             await client.aclose()

@@ -10,14 +10,20 @@ from __future__ import annotations
 from axelcompta.categorize.models import ProposedEntry
 from axelcompta.core.ids import EcritureId
 from axelcompta.core.money import Money
+from axelcompta.core.pcg import COMPTE_BANQUE
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 
 
 def construire_ecriture_categorisee(
-    transaction: NormalizedTransaction, proposition: ProposedEntry, compte: str, numero: int
+    transaction: NormalizedTransaction,
+    proposition: ProposedEntry,
+    compte: str,
+    numero: int,
+    compte_banque: str = COMPTE_BANQUE,
 ) -> Ecriture:
-    """512 en contrepartie du compte de la catégorie (doc 06 §2). Le sens de
+    """Banque (512, ou le sous-compte 512x du compte bancaire de l'opération,
+    AXE-832) en contrepartie du compte de la catégorie (doc 06 §2). Le sens de
     chaque ligne suit le signe de la transaction (positif = argent reçu),
     pas la nature du compte — les deux s'accordent toujours en partie
     double. Pas de ventilation TVA ici : réservée au settlement plateforme
@@ -34,7 +40,7 @@ def construire_ecriture_categorisee(
         libelle=f"{transaction.libelle} ({proposition.categorie})",
         reference_piece=None,
         lignes=(
-            LigneEcriture(compte="512", sens=sens_512, montant=montant),
+            LigneEcriture(compte=compte_banque, sens=sens_512, montant=montant),
             LigneEcriture(compte=compte, sens=sens_compte, montant=montant),
         ),
     )
