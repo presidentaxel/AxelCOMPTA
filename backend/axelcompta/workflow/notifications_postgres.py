@@ -51,6 +51,29 @@ class PostgresNotificationRepository(NotificationRepository):
             )
         return resultat.rowcount
 
+    def marquer_lue(
+        self, dossier_id: DossierId, notification_id: str, maintenant: datetime
+    ) -> bool:
+        with self._engine.begin() as connexion:
+            appliquer_rls(connexion)
+            trouve = connexion.execute(
+                select(table.c.id).where(
+                    table.c.id == notification_id, table.c.dossier_id == dossier_id
+                )
+            ).first()
+            if trouve is None:
+                return False
+            connexion.execute(
+                update(table)
+                .where(
+                    table.c.id == notification_id,
+                    table.c.dossier_id == dossier_id,
+                    table.c.lue_le.is_(None),
+                )
+                .values(lue_le=maintenant)
+            )
+        return True
+
     def enregistrer(self, notification: NotificationEnvoyee) -> None:
         with self._engine.begin() as connexion:
             appliquer_rls(connexion)

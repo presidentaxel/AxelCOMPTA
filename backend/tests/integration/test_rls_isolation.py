@@ -258,14 +258,24 @@ def test_notifications_lues_seulement_dans_son_dossier_et_rien_dautre_modifiable
     depot_web = PostgresNotificationRepository(engine_web)
     with contexte_identite(dossier_id="sophie", tenant_id=None):
         assert [n.id for n in depot_web.lister(DossierId("karim"), limite=5)] == []
+        assert (
+            depot_web.marquer_lue(DossierId("karim"), "n-karim", datetime(2026, 9, 26, 10, 0))
+            is False
+        )
+        assert (
+            depot_web.marquer_lue(DossierId("sophie"), "n-sophie", datetime(2026, 9, 26, 10, 0))
+            is True
+        )
         assert depot_web.marquer_lues(DossierId("karim"), datetime(2026, 9, 26, 10, 0)) == 0
-        assert depot_web.marquer_lues(DossierId("sophie"), datetime(2026, 9, 26, 10, 0)) == 1
+        assert depot_web.marquer_lues(DossierId("sophie"), datetime(2026, 9, 26, 10, 0)) == 0
         with engine_web.begin() as connexion:
             appliquer_rls(connexion)
             with pytest.raises((ProgrammingError, DBAPIError)):
                 connexion.execute(text("UPDATE notifications_envoyees SET type = 'autre'"))
 
     assert depot_admin.lister(DossierId("karim"), limite=5)[0].lue_le is None
+    lue_sophie = depot_admin.lister(DossierId("sophie"), limite=5)[0].lue_le
+    assert lue_sophie == datetime(2026, 9, 26, 10, 0)
 
 
 def test_avenants_de_regime_lus_par_dossier_et_jamais_modifies(

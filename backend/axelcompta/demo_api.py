@@ -166,7 +166,11 @@ from axelcompta.tenants.statuts import (
 from axelcompta.workflow.decisions import DecisionHumaine, DecisionRepository
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
 from axelcompta.workflow.expert import ImputationRefusee, preparer_imputation
-from axelcompta.workflow.notifications import NotificationRepository
+from axelcompta.workflow.notifications import (
+    NotificationRepository,
+    ecritures_a_trancher,
+    pour_la_cloche,
+)
 from axelcompta.workflow.notifications_postgres import PostgresNotificationRepository
 from axelcompta.workflow.propositions import PropositionRepository
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
@@ -2604,8 +2608,14 @@ def _enregistrer_routes_greffe_inpi(app: FastAPI) -> None:
 
 class NotificationVue(BaseModel):
     id: str
+    type: str
     message: str
     cree_le: str
+    lue: bool
+
+
+class NotificationLueVue(BaseModel):
+    id: str
     lue: bool
 
 
@@ -2616,25 +2626,49 @@ class NotificationsLuesVue(BaseModel):
 # Assez pour une cloche : au-delà, les plus anciennes n'apportent rien,
 # l'écran « À traiter » montre déjà tout ce qui attend.
 _NOTIFICATIONS_AFFICHEES = 20
+# Avant regroupement, pour qu'un rappel récent ne cache pas un autre sujet.
+_HISTORIQUE_AVANT_REGROUPEMENT = 200
 
 
 def _enregistrer_routes_notifications(app: FastAPI) -> None:
     """Cloche de l'espace chauffeur (doc 19 §5.2) : indiv seulement, comme
-    le reste de son dossier."""
+    le reste de son dossier. Le nombre d'opérations est recalculé ici."""
 
     @app.get("/dossiers/{dossier_id}/notifications", response_model=list[NotificationVue])
     def lister_notifications(
-        dossier: DossierDep, notifications: NotificationsDep
+        dossier: DossierDep,
+        notifications: NotificationsDep,
+        ledger: LedgerBaseDep,
+        decisions: DecisionsDep,
     ) -> list[NotificationVue]:
+        nb = len(ecritures_a_trancher(ledger, decisions, dossier.id))
+        visibles = pour_la_cloche(
+            notifications.lister(dossier.id, _HISTORIQUE_AVANT_REGROUPEMENT),
+            nb,
+            _NOTIFICATIONS_AFFICHEES,
+        )
         return [
             NotificationVue(
-                id=n.id,
-                message=n.message,
-                cree_le=n.envoye_le.isoformat(),
-                lue=n.lue_le is not None,
+                id=vue.id,
+                type=vue.type,
+                message=vue.message,
+                cree_le=vue.envoye_le.isoformat(),
+                lue=vue.lue,
             )
-            for n in notifications.lister(dossier.id, _NOTIFICATIONS_AFFICHEES)
+            for vue in visibles
         ]
+
+    @app.post(
+        "/dossiers/{dossier_id}/notifications/{notification_id}/lue",
+        response_model=NotificationLueVue,
+    )
+    def marquer_notification_lue(
+        notification_id: str, dossier: DossierDep, notifications: NotificationsDep
+    ) -> NotificationLueVue:
+        maintenant = datetime.now(UTC).replace(tzinfo=None)
+        if not notifications.marquer_lue(dossier.id, notification_id, maintenant):
+            raise HTTPException(status_code=404, detail="Notification inconnue")
+        return NotificationLueVue(id=notification_id, lue=True)
 
     @app.post("/dossiers/{dossier_id}/notifications/lues", response_model=NotificationsLuesVue)
     def marquer_notifications_lues(
