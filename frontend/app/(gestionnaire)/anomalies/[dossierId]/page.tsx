@@ -86,6 +86,7 @@ export default function AnomaliesPage() {
         {alertes?.map((alerte) => (
           <InstructionAlerte
             key={alerte.id}
+            dossierId={dossierId}
             alerte={alerte}
             envoi={envoi === alerte.id}
             lecture={!droit.ecriture}

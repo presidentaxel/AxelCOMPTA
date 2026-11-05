@@ -100,6 +100,14 @@ export type ReglageTags = {
   exclusions: Record<string, string[]>;
 };
 
+/** AXE-814 : un changement d'état d'une alerte, avec son auteur. */
+export type EvenementAnomalie = {
+  etat: string;
+  acteur: string;
+  commentaire: string;
+  le: string;
+};
+
 export type AlerteAnomalie = {
   id: string;
   code: string;

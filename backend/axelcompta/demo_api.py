@@ -61,7 +61,8 @@ from axelcompta.affectations import (
     enregistrer_bulletin,
     proposer,
 )
-from axelcompta.anomaly.instruction import RegistreInstructions, TransitionRefusee
+from axelcompta.anomaly.instruction import InstructionsRepository, TransitionRefusee
+from axelcompta.anomaly.instruction_postgres import PostgresInstructions
 from axelcompta.anomaly.models import Alerte, MouvementSurveille
 from axelcompta.anomaly.service import analyser
 from axelcompta.categorize.appris import (
@@ -358,6 +359,13 @@ class AlerteAnomalieVue(BaseModel):
     libelle_mouvement: str
     montant_centimes: int
     date: str
+
+
+class EvenementAnomalieVue(BaseModel):
+    etat: str
+    acteur: str
+    commentaire: str
+    le: str
 
 
 class InstructionAnomalieEntree(BaseModel):
@@ -1225,16 +1233,15 @@ def get_comptes_bancaires() -> CompteBancaireRepository:
 
 ComptesBancairesDep = Annotated[CompteBancaireRepository, Depends(get_comptes_bancaires)]
 
-_REGISTRE_ANOMALIES = RegistreInstructions()
+
+def get_registre_anomalies() -> InstructionsRepository:
+    """Qualifications d'alertes, en base (AXE-814) : elles survivent aux
+    redémarrages et se partagent entre workers. `RegistreInstructions` en
+    mémoire dans les tests."""
+    return PostgresInstructions(_engine())
 
 
-def get_registre_anomalies() -> RegistreInstructions:
-    """Qualifications d'alertes, en mémoire de process. Les tests passent
-    une instance neuve."""
-    return _REGISTRE_ANOMALIES
-
-
-RegistreAnomaliesDep = Annotated[RegistreInstructions, Depends(get_registre_anomalies)]
+RegistreAnomaliesDep = Annotated[InstructionsRepository, Depends(get_registre_anomalies)]
 
 
 def get_signatures_inpi() -> SignatureRepository:
@@ -3677,6 +3684,23 @@ def _alertes_du_dossier(
     return _alertes_du_ledger(dossier, ledger, decisions, justificatifs)
 
 
+def _enregistrer_route_historique_anomalie(app: FastAPI) -> None:
+    @app.get(
+        "/dossiers/{dossier_id}/anomalies/{alerte_id}/historique",
+        response_model=list[EvenementAnomalieVue],
+    )
+    def historique_anomalie(
+        alerte_id: str, dossier: DossierPortefeuilleDep, registre: RegistreAnomaliesDep
+    ) -> list[EvenementAnomalieVue]:
+        """Chaque changement d'état, avec son auteur et sa date (AXE-814)."""
+        return [
+            EvenementAnomalieVue(
+                etat=e.etat, acteur=e.acteur, commentaire=e.commentaire, le=e.le.isoformat()
+            )
+            for e in registre.historique(dossier.id, alerte_id)
+        ]
+
+
 def _enregistrer_routes_anomalies(app: FastAPI) -> None:
     @app.get("/dossiers/{dossier_id}/anomalies", response_model=list[AlerteAnomalieVue])
     def lister_anomalies(
@@ -3687,7 +3711,8 @@ def _enregistrer_routes_anomalies(app: FastAPI) -> None:
         registre: RegistreAnomaliesDep,
     ) -> list[AlerteAnomalieVue]:
         alertes = _alertes_du_dossier(dossier, base, decisions, justificatifs)
-        return [_alerte_vue(alerte, registre.etat(alerte.id)) for alerte in alertes.values()]
+        etats = registre.etats(dossier.id)
+        return [_alerte_vue(alerte, etats.get(alerte.id, "ouverte")) for alerte in alertes.values()]
 
     @app.post(
         "/dossiers/{dossier_id}/anomalies/{alerte_id}",
@@ -3713,7 +3738,13 @@ def _enregistrer_routes_anomalies(app: FastAPI) -> None:
             raise HTTPException(status_code=404, detail="Alerte inconnue.")
         try:
             etat = registre.instruire(
-                alerte_id, entree.decision, identite.user_id, entree.commentaire
+                dossier.id,
+                alerte_id,
+                entree.decision,
+                # L'auteur se lit dans l'historique (AXE-800) : l'e-mail, pas l'uuid.
+                identite.email or identite.user_id,
+                entree.commentaire,
+                datetime.now(UTC),
             )
         except TransitionRefusee as erreur:
             raise HTTPException(status_code=400, detail=str(erreur)) from erreur
@@ -3809,15 +3840,25 @@ def _sujets_anomalies(
     ledger: InMemoryLedgerService,
     decisions: DecisionRepository,
     justificatifs: JustificatifRepository,
-    registre: RegistreInstructions,
+    registre: InstructionsRepository,
     exclues: frozenset[EcritureId],
 ) -> list[SujetExpertVue]:
     sujets: list[SujetExpertVue] = []
     alertes = _alertes_du_ledger(dossier, ledger, decisions, justificatifs)
+    etats = registre.etats(dossier.id)
+    ecritures = {e.id: e for e in ledger.grand_livre(dossier.id)}
     for alerte in alertes.values():
         if alerte.ecriture_id in exclues:
             continue
-        if registre.etat(alerte.id) not in ("ouverte", "en_instruction"):
+        etat = etats.get(alerte.id, "ouverte")
+        if etat == "usage_personnel":
+            proposition = _reclassement_personnel(
+                dossier, alerte, ecritures.get(alerte.ecriture_id)
+            )
+            if proposition is not None:
+                sujets.append(proposition)
+            continue
+        if etat not in ("ouverte", "en_instruction"):
             continue
         sujets.append(
             _sujet(
@@ -3834,12 +3875,44 @@ def _sujets_anomalies(
     return sujets
 
 
+def est_banque_ou_tva(compte: str) -> bool:
+    return compte.startswith("512") or compte.startswith("445")
+
+
+def _reclassement_personnel(
+    dossier: Dossier, alerte: Alerte, ecriture: Ecriture | None
+) -> SujetExpertVue | None:
+    """Alerte qualifiée « usage personnel » (AXE-814) : le reclassement vers
+    455 (108 en EI, matrice des statuts) est **proposé** dans la file, jamais
+    écrit. L'expert-comptable ou le chauffeur le valide par une imputation.
+    Rien à proposer si l'écriture y est déjà, ou si le statut ne prévoit pas
+    de compte (usage personnel signalé sans écriture)."""
+    cible = configuration_de(dossier).comptes_categories_statut().get("usage_personnel")
+    if cible is None or ecriture is None:
+        return None
+    actuels = {ligne.compte for ligne in ecriture.lignes if not est_banque_ou_tva(ligne.compte)}
+    if cible in actuels:
+        return None
+    return _sujet(
+        dossier,
+        f"reclassement:{alerte.id}",
+        "gestionnaire",
+        "anomalie",
+        alerte.libelle_mouvement,
+        f"Usage personnel retenu : reclassement proposé en {cible}, à valider.",
+        alerte.montant_centimes,
+        str(alerte.ecriture_id),
+        compte_actuel=min(actuels) if actuels else None,
+        compte_suggere=cible,
+    )
+
+
 def _sujets_expert(
     dossier: Dossier,
     base: LedgerService,
     decisions: DecisionRepository,
     justificatifs: JustificatifRepository,
-    registre: RegistreInstructions,
+    registre: InstructionsRepository,
     avec_anomalies: bool = True,
 ) -> list[SujetExpertVue]:
     ledger = _ledger_avec_decisions(dossier, base, decisions)
@@ -4008,6 +4081,7 @@ def create_app() -> FastAPI:
     _enregistrer_route_correction(app)
     _enregistrer_routes_annulation(app)
     _enregistrer_routes_anomalies(app)
+    _enregistrer_route_historique_anomalie(app)
     _enregistrer_routes_expert(app)
     _enregistrer_routes_tags(app)
     _enregistrer_routes_revue(app)

@@ -36,3 +36,18 @@ transverse).
 ## Doc de référence
 
 [doc 05 §6](../../../docs/05-pipeline-categorisation.md#6-détection-danomalies-et-dabus-module-anomaly).
+
+## Qualifications gardées en base (AXE-814)
+
+`instruction.py` porte le cycle (pur) et le contrat `InstructionsRepository` ;
+`instruction_postgres.py` l'implémente sur `qualifications_anomalie`
+(migration `a9c4e7b2d815`) : append-only, RLS par dossier, une ligne par
+changement d'état avec son auteur (e-mail) et sa date. L'état d'une alerte
+est sa dernière ligne ; les alertes recalculées la retrouvent par leur
+identifiant stable `{détecteur}:{écriture}`. `RegistreInstructions` reste
+le dépôt en mémoire des tests.
+
+Une alerte qualifiée « usage personnel » fait apparaître dans le mode expert
+une proposition de reclassement vers 455 (108 en EI, matrice des statuts) :
+proposée, jamais écrite.
+

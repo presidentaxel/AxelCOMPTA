@@ -27,6 +27,7 @@ import {
 import type {
   AlerteAnomalie,
   DossierAgregat,
+  EvenementAnomalie,
   FileExpert,
   ImputationFaite,
   ReglageTags,
@@ -274,6 +275,19 @@ export async function listerAnomalies(dossierId: string): Promise<AlerteAnomalie
     throw new ApiError(`API démo (/anomalies) : HTTP ${reponse.status}`, reponse.status);
   }
   return (await reponse.json()) as AlerteAnomalie[];
+}
+
+export async function lireHistoriqueAlerte(
+  dossierId: string,
+  alerteId: string,
+): Promise<EvenementAnomalie[]> {
+  const reponse = await requeteGestionnaire(
+    `/dossiers/${dossierId}/anomalies/${encodeURIComponent(alerteId)}/historique`,
+  );
+  if (!reponse.ok) {
+    throw new ApiError("Impossible de lire l'historique.", reponse.status);
+  }
+  return (await reponse.json()) as EvenementAnomalie[];
 }
 
 export async function instruireAlerte(
