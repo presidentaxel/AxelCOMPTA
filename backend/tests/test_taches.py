@@ -155,3 +155,31 @@ def test_les_tags_excluent_de_la_synchro_du_classement_et_des_rappels() -> None:
     assert appels.synchro == [("b2", "b3")]
     assert appels.sans_classement == frozenset({"b2"})
     assert notifies == ["b2", "b3"]
+
+
+def test_les_caches_sont_prechauffes_avant_les_notifications() -> None:
+    """AXE-824 : après la synchro, le premier affichage lit des valeurs gardées."""
+    appels: list[str] = []
+
+    def prechauffer(dossiers: tuple[Dossier, ...]) -> int:
+        appels.append("caches")
+        return len(dossiers)
+
+    def notifier(dossiers: tuple[Dossier, ...]) -> list[ResultatNotification]:
+        appels.append("notifications")
+        return _notifier_tout(dossiers)
+
+    bilan = lancer_taches(_depot(("a1", "A", None)), None, notifier, prechauffer=prechauffer)
+
+    assert appels == ["caches", "notifications"]
+    assert "A caches : 1 dossiers recalculés" in bilan.lignes
+
+
+def test_un_echec_de_prechauffage_ne_bloque_rien() -> None:
+    def planter(dossiers: tuple[Dossier, ...]) -> int:
+        raise ConnectionError("base")
+
+    bilan = lancer_taches(_depot(("a1", "A", None)), None, _notifier_tout, prechauffer=planter)
+
+    assert not bilan.echec
+    assert bilan.lignes[-1] == "A notifications : 1 créées, 0 en échec"
