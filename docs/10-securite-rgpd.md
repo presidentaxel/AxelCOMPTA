@@ -7,7 +7,7 @@
 >   posé.
 > - Pas fait : MFA demandée à la connexion et journal des connexions et
 >   exports (AXE-812), sauvegardes avec restauration testée et hébergement
->   de production (AXE-811), séparation démo/production (AXE-810), DPA et
+>   de production (AXE-811), isolation de la production, où ne reste qu'un dossier fictif de review UX (AXE-810, doc 17), DPA et
 >   CGU (AXE-813), offboarding (export et purge d'un tenant, doc 14 :
 >   aucun ticket).
 

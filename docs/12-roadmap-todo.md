@@ -118,12 +118,19 @@ toute autre vente.
   triggers, migration `e7b3d9a15c42`) : la page Entreprises ne reconstruit
   plus chaque dossier (AXE-566).
 
+### Passage en mode réel (05/11)
+
+Serenity a ses premiers chauffeurs sur Digifactory (13 contacts, dont 7
+nouveaux). La base Supabase devient la base réelle du portefeuille ; le
+menu Démo et les faux comptes sont retirés ; Karim, Yanis et
+`demo@axelcompta.fr` sont supprimés ; Sophie reste pour les reviews UX.
+Détail : [doc 17](17-plan-demo-backend.md). Le lien avec Rollee devient
+nécessaire pour les recettes des vrais chauffeurs (tickets Rollee ouverts
+le même jour).
+
 ### En cours (05/11)
 
-- PR #82 (AXE-704) : annuler une décision et refuser la liasse tant qu'il
-  reste à traiter. En revue.
-- PR #83 (AXE-690) : états vides et erreurs du chauffeur, toujours une
-  action. En revue.
+- PR #82 (AXE-704) et #83 (AXE-690) : mergées le 05/11.
 - **Bug ouvert AXE-685** : les provisions de clôture peuvent être écrasées
   après une lecture ratée. Priorité haute, à corriger avant tout dossier
   réel.
@@ -190,7 +197,9 @@ que Linear ne couvrait pas. Tickets créés dans P-AXE-28 :
 - AXE-808 : rappels hors de l'application, par l'intégration e-mail/SMS du
   gestionnaire.
 - AXE-809 : création des dossiers en masse avec rapport de validation.
-- AXE-810 : séparer la production de la démo (base, menu Démo, routes).
+- AXE-810 : isoler la production. Le menu Démo est retiré le 05/11 et la
+  base devient la production ; restent les routes `demo_api`, `/metrics`
+  et le dossier de review UX.
 - AXE-811 : hébergement de production (ADR-003) et restauration
   chronométrée.
 - AXE-812 : MFA demandée à la connexion, journal des connexions et exports.

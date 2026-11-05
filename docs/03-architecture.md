@@ -9,8 +9,9 @@
 > - Rôles en place : lecture, membre, admin (et `retire` pour un membre
 >   retiré). À venir : `expert_comptable` (AXE-800). La MFA TOTP est codée
 >   mais pas demandée à la connexion (AXE-812).
-> - Une seule base Supabase sert aujourd'hui à la démo et aux dossiers
->   réels : séparation prévue (AXE-810), hébergement de production à
+> - Depuis le 2026-11-05, la base Supabase `AxelCompta` est la base réelle
+>   du portefeuille Serenity ; seul un dossier fictif y reste, pour les
+>   reviews UX (doc 17). Isolation stricte (AXE-810), hébergement de production à
 >   trancher (AXE-811).
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-09-24

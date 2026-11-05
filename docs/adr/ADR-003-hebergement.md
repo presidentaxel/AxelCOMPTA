@@ -3,9 +3,10 @@
 **Date :** 2026-06-16 — Mise à jour : 2026-09-24
 **Statut :** partiellement accepté — base de données et auth tranchées (Supabase, y compris pour la V1, voir mise à jour 2026-09-08), compute à décider quand le code est stable
 
-> **État au 2026-11-05** : un seul projet Supabase (`AxelCompta-demo`,
-> eu-west-1) porte la démo et les dossiers `DIGI_`. Projet de production
-> distinct et retrait de la démo en production : AXE-810. Décision de
+> **État au 2026-11-05** : le projet Supabase `AxelCompta` (eu-west-1)
+> devient la base de production du portefeuille Serenity (doc 17) ; le
+> menu Démo est retiré et seul un dossier fictif de review UX y reste.
+> Isolation stricte de la production : AXE-810. Décision de
 > production (région, sauvegardes, CLOUD Act pour l'auth) et restauration
 > chronométrée : AXE-811.
 **Décideurs :** Louis Vedovato
