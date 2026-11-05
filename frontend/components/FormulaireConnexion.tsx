@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { demanderReinitialisation, envoyerLienMagique } from "@/lib/auth-chauffeur";
+import { traduireExceptionAuth } from "@/lib/messages-auth";
 import { sessionAExpire } from "@/lib/session";
 
 type Mode = "mot_de_passe" | "lien" | "oubli";
@@ -20,6 +21,8 @@ export function FormulaireConnexion({
   sousTitre: string;
   onConnecte: (email: string, motDePasse: string) => Promise<void>;
 }) {
+  const idEmail = useId();
+  const idMotDePasse = useId();
   const [mode, setMode] = useState<Mode>("mot_de_passe");
   const [email, setEmail] = useState("");
   const [motDePasse, setMotDePasse] = useState("");
@@ -28,10 +31,14 @@ export function FormulaireConnexion({
   const [info, setInfo] = useState<string | null>(null);
 
   useEffect(() => {
-    // Arrivée depuis une page interne dont la session n'a pas pu être
-    // renouvelée (`lib/session.ts`) : on dit pourquoi on est là.
-    if (sessionAExpire(window.location.search)) {
+    const recherche = new URLSearchParams(window.location.search);
+    const demande = recherche.get("mode");
+    if (demande === "lien" || demande === "oubli") {
+      // Le mode vient de l'adresse (« Mot de passe oublié », « nouveau lien »).
       // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMode(demande);
+    }
+    if (sessionAExpire(window.location.search)) {
       setInfo("Votre session a expiré. Reconnectez-vous pour reprendre où vous en étiez.");
     }
   }, []);
@@ -53,7 +60,7 @@ export function FormulaireConnexion({
         await onConnecte(adresse, motDePasse);
       }
     } catch (exception) {
-      setErreur(exception instanceof Error ? exception.message : "Échec de la connexion.");
+      setErreur(traduireExceptionAuth(exception));
     } finally {
       setEnCours(false);
     }
@@ -70,28 +77,53 @@ export function FormulaireConnexion({
       <h1 className="mb-1 text-xl font-bold text-ink">{titre}</h1>
       <p className="mb-6 text-sm text-subtle">{sousTitre}</p>
       <form className="space-y-3" onSubmit={soumettre}>
-        <Input
-          type="email"
-          uiSize="lg"
-          value={email}
-          onChange={(evenement) => setEmail(evenement.target.value)}
-          placeholder="Votre e-mail"
-          required
-          disabled={enCours}
-        />
-        {mode === "mot_de_passe" && (
+        <div className="space-y-1">
+          <label htmlFor={idEmail} className="block text-sm font-medium text-ink">
+            E-mail
+          </label>
           <Input
-            type="password"
+            id={idEmail}
+            name="email"
+            type="email"
+            autoComplete="email"
             uiSize="lg"
-            value={motDePasse}
-            onChange={(evenement) => setMotDePasse(evenement.target.value)}
-            placeholder="Votre mot de passe"
+            value={email}
+            onChange={(evenement) => setEmail(evenement.target.value)}
+            placeholder="nom@exemple.fr"
             required
             disabled={enCours}
+            aria-invalid={erreur ? true : undefined}
           />
+        </div>
+        {mode === "mot_de_passe" && (
+          <div className="space-y-1">
+            <label htmlFor={idMotDePasse} className="block text-sm font-medium text-ink">
+              Mot de passe
+            </label>
+            <Input
+              id={idMotDePasse}
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              uiSize="lg"
+              value={motDePasse}
+              onChange={(evenement) => setMotDePasse(evenement.target.value)}
+              required
+              disabled={enCours}
+              aria-invalid={erreur ? true : undefined}
+            />
+          </div>
         )}
-        {erreur && <p className="text-sm text-danger">{erreur}</p>}
-        {info && <p className="text-sm text-subtle">{info}</p>}
+        {erreur && (
+          <p role="alert" className="text-sm text-danger">
+            {erreur}
+          </p>
+        )}
+        {info && (
+          <p role="status" className="text-sm text-subtle">
+            {info}
+          </p>
+        )}
         <Button type="submit" disabled={enCours} className="w-full">
           {enCours
             ? "Envoi…"

@@ -18,7 +18,7 @@ export default function ConnexionGestionnairePage() {
         sousTitre="Accédez à l'état de votre portefeuille."
         onConnecte={async (email, motDePasse) => {
           await connexionGestionnaire(email, motDePasse);
-          router.push(cheminDeRetour(window.location.search, "/"));
+          router.replace(cheminDeRetour(window.location.search, "/"));
         }}
       />
     </main>

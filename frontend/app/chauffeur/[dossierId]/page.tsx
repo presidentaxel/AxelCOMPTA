@@ -1,7 +1,8 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { use, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, use, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ConfirmationGroupee } from "@/components/ConfirmationGroupee";
@@ -10,6 +11,14 @@ import { ResultatACeJour } from "@/components/ResultatACeJour";
 import { StationTickets, ticketPrioritaire } from "@/components/StationTickets";
 import { useDossierChauffeur, useOperationsChauffeur } from "@/app/chauffeur/use-dossier";
 import { ApiError } from "@/lib/api";
+import {
+  ecrireEtatActivite,
+  lireEtatActivite,
+  memoriserActivite,
+  relireActivite,
+  type EtatActivite,
+  type SensActivite,
+} from "@/lib/activite-url";
 import { joindreJustificatifChauffeur } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
 import { libelleCategorie, phrasePourChauffeur } from "@/lib/langage-chauffeur";
@@ -28,11 +37,42 @@ export default function DossierChauffeurPage({
 }: {
   params: Promise<{ dossierId: string }>;
 }) {
+  return (
+    <Suspense fallback={<SqueletteLignes nombre={4} className="mt-6 h-14 w-full" />}>
+      <Activite params={params} />
+    </Suspense>
+  );
+}
+
+function Activite({
+  params,
+}: {
+  params: Promise<{ dossierId: string }>;
+}) {
   const { dossierId } = use(params);
+  const router = useRouter();
+  const pathname = usePathname();
+  const recherche = useSearchParams();
+  const etat = lireEtatActivite(recherche);
+  const requete = recherche.toString();
   const { dossier } = useDossierChauffeur(dossierId);
   const { transactions, remplacer, recharger } = useOperationsChauffeur(dossierId);
-  const [vue, setVue] = useState<"traiter" | "mouvements">("traiter");
-  const [moisChoisi, setMoisChoisi] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (requete) {
+      memoriserActivite(dossierId, requete);
+      return;
+    }
+    const sauve = relireActivite(dossierId);
+    if (!sauve) return;
+    router.replace(`${pathname}?${sauve}`, { scroll: false });
+  }, [dossierId, requete, pathname, router]);
+
+  function mettreAJour(maj: Partial<EtatActivite>) {
+    const requete = ecrireEtatActivite(recherche, maj);
+    memoriserActivite(dossierId, requete);
+    router.replace(requete ? `${pathname}?${requete}` : pathname, { scroll: false });
+  }
 
   const operations = transactions.statut === "pret" ? transactions.valeur : [];
   const aVerifier = operations
@@ -40,17 +80,17 @@ export default function DossierChauffeurPage({
     .sort((a, b) => b.date.localeCompare(a.date));
   const moisDispo = [...new Set(operations.map((transaction) => transaction.date.slice(0, 7)))].sort();
   const dernierMois = moisDispo.at(-1);
-  const mois = moisChoisi && moisDispo.includes(moisChoisi) ? moisChoisi : dernierMois;
+  const mois = etat.mois && moisDispo.includes(etat.mois) ? etat.mois : dernierMois;
   const indexMois = mois ? moisDispo.indexOf(mois) : -1;
 
   return (
     <div>
       <Entete dossier={dossier} aDesTransactions={operations.length > 0} />
       <div className="mt-8 flex gap-2">
-        <Onglet actif={vue === "traiter"} onClick={() => setVue("traiter")}>
+        <Onglet actif={etat.vue === "traiter"} onClick={() => mettreAJour({ vue: "traiter" })}>
           {aVerifier.length > 0 ? `À traiter · ${aVerifier.length}` : "À traiter"}
         </Onglet>
-        <Onglet actif={vue === "mouvements"} onClick={() => setVue("mouvements")}>
+        <Onglet actif={etat.vue === "mouvements"} onClick={() => mettreAJour({ vue: "mouvements" })}>
           Mouvements
         </Onglet>
       </div>
@@ -58,7 +98,7 @@ export default function DossierChauffeurPage({
         <p className="mt-8 text-sm text-danger">{transactions.message}</p>
       ) : transactions.statut === "en_cours" ? (
         <SqueletteLignes nombre={4} className="mt-6 h-14 w-full" />
-      ) : vue === "traiter" ? (
+      ) : etat.vue === "traiter" ? (
         <Arriere
           aVerifier={aVerifier}
           dossierId={dossierId}
@@ -78,8 +118,10 @@ export default function DossierChauffeurPage({
           mois={mois}
           peutReculer={indexMois > 0}
           peutAvancer={indexMois >= 0 && indexMois < moisDispo.length - 1}
-          onReculer={() => setMoisChoisi(moisDispo[indexMois - 1] ?? null)}
-          onAvancer={() => setMoisChoisi(moisDispo[indexMois + 1] ?? null)}
+          onReculer={() => mettreAJour({ mois: moisDispo[indexMois - 1] ?? null })}
+          onAvancer={() => mettreAJour({ mois: moisDispo[indexMois + 1] ?? null })}
+          sens={etat.sens}
+          onSens={(sens) => mettreAJour({ sens })}
         />
       )}
     </div>
@@ -246,6 +288,8 @@ function Mouvements({
   peutAvancer,
   onReculer,
   onAvancer,
+  sens,
+  onSens,
 }: {
   dossierId: string;
   onJointe: (transaction: TransactionVue) => void;
@@ -255,8 +299,9 @@ function Mouvements({
   peutAvancer: boolean;
   onReculer: () => void;
   onAvancer: () => void;
+  sens: SensActivite;
+  onSens: (sens: SensActivite) => void;
 }) {
-  const [sens, setSens] = useState<"sorties" | "entrees">("sorties");
   const retenues = transactions.filter((transaction) =>
     sens === "sorties" ? transaction.montant_cts < 0 : transaction.montant_cts > 0,
   );
@@ -286,10 +331,10 @@ function Mouvements({
         </button>
       </div>
       <div className="mt-2 flex gap-2">
-        <Onglet actif={sens === "sorties"} onClick={() => setSens("sorties")}>
+        <Onglet actif={sens === "sorties"} onClick={() => onSens("sorties")}>
           Sorties
         </Onglet>
-        <Onglet actif={sens === "entrees"} onClick={() => setSens("entrees")}>
+        <Onglet actif={sens === "entrees"} onClick={() => onSens("entrees")}>
           Entrées
         </Onglet>
       </div>

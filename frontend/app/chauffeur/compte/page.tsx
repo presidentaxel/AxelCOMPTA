@@ -56,7 +56,7 @@ export default function CompteChauffeurPage() {
         className="mt-10 inline-flex min-h-11 items-center text-sm font-medium text-danger outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]"
         onClick={() => {
           deconnecter();
-          router.push("/chauffeur/login");
+          router.replace("/chauffeur/login");
         }}
       >
         Se déconnecter

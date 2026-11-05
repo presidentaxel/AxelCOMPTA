@@ -16,7 +16,9 @@ export type Bloc<T> =
 function sessionOuvreLeDossier(dossierId: string, router: ReturnType<typeof useRouter>): boolean {
   const session = obtenirSession();
   if (session === null) {
-    router.push("/chauffeur/login");
+    const retour = `${window.location.pathname}${window.location.search}`;
+    const parametres = new URLSearchParams({ retour });
+    router.replace(`/chauffeur/login?${parametres.toString()}`);
     return false;
   }
   if (session.dossierId !== dossierId) {

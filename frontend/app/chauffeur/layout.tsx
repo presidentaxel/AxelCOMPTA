@@ -7,6 +7,7 @@ import { FileText, List, UserRound } from "lucide-react";
 
 import { Cloche } from "@/components/Cloche";
 import { Marque } from "@/components/Marque";
+import { EVENEMENT_ACTIVITE, relireActivite } from "@/lib/activite-url";
 import { obtenirSession, type SessionChauffeur } from "@/lib/auth-chauffeur";
 import { clavierOuvert, insetClavier } from "@/lib/clavier-viewport";
 
@@ -100,10 +101,26 @@ export default function ChauffeurLayout({ children }: { children: React.ReactNod
 function Barre({ dossierId, chemin }: { dossierId: string; chemin: string }) {
   const activite = `/chauffeur/${dossierId}`;
   const exercice = `/chauffeur/${dossierId}/exercice`;
+  const resultat = `/chauffeur/${dossierId}/resultat`;
   const compte = "/chauffeur/compte";
+  const [requeteActivite, setRequeteActivite] = useState("");
+
+  useEffect(() => {
+    const lire = () => setRequeteActivite(relireActivite(dossierId));
+    lire();
+    window.addEventListener(EVENEMENT_ACTIVITE, lire);
+    return () => window.removeEventListener(EVENEMENT_ACTIVITE, lire);
+  }, [dossierId]);
+
+  const hrefActivite = requeteActivite ? `${activite}?${requeteActivite}` : activite;
   const liens = [
-    { href: activite, libelle: "Activité", Icone: List, actif: chemin === activite },
-    { href: exercice, libelle: "Exercice", Icone: FileText, actif: chemin === exercice },
+    { href: hrefActivite, libelle: "Activité", Icone: List, actif: chemin === activite },
+    {
+      href: exercice,
+      libelle: "Exercice",
+      Icone: FileText,
+      actif: chemin === exercice || chemin === resultat,
+    },
     { href: compte, libelle: "Compte", Icone: UserRound, actif: chemin === compte },
   ];
 
@@ -115,6 +132,7 @@ function Barre({ dossierId, chemin }: { dossierId: string; chemin: string }) {
             <Link
               key={href}
               href={href}
+              aria-current={actif ? "page" : undefined}
               className={`flex h-14 flex-col items-center justify-center gap-0.5 text-xs ${
                 actif ? "font-semibold text-ink" : "text-subtle"
               }`}
