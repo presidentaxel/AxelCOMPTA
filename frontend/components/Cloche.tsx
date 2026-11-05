@@ -9,6 +9,7 @@ import {
   listerNotificationsChauffeur,
   marquerNotificationLueChauffeur,
 } from "@/lib/auth-chauffeur";
+import { phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import { messageEchecChargement } from "@/lib/session";
 import type { NotificationVue } from "@/lib/types";
 
@@ -56,7 +57,11 @@ export function Cloche({ dossierId, chemin }: { dossierId: string; chemin: strin
       })
       .catch((exception: unknown) => {
         if (annule) return;
-        setMessage(messageEchecChargement(exception, "Impossible de charger les notifications."));
+        setMessage(
+          phrasePourChauffeur(
+            messageEchecChargement(exception, "Impossible de charger les notifications."),
+          ),
+        );
         setStatut("erreur");
       });
     return () => {

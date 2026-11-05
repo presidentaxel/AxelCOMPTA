@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { lireEuros, listeAEnregistrer, type LectureListe } from "./saisie-chauffeur.ts";
+import { lireEuros, listeAEnregistrer, type LectureListe } from "./saisie-chauffeur";
 
 test("1 000,50 et l'espace insécable sont acceptés", () => {
   assert.deepEqual(lireEuros("1 000,50"), { centimes: 100050 });

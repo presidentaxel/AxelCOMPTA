@@ -5,9 +5,10 @@
 // et les prélèvements sociaux, et les reverse avec la déclaration 2777 avant
 // le 15 du mois suivant. Le virement net et le paiement de la 2777 se
 // catégorisent ensuite depuis la banque.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Aide } from "@/components/Aide";
+import { Etat } from "@/components/Etat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
@@ -18,20 +19,59 @@ import {
 } from "@/lib/auth-chauffeur";
 import { formatDate, formatMontant } from "@/lib/format";
 import { phrasePourChauffeur } from "@/lib/langage-chauffeur";
+import { messageEchecChargement } from "@/lib/session";
 import type { DividendesVue } from "@/lib/types";
 
 export function DividendesSection({ dossierId }: { dossierId: string }) {
   const [vue, setVue] = useState<DividendesVue | null>(null);
+  const [echecLecture, setEchecLecture] = useState<string | null>(null);
   const [verseLe, setVerseLe] = useState(() => new Date().toISOString().slice(0, 10));
   const [dispense, setDispense] = useState(false);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [suivi, setSuivi] = useState(dossierId);
+  const ticket = useRef(0);
+
+  if (suivi !== dossierId) {
+    setSuivi(dossierId);
+    setVue(null);
+    setEchecLecture(null);
+    setErreur(null);
+  }
+
+  const relire = useCallback(() => {
+    const courant = ++ticket.current;
+    fetchAvecAuthChauffeur<DividendesVue>(`/dossiers/${dossierId}/dividendes`)
+      .then((lue) => {
+        if (ticket.current !== courant) return;
+        setVue(lue);
+        setEchecLecture(null);
+      })
+      .catch((exception: unknown) => {
+        if (ticket.current !== courant) return;
+        setVue(null);
+        setEchecLecture(
+          phrasePourChauffeur(
+            messageEchecChargement(exception, "Impossible de charger vos dividendes."),
+          ),
+        );
+      });
+  }, [dossierId]);
 
   useEffect(() => {
-    fetchAvecAuthChauffeur<DividendesVue>(`/dossiers/${dossierId}/dividendes`)
-      .then(setVue)
-      .catch(() => setVue(null));
-  }, [dossierId]);
+    relire();
+  }, [relire]);
+
+  if (echecLecture) {
+    return (
+      <section className="mt-8" aria-labelledby="titre-dividendes">
+        <h2 id="titre-dividendes" className="text-sm font-medium text-ink">
+          Mes dividendes
+        </h2>
+        <Etat type="erreur" message={echecLecture} onReessayer={relire} />
+      </section>
+    );
+  }
 
   if (!vue?.applicable) {
     return null;
