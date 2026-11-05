@@ -12,12 +12,19 @@ from axelcompta.workflow.decisions import DecisionHumaine
 from axelcompta.workflow.decisions_memory import InMemoryDecisionRepository
 from axelcompta.workflow.notifications import (
     INTERVALLE_MIN,
+    MESSAGES_FIXES,
     RAPPEL,
+    TYPE_A_TRANCHER,
+    TYPE_CLOTURE_A_VALIDER,
+    TYPE_CONNEXION_A_REFAIRE,
+    TYPE_CONNEXION_J14,
     InMemoryNotificationRepository,
+    NotificationEnvoyee,
     ecritures_a_trancher,
     message,
     notifier_a_trancher,
     notifier_cloture_a_valider,
+    pour_la_cloche,
 )
 
 D = DossierId("d1")
@@ -125,6 +132,56 @@ def test_le_message_ne_contient_ni_montant_ni_libelle() -> None:
 def test_singulier_et_pluriel() -> None:
     assert message(1) == "Une opération est à traiter"
     assert message(4) == "4 opérations sont à traiter"
+
+
+def _posee(id_: str, type_: str, quand: datetime, nb_ids: int = 0) -> NotificationEnvoyee:
+    return NotificationEnvoyee(
+        id=id_,
+        dossier_id=D,
+        type=type_,
+        envoye_le=quand,
+        ecriture_ids=tuple(EcritureId(f"{id_}-{i}") for i in range(nb_ids)),
+    )
+
+
+def test_la_cloche_recalcule_le_compte_et_ne_repette_pas_les_rappels() -> None:
+    depot = InMemoryNotificationRepository()
+    depot.enregistrer(_posee("vieux", TYPE_A_TRANCHER, T0, nb_ids=336))
+    depot.enregistrer(_posee("recent", TYPE_A_TRANCHER, T0 + RAPPEL, nb_ids=1))
+    depot.enregistrer(_posee("j14", TYPE_CONNEXION_J14, T0))
+    depot.enregistrer(_posee("refaire", TYPE_CONNEXION_A_REFAIRE, T0 + timedelta(days=6)))
+    depot.enregistrer(_posee("cloture", TYPE_CLOTURE_A_VALIDER, T0 + timedelta(days=1)))
+
+    rien = pour_la_cloche(depot.lister(D, 20), nb_a_trancher=0, limite=20)
+    assert [(n.id, n.type) for n in rien] == [
+        ("refaire", TYPE_CONNEXION_A_REFAIRE),
+        ("cloture", TYPE_CLOTURE_A_VALIDER),
+    ]
+
+    affichees = pour_la_cloche(depot.lister(D, 20), nb_a_trancher=4, limite=20)
+    assert [(n.id, n.message) for n in affichees] == [
+        ("recent", "4 opérations sont à traiter"),
+        ("refaire", MESSAGES_FIXES[TYPE_CONNEXION_A_REFAIRE]),
+        ("cloture", MESSAGES_FIXES[TYPE_CLOTURE_A_VALIDER]),
+    ]
+
+
+def test_marquer_lue_ne_touche_que_la_notification_demandee() -> None:
+    env = Env()
+    env.notifier(T0)
+    env.ajouter("e2", "471")
+    env.notifier(T0 + INTERVALLE_MIN)
+    premiere, seconde = sorted(env.notifs.historique, key=lambda n: n.envoye_le)
+
+    assert env.notifs.marquer_lue(D, seconde.id, T0 + RAPPEL) is True
+    assert env.notifs.marquer_lue(D, "absente", T0) is False
+    assert env.notifs.marquer_lue(DossierId("autre"), premiere.id, T0) is False
+    par_id = {n.id: n for n in env.notifs.historique}
+    assert par_id[seconde.id].lue_le == T0 + RAPPEL
+    assert par_id[premiere.id].lue_le is None
+
+    assert env.notifs.marquer_lue(D, seconde.id, T0 + RAPPEL * 2) is True
+    assert {n.id: n.lue_le for n in env.notifs.historique}[seconde.id] == T0 + RAPPEL
 
 
 def test_marquer_lues_ne_touche_que_les_non_lues_du_dossier() -> None:

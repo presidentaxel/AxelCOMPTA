@@ -5,6 +5,7 @@
 // demandé par le portail. La signature qualifiée reste un bouchon (ADR-004).
 import { useState } from "react";
 
+import { Aide } from "@/components/Aide";
 import { Button } from "@/components/ui/button";
 import { ApiError, cheminGreffeInpi } from "@/lib/api";
 import {
@@ -12,32 +13,35 @@ import {
   signerGreffeInpiChauffeur,
   telechargerAvecAuthChauffeur,
 } from "@/lib/auth-chauffeur";
+import { phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import type { DossierResume } from "@/lib/types";
 
-import { Aide } from "./Aide";
 import { Badge } from "./Badge";
 
 function messageErreur(exception: unknown, repli: string): string {
-  return exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
-    ? exception.message
-    : repli;
+  const brut =
+    exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
+      ? exception.message
+      : repli;
+  return phrasePourChauffeur(brut);
 }
 
 export function GreffeInpiSection({
   dossier,
-  bloque = false,
-  raison = "",
+  raisonBlocage,
 }: {
   dossier: DossierResume;
-  bloque?: boolean;
-  raison?: string;
+  /** Étape précédente pas faite : rien ne se signe ni ne se télécharge. */
+  raisonBlocage: string | null;
 }) {
   const guide = dossier.guide_greffe;
+  const bloque = raisonBlocage !== null;
   const [signe, setSigne] = useState(dossier.greffe_inpi_signe);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
   async function signer() {
+    if (bloque) return;
     setEnCours(true);
     setErreur(null);
     try {
@@ -51,6 +55,7 @@ export function GreffeInpiSection({
   }
 
   async function telecharger(chemin: string, nomFichier: string) {
+    if (bloque) return;
     setErreur(null);
     try {
       await telechargerAvecAuthChauffeur(chemin, nomFichier);
@@ -64,28 +69,25 @@ export function GreffeInpiSection({
       <div className="flex items-baseline justify-between gap-4">
         <h2 className="text-base font-semibold text-ink">
           Dépôt des comptes
-          <Aide tactile texte="Le greffe du tribunal de commerce. Vous déposez vous-même : rien n'est envoyé d'ici." />
+          <Aide texte="Le greffe du tribunal de commerce reçoit les comptes de l'année, sur le portail de l'INPI. Rien n'est envoyé depuis ici." />
         </h2>
-        {bloque ? null : signe ? (
-          <Badge variant="validated">Signé</Badge>
-        ) : (
-          <Badge variant="pending">À signer</Badge>
-        )}
+        {signe ? <Badge variant="validated">Signé</Badge> : <Badge variant="pending">À signer</Badge>}
       </div>
-      {bloque && <p className="mt-2 text-sm text-ink">{raison}</p>}
+      {raisonBlocage && <p className="mt-1 text-sm text-ink">{raisonBlocage}</p>}
+      <div className={bloque ? "opacity-50" : undefined}>
       {guide.depose ? (
         <>
           <p className="mt-1 text-sm text-subtle">
             À reporter sur le portail. Rien n&apos;est envoyé d&apos;ici.
           </p>
           {bloque ? (
-            <Button type="button" className="mt-4 h-11 w-full" disabled>
-              Ouvrir le portail
+            <Button type="button" className="mt-4 w-full" disabled>
+              Ouvrir le portail INPI
             </Button>
           ) : (
-            <Button asChild className="mt-4 h-11 w-full">
+            <Button asChild className="mt-4 w-full">
               <a href={guide.lien} target="_blank" rel="noopener noreferrer">
-                Ouvrir le portail
+                Ouvrir le portail INPI
               </a>
             </Button>
           )}
@@ -118,7 +120,7 @@ export function GreffeInpiSection({
                             `${document.replace(".pdf", "")}-${dossier.dossier_id}.pdf`,
                           )
                         }
-                        className="min-h-11 shrink-0 text-sm text-primary disabled:opacity-50"
+                        className="inline-flex min-h-11 shrink-0 items-center text-sm text-primary outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb] disabled:cursor-not-allowed"
                       >
                         Télécharger
                       </button>
@@ -131,7 +133,7 @@ export function GreffeInpiSection({
           </ul>
         </>
       ) : (
-        <p className="mt-2 text-sm text-subtle">Pas de dépôt de comptes au greffe pour cette forme.</p>
+        <p className="mt-2 text-sm text-subtle">Cette forme de société ne dépose pas ses comptes.</p>
       )}
       <button
         type="button"
@@ -139,7 +141,7 @@ export function GreffeInpiSection({
         onClick={() =>
           void telecharger(cheminGreffeInpi(dossier.dossier_id), `greffe-inpi-${dossier.dossier_id}.pdf`)
         }
-        className="mt-4 min-h-11 py-2 text-left text-sm text-primary disabled:opacity-50"
+        className="mt-4 inline-flex min-h-11 items-center text-left text-sm text-primary outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb] disabled:cursor-not-allowed"
       >
         Télécharger le dossier de synthèse
       </button>
@@ -147,13 +149,14 @@ export function GreffeInpiSection({
         <Button
           type="button"
           variant="secondary"
-          className="mt-2 h-11 w-full"
-          disabled={enCours || bloque}
+          className="mt-2 w-full"
+          disabled={bloque || enCours}
           onClick={() => void signer()}
         >
           {enCours ? "Signature…" : "Signer"}
         </Button>
       )}
+      </div>
       {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}
     </section>
   );

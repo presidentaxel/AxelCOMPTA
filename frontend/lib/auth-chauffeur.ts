@@ -15,7 +15,15 @@
  */
 
 import { ApiError } from "./api";
-import { adresseInconnue, messageAuthFrancais } from "./messages-auth";
+import {
+  absenceDeCompte,
+  messageMotDePasseCourt,
+  MESSAGE_LIEN_EXPIRE,
+  MESSAGE_SANS_DOSSIER,
+  MESSAGE_SESSION,
+  traduireCorpsAuth,
+  traduireExceptionAuth,
+} from "./messages-auth";
 import { appelAuthentifie, erreurApi, lireCorps } from "./session";
 import type {
   AffectationVue,
@@ -39,7 +47,9 @@ export type SessionChauffeur = {
   email: string;
 };
 
-export class ErreurAuthChauffeur extends Error {}
+export class ErreurAuthChauffeur extends Error {
+  override name = "ErreurAuthChauffeur";
+}
 
 export const URL_SUPABASE = SUPABASE_URL;
 
@@ -57,13 +67,13 @@ export function enTetesSupabase(accessToken?: string): Record<string, string> {
 export function decoderChargeUtileJwt(jeton: string): Record<string, unknown> {
   const partie = jeton.split(".")[1];
   if (!partie) {
-    throw new ErreurAuthChauffeur("Lien invalide ou expiré.");
+    throw new ErreurAuthChauffeur(MESSAGE_LIEN_EXPIRE);
   }
   try {
     const normalise = partie.replace(/-/g, "+").replace(/_/g, "/");
     return JSON.parse(atob(normalise)) as Record<string, unknown>;
   } catch {
-    throw new ErreurAuthChauffeur("Lien invalide ou expiré.");
+    throw new ErreurAuthChauffeur(MESSAGE_LIEN_EXPIRE);
   }
 }
 
@@ -74,7 +84,7 @@ function dossierIdDepuisJeton(accessToken: string): string {
   const metadata = charge.app_metadata as { dossier_id?: string } | undefined;
   const dossierId = metadata?.dossier_id;
   if (!dossierId) {
-    throw new ErreurAuthChauffeur("Ce compte n'est lié à aucun dossier.");
+    throw new ErreurAuthChauffeur(MESSAGE_SANS_DOSSIER);
   }
   return dossierId;
 }
@@ -106,36 +116,28 @@ export function deconnecter(): void {
   }
 }
 
-async function texteErreurSupabase(reponse: Response): Promise<string> {
-  const corps = (await reponse.json().catch(() => ({}))) as {
-    error_description?: string;
-    msg?: string;
-    message?: string;
-    error_code?: string;
-  };
-  return (
-    corps.error_description ??
-    corps.msg ??
-    corps.message ??
-    corps.error_code ??
-    `HTTP ${reponse.status}`
-  );
-}
-
 export async function extraireErreurSupabase(reponse: Response): Promise<never> {
-  const brut = await texteErreurSupabase(reponse);
-  throw new ErreurAuthChauffeur(messageAuthFrancais(brut, reponse.status));
+  const corps = await reponse.json().catch(() => ({}));
+  throw new ErreurAuthChauffeur(traduireCorpsAuth(corps, reponse.status));
 }
 
-/** Appel Supabase : une coupure réseau devient une phrase française. */
+/** `fetch` vers Supabase Auth. Une coupure réseau devient un message
+ * français, jamais « Failed to fetch ». */
 async function appelSupabase(url: string, init: RequestInit): Promise<Response> {
   try {
     return await fetch(url, init);
   } catch (exception) {
-    throw new ErreurAuthChauffeur(
-      messageAuthFrancais(exception instanceof Error ? exception.message : ""),
-    );
+    throw new ErreurAuthChauffeur(traduireExceptionAuth(exception));
   }
+}
+
+/** Lien magique et réinitialisation : une adresse inconnue ne se distingue
+ * pas d'un envoi réussi. Le formulaire garde alors sa phrase neutre. */
+async function ignorerAbsenceDeCompte(reponse: Response): Promise<void> {
+  if (reponse.ok) return;
+  const corps = await reponse.json().catch(() => ({}));
+  if (absenceDeCompte(corps)) return;
+  throw new ErreurAuthChauffeur(traduireCorpsAuth(corps, reponse.status));
 }
 
 /** Page qui reçoit les jetons Supabase (fragment `#access_token`), pour le
@@ -154,12 +156,7 @@ export async function envoyerLienMagique(email: string): Promise<void> {
       body: JSON.stringify({ email, create_user: false }),
     },
   );
-  if (!reponse.ok) {
-    const brut = await texteErreurSupabase(reponse);
-    // Adresse inconnue : le message affiché reste neutre, sans contredire.
-    if (adresseInconnue(brut)) return;
-    throw new ErreurAuthChauffeur(messageAuthFrancais(brut, reponse.status));
-  }
+  await ignorerAbsenceDeCompte(reponse);
 }
 
 export async function demanderReinitialisation(email: string): Promise<void> {
@@ -171,17 +168,15 @@ export async function demanderReinitialisation(email: string): Promise<void> {
       body: JSON.stringify({ email }),
     },
   );
-  if (!reponse.ok) {
-    const brut = await texteErreurSupabase(reponse);
-    if (adresseInconnue(brut)) return;
-    throw new ErreurAuthChauffeur(messageAuthFrancais(brut, reponse.status));
-  }
+  await ignorerAbsenceDeCompte(reponse);
 }
 
 export async function definirMotDePasseAvecJeton(
   accessToken: string,
   motDePasse: string,
 ): Promise<void> {
+  const tropCourt = messageMotDePasseCourt(motDePasse);
+  if (tropCourt) throw new ErreurAuthChauffeur(tropCourt);
   const reponse = await appelSupabase(`${SUPABASE_URL}/auth/v1/user`, {
     method: "PUT",
     headers: enTetesSupabase(accessToken),
@@ -236,7 +231,7 @@ export async function accepterInvitation(fragmentUrl: string): Promise<SessionCh
   const accessToken = parametres.get("access_token");
   const refreshToken = parametres.get("refresh_token");
   if (!accessToken || !refreshToken) {
-    throw new ErreurAuthChauffeur("Lien d'invitation invalide ou expiré.");
+    throw new ErreurAuthChauffeur(MESSAGE_LIEN_EXPIRE);
   }
   const reponse = await appelSupabase(`${SUPABASE_URL}/auth/v1/user`, {
     headers: enTetesSupabase(accessToken),
@@ -258,7 +253,7 @@ export async function accepterInvitation(fragmentUrl: string): Promise<SessionCh
 export async function definirMotDePasse(motDePasse: string): Promise<void> {
   const session = obtenirSession();
   if (!session) {
-    throw new ErreurAuthChauffeur("Aucune session active.");
+    throw new ErreurAuthChauffeur(MESSAGE_SESSION);
   }
   await definirMotDePasseAvecJeton(session.accessToken, motDePasse);
 }
@@ -420,20 +415,22 @@ export async function listerNotificationsChauffeur(dossierId: string): Promise<N
   return fetchAvecAuthChauffeur<NotificationVue[]>(`/dossiers/${dossierId}/notifications`);
 }
 
-/** Une notification devient lue quand on l'ouvre, pas tout le panneau. */
+/** Une notification devient lue quand le chauffeur l'ouvre, pas toute la cloche. */
 export async function marquerNotificationLueChauffeur(
   dossierId: string,
   notificationId: string,
 ): Promise<void> {
   const reponse = await appelChauffeur(
-    `/dossiers/${dossierId}/notifications/${notificationId}/lue`,
+    `/dossiers/${dossierId}/notifications/${encodeURIComponent(notificationId)}/lue`,
     { method: "POST" },
   );
   if (!reponse.ok) {
-    throw erreurApi(await lireCorps(reponse), reponse);
+    throw new ApiError(`HTTP ${reponse.status}`, reponse.status);
   }
 }
 
+/** Pose une décision d'annulation : l'opération redevient à traiter.
+ * L'ancienne décision reste dans l'historique. */
 export async function annulerDecisionChauffeur(
   dossierId: string,
   ecritureId: string,
@@ -444,6 +441,7 @@ export async function annulerDecisionChauffeur(
   );
 }
 
+/** Nouvelle décision sur une opération déjà classée. */
 export async function corrigerDecisionChauffeur(
   dossierId: string,
   ecritureId: string,

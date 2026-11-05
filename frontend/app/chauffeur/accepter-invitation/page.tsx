@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
+import { SuitesAuth } from "@/components/SuitesAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -12,7 +12,12 @@ import {
   ErreurAuthChauffeur,
 } from "@/lib/auth-chauffeur";
 import { lireFragmentAuth, pageInvitation } from "@/lib/auth-lien";
-import { MOT_DE_PASSE_MIN, motDePasseAcceptable } from "@/lib/messages-auth";
+import {
+  INDICATION_MOT_DE_PASSE,
+  LONGUEUR_MIN_MOT_DE_PASSE,
+  messageParametresAuth,
+  traduireExceptionAuth,
+} from "@/lib/messages-auth";
 
 type Etape = "verification" | "definir_mot_de_passe" | "erreur";
 
@@ -27,6 +32,7 @@ type Etape = "verification" | "definir_mot_de_passe" | "erreur";
  */
 export default function AccepterInvitationPage() {
   const router = useRouter();
+  const idMotDePasse = useId();
   const [etape, setEtape] = useState<Etape>("verification");
   const [erreur, setErreur] = useState<string | null>(null);
   const [motDePasse, setMotDePasse] = useState("");
@@ -38,13 +44,15 @@ export default function AccepterInvitationPage() {
     /* eslint-disable react-hooks/set-state-in-effect */
     const fragment = window.location.hash;
     try {
+      const messageRecherche = messageParametresAuth(new URLSearchParams(window.location.search));
+      if (messageRecherche) throw new ErreurAuthChauffeur(messageRecherche);
       const recu = lireFragmentAuth(fragment);
       if (pageInvitation(recu.accessToken) === "gestionnaire") {
         window.location.replace(`/auth/lien${fragment}`);
         return;
       }
     } catch (exception) {
-      setErreur(exception instanceof ErreurAuthChauffeur ? exception.message : "Lien invalide.");
+      setErreur(traduireExceptionAuth(exception));
       setEtape("erreur");
       return;
     }
@@ -54,9 +62,7 @@ export default function AccepterInvitationPage() {
         setEtape("definir_mot_de_passe");
       })
       .catch((exception) => {
-        setErreur(
-          exception instanceof ErreurAuthChauffeur ? exception.message : "Lien invalide.",
-        );
+        setErreur(traduireExceptionAuth(exception));
         setEtape("erreur");
       });
     /* eslint-enable react-hooks/set-state-in-effect */
@@ -67,19 +73,10 @@ export default function AccepterInvitationPage() {
     setEnCours(true);
     setErreur(null);
     try {
-      const refus = motDePasseAcceptable(motDePasse);
-      if (refus) {
-        setErreur(refus);
-        return;
-      }
       await definirMotDePasse(motDePasse);
       router.replace(`/chauffeur/${dossierId}`);
     } catch (exception) {
-      setErreur(
-        exception instanceof ErreurAuthChauffeur
-          ? exception.message
-          : "Échec de l'enregistrement du mot de passe.",
-      );
+      setErreur(traduireExceptionAuth(exception));
     } finally {
       setEnCours(false);
     }
@@ -92,45 +89,45 @@ export default function AccepterInvitationPage() {
   if (etape === "erreur") {
     return (
       <div>
+        <h1 className="mb-2 text-xl font-bold text-ink">Invitation inutilisable</h1>
         <p role="alert" className="text-sm text-danger">
           {erreur}
         </p>
-        <p className="mt-2 text-sm text-subtle">
-          <Link href="/chauffeur/login?mode=lien" className="text-primary hover:underline">
-            Recevoir un nouveau lien
-          </Link>
-          {" · "}
-          <Link href="/chauffeur/login" className="text-primary hover:underline">
-            Se connecter
-          </Link>
-          . Vous pouvez aussi redemander une invitation à votre gestionnaire.
-        </p>
+        <SuitesAuth invitation />
       </div>
     );
   }
 
+  const idRegle = `${idMotDePasse}-regle`;
   return (
     <div>
       <h1 className="mb-1 text-xl font-bold text-ink">Bienvenue</h1>
       <p className="mb-6 text-sm text-subtle">
-        Choisissez un mot de passe d&apos;au moins {MOT_DE_PASSE_MIN} caractères pour vos
-        prochaines connexions.
+        Choisissez un mot de passe pour vos prochaines connexions.
       </p>
       <form className="space-y-3" onSubmit={valider}>
-        <label className="block text-sm text-subtle" htmlFor="invitation-mot-de-passe">
-          Nouveau mot de passe
-        </label>
-        <Input
-          id="invitation-mot-de-passe"
-          type="password"
-          uiSize="lg"
-          autoComplete="new-password"
-          value={motDePasse}
-          onChange={(evenement) => setMotDePasse(evenement.target.value)}
-          required
-          minLength={MOT_DE_PASSE_MIN}
-          disabled={enCours}
-        />
+        <div className="space-y-1">
+          <label htmlFor={idMotDePasse} className="block text-sm font-medium text-ink">
+            Nouveau mot de passe
+          </label>
+          <p id={idRegle} className="text-sm text-subtle">
+            {INDICATION_MOT_DE_PASSE}
+          </p>
+          <Input
+            id={idMotDePasse}
+            name="new-password"
+            type="password"
+            autoComplete="new-password"
+            uiSize="lg"
+            value={motDePasse}
+            onChange={(evenement) => setMotDePasse(evenement.target.value)}
+            required
+            minLength={LONGUEUR_MIN_MOT_DE_PASSE}
+            disabled={enCours}
+            aria-describedby={idRegle}
+            aria-invalid={erreur ? true : undefined}
+          />
+        </div>
         {erreur && (
           <p role="alert" className="text-sm text-danger">
             {erreur}

@@ -4,9 +4,9 @@
 // responsable de sa comptabilité. L'API a tout préparé ; il relit ce que la
 // clôture va faire, accepte l'attestation et valide. Personne d'autre ne
 // peut le faire à sa place, et sans lui rien ne se passe.
+// Les provisions, qui changent le résultat, sont saisies avant cette étape.
 import { useCallback, useEffect, useState } from "react";
 
-import { EtatErreur } from "@/components/EtatChargement";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import {
@@ -15,88 +15,88 @@ import {
   validerClotureChauffeur,
 } from "@/lib/auth-chauffeur";
 import { formatDate } from "@/lib/format";
-import { messageVisible } from "@/lib/messages";
+import {
+  phraseChangement,
+  phraseEcritureCloture,
+  phrasePourChauffeur,
+} from "@/lib/langage-chauffeur";
 import type { ClotureExerciceVue } from "@/lib/types";
-import { Squelette } from "@/components/Squelette";
 
 export function ClotureExerciceSection({
   dossierId,
-  relecture = 0,
+  revision,
+  raisonBlocage,
   onClos,
 }: {
   dossierId: string;
-  relecture?: number;
+  revision: number;
+  /** Opérations encore à trancher : la validation n'est pas proposée. */
+  raisonBlocage: string | null;
   onClos: () => void;
 }) {
   const [apercu, setApercu] = useState<ClotureExerciceVue | null>(null);
-  const [echec, setEchec] = useState<string | null>(null);
   const [accepte, setAccepte] = useState(false);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [succes, setSucces] = useState<string | null>(null);
 
   const charger = useCallback(() => {
-    let annule = false;
     fetchAvecAuthChauffeur<ClotureExerciceVue>(`/dossiers/${dossierId}/cloture-exercice`)
-      .then((vue) => {
-        if (annule) return;
-        setApercu(vue);
-        setEchec(null);
-      })
-      .catch((exception: unknown) => {
-        if (annule) return;
-        setApercu(null);
-        setEchec(messageVisible(exception, "Impossible de charger la clôture."));
-      });
-    return () => {
-      annule = true;
-    };
+      .then(setApercu)
+      .catch(() => setApercu(null));
   }, [dossierId]);
 
-  useEffect(() => charger(), [charger, relecture]);
+  useEffect(() => {
+    charger();
+  }, [charger, revision]);
 
-  if (echec) {
+  if (succes) {
     return (
       <section className="mt-8">
         <h2 className="text-sm font-medium text-ink">Clôture de l&apos;exercice</h2>
-        <EtatErreur
-          message={echec}
-          onReessayer={() => {
-            setEchec(null);
-            setApercu(null);
-            charger();
-          }}
-        />
-      </section>
-    );
-  }
-  if (apercu === null) {
-    return <Squelette className="mt-8 h-24 w-full" />;
-  }
-  if (!apercu.possible) {
-    return (
-      <section className="mt-8">
-        <h2 className="text-sm font-medium text-ink">Clôture de l&apos;exercice</h2>
-        <p className="mt-2 text-sm text-subtle">
-          {succes ?? apercu.raison ?? "La clôture n'est pas disponible pour le moment."}
+        <p role="status" className="mt-2 text-sm text-ink">
+          {succes}
         </p>
       </section>
     );
+  }
+
+  if (raisonBlocage) {
+    return (
+      <section className="mt-8">
+        <h2 className="text-sm font-medium text-ink">Clôture de l&apos;exercice</h2>
+        <p className="mt-2 text-sm text-ink">{raisonBlocage}</p>
+      </section>
+    );
+  }
+
+  if (apercu === null) {
+    return null;
+  }
+  if (!apercu.possible) {
+    // Exercice en cours : rien à clore, la section reste discrète.
+    return apercu.raison && !apercu.raison.includes("pas terminé") ? (
+      <section className="mt-8">
+        <h2 className="text-sm font-medium text-ink">Clôture de l&apos;exercice</h2>
+        <p className="mt-2 text-sm text-subtle">{phrasePourChauffeur(apercu.raison)}</p>
+      </section>
+    ) : null;
   }
 
   async function valider(attestation: string) {
     setEnCours(true);
     setErreur(null);
     try {
-      const vue = await validerClotureChauffeur(dossierId, attestation);
-      setApercu(vue);
-      setSucces(vue.raison ?? "L'exercice est clos.");
+      await validerClotureChauffeur(dossierId, attestation);
+      setSucces("Exercice clos. Les documents sont disponibles.");
       onClos();
     } catch (exception) {
       setErreur(
-        exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
-          ? exception.message
-          : "Échec de la clôture.",
+        phrasePourChauffeur(
+          exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
+            ? exception.message
+            : "Échec de la clôture.",
+        ),
       );
     } finally {
       setEnCours(false);
@@ -112,28 +112,28 @@ export function ClotureExerciceSection({
       </p>
       <ul className="mt-3 space-y-1 text-sm text-ink">
         {apercu.ecritures.map((libelle) => (
-          <li key={libelle}>{libelle}</li>
+          <li key={libelle}>{phraseEcritureCloture(libelle)}</li>
         ))}
         {apercu.nouvel_exercice_debut && (
           <li>Ouverture du nouvel exercice le {formatDate(apercu.nouvel_exercice_debut)}</li>
         )}
         {apercu.changements.map((changement) => (
-          <li key={changement}>{changement}</li>
+          <li key={changement}>{phraseChangement(changement)}</li>
         ))}
       </ul>
       {apercu.attestation && (
         <>
-          <label className="mt-4 flex gap-3 rounded-md border border-border bg-canvas p-3 text-sm text-ink">
+          <label className="mt-4 flex min-h-11 gap-3 rounded-md border border-border bg-canvas p-3 text-sm text-ink">
             <input
               type="checkbox"
-              className="mt-1"
+              className="mt-0.5 size-6 shrink-0"
               checked={accepte}
               onChange={(evenement) => setAccepte(evenement.target.checked)}
             />
             <span>{apercu.attestation}</span>
           </label>
           <Button
-            className="mt-3"
+            className="mt-3 h-11"
             disabled={!accepte || enCours}
             onClick={() => apercu.attestation && valider(apercu.attestation)}
           >
@@ -141,12 +141,7 @@ export function ClotureExerciceSection({
           </Button>
         </>
       )}
-      {succes && <p className="mt-3 text-sm text-ink">{succes}</p>}
-      {erreur && (
-        <p role="alert" className="mt-2 text-sm text-danger">
-          {erreur}
-        </p>
-      )}
+      {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}
     </section>
   );
 }

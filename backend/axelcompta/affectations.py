@@ -69,7 +69,9 @@ def _solde(balance: dict[str, int], *prefixes: str) -> int:
 def _dernier_clos(dossier: Dossier, exercices: ExerciceRepository) -> ExerciceClos:
     clos = exercices.lister(dossier.id)
     if not clos:
-        raise AffectationImpossible("Aucun exercice n'est clos. Clôturez d'abord l'exercice.")
+        raise AffectationImpossible(
+            "Aucun exercice n'est encore clos. Clôturez d'abord l'exercice."
+        )
     return clos[-1]
 
 
@@ -83,8 +85,8 @@ def proposer(
     configuration = configuration_de(dossier)
     if not configuration.colonne.soumis_is:
         raise AffectationImpossible(
-            f"{configuration.colonne.libelle} : le résultat est imposé à l'impôt sur le revenu, "
-            "il n'y a pas de dividendes à décider"
+            "À l'impôt sur le revenu, le résultat est déjà imposé chez vous. "
+            "Il n'y a pas de dividendes à décider."
         )
     clos = _dernier_clos(dossier, exercices)
     annee = clos.fin.year
@@ -205,7 +207,7 @@ def declarer_versement(
         raise AffectationImpossible("Ce versement est déjà déclaré.")
     if not decides.decide_le <= verse_le <= aujourd_hui:
         raise AffectationImpossible(
-            "La date de versement doit suivre la décision et ne pas être dans le futur."
+            "La date de versement doit suivre la décision, et elle ne peut pas être dans le futur."
         )
     detail = retenues(decides.brut, verse_le, dispense_prelevement)
     ledger.enregistrer(ecriture_retenues(dossier.id, decides.annee_exercice, detail))

@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "test:unit": "tsc -p tsconfig.unit.json && node --test dist-unit/*.test.js",
     "e2e": "playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {

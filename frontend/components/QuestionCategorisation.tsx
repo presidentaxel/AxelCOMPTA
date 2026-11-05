@@ -5,19 +5,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
-import { corrigerDecisionChauffeur, trancherTransactionChauffeur } from "@/lib/auth-chauffeur";
-import { questionPour } from "@/lib/libelles-chauffeur";
+import {
+  corrigerDecisionChauffeur,
+  trancherTransactionChauffeur,
+} from "@/lib/auth-chauffeur";
+import {
+  RACCOURCIS_CATEGORIE,
+  intituleProposition,
+  libelleCategorie,
+  phrasePourChauffeur,
+  questionSelonSigne,
+} from "@/lib/langage-chauffeur";
 import type { TransactionVue } from "@/lib/types";
-
-const RACCOURCIS = [
-  ["dividendes", "Mes dividendes"],
-  ["impots_dividendes", "Impôts sur mes dividendes"],
-  ["cotisations_dirigeant", "Mes cotisations sociales"],
-  ["prelevement_source_paie", "Impôt prélevé sur ma paie"],
-  ["compte_courant_associe", "Apport ou remboursement d'associé"],
-  ["virement_interne", "Virement entre mes comptes"],
-  ["salaires_personnel", "Salaire d'un salarié"],
-] as const;
 
 /** doc 19 §5.6 : « petites questions de catégorisation ... présentée
  * simplement » — même mécanisme de revue que doc 17 §9 bloc C (désormais
@@ -28,8 +27,9 @@ export function QuestionCategorisation({
   dossierId,
   ecritureId,
   proposition,
-  origine = null,
   montantCts,
+  origine = null,
+  sansProposition = false,
   raccourci = false,
   corriger = false,
   onResolu,
@@ -37,13 +37,14 @@ export function QuestionCategorisation({
   dossierId: string;
   ecritureId: string;
   proposition: { code: string; libelle: string } | null;
+  montantCts: number;
   /** D'où vient la proposition : choix passés du chauffeur, ou une règle. */
   origine?: TransactionVue["origine_proposition"];
-  /** Signe de l'opération : la question parle d'une dépense ou d'une entrée. */
-  montantCts: number;
-  /** « O » confirme la proposition. Une seule carte visible le porte, jamais au tactile. */
+  /** Vrai quand le libellé ne porte aucune catégorie. */
+  sansProposition?: boolean;
+  /** « O » confirme la proposition. Une seule question de l'écran le porte. */
   raccourci?: boolean;
-  /** L'opération est déjà classée : on enregistre une nouvelle décision. */
+  /** L'opération est déjà classée : une nouvelle décision, pas un premier choix. */
   corriger?: boolean;
   onResolu: (transaction: TransactionVue, libelle: string) => void;
 }) {
@@ -64,22 +65,25 @@ export function QuestionCategorisation({
         const transaction = corriger
           ? await corrigerDecisionChauffeur(dossierId, ecritureId, code)
           : await trancherTransactionChauffeur(dossierId, ecritureId, code);
-        onResolu(transaction, libelleChoisi(code, proposition));
+        onResolu(transaction, libelleCategorie(code));
       } catch (exception) {
-        setErreur(exception instanceof ApiError ? exception.message : "Échec de l'envoi.");
+        setErreur(
+          phrasePourChauffeur(
+            exception instanceof ApiError ? exception.message : "Échec de l'envoi.",
+          ),
+        );
       } finally {
         enCoursRef.current = false;
         setEnCours(false);
       }
     },
-    [corriger, dossierId, ecritureId, onResolu, proposition],
+    [corriger, dossierId, ecritureId, onResolu],
   );
 
   useEffect(() => {
     if (!raccourci || !proposition || afficherAutre) return;
     const code = proposition.code;
     function surTouche(evenement: KeyboardEvent) {
-      if (evenement.repeat) return;
       if (evenement.key.toLowerCase() !== "o") return;
       if (evenement.metaKey || evenement.ctrlKey || evenement.altKey) return;
       const cible = evenement.target;
@@ -95,8 +99,8 @@ export function QuestionCategorisation({
     <div className="rounded-md border border-warning/40 bg-pending-subtle p-3">
       <p className="mb-2 text-sm font-medium text-ink">
         {proposition
-          ? intitule(proposition.libelle, origine)
-          : questionPour(montantCts, false)}
+          ? intituleProposition(proposition.libelle, origine)
+          : questionSelonSigne(montantCts, sansProposition)}
       </p>
       {!afficherAutre ? (
         <div className="flex flex-col gap-2">
@@ -148,16 +152,16 @@ export function QuestionCategorisation({
           {/* Catégories dont le compte dépend du statut : l'API répond
               clairement si elle ne s'applique pas à ce dossier. */}
           <div className="mb-2 flex flex-wrap gap-1.5">
-            {RACCOURCIS.map(([categorie, libelle]) => (
+            {RACCOURCIS_CATEGORIE.map((categorie) => (
               <Button
                 key={categorie}
                 type="button"
                 variant="secondary"
                 disabled={enCours}
-                className="h-auto min-h-11 max-w-full whitespace-normal!"
+                className="h-auto min-h-11 max-w-full whitespace-normal! px-3 py-2"
                 onClick={() => repondre(categorie)}
               >
-                {libelle}
+                {libelleCategorie(categorie)}
               </Button>
             ))}
           </div>
@@ -172,8 +176,7 @@ export function QuestionCategorisation({
               type="text"
               value={autreCategorie}
               onChange={(evenement) => setAutreCategorie(evenement.target.value)}
-              aria-label={montantCts < 0 ? "Décrivez cette dépense" : "Décrivez cette entrée"}
-              placeholder={montantCts < 0 ? "Décrivez cette dépense" : "Décrivez cette entrée"}
+              placeholder="en quelques mots"
               autoFocus
               disabled={enCours}
               className="h-11 min-w-0 flex-1 text-base"
@@ -189,17 +192,11 @@ export function QuestionCategorisation({
           </form>
         </div>
       )}
-      {erreur && (
-        <p role="alert" className="mt-1 text-sm text-danger">
-          {erreur}
-        </p>
-      )}
+      {erreur && <p className="mt-1 text-xs text-danger">{erreur}</p>}
     </div>
   );
 }
 
-/** Le chauffeur voit d'où vient la proposition : ce qu'il a déjà classé lui-même,
- * ou le modèle et sa confiance. */
 function Touche({ children }: { children: string }) {
   return (
     <kbd className="rounded-xs border border-border-strong bg-canvas-app px-1.5 py-px text-xs font-medium text-subtle shadow-[0_1px_0_var(--color-border-strong)]">
@@ -208,18 +205,3 @@ function Touche({ children }: { children: string }) {
   );
 }
 
-function intitule(libelle: string, origine: TransactionVue["origine_proposition"]): string {
-  if (origine === "appris") return `Comme une opération déjà classée : ${libelle}`;
-  return `Proposition : ${libelle}`;
-}
-
-function libelleChoisi(
-  code: string,
-  proposition: { code: string; libelle: string } | null,
-): string {
-  if (proposition && proposition.code === code) return proposition.libelle;
-  if (code === "usage_personnel") return "Dépense personnelle";
-  if (code === "remuneration_dirigeant") return "Ma rémunération";
-  const connu = RACCOURCIS.find(([categorie]) => categorie === code);
-  return connu?.[1] ?? code;
-}

@@ -1,51 +1,54 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 
-import { useDossierChauffeur } from "@/app/chauffeur/use-dossier";
 import { ClotureExerciceSection } from "@/components/ClotureExerciceSection";
-import { ClotureSection } from "@/components/ClotureSection";
-import { EtatErreur } from "@/components/EtatChargement";
+import { ChiffresExercice, ClotureSection } from "@/components/ClotureSection";
 import { GreffeInpiSection } from "@/components/GreffeInpiSection";
 import { PaieSection } from "@/components/PaieSection";
 import { ProvisionsCloture } from "@/components/ProvisionsCloture";
-import { ResultatACeJour } from "@/components/ResultatACeJour";
+import { useDossierChauffeur } from "@/app/chauffeur/use-dossier";
 import { Squelette, SqueletteLignes } from "@/components/Squelette";
 import { fetchAvecAuthChauffeur } from "@/lib/auth-chauffeur";
+import { phraseOperationsRestantes, raisonApresCloture } from "@/lib/etapes-exercice";
 import { formatDate } from "@/lib/format";
-import { messageVisible } from "@/lib/messages";
 import type { AffectationVue, DividendesVue } from "@/lib/types";
 
-/** Exercice : provisions, clôture, documents, dépôt, puis dividendes.
- * Une étape suivante reste visible, grisée, avec la raison. */
+/** Exercice : provisions, clôture, documents, greffe, puis l'affectation.
+ * Chaque étape attend la précédente. Séparé de l'activité pour que le
+ * téléphone s'ouvre sur les opérations. */
 export default function ExerciceChauffeurPage({
   params,
 }: {
   params: Promise<{ dossierId: string }>;
 }) {
   const { dossierId } = use(params);
-  const { dossier, reessayer, rafraichir } = useDossierChauffeur(dossierId);
-  const [relecture, setRelecture] = useState(0);
+  const { dossier, recharger } = useDossierChauffeur(dossierId);
+  const [clos, setClos] = useState(false);
+  const [revisionProvisions, setRevisionProvisions] = useState(0);
+  const [suivi, setSuivi] = useState(dossierId);
+  if (suivi !== dossierId) {
+    setSuivi(dossierId);
+    setClos(false);
+    setRevisionProvisions(0);
+  }
   const fiche = dossier.statut === "pret" ? dossier.valeur : null;
   const periode =
     fiche?.exercice_debut && fiche.exercice_fin
       ? `${formatDate(fiche.exercice_debut)} – ${formatDate(fiche.exercice_fin)}`
       : null;
-  const restantes = fiche?.nb_a_trancher ?? 0;
-  const raisonOperations =
-    restantes > 0
-      ? `Il reste ${restantes} opération${restantes > 1 ? "s" : ""} à traiter.`
-      : "Clôturez d'abord l'exercice.";
-  const suitePrete = fiche !== null && fiche.cloture_faite && restantes === 0;
+  const comptesClos = Boolean(fiche?.cloture_faite) || clos;
+  const operationsRestantes = fiche?.nb_a_trancher ?? 0;
+  const raisonDocuments = fiche ? raisonApresCloture(operationsRestantes, comptesClos) : null;
+  const raisonCloture = operationsRestantes > 0 ? phraseOperationsRestantes(operationsRestantes) : null;
 
   return (
     <div>
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Exercice</h1>
       {dossier.statut === "en_cours" && <Squelette className="mt-2 h-4 w-56" />}
       {periode && <p className="mt-2 text-sm text-subtle">{periode}</p>}
-      {dossier.statut === "erreur" && <EtatErreur message={dossier.message} onReessayer={reessayer} />}
-      {fiche && <ResultatACeJour centimes={fiche.resultat_cts} />}
+      {dossier.statut === "erreur" && <p className="mt-4 text-sm text-danger">{dossier.message}</p>}
       {fiche &&
         [fiche.alerte_regime, fiche.alerte_tva]
           .filter((alerte): alerte is string => alerte !== null)
@@ -72,32 +75,36 @@ export default function ExerciceChauffeurPage({
         ) : (
           fiche && (
             <>
-              <section>
-                <h2 className="text-base font-semibold text-ink">Charges pas encore passées</h2>
-                <ProvisionsCloture
-                  dossierId={dossierId}
-                  onChange={() => {
-                    setRelecture((n) => n + 1);
-                    rafraichir();
-                  }}
-                />
-              </section>
+              <ChiffresExercice dossier={fiche} />
+              <ProvisionsCloture
+                dossierId={dossierId}
+                onChange={() => {
+                  setRevisionProvisions((valeur) => valeur + 1);
+                  recharger();
+                }}
+              />
               <ClotureExerciceSection
                 dossierId={dossierId}
-                relecture={relecture}
-                onClos={rafraichir}
+                revision={revisionProvisions}
+                raisonBlocage={raisonCloture}
+                onClos={() => {
+                  setClos(true);
+                  recharger();
+                }}
               />
-              <div className={suitePrete ? "" : "mt-8"}>
-                <ClotureSection dossier={fiche} operationsRestantes={restantes} />
-              </div>
+              <ClotureSection
+                dossier={fiche}
+                comptesClos={comptesClos}
+                operationsRestantes={operationsRestantes}
+              />
               {fiche.depot_greffe && (
-                <GreffeInpiSection
-                  dossier={fiche}
-                  bloque={!suitePrete}
-                  raison={raisonOperations}
-                />
+                <GreffeInpiSection dossier={fiche} raisonBlocage={raisonDocuments} />
               )}
-              <LiensSuite dossierId={dossierId} />
+              <LienAffectation
+                dossierId={dossierId}
+                comptesClos={comptesClos}
+                raisonBlocage={raisonDocuments}
+              />
               {fiche.paie_par_bulletin && <PaieSection dossierId={dossierId} />}
             </>
           )
@@ -107,67 +114,67 @@ export default function ExerciceChauffeurPage({
   );
 }
 
-/** L'affectation tant qu'elle se décide, puis les dividendes tant que la
- * déclaration n'est pas faite. Les deux liens restent trouvables. */
-function LiensSuite({ dossierId }: { dossierId: string }) {
+const LIEN =
+  "mt-8 block min-h-11 rounded-md border border-border bg-canvas p-3 text-sm text-ink outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]";
+
+/** L'affectation se décide sur son écran. Une fois décidée, « Mes dividendes »
+ * reste accessible tant que le versement existe — y compris après la
+ * déclaration 2777, pour retrouver l'échéance. */
+function LienAffectation({
+  dossierId,
+  comptesClos,
+  raisonBlocage,
+}: {
+  dossierId: string;
+  comptesClos: boolean;
+  raisonBlocage: string | null;
+}) {
   const [affectation, setAffectation] = useState<AffectationVue | null>(null);
   const [dividendes, setDividendes] = useState<DividendesVue | null>(null);
-  const [erreur, setErreur] = useState<string | null>(null);
-  const [essai, setEssai] = useState(0);
 
-  const charger = useCallback(() => {
+  useEffect(() => {
     let annule = false;
-    Promise.all([
-      fetchAvecAuthChauffeur<AffectationVue>(`/dossiers/${dossierId}/affectation`),
-      fetchAvecAuthChauffeur<DividendesVue>(`/dossiers/${dossierId}/dividendes`),
-    ])
-      .then(([affectationVue, dividendesVue]) => {
-        if (annule) return;
-        setAffectation(affectationVue);
-        setDividendes(dividendesVue);
-        setErreur(null);
+    fetchAvecAuthChauffeur<AffectationVue>(`/dossiers/${dossierId}/affectation`)
+      .then((vue) => {
+        if (!annule) setAffectation(vue);
       })
-      .catch((exception: unknown) => {
-        if (!annule) {
-          setErreur(messageVisible(exception, "Impossible de charger la suite de l'exercice."));
-        }
+      .catch(() => {
+        if (!annule) setAffectation(null);
+      });
+    fetchAvecAuthChauffeur<DividendesVue>(`/dossiers/${dossierId}/dividendes`)
+      .then((vue) => {
+        if (!annule) setDividendes(vue);
+      })
+      .catch(() => {
+        if (!annule) setDividendes(null);
       });
     return () => {
       annule = true;
     };
-  }, [dossierId]);
+  }, [dossierId, comptesClos]);
 
-  useEffect(() => charger(), [charger, essai]);
-
-  if (erreur) {
+  if (raisonBlocage) {
     return (
-      <EtatErreur
-        message={erreur}
-        onReessayer={() => {
-          setErreur(null);
-          setEssai((n) => n + 1);
-        }}
-      />
+      <section className="mt-8 rounded-md border border-border bg-canvas p-3">
+        <h2 className="text-sm font-medium text-ink">Affectation du résultat</h2>
+        <p className="mt-1 text-sm text-ink">{raisonBlocage}</p>
+      </section>
     );
   }
-  return (
-    <div className="mt-8 space-y-3">
-      {affectation?.applicable && (
-        <Link
-          href={`/chauffeur/${dossierId}/resultat`}
-          className="block min-h-11 rounded-md border border-border bg-canvas p-3 text-sm text-ink"
-        >
-          Décider ce que je fais de mon résultat {affectation.annee_exercice} →
-        </Link>
-      )}
-      {dividendes?.applicable && !dividendes.declare && (
-        <Link
-          href={`/chauffeur/${dossierId}/resultat`}
-          className="block min-h-11 rounded-md border border-border bg-canvas p-3 text-sm text-ink"
-        >
-          Mes dividendes →
-        </Link>
-      )}
-    </div>
-  );
+  if (affectation?.applicable) {
+    return (
+      <Link href={`/chauffeur/${dossierId}/resultat`} className={LIEN}>
+        Décider de ce que je fais de mon résultat {affectation.annee_exercice} →
+      </Link>
+    );
+  }
+  if (dividendes?.applicable) {
+    const annee = dividendes.annee_exercice ? ` ${dividendes.annee_exercice}` : "";
+    return (
+      <Link href={`/chauffeur/${dossierId}/resultat`} className={LIEN}>
+        Mes dividendes{annee} →
+      </Link>
+    );
+  }
+  return null;
 }

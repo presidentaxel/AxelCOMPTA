@@ -1,5 +1,5 @@
-"""Pose dans l'application la notification « des opérations attendent votre
-confirmation » (doc 19 §5.2) pour tout un portefeuille.
+"""Pose dans l'application la notification « des opérations sont à traiter »
+(doc 19 §5.2) pour tout un portefeuille.
 
 Composition root comme `synchro_digifactory.py` (doc 18). Lancé par les
 tâches planifiées (`axelcompta.taches`), après la synchro, ou à la main. Les

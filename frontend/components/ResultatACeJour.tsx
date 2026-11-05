@@ -1,37 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { formatDate, formatMontant } from "@/lib/format";
+import type { DossierResume } from "@/lib/types";
 
-import { formatMontant } from "@/lib/format";
-
-const JOUR = new Intl.DateTimeFormat("fr-FR", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-});
-
-/** Le même bloc sur Activité, Exercice et Résultat : un montant, un libellé. */
-export function ResultatACeJour({ centimes }: { centimes: number }) {
-  const [au, setAu] = useState<string | null>(null);
-  useEffect(() => {
-    // La date du jour ne doit pas diverger entre le serveur et le navigateur.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAu(JOUR.format(new Date()));
-  }, []);
-  const negatif = centimes < 0;
+/** Résultat provisoire du dossier, affiché tel quel sur Activité, Exercice
+ * et Mon résultat. Source unique : le résumé du dossier. L'écran d'affectation
+ * chiffre le résultat de l'exercice clos, qui peut diverger, et ne le
+ * réaffiche pas sous un autre libellé. */
+export function ResultatACeJour({ dossier }: { dossier: DossierResume }) {
+  const centimes = dossier.resultat_cts;
   return (
-    <div className="mt-6">
+    <div>
       <p
         className={`text-[28px] font-bold tabular-nums tracking-tight ${
-          negatif ? "text-amount-negative" : "text-amount-positive"
+          centimes < 0 ? "text-amount-negative" : "text-amount-positive"
         }`}
       >
         {formatMontant(centimes)}
       </p>
-      <p className="text-sm text-subtle">
-        Résultat à ce jour
-        {au ? ` · ${au}` : ""}
+      <p className="text-sm text-subtle" suppressHydrationWarning>
+        Résultat à ce jour, {formatDate(aujourdhuiIso())}
       </p>
     </div>
   );
+}
+
+function aujourdhuiIso(): string {
+  const date = new Date();
+  const mois = String(date.getMonth() + 1).padStart(2, "0");
+  const jour = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${mois}-${jour}`;
 }

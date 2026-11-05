@@ -20,22 +20,22 @@ CATEGORIE_REMUNERATION = "remuneration_dirigeant"
 # Pourquoi une catégorie de statut n'a pas de compte (doc 06 §7).
 _SANS_COMPTE = {
     CATEGORIE_USAGE_PERSONNEL: (
-        "Pour cette entreprise, une dépense personnelle est signalée sans écriture"
+        "Pour cette forme de société, l'usage personnel est signalé sans écriture."
     ),
     "compte_courant_associe": (
-        "Pour cette entreprise, il n'y a pas d'apport d'associé à classer"
+        "Pour cette forme de société, il n'y a pas d'apport ou de remboursement d'associé."
     ),
     CATEGORIE_REMUNERATION: (
-        "Pour cette entreprise, la rémunération dépend de la situation du gérant "
-        "(majoritaire ou non) : à préciser"
+        "Pour cette forme de société, la rémunération dépend de la situation du gérant "
+        "(majoritaire ou non). Elle reste à préciser."
     ),
     "cotisations_dirigeant": (
-        "Pour cette entreprise, les cotisations dépendent de la situation du gérant "
-        "(majoritaire ou non) : à préciser"
+        "Pour cette forme de société, les cotisations dépendent de la situation du gérant "
+        "(majoritaire ou non). Elles restent à préciser."
     ),
-    "prelevement_source_paie": "Seul un président assimilé salarié a un bulletin de paie",
-    "dividendes": "À l'impôt sur le revenu, il n'y a pas de dividendes",
-    "impots_dividendes": "À l'impôt sur le revenu, il n'y a pas de dividendes",
+    "prelevement_source_paie": "Seul un président assimilé salarié a un bulletin de paie.",
+    "dividendes": "À l'impôt sur le revenu, il n'y a pas de dividendes.",
+    "impots_dividendes": "À l'impôt sur le revenu, il n'y a pas de dividendes.",
 }
 
 
@@ -75,11 +75,13 @@ def _compte_cible(
     if categorie_choisie in comptes_statut:
         compte_statut = comptes_statut[categorie_choisie]
         if compte_statut is None:
-            raise CategorieInconnueError(f"{_SANS_COMPTE[categorie_choisie]}.")
+            raise CategorieInconnueError(_SANS_COMPTE[categorie_choisie])
         return compte_statut
     compte = comptes_par_categorie.get(categorie_choisie)
     if compte is None:
-        raise CategorieInconnueError("Cette catégorie n'est pas reconnue.")
+        raise CategorieInconnueError(
+            "Cette réponse ne correspond à aucune catégorie connue pour cette société."
+        )
     return compte
 
 

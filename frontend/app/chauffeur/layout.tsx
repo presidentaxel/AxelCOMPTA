@@ -7,7 +7,9 @@ import { FileText, List, UserRound } from "lucide-react";
 
 import { Cloche } from "@/components/Cloche";
 import { Marque } from "@/components/Marque";
+import { EVENEMENT_ACTIVITE, relireActivite } from "@/lib/activite-url";
 import { obtenirSession, type SessionChauffeur } from "@/lib/auth-chauffeur";
+import { clavierOuvert, insetClavier } from "@/lib/clavier-viewport";
 
 /** Pages d'entrée : pas de navigation, même si une session traîne encore
  * dans le navigateur. */
@@ -15,7 +17,11 @@ const PAGES_PUBLIQUES = new Set(["/chauffeur/login", "/chauffeur/accepter-invita
 
 /** Habillage chauffeur — webapp téléphone, lisible aussi sur un grand
  * écran (colonne centrée). Même calme que le portefeuille gestionnaire :
- * marque, liste, une barre du bas. Pas de Sidebar. */
+ * marque, liste, une barre du bas. Pas de Sidebar.
+ *
+ * La coque est fixe et suit le visual viewport (`--vvh`, `--vv-offset`),
+ * pas `100vh` : la barre du bas reste au bord visible, et se retire quand
+ * le clavier couvre ce bord (iOS Safari, Chrome Android, Samsung Internet). */
 export default function ChauffeurLayout({ children }: { children: React.ReactNode }) {
   const chemin = usePathname();
   const [session, setSession] = useState<SessionChauffeur | null>(null);
@@ -25,19 +31,64 @@ export default function ChauffeurLayout({ children }: { children: React.ReactNod
     setSession(obtenirSession());
   }, [chemin]);
 
+  useEffect(() => {
+    const vv = window.visualViewport;
+    let plein = window.innerHeight;
+
+    const publier = () => {
+      const hauteur = vv?.height ?? window.innerHeight;
+      const decalage = vv?.offsetTop ?? 0;
+      if (window.innerHeight > plein) plein = window.innerHeight;
+      const inset = insetClavier(plein, hauteur, decalage);
+      const racine = document.documentElement;
+      racine.style.setProperty("--vvh", `${Math.round(hauteur)}px`);
+      racine.style.setProperty("--vv-offset", `${Math.round(decalage)}px`);
+      racine.style.setProperty("--clavier-inset", `${inset}px`);
+      racine.toggleAttribute("data-clavier", clavierOuvert(inset));
+    };
+
+    const recalerChamp = () => {
+      publier();
+      const actif = document.activeElement;
+      if (actif instanceof HTMLElement && actif.matches("input, textarea, select")) {
+        window.setTimeout(() => actif.scrollIntoView({ block: "nearest" }), 50);
+      }
+    };
+
+    const surOrientation = () => {
+      plein = window.innerHeight;
+      publier();
+    };
+
+    publier();
+    vv?.addEventListener("resize", recalerChamp);
+    vv?.addEventListener("scroll", publier);
+    window.addEventListener("orientationchange", surOrientation);
+    return () => {
+      vv?.removeEventListener("resize", recalerChamp);
+      vv?.removeEventListener("scroll", publier);
+      window.removeEventListener("orientationchange", surOrientation);
+      const racine = document.documentElement;
+      racine.style.removeProperty("--vvh");
+      racine.style.removeProperty("--vv-offset");
+      racine.style.removeProperty("--clavier-inset");
+      racine.removeAttribute("data-clavier");
+    };
+  }, []);
+
   const espace = session !== null && !PAGES_PUBLIQUES.has(chemin);
 
   return (
-    <div className="chauffeur-ecran min-h-dvh bg-canvas-app">
-      <header className="sticky top-0 z-10 border-b border-border bg-canvas pt-[env(safe-area-inset-top)]">
+    <div className="chauffeur bg-canvas-app">
+      <header className="shrink-0 border-b border-border bg-canvas pt-[env(safe-area-inset-top)]">
         <div className="mx-auto flex h-14 max-w-md items-center px-4">
           <Marque />
           {espace && session && <Cloche dossierId={session.dossierId} chemin={chemin} />}
         </div>
       </header>
       <main
-        className={`mx-auto min-w-0 max-w-md overflow-x-clip px-4 py-6 ${
-          espace ? "pb-[calc(6rem+env(safe-area-inset-bottom))]" : ""
+        className={`chauffeur-main mx-auto w-full min-h-0 max-w-md flex-1 overflow-x-clip overflow-y-auto px-4 py-6 ${
+          espace ? "" : "sans-barre"
         }`}
       >
         {children}
@@ -50,15 +101,20 @@ export default function ChauffeurLayout({ children }: { children: React.ReactNod
 function Barre({ dossierId, chemin }: { dossierId: string; chemin: string }) {
   const activite = `/chauffeur/${dossierId}`;
   const exercice = `/chauffeur/${dossierId}/exercice`;
-  const compte = "/chauffeur/compte";
   const resultat = `/chauffeur/${dossierId}/resultat`;
+  const compte = "/chauffeur/compte";
+  const [requeteActivite, setRequeteActivite] = useState("");
+
+  useEffect(() => {
+    const lire = () => setRequeteActivite(relireActivite(dossierId));
+    lire();
+    window.addEventListener(EVENEMENT_ACTIVITE, lire);
+    return () => window.removeEventListener(EVENEMENT_ACTIVITE, lire);
+  }, [dossierId]);
+
+  const hrefActivite = requeteActivite ? `${activite}?${requeteActivite}` : activite;
   const liens = [
-    {
-      href: activite,
-      libelle: "Activité",
-      Icone: List,
-      actif: chemin === activite,
-    },
+    { href: hrefActivite, libelle: "Activité", Icone: List, actif: chemin === activite },
     {
       href: exercice,
       libelle: "Exercice",
@@ -69,20 +125,23 @@ function Barre({ dossierId, chemin }: { dossierId: string; chemin: string }) {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-1/2 z-10 w-full max-w-md -translate-x-1/2 border-t border-border bg-canvas">
-      <div className="grid grid-cols-3 pb-[env(safe-area-inset-bottom)]">
-        {liens.map(({ href, libelle, Icone, actif }) => (
-          <Link
-            key={href}
-            href={href}
-            className={`flex h-14 flex-col items-center justify-center gap-0.5 text-xs ${
-              actif ? "font-semibold text-ink" : "text-subtle"
-            }`}
-          >
-            <Icone className="h-5 w-5" aria-hidden />
-            {libelle}
-          </Link>
-        ))}
+    <nav aria-label="Navigation" className="barre-chauffeur shrink-0">
+      <div className="mx-auto w-full max-w-md border-t border-border bg-canvas pb-[env(safe-area-inset-bottom)]">
+        <div className="grid grid-cols-3">
+          {liens.map(({ href, libelle, Icone, actif }) => (
+            <Link
+              key={href}
+              href={href}
+              aria-current={actif ? "page" : undefined}
+              className={`flex h-14 flex-col items-center justify-center gap-0.5 text-xs ${
+                actif ? "font-semibold text-ink" : "text-subtle"
+              }`}
+            >
+              <Icone className="h-5 w-5" aria-hidden />
+              {libelle}
+            </Link>
+          ))}
+        </div>
       </div>
     </nav>
   );

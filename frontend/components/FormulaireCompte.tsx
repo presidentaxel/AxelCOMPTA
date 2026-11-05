@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MOT_DE_PASSE_MIN, motDePasseAcceptable } from "@/lib/messages-auth";
+import { INDICATION_MOT_DE_PASSE, LONGUEUR_MIN_MOT_DE_PASSE, traduireExceptionAuth } from "@/lib/messages-auth";
 
 /** Changement de mot de passe (session déjà ouverte) et demande de
  * changement d'adresse. L'adresse ne bouge qu'après le clic sur le lien
@@ -27,19 +27,19 @@ export function FormulaireCompte({
       <Formulaire
         titre="Nouveau mot de passe"
         type="password"
-        placeholder={`Au moins ${MOT_DE_PASSE_MIN} caractères`}
-        libelle="Enregistrer le mot de passe"
-        minLength={MOT_DE_PASSE_MIN}
         autoComplete="new-password"
+        indication={INDICATION_MOT_DE_PASSE}
+        minLength={LONGUEUR_MIN_MOT_DE_PASSE}
+        libelle="Enregistrer le mot de passe"
         onValider={onMotDePasse}
         succes="Mot de passe mis à jour."
       />
       <Formulaire
         titre="Nouvelle adresse e-mail"
         type="email"
+        autoComplete="email"
         placeholder="nouvelle@adresse.fr"
         libelle="Recevoir le lien de confirmation"
-        autoComplete="email"
         onValider={onEmail}
         succes="Un lien de confirmation a été envoyé à cette adresse. L'ancienne reste active jusqu'au clic."
       />
@@ -50,22 +50,26 @@ export function FormulaireCompte({
 function Formulaire({
   titre,
   type,
+  autoComplete,
   placeholder,
+  indication,
   libelle,
   minLength,
-  autoComplete,
   onValider,
   succes,
 }: {
   titre: string;
   type: "password" | "email";
-  placeholder: string;
+  autoComplete: "new-password" | "email";
+  placeholder?: string;
+  indication?: string;
   libelle: string;
   minLength?: number;
-  autoComplete: string;
   onValider: (valeur: string) => Promise<void>;
   succes: string;
 }) {
+  const id = useId();
+  const idRegle = `${id}-regle`;
   const [valeur, setValeur] = useState("");
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -77,19 +81,13 @@ function Formulaire({
     setErreur(null);
     setInfo(null);
     try {
-      const saisie = type === "email" ? valeur.trim() : valeur;
-      if (type === "password") {
-        const refus = motDePasseAcceptable(saisie);
-        if (refus) {
-          setErreur(refus);
-          return;
-        }
-      }
-      await onValider(saisie);
+      // L'e-mail se nettoie ; le mot de passe est gardé tel quel (les espaces
+      // peuvent en faire partie), comme à la connexion.
+      await onValider(type === "email" ? valeur.trim() : valeur);
       setValeur("");
       setInfo(succes);
     } catch (exception) {
-      setErreur(exception instanceof Error ? exception.message : "Échec de l'enregistrement.");
+      setErreur(traduireExceptionAuth(exception));
     } finally {
       setEnCours(false);
     }
@@ -97,30 +95,41 @@ function Formulaire({
 
   return (
     <form className="space-y-3" onSubmit={soumettre}>
-      <h2 className="text-sm font-semibold text-ink">
-        <label htmlFor={`compte-${type}`}>{titre}</label>
-      </h2>
-      {type === "password" && (
-        <p className="text-sm text-subtle">Au moins {MOT_DE_PASSE_MIN} caractères.</p>
-      )}
-      <Input
-        id={`compte-${type}`}
-        type={type}
-        uiSize="lg"
-        autoComplete={autoComplete}
-        value={valeur}
-        onChange={(evenement) => setValeur(evenement.target.value)}
-        placeholder={placeholder}
-        required
-        minLength={minLength}
-        disabled={enCours}
-      />
+      <div className="space-y-1">
+        <label htmlFor={id} className="block text-sm font-semibold text-ink">
+          {titre}
+        </label>
+        {indication && (
+          <p id={idRegle} className="text-sm text-subtle">
+            {indication}
+          </p>
+        )}
+        <Input
+          id={id}
+          name={type === "email" ? "email" : "new-password"}
+          type={type}
+          autoComplete={autoComplete}
+          uiSize="lg"
+          value={valeur}
+          onChange={(evenement) => setValeur(evenement.target.value)}
+          placeholder={placeholder}
+          required
+          minLength={minLength}
+          disabled={enCours}
+          aria-describedby={indication ? idRegle : undefined}
+          aria-invalid={erreur ? true : undefined}
+        />
+      </div>
       {erreur && (
         <p role="alert" className="text-sm text-danger">
           {erreur}
         </p>
       )}
-      {info && <p className="text-sm text-subtle">{info}</p>}
+      {info && (
+        <p role="status" className="text-sm text-subtle">
+          {info}
+        </p>
+      )}
       <Button type="submit" disabled={enCours}>
         {enCours ? "Envoi…" : libelle}
       </Button>

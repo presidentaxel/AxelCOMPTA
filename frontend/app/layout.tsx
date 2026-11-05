@@ -17,6 +17,10 @@ export const metadata: Metadata = {
   description: "AxeL, production comptable.",
 };
 
+/** `viewport-fit=cover` : sans lui, `env(safe-area-inset-*)` vaut 0 et la
+ * barre du bas passe sous l'indicateur d'accueil de l'iPhone. Le zoom
+ * utilisateur reste possible ; les champs à 16 px évitent le zoom
+ * automatique d'iOS au focus. */
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,

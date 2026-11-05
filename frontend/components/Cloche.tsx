@@ -4,12 +4,10 @@ import { Bell } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-import { EtatErreur, EtatVide } from "@/components/EtatChargement";
 import {
   listerNotificationsChauffeur,
   marquerNotificationLueChauffeur,
 } from "@/lib/auth-chauffeur";
-import { messageVisible } from "@/lib/messages";
 import type { NotificationVue } from "@/lib/types";
 
 const QUAND = new Intl.DateTimeFormat("fr-FR", {
@@ -19,103 +17,113 @@ const QUAND = new Intl.DateTimeFormat("fr-FR", {
   minute: "2-digit",
 });
 
-/** Notifications internes (doc 19 §5.2) : pas d'e-mail, la cloche est le
- * canal. Chaque notification se lit quand on l'ouvre. */
+/** Sous le bandeau, au-dessus de la barre du bas, avec une marge. */
+const HAUTEUR_PANNEAU = "calc(100dvh - 8rem - env(safe-area-inset-bottom, 0px))";
+
+/** La clôture se valide dans Exercice, la banque se confirme dans Compte.
+ * Les opérations à traiter s'ouvrent sur Activité. */
+export function lienNotification(dossierId: string, type: string): string {
+  if (type === "cloture_a_valider") return `/chauffeur/${dossierId}/exercice`;
+  if (type.startsWith("connexion")) return "/chauffeur/compte";
+  return `/chauffeur/${dossierId}`;
+}
+
+/** Notifications internes (doc 19 §5.2). Ouvrir la cloche ne marque rien :
+ * chaque notification devient lue quand on l'ouvre. Une erreur de chargement
+ * laisse la cloche muette. */
 export function Cloche({ dossierId, chemin }: { dossierId: string; chemin: string }) {
   const [notifications, setNotifications] = useState<NotificationVue[]>([]);
-  const [erreur, setErreur] = useState<string | null>(null);
   const [ouvert, setOuvert] = useState(false);
-  const [essai, setEssai] = useState(0);
-  const panneau = useRef<HTMLDivElement>(null);
+  const racine = useRef<HTMLDivElement>(null);
+  const lectures = useRef(new Set<string>());
 
   useEffect(() => {
     let annule = false;
     listerNotificationsChauffeur(dossierId)
       .then((liste) => {
-        if (!annule) {
-          setNotifications(liste);
-          setErreur(null);
-        }
+        if (annule) return;
+        setNotifications(
+          liste.map((notification) =>
+            lectures.current.has(notification.id) ? { ...notification, lue: true } : notification,
+          ),
+        );
       })
-      .catch((exception: unknown) => {
-        if (!annule) {
-          setErreur(messageVisible(exception, "Impossible de charger les notifications."));
-        }
+      .catch(() => {
+        if (!annule) setNotifications([]);
       });
     return () => {
       annule = true;
     };
-  }, [dossierId, chemin, essai]);
+  }, [dossierId, chemin]);
 
   useEffect(() => {
     if (!ouvert) return;
-    function surTouche(evenement: KeyboardEvent) {
-      if (evenement.key === "Escape") setOuvert(false);
+    function fermerSiDehors(event: PointerEvent) {
+      if (!racine.current?.contains(event.target as Node)) setOuvert(false);
     }
-    function surClic(evenement: MouseEvent) {
-      if (panneau.current && !panneau.current.contains(evenement.target as Node)) {
-        setOuvert(false);
-      }
+    function fermerSiEchap(event: KeyboardEvent) {
+      if (event.key === "Escape") setOuvert(false);
     }
-    document.addEventListener("keydown", surTouche);
-    document.addEventListener("mousedown", surClic);
+    document.addEventListener("pointerdown", fermerSiDehors);
+    document.addEventListener("keydown", fermerSiEchap);
     return () => {
-      document.removeEventListener("keydown", surTouche);
-      document.removeEventListener("mousedown", surClic);
+      document.removeEventListener("pointerdown", fermerSiDehors);
+      document.removeEventListener("keydown", fermerSiEchap);
     };
   }, [ouvert]);
 
   const nonLues = notifications.filter((notification) => !notification.lue).length;
 
-  async function ouvrirUne(notification: NotificationVue) {
+  function suivre(notification: NotificationVue) {
     setOuvert(false);
-    if (notification.lue) return;
-    try {
-      await marquerNotificationLueChauffeur(dossierId, notification.id);
-      setNotifications((liste) =>
-        liste.map((ligne) => (ligne.id === notification.id ? { ...ligne, lue: true } : ligne)),
-      );
-    } catch {
-      // Le lien a déjà mené à l'écran. La pastille se mettra à jour au prochain chargement.
-    }
+    if (notification.lue || lectures.current.has(notification.id)) return;
+    lectures.current.add(notification.id);
+    setNotifications((liste) =>
+      liste.map((item) => (item.id === notification.id ? { ...item, lue: true } : item)),
+    );
+    void marquerNotificationLueChauffeur(dossierId, notification.id).catch(() => {
+      lectures.current.delete(notification.id);
+    });
   }
 
   return (
-    <div className="relative ml-auto" ref={panneau}>
+    <div className="relative ml-auto" ref={racine}>
       <button
         type="button"
         onClick={() => setOuvert((actuel) => !actuel)}
         aria-expanded={ouvert}
+        aria-haspopup="dialog"
         aria-label={nonLues > 0 ? `Notifications, ${nonLues} non lues` : "Notifications"}
-        className="relative flex h-11 w-11 items-center justify-center rounded-full text-ink"
+        className="relative flex h-11 w-11 items-center justify-center rounded-full text-ink outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]"
       >
         <Bell className="h-5 w-5" aria-hidden />
         {nonLues > 0 && (
-          <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-xs font-semibold text-on-primary">
+          <span className="absolute right-0 top-0 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1 text-xs font-semibold leading-none text-on-primary">
             {nonLues}
           </span>
         )}
       </button>
       {ouvert && (
-        <div className="absolute right-0 top-12 z-20 max-h-[min(24rem,calc(100dvh-8.5rem-env(safe-area-inset-bottom)))] w-72 overflow-y-auto rounded-lg border border-border bg-canvas p-2 shadow-lg">
-          {erreur ? (
-            <EtatErreur message={erreur} onReessayer={() => setEssai((n) => n + 1)} />
-          ) : notifications.length === 0 ? (
-            <EtatVide
-              titre="Aucune notification."
-              action="Actualiser"
-              onAction={() => setEssai((n) => n + 1)}
-            />
+        <div
+          role="dialog"
+          aria-label="Notifications"
+          style={{ maxHeight: HAUTEUR_PANNEAU }}
+          className="absolute right-0 top-12 z-20 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-lg border border-border bg-canvas p-2 shadow-lg"
+        >
+          {notifications.length === 0 ? (
+            <p className="p-3 text-sm text-subtle">Aucune notification.</p>
           ) : (
             <ul>
               {notifications.map((notification) => (
                 <li key={notification.id}>
                   <Link
                     href={lienNotification(dossierId, notification.type)}
-                    onClick={() => void ouvrirUne(notification)}
+                    onClick={() => suivre(notification)}
                     className="block min-h-11 rounded-md p-3 hover:bg-canvas-app"
                   >
-                    <p className={`text-sm ${notification.lue ? "text-subtle" : "font-medium text-ink"}`}>
+                    <p
+                      className={`text-sm break-words ${notification.lue ? "text-subtle" : "font-medium text-ink"}`}
+                    >
                       {notification.message}
                     </p>
                     <p className="mt-0.5 text-xs text-subtle">
@@ -130,10 +138,4 @@ export function Cloche({ dossierId, chemin }: { dossierId: string; chemin: strin
       )}
     </div>
   );
-}
-
-function lienNotification(dossierId: string, type: string): string {
-  if (type === "cloture_a_valider") return `/chauffeur/${dossierId}/exercice`;
-  if (type.startsWith("connexion")) return "/chauffeur/compte";
-  return `/chauffeur/${dossierId}?vue=traiter`;
 }

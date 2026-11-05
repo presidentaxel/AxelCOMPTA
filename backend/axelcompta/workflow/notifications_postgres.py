@@ -56,19 +56,18 @@ class PostgresNotificationRepository(NotificationRepository):
     ) -> bool:
         with self._engine.begin() as connexion:
             appliquer_rls(connexion)
-            existe = connexion.execute(
+            trouve = connexion.execute(
                 select(table.c.id).where(
-                    table.c.dossier_id == dossier_id,
-                    table.c.id == notification_id,
+                    table.c.id == notification_id, table.c.dossier_id == dossier_id
                 )
             ).first()
-            if existe is None:
+            if trouve is None:
                 return False
             connexion.execute(
                 update(table)
                 .where(
-                    table.c.dossier_id == dossier_id,
                     table.c.id == notification_id,
+                    table.c.dossier_id == dossier_id,
                     table.c.lue_le.is_(None),
                 )
                 .values(lue_le=maintenant)

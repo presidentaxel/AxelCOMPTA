@@ -8,6 +8,12 @@ import {
   ErreurAuthChauffeur,
 } from "./auth-chauffeur";
 import { ErreurAuthGestionnaire, ouvrirSessionGestionnaire } from "./auth-gestionnaire";
+import {
+  MESSAGE_LIEN_EXPIRE,
+  MESSAGE_SANS_LIEN,
+  messageParametresAuth,
+  traduireExceptionAuth,
+} from "./messages-auth";
 
 export type FragmentAuth = {
   accessToken: string;
@@ -26,15 +32,17 @@ export function pageInvitation(accessToken: string): "chauffeur" | "gestionnaire
   const meta = (charge.app_metadata ?? {}) as { dossier_id?: string; tenant_id?: string };
   if (meta.dossier_id) return "chauffeur";
   if (meta.tenant_id) return "gestionnaire";
-  throw new ErreurAuthChauffeur("Ce compte n'est lié ni à un dossier ni à un portefeuille.");
+  throw new ErreurAuthChauffeur(MESSAGE_SANS_LIEN);
 }
 
 export function lireFragmentAuth(fragment: string): FragmentAuth {
   const parametres = new URLSearchParams(fragment.replace(/^#/, ""));
+  const message = messageParametresAuth(parametres);
+  if (message) throw new ErreurAuthChauffeur(message);
   const accessToken = parametres.get("access_token");
   const refreshToken = parametres.get("refresh_token");
   if (!accessToken || !refreshToken) {
-    throw new ErreurAuthChauffeur("Lien invalide ou expiré.");
+    throw new ErreurAuthChauffeur(MESSAGE_LIEN_EXPIRE);
   }
   return { accessToken, refreshToken, type: parametres.get("type") ?? "" };
 }
@@ -56,11 +64,9 @@ export function ouvrirSessionDepuisJetons(accessToken: string, refreshToken: str
     try {
       ouvrirSessionGestionnaire(accessToken, refreshToken, email);
     } catch (exception) {
-      throw new ErreurAuthGestionnaire(
-        exception instanceof Error ? exception.message : "Lien invalide.",
-      );
+      throw new ErreurAuthGestionnaire(traduireExceptionAuth(exception));
     }
     return "/";
   }
-  throw new ErreurAuthChauffeur("Ce compte n'est lié ni à un dossier ni à un portefeuille.");
+  throw new ErreurAuthChauffeur(MESSAGE_SANS_LIEN);
 }

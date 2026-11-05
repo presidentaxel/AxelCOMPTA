@@ -3,10 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-import { Squelette } from "@/components/Squelette";
 import { obtenirSession } from "@/lib/auth-chauffeur";
 
-/** `/chauffeur` seul mène au dossier ouvert, ou à la connexion. */
+/** `/chauffeur` seul n'est pas une page : on ouvre le dossier, ou la connexion. */
 export default function ChauffeurIndexPage() {
   const router = useRouter();
 
@@ -15,5 +14,5 @@ export default function ChauffeurIndexPage() {
     router.replace(session ? `/chauffeur/${session.dossierId}` : "/chauffeur/login");
   }, [router]);
 
-  return <Squelette className="h-40 w-full" />;
+  return <p className="text-sm text-subtle">Redirection…</p>;
 }

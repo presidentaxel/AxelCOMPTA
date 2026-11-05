@@ -13,6 +13,7 @@
  */
 
 import { ApiError } from "./api";
+import { MESSAGE_SANS_PORTEFEUILLE, MESSAGE_SESSION } from "./messages-auth";
 import { appelAuthentifie } from "./session";
 import {
   changerEmailAvecJeton,
@@ -34,7 +35,9 @@ export type SessionGestionnaire = {
   email: string;
 };
 
-export class ErreurAuthGestionnaire extends Error {}
+export class ErreurAuthGestionnaire extends Error {
+  override name = "ErreurAuthGestionnaire";
+}
 
 function baseUrlApi(): string {
   return process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -45,7 +48,7 @@ function tenantIdDepuisJeton(accessToken: string): string {
   const metadata = charge.app_metadata as { tenant_id?: string } | undefined;
   const tenantId = metadata?.tenant_id;
   if (!tenantId) {
-    throw new ErreurAuthGestionnaire("Ce compte n'est lié à aucun portefeuille.");
+    throw new ErreurAuthGestionnaire(MESSAGE_SANS_PORTEFEUILLE);
   }
   return tenantId;
 }
@@ -112,7 +115,7 @@ export async function connexionGestionnaire(
 export async function changerMotDePasseGestionnaire(motDePasse: string): Promise<void> {
   const session = obtenirSessionGestionnaire();
   if (!session) {
-    throw new ErreurAuthGestionnaire("Aucune session active.");
+    throw new ErreurAuthGestionnaire(MESSAGE_SESSION);
   }
   try {
     await definirMotDePasseAvecJeton(session.accessToken, motDePasse);
@@ -126,7 +129,7 @@ export async function changerMotDePasseGestionnaire(motDePasse: string): Promise
 export async function changerEmailGestionnaire(email: string): Promise<void> {
   const session = obtenirSessionGestionnaire();
   if (!session) {
-    throw new ErreurAuthGestionnaire("Aucune session active.");
+    throw new ErreurAuthGestionnaire(MESSAGE_SESSION);
   }
   try {
     await changerEmailAvecJeton(session.accessToken, email);

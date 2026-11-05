@@ -1,31 +1,18 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useId, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { demanderReinitialisation, envoyerLienMagique } from "@/lib/auth-chauffeur";
-import { messageVisible } from "@/lib/messages";
+import { traduireExceptionAuth } from "@/lib/messages-auth";
 import { sessionAExpire } from "@/lib/session";
 
 type Mode = "mot_de_passe" | "lien" | "oubli";
 
 /** Connexion par mot de passe, lien magique, ou e-mail de réinitialisation.
  * Les deux derniers atterrissent sur `/auth/lien`. */
-export function FormulaireConnexion(props: {
-  titre: string;
-  sousTitre: string;
-  onConnecte: (email: string, motDePasse: string) => Promise<void>;
-}) {
-  return (
-    <Suspense fallback={<p className="text-sm text-subtle">Chargement…</p>}>
-      <Formulaire {...props} />
-    </Suspense>
-  );
-}
-
-function Formulaire({
+export function FormulaireConnexion({
   titre,
   sousTitre,
   onConnecte,
@@ -34,11 +21,9 @@ function Formulaire({
   sousTitre: string;
   onConnecte: (email: string, motDePasse: string) => Promise<void>;
 }) {
-  const recherche = useSearchParams();
-  const modeInitial = recherche.get("mode");
-  const [mode, setMode] = useState<Mode>(
-    modeInitial === "lien" || modeInitial === "oubli" ? modeInitial : "mot_de_passe",
-  );
+  const idEmail = useId();
+  const idMotDePasse = useId();
+  const [mode, setMode] = useState<Mode>("mot_de_passe");
   const [email, setEmail] = useState("");
   const [motDePasse, setMotDePasse] = useState("");
   const [enCours, setEnCours] = useState(false);
@@ -46,10 +31,14 @@ function Formulaire({
   const [info, setInfo] = useState<string | null>(null);
 
   useEffect(() => {
-    // Arrivée depuis une page interne dont la session n'a pas pu être
-    // renouvelée (`lib/session.ts`) : on dit pourquoi on est là.
-    if (sessionAExpire(window.location.search)) {
+    const recherche = new URLSearchParams(window.location.search);
+    const demande = recherche.get("mode");
+    if (demande === "lien" || demande === "oubli") {
+      // Le mode vient de l'adresse (« Mot de passe oublié », « nouveau lien »).
       // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMode(demande);
+    }
+    if (sessionAExpire(window.location.search)) {
       setInfo("Votre session a expiré. Reconnectez-vous pour reprendre où vous en étiez.");
     }
   }, []);
@@ -71,7 +60,7 @@ function Formulaire({
         await onConnecte(adresse, motDePasse);
       }
     } catch (exception) {
-      setErreur(messageVisible(exception, "Échec de la connexion."));
+      setErreur(traduireExceptionAuth(exception));
     } finally {
       setEnCours(false);
     }
@@ -88,43 +77,53 @@ function Formulaire({
       <h1 className="mb-1 text-xl font-bold text-ink">{titre}</h1>
       <p className="mb-6 text-sm text-subtle">{sousTitre}</p>
       <form className="space-y-3" onSubmit={soumettre}>
-        <label className="block text-sm text-subtle" htmlFor="connexion-email">
-          E-mail
-        </label>
-        <Input
-          id="connexion-email"
-          type="email"
-          uiSize="lg"
-          autoComplete="email"
-          value={email}
-          onChange={(evenement) => setEmail(evenement.target.value)}
-          placeholder="vous@exemple.fr"
-          required
-          disabled={enCours}
-        />
+        <div className="space-y-1">
+          <label htmlFor={idEmail} className="block text-sm font-medium text-ink">
+            E-mail
+          </label>
+          <Input
+            id={idEmail}
+            name="email"
+            type="email"
+            autoComplete="email"
+            uiSize="lg"
+            value={email}
+            onChange={(evenement) => setEmail(evenement.target.value)}
+            placeholder="nom@exemple.fr"
+            required
+            disabled={enCours}
+            aria-invalid={erreur ? true : undefined}
+          />
+        </div>
         {mode === "mot_de_passe" && (
-          <>
-            <label className="block text-sm text-subtle" htmlFor="connexion-mot-de-passe">
+          <div className="space-y-1">
+            <label htmlFor={idMotDePasse} className="block text-sm font-medium text-ink">
               Mot de passe
             </label>
             <Input
-              id="connexion-mot-de-passe"
+              id={idMotDePasse}
+              name="password"
               type="password"
-              uiSize="lg"
               autoComplete="current-password"
+              uiSize="lg"
               value={motDePasse}
               onChange={(evenement) => setMotDePasse(evenement.target.value)}
               required
               disabled={enCours}
+              aria-invalid={erreur ? true : undefined}
             />
-          </>
+          </div>
         )}
         {erreur && (
           <p role="alert" className="text-sm text-danger">
             {erreur}
           </p>
         )}
-        {info && <p className="text-sm text-subtle">{info}</p>}
+        {info && (
+          <p role="status" className="text-sm text-subtle">
+            {info}
+          </p>
+        )}
         <Button type="submit" disabled={enCours} className="w-full">
           {enCours
             ? "Envoi…"
@@ -137,19 +136,19 @@ function Formulaire({
       </form>
       <div className="mt-4 flex flex-col gap-2 text-sm">
         {mode !== "lien" && (
-          <button type="button" className="min-h-11 text-left text-primary hover:underline" onClick={() => basculer("lien")}>
+          <button type="button" className="inline-flex min-h-11 items-center text-left text-primary hover:underline" onClick={() => basculer("lien")}>
             Recevoir un lien de connexion
           </button>
         )}
         {mode !== "oubli" && (
-          <button type="button" className="min-h-11 text-left text-primary hover:underline" onClick={() => basculer("oubli")}>
+          <button type="button" className="inline-flex min-h-11 items-center text-left text-primary hover:underline" onClick={() => basculer("oubli")}>
             Mot de passe oublié
           </button>
         )}
         {mode !== "mot_de_passe" && (
           <button
             type="button"
-            className="min-h-11 text-left text-primary hover:underline"
+            className="inline-flex min-h-11 items-center text-left text-primary hover:underline"
             onClick={() => basculer("mot_de_passe")}
           >
             Se connecter avec un mot de passe

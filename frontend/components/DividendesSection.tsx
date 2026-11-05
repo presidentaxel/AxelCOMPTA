@@ -5,10 +5,9 @@
 // et les prélèvements sociaux, et les reverse avec la déclaration 2777 avant
 // le 15 du mois suivant. Le virement net et le paiement de la 2777 se
 // catégorisent ensuite depuis la banque.
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Aide } from "@/components/Aide";
-import { EtatErreur } from "@/components/EtatChargement";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
@@ -18,51 +17,24 @@ import {
   fetchAvecAuthChauffeur,
 } from "@/lib/auth-chauffeur";
 import { formatDate, formatMontant } from "@/lib/format";
-import { messageVisible } from "@/lib/messages";
+import { phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import type { DividendesVue } from "@/lib/types";
 
 export function DividendesSection({ dossierId }: { dossierId: string }) {
   const [vue, setVue] = useState<DividendesVue | null>(null);
-  const [echec, setEchec] = useState<string | null>(null);
   const [verseLe, setVerseLe] = useState(() => new Date().toISOString().slice(0, 10));
   const [dispense, setDispense] = useState(false);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
-  const charger = useCallback(() => {
-    let annule = false;
+  useEffect(() => {
     fetchAvecAuthChauffeur<DividendesVue>(`/dossiers/${dossierId}/dividendes`)
-      .then((valeur) => {
-        if (annule) return;
-        setVue(valeur);
-        setEchec(null);
-      })
-      .catch((exception: unknown) => {
-        if (!annule) setEchec(messageVisible(exception, "Impossible de charger vos dividendes."));
-      });
-    return () => {
-      annule = true;
-    };
+      .then(setVue)
+      .catch(() => setVue(null));
   }, [dossierId]);
 
-  useEffect(() => charger(), [charger]);
-
-  if (echec) {
-    return (
-      <EtatErreur
-        message={echec}
-        onReessayer={() => {
-          setEchec(null);
-          charger();
-        }}
-      />
-    );
-  }
-  if (vue === null) {
+  if (!vue?.applicable) {
     return null;
-  }
-  if (!vue.applicable) {
-    return vue.raison ? <p className="mt-8 text-sm text-subtle">{vue.raison}</p> : null;
   }
 
   async function declarer() {
@@ -72,9 +44,11 @@ export function DividendesSection({ dossierId }: { dossierId: string }) {
       setVue(await declarerDividendesChauffeur(dossierId, verseLe, dispense));
     } catch (exception) {
       setErreur(
-        exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
-          ? exception.message
-          : "Échec de la déclaration.",
+        phrasePourChauffeur(
+          exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
+            ? exception.message
+            : "Échec de la déclaration.",
+        ),
       );
     } finally {
       setEnCours(false);
@@ -85,48 +59,52 @@ export function DividendesSection({ dossierId }: { dossierId: string }) {
     <section className="mt-8">
       <h2 className="text-sm font-medium text-ink">Mes dividendes {vue.annee_exercice}</h2>
       <dl className="mt-3 space-y-1 text-sm">
-        <Ligne libelle="Montant décidé" cents={vue.brut_cts} />
+        <Ligne libelle="Dividendes décidés" cents={vue.brut_cts} />
         <Ligne
           libelle="Impôt retenu (12,8 %)"
-          aide="Le prélèvement forfaitaire. Il est retenu par la société avant de vous virer le reste."
           cents={vue.prelevement_forfaitaire_cts}
+          aide="Le prélèvement forfaitaire : l'impôt gardé sur les dividendes, avant les retenues sociales."
         />
         <Ligne
-          libelle="Cotisations sociales"
-          aide="CSG, CRDS et prélèvement de solidarité, retenus en même temps."
-          cents={vue.csg_cts + vue.crds_cts + vue.solidarite_cts}
+          libelle="Retenue pour la sécurité sociale"
+          cents={vue.csg_cts}
+          aide="La CSG, contribution sociale généralisée."
         />
-        <Ligne libelle="Ce que vous recevez" cents={vue.net_a_virer_cts} />
+        <Ligne
+          libelle="Retenue pour la dette sociale"
+          cents={vue.crds_cts}
+          aide="La CRDS, contribution au remboursement de la dette sociale."
+        />
+        <Ligne
+          libelle="Retenue de solidarité"
+          cents={vue.solidarite_cts}
+          aide="Le prélèvement de solidarité : une autre retenue sociale sur les dividendes."
+        />
+        <Ligne libelle="Net à vous virer" cents={vue.net_a_virer_cts} />
       </dl>
       {vue.declare ? (
         <p className="mt-4 rounded-md border border-border bg-canvas p-3 text-sm text-ink">
-          Versés le {vue.verse_le && formatDate(vue.verse_le)}. Déclarez et payez{" "}
-          {formatMontant(vue.total_retenu_cts)} avant le{" "}
-          {vue.echeance_2777 && formatDate(vue.echeance_2777)}
-          <Aide
-            tactile
-            texte="La déclaration 2777 : c'est elle qui dit à l'administration ce qui a été retenu sur vos dividendes."
-          />
-          . Ensuite, classez votre virement en « Mes dividendes » et ce paiement en « Impôts sur
-          mes dividendes ».
+          Versés le {vue.verse_le && formatDate(vue.verse_le)}. Déposez et payez avant le{" "}
+          {vue.echeance_2777 && formatDate(vue.echeance_2777)} la déclaration des retenues
+          (formulaire 2777) : {formatMontant(vue.total_retenu_cts)}. C&apos;est l&apos;impôt et les
+          prélèvements gardés sur vos dividendes. Classez ensuite votre virement en « Mes
+          dividendes » et ce paiement en « Impôts sur mes dividendes ».
         </p>
       ) : (
         <div className="mt-4 space-y-3 text-sm">
-          <label className="flex items-center gap-3">
+          <label className="flex min-h-11 flex-col gap-2">
             <span className="text-subtle">Date du versement</span>
             <Input
               type="date"
-              uiSize="lg"
-              className="w-44"
-              aria-label="Date du versement"
+              className="h-11 text-base"
               value={verseLe}
               onChange={(evenement) => setVerseLe(evenement.target.value)}
             />
           </label>
-          <label className="flex gap-3 text-ink">
+          <label className="flex min-h-11 items-start gap-3 text-ink">
             <input
               type="checkbox"
-              className="mt-1"
+              className="mt-0.5 size-6 shrink-0"
               checked={dispense}
               onChange={(evenement) => setDispense(evenement.target.checked)}
             />
@@ -151,9 +129,9 @@ function Ligne({ libelle, cents, aide }: { libelle: string; cents: number; aide?
     <div className="flex justify-between gap-3">
       <dt className="text-subtle">
         {libelle}
-        {aide && <Aide tactile texte={aide} />}
+        {aide && <Aide texte={aide} />}
       </dt>
-      <dd className="text-right tabular-nums text-ink">{formatMontant(cents)}</dd>
+      <dd className="tabular-nums text-ink">{formatMontant(cents)}</dd>
     </div>
   );
 }
