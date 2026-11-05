@@ -5,9 +5,10 @@
 // calculer la paie ni déposer la DSN. Son virement net se catégorise
 // ensuite « Ma rémunération », le paiement à l'URSSAF « Mes cotisations
 // sociales ».
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Aide } from "@/components/Aide";
+import { Etat } from "@/components/Etat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
@@ -19,6 +20,7 @@ import {
 import { formatMontant } from "@/lib/format";
 import { phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import { lireEuros } from "@/lib/saisie-chauffeur";
+import { messageEchecChargement } from "@/lib/session";
 import type { BulletinVue } from "@/lib/types";
 
 const CHAMPS = [
@@ -45,18 +47,49 @@ function lireEurosOuZero(saisie: string): number | string {
 
 export function PaieSection({ dossierId }: { dossierId: string }) {
   const [bulletins, setBulletins] = useState<BulletinVue[]>([]);
+  const [lecturePrete, setLecturePrete] = useState(false);
+  const [echecLecture, setEchecLecture] = useState<string | null>(null);
   const [mois, setMois] = useState("");
   const [montants, setMontants] = useState<Record<string, string>>({});
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [suivi, setSuivi] = useState(dossierId);
+  const ticket = useRef(0);
 
-  useEffect(() => {
+  if (suivi !== dossierId) {
+    setSuivi(dossierId);
+    setBulletins([]);
+    setLecturePrete(false);
+    setEchecLecture(null);
+    setErreur(null);
+  }
+
+  const relire = useCallback(() => {
+    const courant = ++ticket.current;
     fetchAvecAuthChauffeur<BulletinVue[]>(`/dossiers/${dossierId}/bulletins`)
-      .then(setBulletins)
-      .catch(() => setBulletins([]));
+      .then((liste) => {
+        if (ticket.current !== courant) return;
+        setBulletins(liste);
+        setLecturePrete(true);
+        setEchecLecture(null);
+      })
+      .catch((exception: unknown) => {
+        if (ticket.current !== courant) return;
+        setLecturePrete(false);
+        setEchecLecture(
+          phrasePourChauffeur(
+            messageEchecChargement(exception, "Impossible de charger vos bulletins."),
+          ),
+        );
+      });
   }, [dossierId]);
 
+  useEffect(() => {
+    relire();
+  }, [relire]);
+
   async function enregistrer() {
+    if (!lecturePrete) return;
     const brut = lireEuros(montants.brut ?? "");
     const salariales = lireEurosOuZero(montants.salariales ?? "");
     const patronales = lireEurosOuZero(montants.patronales ?? "");
@@ -100,7 +133,10 @@ export function PaieSection({ dossierId }: { dossierId: string }) {
         Il ne calcule pas la paie et n&apos;envoie pas la déclaration sociale.
         <Aide texte="La DSN (déclaration sociale nominative) part chaque mois vers les organismes sociaux, depuis votre logiciel de paie." />
       </p>
-      {bulletins.length > 0 && (
+      {echecLecture && (
+        <Etat type="erreur" message={echecLecture} onReessayer={relire} />
+      )}
+      {lecturePrete && bulletins.length > 0 && (
         <ul className="mt-3 space-y-1 text-sm">
           {bulletins.map((bulletin) => (
             <li key={bulletin.mois} className="flex justify-between">
@@ -140,7 +176,11 @@ export function PaieSection({ dossierId }: { dossierId: string }) {
           </label>
         ))}
       </div>
-      <Button className="mt-3 h-11" disabled={enCours || !mois || !montants.brut} onClick={enregistrer}>
+      <Button
+        className="mt-3 h-11"
+        disabled={enCours || !lecturePrete || !mois || !montants.brut}
+        onClick={enregistrer}
+      >
         {enCours ? "Enregistrement…" : "Enregistrer le bulletin"}
       </Button>
       {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}
