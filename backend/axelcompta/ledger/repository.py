@@ -9,7 +9,7 @@ from __future__ import annotations
 import dataclasses
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.engine import Connection, Engine
 
 from axelcompta.core.ids import DossierId, EcritureId
@@ -19,6 +19,7 @@ from axelcompta.core.rls import appliquer_rls
 from .invariants import verifier_equilibre
 from .models import Ecriture, Journal, LigneEcriture, Sens
 from .orm import ecritures, lignes_ecriture
+from .periodes import Periode, verifier_hors_periode_close
 from .service import LedgerService
 
 
@@ -30,6 +31,9 @@ class PostgresLedgerService(LedgerService):
         verifier_equilibre(ecriture)
         with self._engine.begin() as connexion:
             appliquer_rls(connexion)
+            verifier_hors_periode_close(
+                ecriture.date, _periodes_closes(connexion, ecriture.dossier_id)
+            )
             connexion.execute(
                 ecritures.insert().values(
                     id=ecriture.id,
@@ -46,6 +50,11 @@ class PostgresLedgerService(LedgerService):
             )
         return ecriture.id
 
+    def periodes_closes(self, dossier_id: DossierId) -> tuple[Periode, ...]:
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            return _periodes_closes(connexion, dossier_id)
+
     def grand_livre(self, dossier_id: DossierId) -> tuple[Ecriture, ...]:
         with self._engine.connect() as connexion:
             appliquer_rls(connexion)
@@ -55,6 +64,16 @@ class PostgresLedgerService(LedgerService):
             dataclasses.replace(entete, lignes=tuple(lignes_par_ecriture.get(eid, ())))
             for eid, entete in entetes.items()
         )
+
+
+def _periodes_closes(connexion: Connection, dossier_id: DossierId) -> tuple[Periode, ...]:
+    """`exercices_clos` appartient à tenants/ : lue en SQL, sans importer son
+    modèle (ledger ne dépend que de core)."""
+    lignes = connexion.execute(
+        text("SELECT debut, fin FROM exercices_clos WHERE dossier_id = :d ORDER BY debut"),
+        {"d": dossier_id},
+    ).all()
+    return tuple((debut, fin) for debut, fin in lignes)
 
 
 def _ligne_vers_ligne(ecriture_id: EcritureId, ligne: LigneEcriture) -> dict[str, object]:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
+from collections.abc import Sequence
 from collections.abc import Set as AbstractSet
 
 from axelcompta.core.errors import DomaineError
@@ -16,6 +17,7 @@ from axelcompta.core.ids import EcritureId
 from axelcompta.core.pcg import est_compte_banque
 from axelcompta.ledger.contrepassation import contrepasser, origine
 from axelcompta.ledger.models import Ecriture, Journal
+from axelcompta.ledger.periodes import Periode
 
 _COMPTE = re.compile(r"^\d{3,8}$")
 
@@ -29,14 +31,19 @@ def _a_reclasser(compte: str) -> bool:
 
 
 def preparer_imputation(
-    ecriture: Ecriture, compte: str, connus: AbstractSet[EcritureId]
+    ecriture: Ecriture,
+    compte: str,
+    connus: AbstractSet[EcritureId],
+    periodes_closes: Sequence[Periode] = (),
 ) -> tuple[Ecriture, Ecriture]:
-    """Retourne (contre-passation, nouvelle écriture), sans les enregistrer."""
+    """Retourne (contre-passation, nouvelle écriture), sans les enregistrer.
+    Sur une écriture d'un exercice clos, les deux sont datées du premier jour
+    de l'exercice ouvert (I4) : l'exercice clos ne bouge pas."""
     if _COMPTE.fullmatch(compte) is None or not _a_reclasser(compte):
         raise ImputationRefusee(f"Compte refusé : {compte}")
     if origine(ecriture.id) is not None:
         raise ImputationRefusee("Une contre-passation ne s'impute pas.")
-    inverse = contrepasser(ecriture)
+    inverse = contrepasser(ecriture, periodes_closes)
     if inverse.id in connus:
         raise ImputationRefusee("Cette écriture est déjà contre-passée.")
     lignes = []
@@ -53,6 +60,7 @@ def preparer_imputation(
         ecriture,
         id=EcritureId(f"{ecriture.id}:impute-{compte}"),
         journal=Journal.OD,
+        date=inverse.date,
         libelle=f"Imputation {ecriture.libelle}",
         reference_piece=str(ecriture.id),
         lignes=tuple(lignes),

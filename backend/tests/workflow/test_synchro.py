@@ -29,7 +29,12 @@ from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.packs.vtc_demo import charger_compte_par_categorie, charger_regles
 from axelcompta.tenants.models import Dossier
 from axelcompta.workflow.propositions import InMemoryPropositionRepository
-from axelcompta.workflow.synchro import RapportSynchro, choisir_compte, synchroniser_dossier
+from axelcompta.workflow.synchro import (
+    MOTIF_PERIODE_CLOSE,
+    RapportSynchro,
+    choisir_compte,
+    synchroniser_dossier,
+)
 
 DOSSIER = Dossier(
     id=DossierId("d1"),
@@ -510,3 +515,36 @@ def test_un_virement_entre_deux_enveloppes_va_au_580_sans_question() -> None:
     assert (rapport.nouvelles, rapport.a_trancher) == (2, 0)
     assert env.comptes("s") == {"580", "5121"}
     assert env.comptes("e") == {"580", "5122"}
+
+
+def test_une_operation_tardive_dans_un_exercice_clos_part_en_quarantaine() -> None:
+    """AXE-806 : 2025 est clos ; une opération de décembre arrivée en janvier
+    n'entre pas au grand livre, le chauffeur en est prévenu."""
+    env = Env({"acc": [_tx("t9", "PEAGE A1", -12.0, "2025-12-28", "2026-01-05 09:00:00")]})
+    env.ledger.clore(DOSSIER.id, date(2025, 1, 1), date(2025, 12, 31))
+
+    rapport = env.synchroniser()
+
+    assert (rapport.nouvelles, rapport.periode_close) == (0, 1)
+    assert env.ledger.grand_livre(DOSSIER.id) == ()
+    (entree,) = env.journal.lister_quarantaine(DOSSIER.id)
+    assert entree.motif == MOTIF_PERIODE_CLOSE
+
+
+def test_une_operation_modifiee_d_un_exercice_clos_est_contre_passee_en_ouvert() -> None:
+    env = Env(
+        {"acc": [_tx("t1", "CARTE TOTAL STATION", -60.0, "2025-12-28", "2025-12-28 10:00:00")]}
+    )
+    env.synchroniser()
+    env.ledger.clore(DOSSIER.id, date(2025, 1, 1), date(2025, 12, 31))
+    env.payload["acc"][0] = _tx(
+        "t1", "CARTE TOTAL STATION", -75.0, "2025-12-28", "2026-01-05 08:00:00"
+    )
+
+    rapport = env.synchroniser()
+
+    assert rapport.modifiees_signalees == 1
+    (inverse,) = [
+        e for e in env.ledger.grand_livre(DOSSIER.id) if e.id.endswith(":contrepassation")
+    ]
+    assert inverse.date == date(2026, 1, 1)

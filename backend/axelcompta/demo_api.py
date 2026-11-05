@@ -43,6 +43,7 @@ from typing import Annotated, Any, Literal, Protocol
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -139,6 +140,7 @@ from axelcompta.ledger.banque import (
 from axelcompta.ledger.contrepassation import annulees, contrepasser
 from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.ledger.models import Ecriture, Sens
+from axelcompta.ledger.periodes import PeriodeClose
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
 from axelcompta.packs.vtc_demo import (
@@ -3903,7 +3905,9 @@ def imputer_ecriture(
     if ecriture is None:
         raise HTTPException(status_code=404, detail="Écriture inconnue.")
     try:
-        inverse, nouvelle = preparer_imputation(ecriture, entree.compte, set(connus))
+        inverse, nouvelle = preparer_imputation(
+            ecriture, entree.compte, set(connus), base.periodes_closes(dossier.id)
+        )
     except ImputationRefusee as erreur:
         raise HTTPException(status_code=400, detail=str(erreur)) from erreur
     base.enregistrer(inverse)
@@ -3930,14 +3934,21 @@ def annuler_imputation(
     if dossier is None or dossier.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Dossier inconnu.")
     connus = {ecriture.id: ecriture for ecriture in base.grand_livre(dossier.id)}
+    periodes = base.periodes_closes(dossier.id)
     for identifiant in (entree.ecriture_id, entree.contrepassation_id):
         ecriture = connus.get(EcritureId(identifiant))
         if ecriture is None:
             raise HTTPException(status_code=404, detail="Écriture inconnue.")
-        inverse = contrepasser(ecriture)
+        inverse = contrepasser(ecriture, periodes)
         if inverse.id not in connus:
             base.enregistrer(inverse)
             connus[inverse.id] = inverse
+
+
+async def _periode_close_en_409(_requete: Request, erreur: Exception) -> JSONResponse:
+    """I4 : une écriture dans un exercice clos est refusée par le grand livre,
+    sur toutes les routes qui écrivent. 409 avec la phrase, pas 500."""
+    return JSONResponse(status_code=409, content={"detail": str(erreur)})
 
 
 def _enregistrer_routes_expert(app: FastAPI) -> None:
@@ -3990,6 +4001,7 @@ def create_app() -> FastAPI:
     brancher(app)
     app.state.digifactory_branche = True
     _configurer_cors(app)
+    app.add_exception_handler(PeriodeClose, _periode_close_en_409)
     _configurer_contexte_rls(app)
     _enregistrer_routes_dossiers(app)
     _enregistrer_routes_transactions(app)
