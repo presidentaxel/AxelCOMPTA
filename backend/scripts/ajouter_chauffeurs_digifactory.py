@@ -1,15 +1,19 @@
-"""Crée un dossier et un compte de démo par contact Digifactory, puis synchronise.
+"""Crée un dossier par contact Digifactory du portefeuille, puis synchronise.
 
-Les e-mails sont fictifs (`demo-digi-<nr>@axelcompta.fr`). Le mot de passe
-est celui des chauffeurs de démo déjà en place. Les transactions écrites en
-base viennent de l'API au moment de l'exécution.
+**Aucun compte n'est créé** (depuis le 2026-11-05, AXE-726) : le dirigeant
+de chaque société est invité par le gestionnaire avec sa vraie adresse
+(écran Invitations), et confirme sa configuration à la première connexion
+(AXE-730). La forme juridique est reprise de Sirene quand le contact a un
+SIREN ; le reste de la configuration est une valeur par défaut.
 
 Usage, depuis backend/ :
 
-    python scripts/ajouter_chauffeurs_digifactory.py
+    python scripts/ajouter_chauffeurs_digifactory.py               # dossiers + synchro
+    python scripts/ajouter_chauffeurs_digifactory.py --sans-synchro # dossiers seulement
+    python scripts/ajouter_chauffeurs_digifactory.py --formes       # formes Sirene seulement
 
-Idempotent : un contact déjà mappé et un e-mail déjà créé sont laissés tels
-quels. La synchro, elle, rejoue (curseur, pas de doublon d'écriture).
+Idempotent : un contact déjà mappé est laissé tel quel. La synchro rejoue
+sans doublon (curseur).
 """
 
 from __future__ import annotations
@@ -23,13 +27,9 @@ import httpx
 from dotenv import load_dotenv
 
 from axelcompta.core.db import engine_depuis_env
-from axelcompta.demo_comptes import SupabaseConfig
 from axelcompta.demo_digifactory import (
-    MOT_DE_PASSE_COMMUN,
     TENANT_DEMO,
-    corps_compte_demo,
     dossier_depuis_contact,
-    email_demo,
     forme_depuis_nature_juridique,
     numero_contact,
     siren_contact,
@@ -38,8 +38,6 @@ from axelcompta.ingestion.providers.digifactory import DigifactoryHttpClient
 from axelcompta.synchro_digifactory import synchroniser_portefeuille
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.postgres import PostgresDossierRepository
-
-_DEJA_PRIS = ("already", "already been registered", "déjà")
 
 
 def _assurer_dossier(depot: PostgresDossierRepository, voulu: Dossier) -> tuple[Dossier, str]:
@@ -53,18 +51,6 @@ def _assurer_dossier(depot: PostgresDossierRepository, voulu: Dossier) -> tuple[
     if enregistre is None:
         raise RuntimeError(f"{voulu.id} non relu après écriture")
     return enregistre, "créé"
-
-
-def _creer_compte(client: httpx.Client, dossier: Dossier) -> str:
-    email = email_demo(dossier.contact_nr or "")
-    corps = corps_compte_demo(email, dossier.id, MOT_DE_PASSE_COMMUN)
-    reponse = client.post("/admin/users", json=corps)
-    if reponse.status_code < 400:
-        return "compte créé"
-    texte = reponse.text.lower()
-    if reponse.status_code in (409, 422) and any(marque in texte for marque in _DEJA_PRIS):
-        return "compte déjà là"
-    raise RuntimeError(f"compte {email} refusé ({reponse.status_code})")
 
 
 async def _contacts_bruts() -> dict[str, dict[str, object]]:
@@ -128,7 +114,8 @@ def main() -> int:
     )
     dossiers = tuple(_poser(depot, voulu) for voulu in voulus)
     _aligner_formes(depot)
-    _comptes(dossiers)
+    if "--sans-synchro" in sys.argv[1:]:
+        return 0
     engine = engine_depuis_env()
     erreurs = 0
     for dossier in dossiers:
@@ -150,25 +137,8 @@ def main() -> int:
 
 def _poser(depot: PostgresDossierRepository, voulu: Dossier) -> Dossier:
     dossier, etat = _assurer_dossier(depot, voulu)
-    print(f"{dossier.id} ({email_demo(dossier.contact_nr or '')}) : {etat}", flush=True)
+    print(f"{dossier.id} ({dossier.nom}) : {etat}", flush=True)
     return dossier
-
-
-def _comptes(dossiers: tuple[Dossier, ...]) -> None:
-    config = SupabaseConfig.depuis_env()
-    with httpx.Client(
-        base_url=f"{config.url}/auth/v1",
-        headers={
-            "apikey": config.service_role_key,
-            "Authorization": f"Bearer {config.service_role_key}",
-        },
-        timeout=15.0,
-    ) as client:
-        for dossier in dossiers:
-            print(
-                f"  {email_demo(dossier.contact_nr or '')} : {_creer_compte(client, dossier)}",
-                flush=True,
-            )
 
 
 if __name__ == "__main__":

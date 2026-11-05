@@ -1,4 +1,4 @@
-"""Mapping contact Digifactory → dossier et compte de démo. Aucun appel réseau."""
+"""Mapping contact Digifactory → dossier du portefeuille. Aucun appel réseau."""
 
 from __future__ import annotations
 
@@ -6,12 +6,8 @@ from datetime import date
 
 import pytest
 
-from axelcompta.core.ids import DossierId
 from axelcompta.demo_digifactory import (
-    MOT_DE_PASSE_COMMUN,
-    corps_compte_demo,
     dossier_depuis_contact,
-    email_demo,
     forme_depuis_nature_juridique,
     nom_affiche,
     numero_contact,
@@ -29,8 +25,7 @@ def test_le_numero_de_contact_reste_des_chiffres() -> None:
         numero_contact({"nr": "abc"})
 
 
-def test_l_email_et_l_id_derivent_du_numero() -> None:
-    assert email_demo("4952") == "demo-digi-4952@axelcompta.fr"
+def test_l_id_derive_du_numero() -> None:
     dossier = dossier_depuis_contact({"nr": "4952", "companyName": "Alpha"}, _AUJOURD_HUI)
     assert dossier.id == "DIGI_4952"
     assert dossier.contact_nr == "4952"
@@ -69,15 +64,3 @@ def test_la_nature_juridique_insee_donne_la_forme_sans_deviner_la_sasu() -> None
     assert forme_depuis_nature_juridique("5498") == "EURL"
     assert forme_depuis_nature_juridique("1000") == "EI"
     assert forme_depuis_nature_juridique("5599") is None
-
-
-def test_le_compte_na_pas_acces_au_portefeuille() -> None:
-    corps = corps_compte_demo(
-        "demo-digi-2@axelcompta.fr", dossier_id=DossierId("DIGI_2"), mot_de_passe="x"
-    )
-    meta = corps["app_metadata"]
-    assert isinstance(meta, dict)
-    assert meta == {"dossier_id": "DIGI_2", "env": "demo"}
-    assert "tenant_id" not in meta
-    assert corps["email_confirm"] is True
-    assert len(MOT_DE_PASSE_COMMUN) >= 12

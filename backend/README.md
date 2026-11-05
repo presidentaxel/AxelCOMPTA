@@ -193,8 +193,8 @@ Refusé tant que l'exercice n'est pas terminé ou qu'une opération attend une
 décision. La clôture passe en base les écritures d'inventaire et les
 à-nouveaux, clôt l'exercice dans l'historique et ouvre le suivant (avenant
 de régime en vigueur, sortie de franchise de TVA le cas échéant). Rejouable
-sans doublon. Le menu Démo ne sait pas effacer des à-nouveaux : une clôture
-faite sur la démo reste.
+sans doublon. Une clôture faite reste : rien ne l'efface (le menu Démo qui
+remettait la démo à neuf a été retiré le 2026-11-05).
 
 ### Agrégats du portefeuille (AXE-566)
 
@@ -257,6 +257,11 @@ Comptes Supabase : `scripts/creer_compte_gestionnaire.py` (gestionnaire),
 le 2026-09-21) et `scripts/creer_comptes_demo_chauffeurs.py` (les 3 comptes
 chauffeur de démo Karim/Sophie/Yanis, `app_metadata.env: "demo"` pour les
 distinguer de vrais comptes pilote plus tard).
+
+**Depuis le 2026-11-05 (mode réel)** : la base est celle du portefeuille
+Serenity. Karim, Yanis, `demo@axelcompta.fr` et les comptes `demo-digi-*`
+ont été supprimés ; seul `demo-sophie@axelcompta.fr` reste, pour les
+reviews UX. Le paragraphe suivant est l'historique.
 
 **Comptes de démo créés pour de vrai (2026-09-22)**, persistants — pas des
 comptes de test supprimés après vérification comme jusqu'ici : deux comptes

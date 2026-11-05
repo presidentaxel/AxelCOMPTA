@@ -1,4 +1,4 @@
-"""Crée les 3 comptes chauffeur de démo (Karim/Sophie/Yanis) dans Supabase Auth.
+"""Crée le compte chauffeur du dossier de review UX (Sophie) dans Supabase Auth.
 
 Ces comptes ne portent que `app_metadata.dossier_id` (accès indiv), jamais
 `tenant_id` : contrairement à `creer_compte_gestionnaire.py`, ce ne sont pas
@@ -26,10 +26,10 @@ import httpx
 
 from axelcompta.demo_comptes import SupabaseConfig
 
+# Depuis le 2026-11-05, seul le dossier de review UX (Sophie) reste en base :
+# Karim et Yanis ont été supprimés, la base est celle du portefeuille réel.
 COMPTES_DEMO = (
-    ("demo-karim@axelcompta.fr", "DEMO_karim"),
     ("demo-sophie@axelcompta.fr", "DEMO_sophie"),
-    ("demo-yanis@axelcompta.fr", "DEMO_yanis"),
 )
 
 

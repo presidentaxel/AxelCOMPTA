@@ -1,5 +1,10 @@
-"""Amorçage de la base pour la démo : le portefeuille de démo, ses 3 dossiers,
-leur ledger et les propositions du pipeline (doc 17 §4).
+"""Amorçage du dossier de review UX (Sophie) et, pour les tests, des trois
+dossiers chauffeur type (doc 17 §4).
+
+**Depuis le 2026-11-05, la base Supabase est la base réelle du portefeuille
+Serenity.** La commande ne pose plus que `DOSSIER_REVUE_UX`, le seul dossier
+fictif gardé pour les reviews UX ; Karim et Yanis n'existent plus que dans
+les tests (`amorcer_demo` sans filtre).
 
 Composition root comme `demo_api.py` (doc 18). Avant le 2026-09-21, l'API
 recalculait tout ça à chaque requête depuis `chauffeurs_demo.py` ; depuis,
@@ -42,7 +47,12 @@ from axelcompta.workflow.propositions_postgres import PostgresPropositionReposit
 from axelcompta.workflow.signature import DocumentSigne, SignatureRepository
 from axelcompta.workflow.signature_postgres import PostgresSignatureRepository
 
+# Identifiant historique du portefeuille, gardé tel quel en base : c'est
+# aujourd'hui celui de Serenity (nom affiché « Serenity »).
 TENANT_DEMO = TenantId("TENANT_DEMO")
+# Le seul dossier fictif gardé en base, pour les reviews UX (décision du
+# 2026-11-05). Compte : demo-sophie@axelcompta.fr.
+DOSSIER_REVUE_UX = DossierId("DEMO_sophie")
 _SIGNATAIRE_JALON = UserId("seed-demo")
 
 # Préfixe de preuves de l'exercice 2025. Karim s'arrête à la clôture,
@@ -107,12 +117,14 @@ def amorcer_demo(
     dossiers: DossierRepository,
     ledger: LedgerService,
     propositions: PropositionRepository,
+    profils: tuple[ProfilChauffeurType, ...] = PROFILS_DEMO,
 ) -> list[str]:
     """Idempotent : un dossier dont le ledger est complet est laissé tel quel.
-    Retourne les ids des dossiers effectivement écrits."""
+    Retourne les ids des dossiers effectivement écrits. Le portefeuille n'est
+    créé que s'il n'existe pas (son nom en base n'est jamais écrasé)."""
     dossiers.enregistrer_tenant(Tenant(id=TENANT_DEMO, nom="Portefeuille démo"))
     ecrits: list[str] = []
-    for profil in PROFILS_DEMO:
+    for profil in profils:
         dossiers.enregistrer(_dossier_depuis_profil(profil))
         ledger_calcule, props = construire_ledger(profil)
         attendues = ledger_calcule.grand_livre(profil.dossier_id)
@@ -165,12 +177,17 @@ def _contenu_jalon(type_document: str, dossier: Dossier, ledger: LedgerService) 
 
 
 def poser_jalons_demo(
-    dossiers: DossierRepository, ledger: LedgerService, signatures: SignatureRepository
+    dossiers: DossierRepository,
+    ledger: LedgerService,
+    signatures: SignatureRepository,
+    seulement: frozenset[str] | None = None,
 ) -> list[str]:
     """Enregistre les preuves manquantes de l'exercice 2025. Idempotent :
     une preuve déjà là n'est pas réécrite (table append-only)."""
     poses: list[str] = []
     for dossier_id, types in JALONS_PAR_DOSSIER.items():
+        if seulement is not None and dossier_id not in seulement:
+            continue
         dossier = dossiers.obtenir(DossierId(dossier_id))
         if dossier is None:
             continue
@@ -196,8 +213,11 @@ def main() -> int:
     engine = engine_depuis_env()
     dossiers = PostgresDossierRepository(engine)
     ledger = PostgresLedgerService(engine)
-    ecrits = amorcer_demo(dossiers, ledger, PostgresPropositionRepository(engine))
-    jalons = poser_jalons_demo(dossiers, ledger, PostgresSignatureRepository(engine))
+    profils = tuple(p for p in PROFILS_DEMO if p.dossier_id == DOSSIER_REVUE_UX)
+    ecrits = amorcer_demo(dossiers, ledger, PostgresPropositionRepository(engine), profils)
+    jalons = poser_jalons_demo(
+        dossiers, ledger, PostgresSignatureRepository(engine), frozenset({DOSSIER_REVUE_UX})
+    )
     if ecrits:
         print(f"Amorçage terminé : {', '.join(ecrits)}")
     else:
