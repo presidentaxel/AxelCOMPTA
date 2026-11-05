@@ -125,8 +125,17 @@ nouveaux). La base Supabase devient la base réelle du portefeuille ; le
 menu Démo et les faux comptes sont retirés ; Karim, Yanis et
 `demo@axelcompta.fr` sont supprimés ; Sophie reste pour les reviews UX.
 Détail : [doc 17](17-plan-demo-backend.md). Le lien avec Rollee devient
-nécessaire pour les recettes des vrais chauffeurs (tickets Rollee ouverts
-le même jour).
+nécessaire pour les recettes des vrais chauffeurs. Tickets ouverts le même
+jour, dans l'ordre :
+- AXE-817 (urgent) : contrat, sandbox et choix entre User API et Company API ;
+- AXE-818 : client API et `RolleeProvider` ;
+- AXE-819 : le chauffeur relie ses comptes Uber et Bolt via Rollee Connect ;
+- AXE-820 : webhooks signés et synchro quotidienne de secours ;
+- AXE-821 : revenus Rollee réconciliés avec le virement Digifactory, puis
+  écritures 706, TVA et commission.
+
+Les relevés CSV (AXE-801) restent la source de secours pour un chauffeur
+sans Rollee.
 
 ### En cours (05/11)
 
