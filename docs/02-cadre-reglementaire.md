@@ -66,6 +66,27 @@ Conséquences concrètes, à implémenter dans le produit :
 | Les propositions automatiques sont des **propositions** | UI : statut « proposé » vs « validé » ; les écritures non validées ne sortent jamais dans un état définitif. |
 | AxeL n'analyse pas, ne surveille pas, ne redresse pas *en son nom* | Les alertes (anomalies, abus potentiels) sont adressées à l'utilisateur, qui décide. Pas de rapport signé AxeL. |
 | Pas de prestation humaine de saisie chez AxeL | Si un jour on propose du service, le faire via un cabinet EC partenaire. |
+| **Le logiciel ne décide jamais d'une imputation** : c'est le chauffeur, ou l'expert-comptable de l'entreprise dans le mode expert | Rôle `expert_comptable` distinct, activé seulement après un engagement de responsabilité accepté et tracé ; chaque changement porte son auteur et son motif (AXE-800, voir ci-dessous). |
+
+> **Mode expert — décision de Louis du 2026-11-05.** Le mode expert (file de
+> tout ce qui est à traiter, « Imputer ») vise une entreprise qui gère sa
+> flotte **avec un expert-comptable**. C'est l'expert-comptable qui décide
+> de chaque imputation, dans le cadre de sa lettre de mission ; AxeL ne fait
+> que l'outil, il ne propose rien qui s'écrive seul. Pour que ce soit
+> prouvable, celui qui change une écriture en **prend la charge juridique** :
+> - rôle `expert_comptable` séparé d'admin, membre et lecture, avec nom,
+>   cabinet, numéro d'inscription à l'Ordre et lettre de mission (dossiers
+>   couverts) ;
+> - engagement de responsabilité (texte versionné, relu par un juriste,
+>   AXE-813) accepté avant tout accès, gardé mot pour mot dans le journal
+>   d'audit ;
+> - chaque imputation, annulation ou qualification d'anomalie enregistre son
+>   auteur, son motif et la version de l'engagement ; le chauffeur voit qui a
+>   reclassé son opération et pourquoi ;
+> - sans ce rôle et cet engagement, l'API refuse l'écriture (403).
+>
+> Tant qu'AXE-800 n'est pas livré, le mode expert existe dans le code
+> (AXE-560) sans cette garde : il ne doit pas être ouvert à un client réel.
 
 ### 2.4 Piste complémentaire
 

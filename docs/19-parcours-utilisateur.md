@@ -143,6 +143,14 @@ n'est pas confirmé par un juriste : **le gestionnaire ne voit rien de
 dossier-spécifique au-delà des agrégats de §2.1** — pas d'option cachée
 activée par défaut en attendant.
 
+**Exception, décidée le 2026-11-05 : l'expert-comptable de l'entreprise.**
+Une entreprise qui gère sa flotte avec un expert-comptable peut lui donner
+le rôle `expert_comptable`. Lui seul voit le détail des dossiers couverts
+par sa lettre de mission et peut y imputer, après avoir accepté un
+engagement de responsabilité ; chaque changement porte son nom et son
+motif, et le chauffeur les voit (doc 02 §2.3, AXE-800). Le logiciel ne
+décide pas à sa place. Un gestionnaire sans ce rôle garde la vue agrégée.
+
 ## 3. Modèle de compte et onboarding
 
 ### 3.1 Qui crée quoi
