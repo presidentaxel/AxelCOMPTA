@@ -441,6 +441,8 @@ class AnnulationImputationEntree(BaseModel):
 class FileExpertVue(BaseModel):
     sujets: list[SujetExpertVue]
     comptes: list[CompteChoix]
+    # AXE-829 : tags des dossiers présents dans la file, pour le filtre.
+    tags_par_dossier: dict[str, list[str]] = {}
 
 
 class ImputationEntree(BaseModel):
@@ -3968,7 +3970,14 @@ def _enregistrer_routes_expert(app: FastAPI) -> None:
                     avec_anomalies=not etat.exclu(dossier.id, "anomalies"),
                 )
             )
-        return FileExpertVue(sujets=sujets, comptes=_comptes_expert())
+        presents = {sujet.dossier_id for sujet in sujets}
+        return FileExpertVue(
+            sujets=sujets,
+            comptes=_comptes_expert(),
+            tags_par_dossier={
+                str(d): sorted(t) for d, t in etat.par_dossier.items() if str(d) in presents and t
+            },
+        )
 
     app.post("/expert/imputations", response_model=ImputationVue)(imputer_ecriture)
     app.post("/expert/imputations/annuler", status_code=204)(annuler_imputation)

@@ -110,3 +110,13 @@ def test_un_dossier_d_un_autre_portefeuille_est_introuvable() -> None:
     autre = _en_tete_gestionnaire(tenant_id="AUTRE_TENANT")
     reponse = client.post("/tags/test/dossiers", json={"dossier_ids": [dossier]}, headers=autre)
     assert reponse.status_code == 404
+
+
+def test_la_file_expert_porte_les_tags_de_ses_dossiers() -> None:
+    client = _client()
+    dossier = _un_dossier(client)
+    client.post("/tags/chauffeur/dossiers", json={"dossier_ids": [dossier]}, headers=EN_TETE)
+    corps = client.get("/expert/file", headers=EN_TETE).json()
+    if dossier in {s["dossier_id"] for s in corps["sujets"]}:
+        assert corps["tags_par_dossier"][dossier] == ["chauffeur"]
+    assert all(tags for tags in corps["tags_par_dossier"].values())

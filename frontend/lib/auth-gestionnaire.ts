@@ -24,7 +24,13 @@ import {
   extraireErreurSupabase,
   URL_SUPABASE,
 } from "./auth-chauffeur";
-import type { AlerteAnomalie, DossierAgregat, FileExpert, ImputationFaite } from "./types";
+import type {
+  AlerteAnomalie,
+  DossierAgregat,
+  FileExpert,
+  ImputationFaite,
+  ReglageTags,
+} from "./types";
 
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
@@ -634,4 +640,49 @@ export async function reglerRelanceDossier(dossierId: string, mode: ModeRelance 
     const corps = (await reponse.json().catch(() => ({}))) as { detail?: string };
     throw new ApiError(corps.detail ?? "Réglage refusé.", reponse.status);
   }
+}
+
+// --- Tags d'entreprises et exclusions (AXE-829) ---
+
+async function lireReglageTags(reponse: Response, message: string): Promise<ReglageTags> {
+  if (!reponse.ok) {
+    const corps = (await reponse.json().catch(() => null)) as { detail?: string } | null;
+    throw new ApiError(corps?.detail ?? message, reponse.status);
+  }
+  return (await reponse.json()) as ReglageTags;
+}
+
+export async function lireTags(): Promise<ReglageTags> {
+  return lireReglageTags(await requeteGestionnaire("/tags"), "Impossible de lire les tags.");
+}
+
+export async function creerTag(nom: string, description = ""): Promise<ReglageTags> {
+  const reponse = await requeteGestionnaire("/tags", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nom, description }),
+  });
+  return lireReglageTags(reponse, "Impossible de créer ce tag.");
+}
+
+/** Pose (ou retire, `pose` à false) un tag sur un ou plusieurs dossiers. */
+export async function poserTag(tag: string, dossierIds: string[], pose = true): Promise<void> {
+  const reponse = await requeteGestionnaire(`/tags/${encodeURIComponent(tag)}/dossiers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dossier_ids: dossierIds, pose }),
+  });
+  if (!reponse.ok) {
+    const corps = (await reponse.json().catch(() => null)) as { detail?: string } | null;
+    throw new ApiError(corps?.detail ?? "Le tag n'a pas été posé.", reponse.status);
+  }
+}
+
+export async function reglerExclusion(traitement: string, tags: string[]): Promise<ReglageTags> {
+  const reponse = await requeteGestionnaire(`/tags/exclusions/${encodeURIComponent(traitement)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tags }),
+  });
+  return lireReglageTags(reponse, "Le réglage n'a pas été enregistré.");
 }

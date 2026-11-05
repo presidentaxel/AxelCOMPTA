@@ -24,6 +24,15 @@ d'héritage implicite (doc 03 §3bis, doc 06 §7).
 
 ## Fichiers
 
+- `tags.py`, `tags_memoire.py`, `tags_postgres.py` (AXE-829) — tags
+  d'entreprises et exclusion des traitements. Un réglage par portefeuille
+  dit quels tags sortent un dossier de : synchro, classement automatique,
+  mode expert, anomalies, rappels, compteurs d'Entreprises. Par défaut,
+  `societe_du_gestionnaire`, `hors_perimetre` et `test` sont exclus de
+  tout. Poses, retraits et réglages sont des événements append-only
+  (migration `e5b9d3f72a48`) : rien n'est supprimé, tout est réversible et
+  tracé. `chauffeur` est posé à l'import d'après le NAF.
+
 - `sirene.py` (AXE-834) — configuration tirée de Sirene, pure : premier
   exercice à la date de création d'une société créée dans l'année, forme
   (SAS ou SARL marquées « à confirmer » : Sirene ne distingue plus

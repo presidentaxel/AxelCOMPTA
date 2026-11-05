@@ -27,6 +27,11 @@
     "lib/langage-chauffeur.ts",
     "lib/langage-chauffeur.test.ts",
     "lib/configuration-dossier.ts",
-    "lib/configuration-dossier.test.ts"
+    "lib/configuration-dossier.test.ts",
+    "lib/tags.ts",
+    "lib/tags.test.ts",
+    "lib/filtres-portefeuille.ts",
+    "lib/filtres-portefeuille.test.ts",
+    "lib/types.ts"
   ]
 }
