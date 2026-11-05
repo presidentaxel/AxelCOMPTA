@@ -70,6 +70,14 @@ class Dossier:
     # Exception au mode de relance du portefeuille pour ce dossier ; `None`
     # suit le portefeuille (doc 14 §2.3, « configuration par dossier »).
     relance_consentement: str | None = None
+    # Activité principale Sirene (NAF), par exemple 49.32Z pour un VTC
+    # (AXE-834). `None` : jamais lue.
+    code_naf: str | None = None
+    # Éléments de configuration proposés sans certitude (Sirene ne distingue
+    # pas SAS et SASU, ni SARL et EURL ; premier exercice déduit de la date
+    # de création) : « forme_juridique », « exercice ». Le dirigeant les
+    # confirme (AXE-730) ; le gestionnaire voit « à confirmer ».
+    a_confirmer: tuple[str, ...] = ()
 
     def fin_exercice(self) -> date:
         if self.exercice_fin is not None:

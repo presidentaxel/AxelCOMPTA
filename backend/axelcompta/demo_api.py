@@ -328,6 +328,9 @@ class DossierAgregat(BaseModel):
     # régime, pas un détail comptable (doc 19 §2.4).
     alerte_regime: str | None = None
     alerte_tva: str | None = None
+    # Configuration proposée sans certitude (AXE-834) : « forme_juridique »,
+    # « exercice ». Une information de configuration, pas un détail comptable.
+    a_confirmer: list[str] = []
 
 
 class AlerteAnomalieVue(BaseModel):
@@ -781,6 +784,7 @@ def _agregat(
         etape_precedente=etape_precedente,
         alerte_regime=alerte_option_ir(dossier),
         alerte_tva=stocke.alerte_tva,
+        a_confirmer=list(dossier.a_confirmer),
     )
 
 

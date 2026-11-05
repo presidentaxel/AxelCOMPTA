@@ -19,6 +19,7 @@ import {
   retirerDossier,
   type RegleRappel,
 } from "@/lib/auth-gestionnaire";
+import { phraseAConfirmer } from "@/lib/configuration-dossier";
 import {
   libelleBanque,
   libelleCompte,
@@ -341,7 +342,7 @@ export function EcranEntreprises() {
                     etape={dossier.etape_precedente}
                     compteOuvert={dossier.statut_invitation === "actif"}
                   />
-                  {[dossier.alerte_regime, dossier.alerte_tva]
+                  {[dossier.alerte_regime, dossier.alerte_tva, phraseAConfirmer(dossier.a_confirmer ?? [])]
                     .filter((alerte): alerte is string => alerte !== null)
                     .map((alerte) => (
                       <span key={alerte} className="block text-sm text-subtle">

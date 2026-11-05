@@ -59,6 +59,12 @@ class DossierRepository(ABC):
         la valeur posée par défaut à la création."""
 
     @abstractmethod
+    def reconfigurer_depuis_sirene(self, dossier: Dossier) -> None:
+        """Forme, bornes du premier exercice, activité et éléments à
+        confirmer, tirés de Sirene (AXE-834). Lève `ConfigurationInvalide`
+        avant d'écrire si la configuration n'a pas de sens."""
+
+    @abstractmethod
     def ouvrir_exercice(self, dossier: Dossier) -> None:
         """Seule mise à jour de configuration admise : à l'ouverture de
         l'exercice suivant (`axelcompta.exercices`), les bornes et les

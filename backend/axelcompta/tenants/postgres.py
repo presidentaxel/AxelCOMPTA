@@ -62,6 +62,8 @@ class PostgresDossierRepository(DossierRepository):
                     pack_metier=dossier.pack_metier,
                     option_ir_debut=dossier.option_ir_debut,
                     relance_consentement=dossier.relance_consentement,
+                    code_naf=dossier.code_naf,
+                    a_confirmer=list(dossier.a_confirmer),
                 )
                 .on_conflict_do_nothing(index_elements=[dossiers.c.id])
             )
@@ -99,6 +101,22 @@ class PostgresDossierRepository(DossierRepository):
             appliquer_rls(connexion)
             connexion.execute(
                 update(dossiers).where(dossiers.c.id == dossier_id).values(forme_juridique=forme)
+            )
+
+    def reconfigurer_depuis_sirene(self, dossier: Dossier) -> None:
+        configuration_de(dossier)
+        with self._engine.begin() as connexion:
+            appliquer_rls(connexion)
+            connexion.execute(
+                update(dossiers)
+                .where(dossiers.c.id == dossier.id)
+                .values(
+                    forme_juridique=dossier.forme_juridique,
+                    exercice_debut=dossier.exercice_debut,
+                    exercice_fin=dossier.exercice_fin,
+                    code_naf=dossier.code_naf,
+                    a_confirmer=list(dossier.a_confirmer),
+                )
             )
 
     def ouvrir_exercice(self, dossier: Dossier) -> None:
@@ -204,6 +222,8 @@ def _vers_dossier(ligne: Any) -> Dossier:
         pack_metier=ligne.pack_metier,
         option_ir_debut=ligne.option_ir_debut,
         relance_consentement=ligne.relance_consentement,
+        code_naf=ligne.code_naf,
+        a_confirmer=tuple(ligne.a_confirmer or ()),
     )
 
 

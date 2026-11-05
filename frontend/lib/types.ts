@@ -84,6 +84,8 @@ export type DossierAgregat = {
   etape_precedente: string;
   alerte_regime: string | null;
   alerte_tva: string | null;
+  /** AXE-834 : configuration proposée sans certitude, à confirmer par le dirigeant. */
+  a_confirmer: string[];
 };
 
 export type AlerteAnomalie = {

@@ -5,11 +5,12 @@ Composition root, comme `demo_seed.py`. Aucun compte n'est créé ici
 transactions viennent de l'API au moment de la synchro : rien de bancaire
 n'est écrit dans le dépôt.
 
-Digifactory ne donne pas la forme juridique. Le dossier est posé en SASU à
-l'IS le temps du premier enregistrement, puis la forme est reprise du
-répertoire Sirene (code `nature_juridique`) quand le contact a un SIREN.
-L'identité légale complète (siège, capital, associés) reste vide : Sirene
-ne suffit pas à la remplir, et on n'invente rien.
+Digifactory ne donne ni la forme juridique ni la date de création. Le
+dossier part en SASU à l'IS sur l'année civile, puis `preparer_dossier`
+reprend de Sirene la forme, le premier exercice et l'activité (AXE-834,
+`tenants/sirene.py`), en marquant « à confirmer » ce que Sirene ne tranche
+pas. Une société cessée n'a pas de dossier. L'identité légale complète
+(siège, capital, associés) reste vide : Sirene ne suffit pas à la remplir.
 
 Usage, depuis backend/ (`.env` à la racine) :
 
@@ -19,22 +20,19 @@ Usage, depuis backend/ (`.env` à la racine) :
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import date
 
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.tenants.models import Dossier
+from axelcompta.tenants.sirene import (
+    A_CONFIRMER_EXERCICE,
+    A_CONFIRMER_FORME,
+    FicheSirene,
+    configurer_depuis_sirene,
+)
 
 TENANT_DEMO = TenantId("TENANT_DEMO")
-# Nomenclature des catégories juridiques, niveau III.
-# Depuis juillet 2020, l'INSEE a fondu la SASU (5720) dans la SAS (5710)
-# et l'EURL (5498) dans la SARL (5499). On ne devine pas l'associé unique.
-_FORME_PAR_NATURE_JURIDIQUE = {
-    "1000": "EI",
-    "5498": "EURL",
-    "5499": "SARL",
-    "5710": "SAS",
-    "5720": "SASU",
-}
 
 
 def numero_contact(contact: Mapping[str, object]) -> str:
@@ -87,12 +85,26 @@ def siren_contact(contact: Mapping[str, object]) -> str | None:
     return None
 
 
-def forme_depuis_nature_juridique(nature: str) -> str | None:
-    """Forme de notre matrice, ou `None` si le code Sirene ne la détermine
-    pas (SAS et SASU partagent 5710 depuis 2020)."""
-    return _FORME_PAR_NATURE_JURIDIQUE.get(nature.strip())
-
-
 def _texte(contact: Mapping[str, object], cle: str) -> str:
     valeur = contact.get(cle)
     return valeur.strip() if isinstance(valeur, str) else ""
+
+
+def preparer_dossier(
+    voulu: Dossier, fiche: FicheSirene | None, aujourd_hui: date
+) -> tuple[Dossier | None, tuple[str, ...]]:
+    """Dossier à créer pour un contact, d'après sa fiche Sirene (AXE-834),
+    et les avertissements à afficher. `None` : la société est cessée, pas de
+    dossier. Sans fiche, le dossier garde ses valeurs par défaut et toute sa
+    configuration est à confirmer."""
+    if fiche is None:
+        a_confirmer = (A_CONFIRMER_EXERCICE, A_CONFIRMER_FORME)
+        return replace(voulu, a_confirmer=a_confirmer), ("pas de fiche Sirene",)
+    if not fiche.active:
+        return None, (f"société cessée (Sirene : {fiche.etat_administratif})",)
+    avertissements: tuple[str, ...] = ()
+    if not fiche.chauffeur:
+        avertissements = (
+            f"activité {fiche.code_naf or 'inconnue'} : pas un chauffeur, à vérifier",
+        )
+    return configurer_depuis_sirene(voulu, fiche, aujourd_hui), avertissements

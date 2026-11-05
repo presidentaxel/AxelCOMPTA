@@ -8,11 +8,12 @@ import pytest
 
 from axelcompta.demo_digifactory import (
     dossier_depuis_contact,
-    forme_depuis_nature_juridique,
     nom_affiche,
     numero_contact,
+    preparer_dossier,
     siren_contact,
 )
+from axelcompta.tenants.sirene import FicheSirene
 from axelcompta.tenants.statuts import configuration_de
 
 _AUJOURD_HUI = date(2026, 9, 26)
@@ -57,10 +58,32 @@ def test_le_siren_vient_du_champ_ou_des_neuf_premiers_du_siret() -> None:
     assert siren_contact({}) is None
 
 
-def test_la_nature_juridique_insee_donne_la_forme_sans_deviner_la_sasu() -> None:
-    assert forme_depuis_nature_juridique("5710") == "SAS"
-    assert forme_depuis_nature_juridique("5720") == "SASU"
-    assert forme_depuis_nature_juridique("5499") == "SARL"
-    assert forme_depuis_nature_juridique("5498") == "EURL"
-    assert forme_depuis_nature_juridique("1000") == "EI"
-    assert forme_depuis_nature_juridique("5599") is None
+def test_preparer_un_dossier_depuis_sirene() -> None:
+    """AXE-834 : JAC TRANSPORTS, créée le 13/03/2026, NAF 49.32Z."""
+    voulu = dossier_depuis_contact({"nr": "58591", "companyName": "JAC"}, _AUJOURD_HUI)
+    fiche = FicheSirene("102473030", "5710", "49.32Z", "A", date(2026, 3, 13))
+    dossier, avertissements = preparer_dossier(voulu, fiche, date(2026, 11, 5))
+    assert dossier is not None and avertissements == ()
+    assert dossier.exercice_debut == date(2026, 3, 13)
+    assert dossier.forme_juridique == "SAS"
+    assert dossier.a_confirmer == ("exercice", "forme_juridique")
+
+
+def test_une_societe_cessee_n_a_pas_de_dossier() -> None:
+    voulu = dossier_depuis_contact({"nr": "1"}, _AUJOURD_HUI)
+    dossier, avertissements = preparer_dossier(
+        voulu, FicheSirene("1", "5710", "49.32Z", "C", None), _AUJOURD_HUI
+    )
+    assert dossier is None
+    assert "cessée" in avertissements[0]
+
+
+def test_une_activite_hors_vtc_est_signalee_et_sans_fiche_tout_est_a_confirmer() -> None:
+    """SERENITY GROUPE (70.22Z) : créé mais signalé ; sans fiche, tout est à confirmer."""
+    voulu = dossier_depuis_contact({"nr": "4952"}, _AUJOURD_HUI)
+    conseil = FicheSirene("501518971", "5710", "70.22Z", "A", date(2007, 12, 13))
+    dossier, avertissements = preparer_dossier(voulu, conseil, _AUJOURD_HUI)
+    assert dossier is not None and "pas un chauffeur" in avertissements[0]
+    sans_fiche, _ = preparer_dossier(voulu, None, _AUJOURD_HUI)
+    assert sans_fiche is not None
+    assert sans_fiche.a_confirmer == ("exercice", "forme_juridique")
