@@ -111,3 +111,14 @@ seul module autorisé à transformer une `ProposedEntry` (sortie de
 
 [doc 05 §5](../../../docs/05-pipeline-categorisation.md#5-étage-4--revue-humaine),
 [ADR-004](../../../docs/adr/ADR-004-signature-electronique.md).
+
+## Opérations déjà classées (AXE-823)
+
+`classees.py` (pur) dit, pour chaque écriture classée, qui l'a classée
+(`auto` : règle ou modèle, `chauffeur` : décision, `expert` : imputation),
+avec quelle confiance et sur quel compte ; filtres, tri par confiance
+croissante, compteurs. `verdicts.py` / `verdicts_postgres.py` gardent les
+verdicts « juste » / « faux » (migration `b3d8f1a6c924`, append-only),
+sans écriture : ils servent à mesurer la précision (AXE-816). Route
+`GET /expert/classees`, filtrée et paginée (50) côté serveur.
+

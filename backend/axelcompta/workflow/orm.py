@@ -19,11 +19,13 @@ from __future__ import annotations
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     Column,
     DateTime,
     Float,
     ForeignKey,
+    Identity,
     LargeBinary,
     String,
     Table,
@@ -117,4 +119,18 @@ journal_audit = Table(
     Column("reference", String, nullable=False),
     Column("acteur", String, nullable=False),
     Column("acte_le", DateTime(timezone=True), nullable=False),
+)
+
+# Verdicts « juste » / « faux » sur un classement (AXE-823), sans écriture.
+# Append-only : le dernier par écriture fait foi.
+verdicts_classement = Table(
+    "verdicts_classement",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("rang", BigInteger, Identity(), nullable=False),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("ecriture_id", String, nullable=False),
+    Column("verdict", String, nullable=False),
+    Column("par", String, nullable=False),
+    Column("le", DateTime(timezone=True), nullable=False),
 )

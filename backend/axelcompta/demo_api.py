@@ -187,6 +187,14 @@ from axelcompta.tenants.tags import (
     nom_de_tag,
 )
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
+from axelcompta.workflow.classees import (
+    Filtres,
+    OperationClassee,
+    Statut,
+    compter,
+    trier,
+)
+from axelcompta.workflow.classees import classer as classer_operations
 from axelcompta.workflow.decisions import (
     CATEGORIE_ANNULATION,
     DecisionHumaine,
@@ -212,6 +220,8 @@ from axelcompta.workflow.revue import (
 from axelcompta.workflow.signature import DocumentSigne, SignatureRepository
 from axelcompta.workflow.signature_demo import SignatureDemoProvider
 from axelcompta.workflow.signature_postgres import PostgresSignatureRepository
+from axelcompta.workflow.verdicts import VerdictsRepository
+from axelcompta.workflow.verdicts_postgres import PostgresVerdicts
 
 _TYPES_IMAGE_ACCEPTES = ("image/jpeg", "image/png", "image/webp", "image/heic", "image/heif")
 _EXTENSIONS_IMAGE = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
@@ -1140,6 +1150,14 @@ DecisionsDep = Annotated[DecisionRepository, Depends(get_decisions)]
 DossiersDep = Annotated[DossierRepository, Depends(get_dossiers)]
 LedgerBaseDep = Annotated[LedgerService, Depends(get_ledger)]
 PropositionsDep = Annotated[PropositionRepository, Depends(get_propositions)]
+
+
+def get_verdicts() -> VerdictsRepository:
+    """Verdicts « juste » / « faux » sur les classements (AXE-823)."""
+    return PostgresVerdicts(_engine())
+
+
+VerdictsDep = Annotated[VerdictsRepository, Depends(get_verdicts)]
 PipelineDep = Annotated[RulesAndMlPipeline, Depends(get_pipeline)]
 
 
@@ -4065,6 +4083,171 @@ def _enregistrer_routes_expert(app: FastAPI) -> None:
 
     app.post("/expert/imputations", response_model=ImputationVue)(imputer_ecriture)
     app.post("/expert/imputations/annuler", status_code=204)(annuler_imputation)
+    _enregistrer_routes_classees(app)
+    _enregistrer_route_verdict(app)
+
+
+PAR_PAGE_CLASSEES = 50
+
+
+class OperationClasseeVue(BaseModel):
+    dossier_id: str
+    dossier_nom: str
+    ecriture_id: str
+    date: str
+    libelle: str
+    montant_cts: int
+    compte: str
+    categorie: str | None
+    origine: str
+    confiance: float | None
+    statut: str
+    sens: str
+    verdict: str | None
+
+
+class CompteursClasseesVue(BaseModel):
+    auto: int
+    chauffeur: int
+    expert: int
+    justes: int
+    fausses: int
+
+
+class OperationsClasseesVue(BaseModel):
+    operations: list[OperationClasseeVue]
+    total: int
+    page: int
+    pages: int
+    compteurs: CompteursClasseesVue
+    categories: list[str]
+
+
+class VerdictEntree(BaseModel):
+    dossier_id: str
+    ecriture_id: str
+    verdict: Literal["juste", "faux"]
+
+
+def _operations_du_dossier(
+    dossier: Dossier,
+    base: LedgerService,
+    decisions: DecisionRepository,
+    propositions: PropositionRepository,
+    verdicts: VerdictsRepository,
+) -> list[OperationClassee]:
+    """Une lecture par source et par dossier : grand livre, décisions,
+    propositions, verdicts. Aucune proposition recalculée."""
+    ledger = _ledger_avec_decisions(dossier, base, decisions)
+    en_vigueur: dict[EcritureId, str] = {}
+    for decision in decisions.lister_decisions(dossier.id):
+        if decision.categorie == CATEGORIE_ANNULATION:
+            en_vigueur.pop(decision.ecriture_id, None)
+        else:
+            en_vigueur[decision.ecriture_id] = decision.categorie
+    return classer_operations(
+        ledger.grand_livre(dossier.id),
+        propositions.lister(dossier.id),
+        en_vigueur,
+        verdicts.derniers(dossier.id),
+    )
+
+
+def _vue_classee(operation: OperationClassee, noms: dict[DossierId, str]) -> OperationClasseeVue:
+    return OperationClasseeVue(
+        dossier_id=str(operation.dossier_id),
+        dossier_nom=noms.get(operation.dossier_id, str(operation.dossier_id)),
+        ecriture_id=str(operation.ecriture_id),
+        date=operation.date.isoformat(),
+        libelle=operation.libelle,
+        montant_cts=operation.montant_cts,
+        compte=operation.compte,
+        categorie=operation.categorie,
+        origine=operation.origine,
+        confiance=operation.confiance,
+        statut=operation.statut,
+        sens=operation.sens,
+        verdict=operation.verdict,
+    )
+
+
+def _page_classees(
+    operations: list[OperationClassee], filtres: Filtres, tri: str, page: int
+) -> tuple[list[OperationClassee], int, int]:
+    """(tranche de la page, total filtré, nombre de pages)."""
+    gardees = trier((o for o in operations if filtres.garde(o)), tri)
+    pages = max(1, -(-len(gardees) // PAR_PAGE_CLASSEES))
+    courante = min(max(1, page), pages)
+    debut = (courante - 1) * PAR_PAGE_CLASSEES
+    return gardees[debut : debut + PAR_PAGE_CLASSEES], len(gardees), pages
+
+
+def _enregistrer_routes_classees(app: FastAPI) -> None:
+    @app.get("/expert/classees", response_model=OperationsClasseesVue)
+    def lire_classees(  # noqa: PLR0913 — un paramètre par filtre de l'URL
+        dossiers: DossiersDep,
+        base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        propositions: PropositionsDep,
+        verdicts: VerdictsDep,
+        identite: IdentiteDep,
+        statut: Statut | None = None,
+        origine: str | None = None,
+        categorie: str | None = None,
+        tranche: str | None = None,
+        sens: str | None = None,
+        dossier: str | None = None,
+        tri: str = "recentes",
+        page: int = 1,
+    ) -> OperationsClasseesVue:
+        """Opérations déjà classées du portefeuille (AXE-823), filtrées et
+        paginées côté serveur. Les compteurs portent sur tout le portefeuille."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        portefeuille = [
+            d for d in dossiers.lister_par_tenant(tenant_id) if dossier in (None, str(d.id))
+        ]
+        noms = {d.id: d.nom for d in portefeuille}
+        operations = [
+            o
+            for d in portefeuille
+            for o in _operations_du_dossier(d, base, decisions, propositions, verdicts)
+        ]
+        filtres = Filtres(statut, origine, categorie, tranche, sens)
+        tranche_page, total, pages = _page_classees(operations, filtres, tri, page)
+        compteurs = compter(operations)
+        return OperationsClasseesVue(
+            operations=[_vue_classee(o, noms) for o in tranche_page],
+            total=total,
+            page=min(max(1, page), pages),
+            pages=pages,
+            compteurs=CompteursClasseesVue(**dataclasses.asdict(compteurs)),
+            categories=sorted({o.categorie for o in operations if o.categorie}),
+        )
+
+
+def _enregistrer_route_verdict(app: FastAPI) -> None:
+    @app.post("/expert/classees/verdict", status_code=204)
+    def noter_verdict(
+        entree: VerdictEntree,
+        dossiers: DossiersDep,
+        verdicts: VerdictsDep,
+        role: RoleMembreDep,
+        identite: IdentiteDep,
+    ) -> None:
+        """« Juste » ou « faux », sans écriture. « Faux » ne corrige rien :
+        l'imputation reste un geste à part (mode expert)."""
+        tenant_id, identite_ok = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, "La lecture ne note pas un classement.")
+        dossier = dossiers.obtenir(DossierId(entree.dossier_id))
+        if dossier is None or dossier.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Dossier inconnu.")
+        verdicts.noter(
+            dossier.id,
+            EcritureId(entree.ecriture_id),
+            entree.verdict,
+            identite_ok.user_id,
+            datetime.now(UTC),
+        )
 
 
 def create_app() -> FastAPI:
