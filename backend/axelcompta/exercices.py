@@ -63,6 +63,10 @@ from axelcompta.workflow.revue import appliquer_decisions
 class PassageRefuse(ValueError):
     """L'exercice ne peut pas être clos maintenant ; le message dit pourquoi."""
 
+    def __init__(self, message: str, *, code: str = "autre") -> None:
+        super().__init__(message)
+        self.code = code
+
 
 @dataclass(frozen=True, slots=True)
 class PassageExercice:
@@ -82,10 +86,16 @@ def preparer_passage(
 ) -> PassageExercice:
     fin = dossier.fin_exercice()
     if fin >= aujourd_hui:
-        raise PassageRefuse(f"l'exercice se termine le {fin:%d/%m/%Y}, il n'est pas terminé")
+        raise PassageRefuse(
+            f"L'exercice se termine le {fin:%d/%m/%Y} : il n'est pas terminé.",
+            code="pas_termine",
+        )
     en_attente = ecritures_a_trancher(ledger, decisions, dossier.id)
     if en_attente:
-        raise PassageRefuse(f"{len(en_attente)} opération(s) attendent encore une décision")
+        raise PassageRefuse(
+            f"Il reste {len(en_attente)} opération(s) à traiter avant de clore.",
+            code="operations",
+        )
     configuration = configuration_de(dossier)
     colonne = configuration.colonne
     tranchees = appliquer_decisions(

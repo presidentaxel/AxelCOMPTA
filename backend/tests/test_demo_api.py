@@ -555,6 +555,74 @@ def test_trancher_deux_fois_la_meme_ecriture_est_refuse() -> None:
     assert reponse.status_code == 409
 
 
+def test_annuler_une_decision_remet_l_operation_a_traiter() -> None:
+    client = _client()
+    en_tete = _en_tete("DEMO_sophie")
+    avant = client.get("/dossiers/DEMO_sophie", headers=en_tete).json()["nb_a_trancher"]
+    ecriture_id = _premiere_a_trancher(client, "DEMO_sophie")
+    decision = client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/decision",
+        json={"categorie": "usage_personnel"},
+        headers=en_tete,
+    )
+    assert decision.status_code == 200
+    assert client.get("/dossiers/DEMO_sophie", headers=en_tete).json()["nb_a_trancher"] == avant - 1
+
+    annulation = client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/annulation",
+        headers=en_tete,
+    )
+
+    assert annulation.status_code == 200
+    assert annulation.json()["statut"] == "à trancher"
+    assert client.get("/dossiers/DEMO_sophie", headers=en_tete).json()["nb_a_trancher"] == avant
+    a_nouveau = client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/decision",
+        json={"categorie": "carburant"},
+        headers=en_tete,
+    )
+    assert a_nouveau.status_code == 200
+
+
+def test_corriger_une_decision_enregistre_la_nouvelle_sans_ecraser_la_premiere_voie() -> None:
+    client = _client()
+    en_tete = _en_tete("DEMO_sophie")
+    ecriture_id = _premiere_a_trancher(client, "DEMO_sophie")
+    client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/decision",
+        json={"categorie": "usage_personnel"},
+        headers=en_tete,
+    )
+
+    correction = client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/correction",
+        json={"categorie": "carburant"},
+        headers=en_tete,
+    )
+    refuse = client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/decision",
+        json={"categorie": "repas_et_receptions"},
+        headers=en_tete,
+    )
+
+    assert correction.status_code == 200
+    assert correction.json()["statut"] == "validé"
+    assert refuse.status_code == 409
+
+
+def test_liasse_definitive_et_signature_refusent_s_il_reste_des_operations() -> None:
+    client = _client()
+    en_tete = _en_tete("DEMO_sophie")
+    assert client.get("/dossiers/DEMO_sophie", headers=en_tete).json()["nb_a_trancher"] > 0
+
+    liasse = client.get("/dossiers/DEMO_sophie/liasse-fiscale.pdf", headers=en_tete)
+    signature = client.post("/dossiers/DEMO_sophie/greffe-inpi/signature", headers=en_tete)
+
+    assert liasse.status_code == 409
+    assert "à traiter" in liasse.json()["detail"]
+    assert signature.status_code == 409
+
+
 def test_trancher_une_ecriture_deja_validee_est_refuse() -> None:
     client = _client()
     en_tete = _en_tete("DEMO_karim")
@@ -1270,13 +1338,19 @@ def test_remise_a_neuf_reservee_a_un_admin_du_portefeuille_demo() -> None:
     assert appels_membre == appels_autre == []
 
 
-def _poser_notification(client: TestClient, dossier_id: str, id_: str, heure: int) -> None:
+def _poser_notification(
+    client: TestClient,
+    dossier_id: str,
+    id_: str,
+    heure: int,
+    type_: str = "a_trancher",
+) -> None:
     depot = client.app.dependency_overrides[get_notifications]()  # type: ignore[attr-defined]
     depot.enregistrer(
         NotificationEnvoyee(
             id=id_,
             dossier_id=DossierId(dossier_id),
-            type="a_trancher",
+            type=type_,
             envoye_le=datetime(2026, 9, 26, heure, 0),
             ecriture_ids=(EcritureId("e1"), EcritureId("e2")),
         )
@@ -1287,16 +1361,26 @@ def test_notifications_du_chauffeur_les_plus_recentes_dabord_puis_lues() -> None
     client = _client()
     _poser_notification(client, "DEMO_sophie", "n1", 9)
     _poser_notification(client, "DEMO_sophie", "n2", 15)
-    _poser_notification(client, "DEMO_karim", "n3", 10)
+    _poser_notification(client, "DEMO_sophie", "banque", 12, "connexion_a_refaire")
+    _poser_notification(client, "DEMO_karim", "n3", 10, "connexion_a_refaire")
     url = "/dossiers/DEMO_sophie/notifications"
     en_tete = _en_tete("DEMO_sophie")
 
     liste = client.get(url, headers=en_tete).json()
-    assert [(n["id"], n["lue"]) for n in liste] == [("n2", False), ("n1", False)]
-    assert liste[0]["message"] == "2 opérations attendent votre confirmation"
+    # Le doublon « à traiter » ne s'affiche qu'une fois (la plus récente),
+    # avec le nombre réel, pas celui figé à l'envoi.
+    assert [n["id"] for n in liste] == ["n2", "banque"]
+    assert liste[0]["type"] == "a_trancher"
+    assert liste[0]["lue"] is False
+    nb = client.get("/dossiers/DEMO_sophie", headers=en_tete).json()["nb_a_trancher"]
+    assert nb > 1
+    assert liste[0]["message"] == f"{nb} opérations sont à traiter"
+    assert "confirmation" not in liste[0]["message"]
 
-    assert client.post(f"{url}/lues", headers=en_tete).json() == {"lues": 2}
-    assert all(n["lue"] for n in client.get(url, headers=en_tete).json())
+    assert client.post(f"{url}/{liste[0]['id']}/lue", headers=en_tete).json() == {"lue": True}
+    relue = client.get(url, headers=en_tete).json()
+    assert relue[0]["lue"] is True
+    assert relue[1]["lue"] is False
     karim = client.get("/dossiers/DEMO_karim/notifications", headers=_en_tete("DEMO_karim"))
     assert [n["lue"] for n in karim.json()] == [False]
 

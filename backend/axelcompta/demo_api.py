@@ -163,10 +163,21 @@ from axelcompta.tenants.statuts import (
     charger_matrice,
     configuration_de,
 )
-from axelcompta.workflow.decisions import DecisionHumaine, DecisionRepository
+from axelcompta.workflow.decisions import (
+    CATEGORIE_ANNULATION,
+    DecisionHumaine,
+    DecisionRepository,
+    decision_en_vigueur,
+)
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
 from axelcompta.workflow.expert import ImputationRefusee, preparer_imputation
-from axelcompta.workflow.notifications import NotificationRepository
+from axelcompta.workflow.notifications import (
+    TYPE_A_TRANCHER,
+    NotificationRepository,
+)
+from axelcompta.workflow.notifications import (
+    message as message_a_traiter,
+)
 from axelcompta.workflow.notifications_postgres import PostgresNotificationRepository
 from axelcompta.workflow.propositions import PropositionRepository
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
@@ -608,12 +619,7 @@ def _resume(
 ) -> DossierResume:
     ecritures = ledger.grand_livre(dossier.id)
     liasse = _construire_liasse(dossier, ledger, provisions)
-    exclues = annulees(ecritures)
-    nb_a_trancher = sum(
-        1
-        for e in ecritures
-        if e.id not in exclues and any(ligne.compte == COMPTE_ATTENTE for ligne in e.lignes)
-    )
+    nb_a_trancher = _nb_a_trancher(ecritures)
     invitation = comptes.statut(dossier.id)
     document_cloture = signatures.dernier(dossier.id, TYPE_DOCUMENT_CLOTURE)
     document_greffe = signatures.dernier(dossier.id, TYPE_DOCUMENT_GREFFE_INPI)
@@ -850,6 +856,30 @@ def _avec_propositions(
         else vue
         for vue in vues
     ]
+
+
+def _nb_a_trancher(ecritures: tuple[Ecriture, ...] | list[Ecriture]) -> int:
+    exclues = annulees(ecritures)
+    return sum(
+        1
+        for e in ecritures
+        if e.id not in exclues and any(ligne.compte == COMPTE_ATTENTE for ligne in e.lignes)
+    )
+
+
+def _refuser_si_operations_a_traiter(dossier: Dossier, ledger: InMemoryLedgerService) -> None:
+    """La liasse définitive et la signature du dépôt attendent que tout soit classé."""
+    nb = _nb_a_trancher(ledger.grand_livre(dossier.id))
+    if nb == 0:
+        return
+    reste = "une opération" if nb == 1 else f"{nb} opérations"
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            f"Il reste {reste} à traiter avant de signer ou de récupérer "
+            "le dossier pour les impôts."
+        ),
+    )
 
 
 def _montant_512(ecriture: Ecriture) -> int:
@@ -1194,7 +1224,8 @@ def _trancher(
         raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
     if ecriture.id in annulees(ecritures):
         raise HTTPException(status_code=409, detail="Cette écriture a été contre-passée.")
-    if decisions.decision_courante(dossier.id, EcritureId(ecriture_id)) is not None:
+    courante = decisions.decision_courante(dossier.id, EcritureId(ecriture_id))
+    if decision_en_vigueur(courante) is not None:
         raise HTTPException(
             status_code=409,
             detail="Cette écriture a déjà été tranchée (doc 05 §5 : décision immuable).",
@@ -1228,6 +1259,55 @@ def _trancher(
     )
     ledger_a_jour = _ledger_avec_decisions(dossier, base, decisions)
     return next(e for e in ledger_a_jour.grand_livre(dossier.id) if e.id == ecriture_id)
+
+
+def _decision_suivante(
+    dossier: Dossier,
+    ecriture_id: str,
+    categorie: str,
+    base: LedgerService,
+    decisions: DecisionRepository,
+    justificatifs: JustificatifRepository,
+    decide_par: UserId,
+) -> TransactionVue:
+    """Enregistre une décision qui en remplace une déjà en vigueur."""
+    courante = decisions.decision_courante(dossier.id, EcritureId(ecriture_id))
+    en_vigueur = decision_en_vigueur(courante)
+    if en_vigueur is None:
+        raise HTTPException(status_code=409, detail="Cette opération n'a pas encore été classée.")
+    if categorie != CATEGORIE_ANNULATION:
+        ecritures = base.grand_livre(dossier.id)
+        ecriture = next((e for e in ecritures if e.id == ecriture_id), None)
+        if ecriture is None:
+            raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
+        try:
+            resoudre_ecriture_a_trancher(
+                ecriture,
+                categorie,
+                configuration_de(dossier).comptes_categories_statut(),
+                charger_compte_par_categorie(),
+            )
+        except CategorieInconnueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    decisions.enregistrer_decision(
+        DecisionHumaine(
+            dossier_id=dossier.id,
+            ecriture_id=EcritureId(ecriture_id),
+            categorie=categorie,
+            etage_origine=en_vigueur.etage_origine,
+            confiance_origine=en_vigueur.confiance_origine,
+            decide_par=decide_par,
+            decide_le=datetime.now(UTC),
+        )
+    )
+    ledger = _ledger_avec_decisions(dossier, base, decisions)
+    ecritures_vues = ledger.grand_livre(dossier.id)
+    ecriture_vue = next(e for e in ecritures_vues if e.id == ecriture_id)
+    return _transaction_vue(
+        ecriture_vue,
+        justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture_vue.id),
+        ecriture_vue.id in annulees(ecritures_vues),
+    )
 
 
 def _a_trancher_ou_refus(
@@ -1587,6 +1667,59 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
             ecriture,
             justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture.id),
             ecriture.id in annulees(ledger.grand_livre(dossier.id)),
+        )
+
+
+def _enregistrer_routes_correction(app: FastAPI) -> None:
+    """Annuler ou corriger : une nouvelle décision, l'ancienne reste en historique."""
+
+    @app.post(
+        "/dossiers/{dossier_id}/transactions/{ecriture_id}/annulation",
+        response_model=TransactionVue,
+    )
+    def annuler_decision(
+        ecriture_id: str,
+        dossier: DossierDep,
+        base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        justificatifs: JustificatifsDep,
+        identite: IdentiteDep,
+    ) -> TransactionVue:
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        return _decision_suivante(
+            dossier,
+            ecriture_id,
+            CATEGORIE_ANNULATION,
+            base,
+            decisions,
+            justificatifs,
+            identite.user_id,
+        )
+
+    @app.post(
+        "/dossiers/{dossier_id}/transactions/{ecriture_id}/correction",
+        response_model=TransactionVue,
+    )
+    def corriger_decision(
+        ecriture_id: str,
+        entree: DecisionEntree,
+        dossier: DossierDep,
+        base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        justificatifs: JustificatifsDep,
+        identite: IdentiteDep,
+    ) -> TransactionVue:
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        if entree.categorie == CATEGORIE_ANNULATION:
+            raise HTTPException(status_code=400, detail="Cette catégorie n'est pas reconnue.")
+        return _decision_suivante(
+            dossier,
+            ecriture_id,
+            entree.categorie,
+            base,
+            decisions,
+            justificatifs,
+            identite.user_id,
         )
 
 
@@ -2456,6 +2589,7 @@ def _enregistrer_routes_cloture(app: FastAPI) -> None:
     def telecharger_liasse_fiscale(
         dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
     ) -> Response:
+        _refuser_si_operations_a_traiter(dossier, ledger)
         pdf = PdfLiasseFiscaleRenderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
         )
@@ -2563,6 +2697,7 @@ def _enregistrer_routes_greffe_inpi(app: FastAPI) -> None:
     ) -> SignatureGreffeVue:
         identite = _verifier_acces_dossier(dossier.id, identite)
         _exiger_depot_greffe(dossier)
+        _refuser_si_operations_a_traiter(dossier, ledger)
         pdf_non_signe = _document_greffe_inpi(
             dossier, ledger, _provisions_saisies(dossier, provisions)
         )
@@ -2580,8 +2715,13 @@ def _enregistrer_routes_greffe_inpi(app: FastAPI) -> None:
 
 class NotificationVue(BaseModel):
     id: str
+    type: str
     message: str
     cree_le: str
+    lue: bool
+
+
+class NotificationLueVue(BaseModel):
     lue: bool
 
 
@@ -2600,17 +2740,33 @@ def _enregistrer_routes_notifications(app: FastAPI) -> None:
 
     @app.get("/dossiers/{dossier_id}/notifications", response_model=list[NotificationVue])
     def lister_notifications(
-        dossier: DossierDep, notifications: NotificationsDep
+        dossier: DossierDep, notifications: NotificationsDep, ledger: LedgerDossierDep
     ) -> list[NotificationVue]:
-        return [
-            NotificationVue(
-                id=n.id,
-                message=n.message,
-                cree_le=n.envoye_le.isoformat(),
-                lue=n.lue_le is not None,
+        """Une notification par type, la plus récente. Le nombre d'opérations
+        à traiter est celui d'aujourd'hui, pas celui figé à l'envoi."""
+        nb = _nb_a_trancher(ledger.grand_livre(dossier.id))
+        vues: list[NotificationVue] = []
+        types_vus: set[str] = set()
+        for n in notifications.lister(dossier.id, _NOTIFICATIONS_AFFICHEES):
+            if n.type in types_vus:
+                continue
+            types_vus.add(n.type)
+            if n.type == TYPE_A_TRANCHER:
+                if nb == 0:
+                    continue
+                texte = message_a_traiter(nb)
+            else:
+                texte = n.message
+            vues.append(
+                NotificationVue(
+                    id=n.id,
+                    type=n.type,
+                    message=texte,
+                    cree_le=n.envoye_le.isoformat(),
+                    lue=n.lue_le is not None,
+                )
             )
-            for n in notifications.lister(dossier.id, _NOTIFICATIONS_AFFICHEES)
-        ]
+        return vues
 
     @app.post("/dossiers/{dossier_id}/notifications/lues", response_model=NotificationsLuesVue)
     def marquer_notifications_lues(
@@ -2618,6 +2774,18 @@ def _enregistrer_routes_notifications(app: FastAPI) -> None:
     ) -> NotificationsLuesVue:
         maintenant = datetime.now(UTC).replace(tzinfo=None)
         return NotificationsLuesVue(lues=notifications.marquer_lues(dossier.id, maintenant))
+
+    @app.post(
+        "/dossiers/{dossier_id}/notifications/{notification_id}/lue",
+        response_model=NotificationLueVue,
+    )
+    def marquer_une_notification_lue(
+        notification_id: str, dossier: DossierDep, notifications: NotificationsDep
+    ) -> NotificationLueVue:
+        maintenant = datetime.now(UTC).replace(tzinfo=None)
+        if not notifications.marquer_lue(dossier.id, notification_id, maintenant):
+            raise HTTPException(status_code=404, detail="Notification introuvable.")
+        return NotificationLueVue(lue=True)
 
 
 class ClotureExerciceVue(BaseModel):
@@ -2632,6 +2800,8 @@ class ClotureExerciceVue(BaseModel):
     changements: list[str] = []
     # Texte à accepter tel quel ; renvoyé à l'identique pour valider.
     attestation: str | None = None
+    # pas_termine | operations | clos | autre. Le texte seul ne sert pas de drapeau.
+    code: str | None = None
 
 
 class ValidationClotureEntree(BaseModel):
@@ -2662,7 +2832,9 @@ def _preparer_cloture(
             provisions,
         )
     except PassageRefuse as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        erreur = HTTPException(status_code=409, detail=str(exc))
+        erreur.code_metier = exc.code  # type: ignore[attr-defined]
+        raise erreur from exc
 
 
 class ProvisionVue(BaseModel):
@@ -2743,6 +2915,16 @@ def _passage_cloture(
     )
 
 
+def _vue_cloture_impossible(refus: HTTPException, debut: str, fin: str) -> ClotureExerciceVue:
+    return ClotureExerciceVue(
+        possible=False,
+        raison=str(refus.detail),
+        code=getattr(refus, "code_metier", None),
+        exercice_debut=debut,
+        exercice_fin=fin,
+    )
+
+
 def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
     """Le chauffeur seul valide la clôture. L'attestation est gardée mot pour mot."""
 
@@ -2760,9 +2942,7 @@ def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
         try:
             passage = _passage_cloture(dossier, ledger, decisions, avenants, provisions)
         except HTTPException as refus:
-            return ClotureExerciceVue(
-                possible=False, raison=str(refus.detail), exercice_debut=debut, exercice_fin=fin
-            )
+            return _vue_cloture_impossible(refus, debut, fin)
         return ClotureExerciceVue(
             possible=True,
             exercice_debut=debut,
@@ -2796,7 +2976,8 @@ def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
         executer_passage(passage, ledger, dossiers, exercices, maintenant, identite.user_id, texte)
         return ClotureExerciceVue(
             possible=False,
-            raison="Exercice clos.",
+            raison="L'exercice est clos.",
+            code="clos",
             exercice_debut=passage.apres.exercice_debut.isoformat(),
             exercice_fin=passage.apres.fin_exercice().isoformat(),
         )
@@ -3490,6 +3671,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_parametres_demo(app)
     _enregistrer_routes_dossiers(app)
     _enregistrer_routes_transactions(app)
+    _enregistrer_routes_correction(app)
     _enregistrer_routes_anomalies(app)
     _enregistrer_routes_expert(app)
     _enregistrer_routes_revue(app)

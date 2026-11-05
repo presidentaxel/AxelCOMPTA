@@ -92,7 +92,7 @@ def test_une_notification_regroupe_tout_ce_qui_attend() -> None:
     env.notifier(T0)
 
     (notification,) = env.notifs.historique
-    assert notification.message == "3 opérations attendent votre confirmation"
+    assert notification.message == "3 opérations sont à traiter"
     assert notification.lue_le is None
 
 
@@ -123,8 +123,8 @@ def test_le_message_ne_contient_ni_montant_ni_libelle() -> None:
 
 
 def test_singulier_et_pluriel() -> None:
-    assert message(1) == "Une opération attend votre confirmation"
-    assert message(4) == "4 opérations attendent votre confirmation"
+    assert message(1) == "Une opération est à traiter"
+    assert message(4) == "4 opérations sont à traiter"
 
 
 def test_marquer_lues_ne_touche_que_les_non_lues_du_dossier() -> None:

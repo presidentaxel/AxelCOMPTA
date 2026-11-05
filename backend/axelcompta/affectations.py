@@ -69,7 +69,7 @@ def _solde(balance: dict[str, int], *prefixes: str) -> int:
 def _dernier_clos(dossier: Dossier, exercices: ExerciceRepository) -> ExerciceClos:
     clos = exercices.lister(dossier.id)
     if not clos:
-        raise AffectationImpossible("aucun exercice clos : clôturez d'abord l'exercice")
+        raise AffectationImpossible("Aucun exercice n'est clos. Clôturez d'abord l'exercice.")
     return clos[-1]
 
 
@@ -92,7 +92,7 @@ def proposer(
     # L'écriture fait foi : une décision tracée mais interrompue avant
     # l'écriture se termine en la rejouant à l'identique (`decider`).
     if any(e.id == id_affectation(dossier.id, annee) for e in grand_livre):
-        raise AffectationImpossible(f"le résultat {annee} est déjà affecté")
+        raise AffectationImpossible(f"Le résultat {annee} est déjà affecté.")
     depuis_ouverture = soldes(tuple(e for e in grand_livre if e.date >= dossier.exercice_debut))
     de_l_exercice_clos = soldes(tuple(e for e in grand_livre if clos.debut <= e.date <= clos.fin))
     charges = _solde(de_l_exercice_clos, "6") - _solde(de_l_exercice_clos, *_HORS_CHARGES_COURANTES)
@@ -172,7 +172,7 @@ def dividendes_decides(
     clos = _dernier_clos(dossier, exercices)
     decision = affectations.obtenir(dossier.id, clos.fin.year)
     if decision is None or decision.dividendes_cts <= 0:
-        raise AffectationImpossible("aucun dividende décidé sur le dernier exercice clos")
+        raise AffectationImpossible("Aucun dividende n'a été décidé sur le dernier exercice clos.")
     cible = id_retenues(dossier.id, decision.annee_exercice)
     declare = next((e for e in ledger.grand_livre(dossier.id) if e.id == cible), None)
     detail = None
@@ -202,10 +202,10 @@ def declarer_versement(
     """Le chauffeur déclare avoir versé ses dividendes : les retenues à la
     source passent en 4423, la 2777 est à déposer avant le 15 du mois suivant."""
     if decides.declare is not None:
-        raise AffectationImpossible("ce versement est déjà déclaré")
+        raise AffectationImpossible("Ce versement est déjà déclaré.")
     if not decides.decide_le <= verse_le <= aujourd_hui:
         raise AffectationImpossible(
-            "la date de versement doit suivre la décision et ne pas être dans le futur"
+            "La date de versement doit suivre la décision et ne pas être dans le futur."
         )
     detail = retenues(decides.brut, verse_le, dispense_prelevement)
     ledger.enregistrer(ecriture_retenues(dossier.id, decides.annee_exercice, detail))
@@ -217,9 +217,9 @@ def declarer_versement(
 
 def enregistrer_bulletin(dossier: Dossier, ledger: LedgerService, bulletin: Bulletin) -> Ecriture:
     if not configuration_de(dossier).paie_par_bulletin:
-        raise AffectationImpossible("seul un président assimilé salarié a un bulletin de paie")
+        raise AffectationImpossible("Seul un président assimilé salarié a un bulletin de paie.")
     if any(e.id == id_bulletin(dossier.id, bulletin.mois) for e in ledger.grand_livre(dossier.id)):
-        raise AffectationImpossible(f"le bulletin de {bulletin.mois} est déjà enregistré")
+        raise AffectationImpossible(f"Le bulletin de {bulletin.mois} est déjà enregistré.")
     ecriture = ecriture_bulletin(dossier.id, bulletin)
     ledger.enregistrer(ecriture)
     return ecriture

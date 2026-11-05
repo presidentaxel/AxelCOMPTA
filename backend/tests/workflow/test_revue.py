@@ -82,7 +82,7 @@ def test_categorie_inconnue_du_pack_leve_plutot_que_deviner() -> None:
 def test_micro_entreprise_usage_personnel_signale_sans_ecriture() -> None:
     comptes = _comptes_statut("EI", "micro")
     assert comptes["usage_personnel"] is None
-    with pytest.raises(CategorieInconnueError, match="signalé sans écriture"):
+    with pytest.raises(CategorieInconnueError, match="signalée sans écriture"):
         resoudre_ecriture_a_trancher(_ecriture_a_trancher(), "usage_personnel", comptes, COMPTES)
 
 

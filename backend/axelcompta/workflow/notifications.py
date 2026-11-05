@@ -27,7 +27,7 @@ from axelcompta.core.ids import DossierId, EcritureId
 from axelcompta.ledger.contrepassation import annulees
 from axelcompta.ledger.service import LedgerService
 
-from .decisions import DecisionRepository
+from .decisions import CATEGORIE_ANNULATION, DecisionRepository
 
 TYPE_A_TRANCHER = "a_trancher"
 # Exercice terminé, en attente de la validation du chauffeur (doc 06 §5) :
@@ -93,6 +93,12 @@ class NotificationRepository(ABC):
     def marquer_lues(self, dossier_id: DossierId, maintenant: datetime) -> int:
         """Marque lues toutes celles qui ne l'étaient pas ; renvoie leur nombre."""
 
+    @abstractmethod
+    def marquer_lue(
+        self, dossier_id: DossierId, notification_id: str, maintenant: datetime
+    ) -> bool:
+        """Marque lue une notification du dossier. Faux si elle n'existe pas."""
+
 
 class InMemoryNotificationRepository(NotificationRepository):
     def __init__(self) -> None:
@@ -117,14 +123,32 @@ class InMemoryNotificationRepository(NotificationRepository):
                 nb += 1
         return nb
 
+    def marquer_lue(
+        self, dossier_id: DossierId, notification_id: str, maintenant: datetime
+    ) -> bool:
+        for i, n in enumerate(self.historique):
+            if n.dossier_id == dossier_id and n.id == notification_id:
+                if n.lue_le is None:
+                    self.historique[i] = replace(n, lue_le=maintenant)
+                return True
+        return False
+
 
 def ecritures_a_trancher(
     ledger: LedgerService, decisions: DecisionRepository, dossier_id: DossierId
 ) -> tuple[EcritureId, ...]:
-    """Écritures au compte d'attente sans décision humaine, hors paires
-    originale + contre-passation."""
+    """Écritures au compte d'attente sans décision en vigueur, hors paires
+    originale + contre-passation. Une annulation rend l'écriture à nouveau
+    comptable : seule la dernière décision compte."""
     ecritures = ledger.grand_livre(dossier_id)
-    exclues = {d.ecriture_id for d in decisions.lister_decisions(dossier_id)} | annulees(ecritures)
+    dernieres: dict[EcritureId, str] = {}
+    for decision in decisions.lister_decisions(dossier_id):
+        dernieres[decision.ecriture_id] = decision.categorie
+    exclues = {
+        ecriture_id
+        for ecriture_id, categorie in dernieres.items()
+        if categorie != CATEGORIE_ANNULATION
+    } | annulees(ecritures)
     return tuple(
         e.id
         for e in ecritures
@@ -143,10 +167,10 @@ class ResultatNotification:
 
 def message(nb: int) -> str:
     """Deux textes distincts plutôt qu'un gabarit à trous, pour que le
-    singulier se lise naturellement."""
+    singulier se lise naturellement. Même mot que l'écran : « À traiter »."""
     if nb == 1:
-        return "Une opération attend votre confirmation"
-    return f"{nb} opérations attendent votre confirmation"
+        return "Une opération est à traiter"
+    return f"{nb} opérations sont à traiter"
 
 
 def notifier_a_trancher(

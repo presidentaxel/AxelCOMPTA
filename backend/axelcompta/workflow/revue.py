@@ -12,26 +12,30 @@ import dataclasses
 from axelcompta.ledger.contrepassation import origine
 from axelcompta.ledger.models import Ecriture
 
-from .decisions import DecisionHumaine
+from .decisions import CATEGORIE_ANNULATION, DecisionHumaine
 
 COMPTE_ATTENTE = "471"
 CATEGORIE_USAGE_PERSONNEL = "usage_personnel"
 CATEGORIE_REMUNERATION = "remuneration_dirigeant"
 # Pourquoi une catégorie de statut n'a pas de compte (doc 06 §7).
 _SANS_COMPTE = {
-    CATEGORIE_USAGE_PERSONNEL: "pour ce statut, l'usage personnel est signalé sans écriture",
-    "compte_courant_associe": "pour ce statut, il n'y a pas de compte courant d'associé",
+    CATEGORIE_USAGE_PERSONNEL: (
+        "Pour cette entreprise, une dépense personnelle est signalée sans écriture"
+    ),
+    "compte_courant_associe": (
+        "Pour cette entreprise, il n'y a pas d'apport d'associé à classer"
+    ),
     CATEGORIE_REMUNERATION: (
-        "pour ce statut, le compte de la rémunération dépend de la situation du gérant "
+        "Pour cette entreprise, la rémunération dépend de la situation du gérant "
         "(majoritaire ou non) : à préciser"
     ),
     "cotisations_dirigeant": (
-        "pour ce statut, le compte des cotisations dépend de la situation du gérant "
+        "Pour cette entreprise, les cotisations dépendent de la situation du gérant "
         "(majoritaire ou non) : à préciser"
     ),
-    "prelevement_source_paie": "seul un président assimilé salarié a un bulletin de paie",
-    "dividendes": "à l'impôt sur le revenu, il n'y a pas de dividendes",
-    "impots_dividendes": "à l'impôt sur le revenu, il n'y a pas de dividendes",
+    "prelevement_source_paie": "Seul un président assimilé salarié a un bulletin de paie",
+    "dividendes": "À l'impôt sur le revenu, il n'y a pas de dividendes",
+    "impots_dividendes": "À l'impôt sur le revenu, il n'y a pas de dividendes",
 }
 
 
@@ -71,11 +75,11 @@ def _compte_cible(
     if categorie_choisie in comptes_statut:
         compte_statut = comptes_statut[categorie_choisie]
         if compte_statut is None:
-            raise CategorieInconnueError(f"{_SANS_COMPTE[categorie_choisie]} (doc 06 §7)")
+            raise CategorieInconnueError(f"{_SANS_COMPTE[categorie_choisie]}.")
         return compte_statut
     compte = comptes_par_categorie.get(categorie_choisie)
     if compte is None:
-        raise CategorieInconnueError(f"catégorie inconnue du pack : {categorie_choisie!r}")
+        raise CategorieInconnueError("Cette catégorie n'est pas reconnue.")
     return compte
 
 
@@ -95,7 +99,7 @@ def appliquer_decisions(
     resultat = []
     for ecriture in ecritures:
         decision = dernieres.get(origine(ecriture.id) or ecriture.id)
-        if decision is not None:
+        if decision is not None and decision.categorie != CATEGORIE_ANNULATION:
             ecriture = resoudre_ecriture_a_trancher(
                 ecriture, decision.categorie, comptes_statut, comptes_par_categorie
             )
