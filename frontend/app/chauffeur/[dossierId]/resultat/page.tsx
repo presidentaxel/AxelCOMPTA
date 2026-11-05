@@ -9,6 +9,7 @@ import { use, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { DividendesSection } from "@/components/DividendesSection";
+import { Etat } from "@/components/Etat";
 import { Squelette, SqueletteLignes } from "@/components/Squelette";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
@@ -18,6 +19,7 @@ import {
   fetchAvecAuthChauffeur,
 } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
+import { messageEchecChargement } from "@/lib/session";
 import type { AffectationVue, ScenarioAffectation } from "@/lib/types";
 
 export default function ResultatChauffeurPage({
@@ -33,12 +35,29 @@ export default function ResultatChauffeurPage({
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [fait, setFait] = useState<string | null>(null);
+  const [tentative, setTentative] = useState(0);
 
   useEffect(() => {
+    let annule = false;
     fetchAvecAuthChauffeur<AffectationVue>(`/dossiers/${dossierId}/affectation`)
-      .then(setVue)
-      .catch(() => setErreur("Impossible de charger votre résultat."));
-  }, [dossierId]);
+      .then((valeur) => {
+        if (!annule) setVue(valeur);
+      })
+      .catch((exception: unknown) => {
+        if (!annule) {
+          setErreur(messageEchecChargement(exception, "Impossible de charger votre résultat."));
+        }
+      });
+    return () => {
+      annule = true;
+    };
+  }, [dossierId, tentative]);
+
+  function reessayer() {
+    setVue(null);
+    setErreur(null);
+    setTentative((valeur) => valeur + 1);
+  }
 
   const retour = (
     <Link href={`/chauffeur/${dossierId}/exercice`} className="text-sm text-subtle underline">
@@ -57,7 +76,7 @@ export default function ResultatChauffeurPage({
   if (vue === null && erreur) {
     return (
       <div>
-        <p className="text-sm text-danger">{erreur}</p>
+        <Etat type="erreur" message={erreur} onReessayer={reessayer} className="mt-0" />
         <div className="mt-4">{retour}</div>
       </div>
     );
@@ -65,9 +84,11 @@ export default function ResultatChauffeurPage({
   if (vue === null) {
     return (
       <div>
-        <Squelette className="h-8 w-40" />
-        <SqueletteLignes nombre={4} className="h-5 w-full" />
-        <Squelette className="mt-8 h-24 w-full" />
+        <Etat type="chargement" className="mt-0">
+          <Squelette className="h-8 w-40" />
+          <SqueletteLignes nombre={4} className="h-5 w-full" />
+          <Squelette className="mt-8 h-24 w-full" />
+        </Etat>
         <div className="mt-4">{retour}</div>
       </div>
     );

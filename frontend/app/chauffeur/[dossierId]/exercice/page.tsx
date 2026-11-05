@@ -5,12 +5,14 @@ import { use, useEffect, useState } from "react";
 
 import { ClotureExerciceSection } from "@/components/ClotureExerciceSection";
 import { ClotureSection } from "@/components/ClotureSection";
+import { Etat } from "@/components/Etat";
 import { GreffeInpiSection } from "@/components/GreffeInpiSection";
 import { PaieSection } from "@/components/PaieSection";
 import { useDossierChauffeur } from "@/app/chauffeur/use-dossier";
 import { Squelette, SqueletteLignes } from "@/components/Squelette";
 import { fetchAvecAuthChauffeur } from "@/lib/auth-chauffeur";
 import { formatDate } from "@/lib/format";
+import { messageEchecChargement } from "@/lib/session";
 import type { AffectationVue } from "@/lib/types";
 
 /** Exercice : le résultat, les documents, le dépôt et la signature.
@@ -21,7 +23,7 @@ export default function ExerciceChauffeurPage({
   params: Promise<{ dossierId: string }>;
 }) {
   const { dossierId } = use(params);
-  const { dossier } = useDossierChauffeur(dossierId);
+  const { dossier, reessayer } = useDossierChauffeur(dossierId);
   const fiche = dossier.statut === "pret" ? dossier.valeur : null;
   const periode =
     fiche?.exercice_debut && fiche.exercice_fin
@@ -31,9 +33,15 @@ export default function ExerciceChauffeurPage({
   return (
     <div>
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Exercice</h1>
-      {dossier.statut === "en_cours" && <Squelette className="mt-2 h-4 w-56" />}
+      {dossier.statut === "en_cours" && (
+        <Etat type="chargement" className="mt-2">
+          <Squelette className="h-4 w-56" />
+        </Etat>
+      )}
       {periode && <p className="mt-2 text-sm text-subtle">{periode}</p>}
-      {dossier.statut === "erreur" && <p className="mt-4 text-sm text-danger">{dossier.message}</p>}
+      {dossier.statut === "erreur" && (
+        <Etat type="erreur" message={dossier.message} onReessayer={reessayer} />
+      )}
       {fiche &&
         [fiche.alerte_regime, fiche.alerte_tva]
           .filter((alerte): alerte is string => alerte !== null)
@@ -56,7 +64,9 @@ export default function ExerciceChauffeurPage({
       )}
       <div className="mt-8">
         {dossier.statut === "en_cours" ? (
-          <SqueletteLignes nombre={6} className="h-10 w-full" />
+          <Etat type="chargement" className="mt-0">
+            <SqueletteLignes nombre={6} className="h-10 w-full" />
+          </Etat>
         ) : (
           fiche && (
             <>
@@ -77,23 +87,54 @@ export default function ExerciceChauffeurPage({
  * écran (Louis, 2026-09-26). Rien ne s'affiche tant qu'il n'y a rien à
  * décider. */
 function LienAffectation({ dossierId }: { dossierId: string }) {
-  const [vue, setVue] = useState<AffectationVue | null>(null);
+  const [tentative, setTentative] = useState(0);
+  const [etat, setEtat] = useState<
+    | { statut: "en_cours" }
+    | { statut: "pret"; valeur: AffectationVue }
+    | { statut: "erreur"; message: string }
+  >({ statut: "en_cours" });
+  const [cycle, setCycle] = useState({ dossierId, tentative });
+  if (cycle.dossierId !== dossierId || cycle.tentative !== tentative) {
+    setCycle({ dossierId, tentative });
+    setEtat({ statut: "en_cours" });
+  }
 
   useEffect(() => {
+    let annule = false;
     fetchAvecAuthChauffeur<AffectationVue>(`/dossiers/${dossierId}/affectation`)
-      .then(setVue)
-      .catch(() => setVue(null));
-  }, [dossierId]);
+      .then((valeur) => {
+        if (!annule) setEtat({ statut: "pret", valeur });
+      })
+      .catch((exception: unknown) => {
+        if (!annule) {
+          setEtat({
+            statut: "erreur",
+            message: messageEchecChargement(exception, "Impossible de charger l'affectation."),
+          });
+        }
+      });
+    return () => {
+      annule = true;
+    };
+  }, [dossierId, tentative]);
 
-  if (!vue?.applicable) {
-    return null;
+  if (etat.statut === "en_cours") return null;
+  if (etat.statut === "erreur") {
+    return (
+      <Etat
+        type="erreur"
+        message={etat.message}
+        onReessayer={() => setTentative((valeur) => valeur + 1)}
+      />
+    );
   }
+  if (!etat.valeur.applicable) return null;
   return (
     <Link
       href={`/chauffeur/${dossierId}/resultat`}
       className="mt-8 block rounded-md border border-border bg-canvas p-3 text-sm text-ink"
     >
-      Décider de l&apos;affectation de mon résultat {vue.annee_exercice} →
+      Décider de l&apos;affectation de mon résultat {etat.valeur.annee_exercice} →
     </Link>
   );
 }

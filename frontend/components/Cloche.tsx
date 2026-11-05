@@ -4,11 +4,19 @@ import { Bell } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { Etat } from "@/components/Etat";
+import { Squelette } from "@/components/Squelette";
 import {
   listerNotificationsChauffeur,
   marquerNotificationsLuesChauffeur,
 } from "@/lib/auth-chauffeur";
+import { messageEchecChargement } from "@/lib/session";
 import type { NotificationVue } from "@/lib/types";
+
+type EtatNotifs =
+  | { statut: "en_cours" }
+  | { statut: "pret"; valeur: NotificationVue[] }
+  | { statut: "erreur"; message: string };
 
 const QUAND = new Intl.DateTimeFormat("fr-FR", {
   day: "numeric",
@@ -18,18 +26,38 @@ const QUAND = new Intl.DateTimeFormat("fr-FR", {
 });
 
 /** Notifications internes (doc 19 §5.2) : pas d'e-mail, la cloche est le
- * canal. Ouvrir la liste vaut lecture. Une erreur de chargement laisse la
- * cloche muette plutôt que de gêner le reste de l'écran. */
+ * canal. Ouvrir la liste vaut lecture. Un échec s'explique dans le panneau,
+ * avec « Réessayer », sans bloquer le reste de l'écran. */
 export function Cloche({ dossierId, chemin }: { dossierId: string; chemin: string }) {
-  const [notifications, setNotifications] = useState<NotificationVue[]>([]);
+  const [tentative, setTentative] = useState(0);
+  const [etat, setEtat] = useState<EtatNotifs>({ statut: "en_cours" });
+  const [cycle, setCycle] = useState({ dossierId, tentative });
   const [ouvert, setOuvert] = useState(false);
+  if (cycle.dossierId !== dossierId || cycle.tentative !== tentative) {
+    setCycle({ dossierId, tentative });
+    setEtat({ statut: "en_cours" });
+  }
 
   useEffect(() => {
+    let annule = false;
     listerNotificationsChauffeur(dossierId)
-      .then(setNotifications)
-      .catch(() => setNotifications([]));
-  }, [dossierId, chemin]);
+      .then((valeur) => {
+        if (!annule) setEtat({ statut: "pret", valeur });
+      })
+      .catch((exception: unknown) => {
+        if (!annule) {
+          setEtat({
+            statut: "erreur",
+            message: messageEchecChargement(exception, "Impossible de charger les notifications."),
+          });
+        }
+      });
+    return () => {
+      annule = true;
+    };
+  }, [dossierId, chemin, tentative]);
 
+  const notifications = etat.statut === "pret" ? etat.valeur : [];
   const nonLues = notifications.filter((notification) => !notification.lue).length;
 
   function basculer() {
@@ -38,7 +66,14 @@ export function Cloche({ dossierId, chemin }: { dossierId: string; chemin: strin
     if (ouvrir && nonLues > 0) {
       marquerNotificationsLuesChauffeur(dossierId)
         .then(() =>
-          setNotifications((liste) => liste.map((notification) => ({ ...notification, lue: true }))),
+          setEtat((actuel) =>
+            actuel.statut === "pret"
+              ? {
+                  statut: "pret",
+                  valeur: actuel.valeur.map((notification) => ({ ...notification, lue: true })),
+                }
+              : actuel,
+          ),
         )
         .catch(() => undefined);
     }
@@ -62,8 +97,29 @@ export function Cloche({ dossierId, chemin }: { dossierId: string; chemin: strin
       </button>
       {ouvert && (
         <div className="absolute right-0 top-12 w-72 rounded-lg border border-border bg-canvas p-2 shadow-lg">
-          {notifications.length === 0 ? (
-            <p className="p-3 text-sm text-subtle">Aucune notification.</p>
+          {etat.statut === "erreur" ? (
+            <Etat
+              type="erreur"
+              className="mt-0 px-1"
+              message={etat.message}
+              onReessayer={() => setTentative((valeur) => valeur + 1)}
+            />
+          ) : etat.statut === "en_cours" ? (
+            <Etat type="chargement" className="mt-0 px-1 py-3">
+              <Squelette className="h-4 w-full" />
+              <Squelette className="mt-2 h-4 w-2/3" />
+            </Etat>
+          ) : notifications.length === 0 ? (
+            <Etat
+              type="vide"
+              className="mt-0 px-1 py-1"
+              message="Aucune notification."
+              action={{
+                libelle: "Voir mon activité",
+                href: `/chauffeur/${dossierId}`,
+                onClick: () => setOuvert(false),
+              }}
+            />
           ) : (
             <ul>
               {notifications.map((notification) => (

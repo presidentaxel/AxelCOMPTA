@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { useDossierChauffeur } from "@/app/chauffeur/use-dossier";
+import { Etat } from "@/components/Etat";
 import { FormulaireCompte } from "@/components/FormulaireCompte";
 import { Squelette } from "@/components/Squelette";
 import {
@@ -34,12 +35,12 @@ export default function CompteChauffeurPage() {
 
   if (!email || !jeton) {
     return (
-      <div>
+      <Etat type="chargement" className="mt-0">
         <Squelette className="h-4 w-48" />
         <Squelette className="mt-8 h-10 w-full" />
         <Squelette className="mt-4 h-10 w-full" />
         <Squelette className="mt-6 h-9 w-32" />
-      </div>
+      </Etat>
     );
   }
 
@@ -66,10 +67,16 @@ export default function CompteChauffeurPage() {
 }
 
 function StatutDossier({ dossierId }: { dossierId: string }) {
-  const { dossier } = useDossierChauffeur(dossierId);
-  if (dossier.statut === "en_cours") return <Squelette className="mb-6 h-4 w-64" />;
+  const { dossier, reessayer } = useDossierChauffeur(dossierId);
+  if (dossier.statut === "en_cours") {
+    return (
+      <Etat type="chargement" className="mb-6 mt-0">
+        <Squelette className="h-4 w-64" />
+      </Etat>
+    );
+  }
   if (dossier.statut === "erreur") {
-    return <p className="mb-6 text-sm text-danger">{dossier.message}</p>;
+    return <Etat type="erreur" message={dossier.message} onReessayer={reessayer} className="mb-6 mt-0" />;
   }
   return (
     <p className="mb-6 text-sm text-subtle">
