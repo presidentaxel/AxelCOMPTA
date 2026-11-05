@@ -7,7 +7,7 @@
 // Les provisions, qui changent le résultat, sont saisies avant cette étape.
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { EchecLecture, messageEchecLecture } from "@/components/EchecLecture";
+import { Etat } from "@/components/Etat";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import {
@@ -21,6 +21,7 @@ import {
   phraseEcritureCloture,
   phrasePourChauffeur,
 } from "@/lib/langage-chauffeur";
+import { messageEchecChargement } from "@/lib/session";
 import type { ClotureExerciceVue } from "@/lib/types";
 
 export function ClotureExerciceSection({
@@ -37,7 +38,6 @@ export function ClotureExerciceSection({
 }) {
   const [apercu, setApercu] = useState<ClotureExerciceVue | null>(null);
   const [echecLecture, setEchecLecture] = useState<string | null>(null);
-  const [enCoursLecture, setEnCoursLecture] = useState(false);
   const [accepte, setAccepte] = useState(false);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -61,20 +61,17 @@ export function ClotureExerciceSection({
         if (ticket.current !== courant) return;
         setApercu(vue);
         setEchecLecture(null);
-        setEnCoursLecture(false);
       })
       .catch((exception: unknown) => {
         if (ticket.current !== courant) return;
         setApercu(null);
-        setEnCoursLecture(false);
-        setEchecLecture(messageEchecLecture(exception, "Impossible de charger la clôture."));
+        setEchecLecture(
+          phrasePourChauffeur(
+            messageEchecChargement(exception, "Impossible de charger la clôture."),
+          ),
+        );
       });
   }, [dossierId]);
-
-  function reessayer() {
-    setEnCoursLecture(true);
-    charger();
-  }
 
   useEffect(() => {
     charger();
@@ -106,7 +103,7 @@ export function ClotureExerciceSection({
         <h2 id="titre-cloture" className="text-sm font-medium text-ink">
           Clôture de l&apos;exercice
         </h2>
-        <EchecLecture message={echecLecture} onReessayer={reessayer} enCours={enCoursLecture} />
+        <Etat type="erreur" message={echecLecture} onReessayer={charger} />
       </section>
     );
   }

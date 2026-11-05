@@ -6,7 +6,7 @@
 > [archive/17-plan-demo-journal-2026-09.md](archive/17-plan-demo-journal-2026-09.md).
 > Les renvois « doc 17 §9 », « §12 », « §14 à 16 » du code et des autres docs
 > pointent vers cette archive. L'état d'avancement du projet est dans le
-> [doc 12](12-roadmap-todo.md). Dernière mise à jour : 2026-09-27.
+> [doc 12](12-roadmap-todo.md). Dernière mise à jour : 2026-11-05.
 
 ## 1. But
 
@@ -63,11 +63,20 @@ d'avant qu'on traite au début de l'année), les invitations individuelles ou
 en masse, les règles de rappel, l'équipe et ses rôles. Le gestionnaire ne
 voit jamais le détail d'un dossier (doc 19 §2.1).
 
+Depuis le 2026-10-25 : le **mode expert** (tout ce qui est à traiter, tous
+dossiers confondus, et « Imputer » qui contre-passe puis réécrit sur le
+compte choisi, annulable) et l'écran **Anomalies** d'un dossier (alertes
+des détecteurs V1, à qualifier). La liste Entreprises se filtre, se trie et
+se pagine, et l'état tient dans l'URL (2026-11-04).
+
 **Chauffeur (mobile)** : ses transactions catégorisées, les questions à
 trancher, la photo de justificatif, la clôture, la liasse fiscale et la
-signature du dépôt greffe (simulée). Le parcours est en refonte UX
-(retour de Louis du 22/09 : « c'est pas une app, c'est un flow continuel
-vers le bas »).
+signature du dépôt greffe (simulée). La refonte UX (retour de Louis du
+22/09) est faite, et les correctifs de la revue UX d'Arthur (AXE-563,
+AXE-704) sont mergés le 2026-11-05 : une carte à la fois dans « À traiter »
+avec « Annuler », écran Exercice dont les étapes restent bloquées tant
+qu'il reste une opération à traiter (la liasse et la signature greffe
+répondent alors 409).
 
 **Documents produits** : liasse fiscale complète sur les formulaires
 officiels 2026 (2065, 2065-bis, 2033-A à G), FEC au format légal, grand livre
@@ -76,8 +85,11 @@ et balance en PDF, dossier de dépôt greffe/INPI.
 ## 4. Hors périmètre, assumé
 
 - OCR des justificatifs : la photo s'attache, son contenu n'est pas lu.
-- Détection d'anomalies statistique : la dépense de Sophie est écrite à la
-  main, pas détectée.
+- Anomalies : les détecteurs V1 tournent (AXE-437) et le gestionnaire
+  qualifie une alerte, mais la qualification est gardée en mémoire de
+  process : un redémarrage de l'API l'efface. La dépense Zara de Sophie
+  reste une donnée écrite à la main dans le jeu de démo.
+- LLM : la pseudonymisation existe, aucun fournisseur n'est appelé.
 - Signature qualifiée : simulateur, aucun prestataire (ADR-004).
 - L'étage ML sur les trois profils : Karim, Sophie et Yanis sont entièrement
   catégorisés par les règles. Le ML (modèle v2, abstention sous 0,5,
@@ -114,6 +126,9 @@ Pièges connus :
   et deux gestionnaires, persistants dans Supabase Auth. Mot de passe
   commun des trois chauffeurs : `DemoChauffeur2026!` (`frontend/README.md`).
   Les mots de passe gestionnaire restent hors du repo.
+- Après un `git pull`, lancer `.venv/bin/alembic upgrade head` avant l'API.
+  Sans la table `agregats_dossier` (migration `e7b3d9a15c42`, 2026-11-04),
+  la page Entreprises échoue.
 
 ## 6. Remettre la démo à neuf
 
@@ -138,8 +153,8 @@ par défaut.
 | Risque | Parade |
 |---|---|
 | Une répétition abîme l'état de départ | §6. Tant que la remise à neuf n'existe pas, répéter sur Karim ou Yanis et garder Sophie intacte |
-| Aucune répétition complète depuis le 11/09 (base, auth et écran gestionnaire ont changé depuis) | Une répétition entière en navigateur avant la vraie |
-| Le parcours chauffeur n'est pas prêt | Refonte en cours ; à défaut, montrer Sophie seulement |
+| Le parcours change souvent (dix PR UX du 04/11 au 05/11) | La répétition est rejouée par les tests (AXE-431 : `pytest tests/test_demo_api.py -k repetition` et `npm run e2e`). Une répétition à la main en navigateur reste à faire avant une vraie démo |
+| Une migration non appliquée sur la base Supabase partagée | `alembic upgrade head` avant de lancer l'API (§5) |
 | Supabase Auth gardé en V1 (ADR-003, mise à jour du 2026-09-08) | En sortir plus tard est une vraie réécriture de l'auth, pas un `pg_dump` : le déclencheur CLOUD Act de l'ADR couvre aussi l'auth |
 | Digifactory tombe ou change | La démo tourne sur les fixtures, jamais sur l'API réelle |
 

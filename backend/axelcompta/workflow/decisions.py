@@ -22,6 +22,17 @@ from datetime import datetime
 from axelcompta.categorize.models import Etage
 from axelcompta.core.ids import DossierId, EcritureId, UserId
 
+# Une décision plus récente qui annule la précédente : l'écriture redevient
+# « à trancher ». On n'efface jamais la ligne (append-only).
+CATEGORIE_ANNULATION = "annulation_decision"
+
+
+def decision_en_vigueur(decision: DecisionHumaine | None) -> DecisionHumaine | None:
+    """La décision qui classe encore l'écriture, ou `None` si elle est annulée."""
+    if decision is None or decision.categorie == CATEGORIE_ANNULATION:
+        return None
+    return decision
+
 
 @dataclass(frozen=True, slots=True)
 class DecisionHumaine:

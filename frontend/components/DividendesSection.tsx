@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Aide } from "@/components/Aide";
-import { EchecLecture, messageEchecLecture } from "@/components/EchecLecture";
+import { Etat } from "@/components/Etat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
@@ -19,12 +19,12 @@ import {
 } from "@/lib/auth-chauffeur";
 import { formatDate, formatMontant } from "@/lib/format";
 import { phrasePourChauffeur } from "@/lib/langage-chauffeur";
+import { messageEchecChargement } from "@/lib/session";
 import type { DividendesVue } from "@/lib/types";
 
 export function DividendesSection({ dossierId }: { dossierId: string }) {
   const [vue, setVue] = useState<DividendesVue | null>(null);
   const [echecLecture, setEchecLecture] = useState<string | null>(null);
-  const [enCoursLecture, setEnCoursLecture] = useState(false);
   const [verseLe, setVerseLe] = useState(() => new Date().toISOString().slice(0, 10));
   const [dispense, setDispense] = useState(false);
   const [enCours, setEnCours] = useState(false);
@@ -46,13 +46,15 @@ export function DividendesSection({ dossierId }: { dossierId: string }) {
         if (ticket.current !== courant) return;
         setVue(lue);
         setEchecLecture(null);
-        setEnCoursLecture(false);
       })
       .catch((exception: unknown) => {
         if (ticket.current !== courant) return;
         setVue(null);
-        setEnCoursLecture(false);
-        setEchecLecture(messageEchecLecture(exception, "Impossible de charger vos dividendes."));
+        setEchecLecture(
+          phrasePourChauffeur(
+            messageEchecChargement(exception, "Impossible de charger vos dividendes."),
+          ),
+        );
       });
   }, [dossierId]);
 
@@ -60,18 +62,13 @@ export function DividendesSection({ dossierId }: { dossierId: string }) {
     relire();
   }, [relire]);
 
-  function reessayer() {
-    setEnCoursLecture(true);
-    relire();
-  }
-
   if (echecLecture) {
     return (
       <section className="mt-8" aria-labelledby="titre-dividendes">
         <h2 id="titre-dividendes" className="text-sm font-medium text-ink">
           Mes dividendes
         </h2>
-        <EchecLecture message={echecLecture} onReessayer={reessayer} enCours={enCoursLecture} />
+        <Etat type="erreur" message={echecLecture} onReessayer={relire} />
       </section>
     );
   }

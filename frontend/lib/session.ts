@@ -138,15 +138,31 @@ export async function lireCorps(reponse: Response): Promise<unknown> {
   }
 }
 
+export const MESSAGE_ERREUR_SERVEUR = "Erreur du serveur. Réessayez dans un instant.";
+
 /** Le message d'erreur de l'API (`detail`), sinon le statut. */
 export function erreurApi(corps: unknown, reponse: Response): ApiError {
   const valeur =
     typeof corps === "object" && corps !== null ? (corps as { detail?: unknown }).detail : null;
   const detail = typeof valeur === "string" ? valeur : null;
   return new ApiError(
-    detail ?? (reponse.status >= 500 ? "Erreur du serveur. Réessayez dans un instant." : `HTTP ${reponse.status}`),
+    detail ?? (reponse.status >= 500 ? MESSAGE_ERREUR_SERVEUR : `HTTP ${reponse.status}`),
     reponse.status,
   );
+}
+
+/** Phrase à montrer quand un chargement échoue.
+ * Le réseau (aucune réponse, `status` 0) et le serveur (5xx) ne disent pas
+ * la même chose : un `.catch` qui les remplace par « Impossible de charger… »
+ * avale le message utile. Un code technique (`HTTP 404`) non plus : on
+ * retombe sur la phrase de repli de l'écran. */
+export function messageEchecChargement(exception: unknown, repli: string): string {
+  if (!(exception instanceof ApiError)) return repli;
+  if (exception.status === 0) return MESSAGE_SERVEUR_INJOIGNABLE;
+  if (exception.status >= 500) {
+    return /^HTTP \d+$/.test(exception.message) ? MESSAGE_ERREUR_SERVEUR : exception.message;
+  }
+  return /^HTTP \d+$/.test(exception.message) ? repli : exception.message;
 }
 
 /** Retour après reconnexion : un chemin interne seulement, jamais une autre origine. */

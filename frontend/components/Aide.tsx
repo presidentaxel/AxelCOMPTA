@@ -7,7 +7,7 @@ export const POURQUOI_RIEN_N_EST_ENVOYE =
   "Les canaux SMS, e-mail et appel sont prévus. Ils ne sont pas encore reliés : Intégrations les marque « Prévu ». La relance est enregistrée. L'entreprise ne reçoit rien pour l'instant.";
 
 /** Un « ? » qui ouvre l'explication. Le texte court à côté ne suffit pas. */
-export function Aide({ texte }: { texte: string }) {
+export function Aide({ texte, tactile = false }: { texte: string; tactile?: boolean }) {
   const [ouvert, setOuvert] = useState(false);
   return (
     <span className="relative inline-block align-middle">
@@ -16,7 +16,11 @@ export function Aide({ texte }: { texte: string }) {
         aria-expanded={ouvert}
         aria-label="Pourquoi ?"
         onClick={() => setOuvert((actuel) => !actuel)}
-        className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-border text-[11px] leading-none text-subtle outline-none hover:border-ink hover:text-ink focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)]"
+        className={
+          tactile
+            ? "ml-1 inline-flex h-11 w-11 items-center justify-center rounded-full border border-border text-xs leading-none text-subtle outline-none hover:border-ink hover:text-ink focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)]"
+            : "ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-border text-xs leading-none text-subtle outline-none hover:border-ink hover:text-ink focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)]"
+        }
       >
         ?
       </button>

@@ -5,11 +5,11 @@
 // à sa place quand provisionner.
 //
 // La lecture et la liste vide sont deux états. Tant que la lecture n'a pas
-// réussi, `lignes` reste null : aucun PUT ne part, sinon `[...lignes, nouvelle]`
-// remplacerait les provisions déjà saisies par la seule ligne ajoutée.
+// réussi, aucun PUT ne part : sinon la seule ligne ajoutée remplacerait
+// les provisions déjà saisies.
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { EchecLecture, messageEchecLecture } from "@/components/EchecLecture";
+import { Etat } from "@/components/Etat";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import {
@@ -19,20 +19,12 @@ import {
 } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
 import { CHARGES_CLOTURE, NOM_NATURE, phrasePourChauffeur } from "@/lib/langage-chauffeur";
+import { lireEuros, listeAEnregistrer, listeSans, type LectureListe } from "@/lib/saisie-chauffeur";
+import { messageEchecChargement } from "@/lib/session";
 import type { ProvisionClotureVue } from "@/lib/types";
 
 const CHAMP =
   "h-11 w-full rounded-md border border-border bg-canvas px-3 text-base text-ink outline-none placeholder:text-muted focus-visible:border-border-focus focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)]";
-
-function eurosEnCentimes(saisie: string): number | null {
-  const texte = saisie.trim().replace(/\s/g, "").replace(",", ".");
-  const morceaux = /^(\d+)(?:\.(\d{1,2}))?$/.exec(texte);
-  if (morceaux === null) {
-    return null;
-  }
-  const cents = (morceaux[2] ?? "").padEnd(2, "0");
-  return Number(morceaux[1]) * 100 + Number(cents);
-}
 
 export function ProvisionsCloture({
   dossierId,
@@ -41,9 +33,7 @@ export function ProvisionsCloture({
   dossierId: string;
   onChange: () => void;
 }) {
-  const [lignes, setLignes] = useState<ProvisionClotureVue[] | null>(null);
-  const [echecLecture, setEchecLecture] = useState<string | null>(null);
-  const [enCoursLecture, setEnCoursLecture] = useState(false);
+  const [lecture, setLecture] = useState<LectureListe<ProvisionClotureVue>>({ statut: "en_cours" });
   const [nature, setNature] = useState<"cca" | "fnp">("fnp");
   const [compte, setCompte] = useState<string>(CHARGES_CLOTURE[0].compte);
   const [montant, setMontant] = useState("");
@@ -55,8 +45,7 @@ export function ProvisionsCloture({
 
   if (suivi !== dossierId) {
     setSuivi(dossierId);
-    setLignes(null);
-    setEchecLecture(null);
+    setLecture({ statut: "en_cours" });
     setErreur(null);
   }
 
@@ -65,17 +54,16 @@ export function ProvisionsCloture({
     lireProvisionsCloture(dossierId)
       .then((lues) => {
         if (ticket.current !== courant) return;
-        setLignes(lues);
-        setEchecLecture(null);
-        setEnCoursLecture(false);
+        setLecture({ statut: "pret", lignes: lues });
       })
       .catch((exception: unknown) => {
         if (ticket.current !== courant) return;
-        setLignes(null);
-        setEchecLecture(
-          messageEchecLecture(exception, "Impossible de charger ce qui est déjà saisi."),
-        );
-        setEnCoursLecture(false);
+        setLecture({
+          statut: "erreur",
+          message: phrasePourChauffeur(
+            messageEchecChargement(exception, "Impossible de charger ce qui est déjà saisi."),
+          ),
+        });
       });
   }, [dossierId]);
 
@@ -83,17 +71,12 @@ export function ProvisionsCloture({
     relire();
   }, [relire]);
 
-  function reessayer() {
-    setEnCoursLecture(true);
-    relire();
-  }
-
   async function envoyer(suivantes: ProvisionClotureVue[]): Promise<boolean> {
     setEnCours(true);
     setErreur(null);
     try {
       const enregistrees = await enregistrerProvisionsCloture(dossierId, suivantes);
-      setLignes(enregistrees);
+      setLecture({ statut: "pret", lignes: enregistrees });
       onChange();
       return true;
     } catch (exception) {
@@ -111,28 +94,33 @@ export function ProvisionsCloture({
   }
 
   async function ajouter() {
-    if (lignes === null) return;
-    const centimes = eurosEnCentimes(montant);
-    if (centimes === null || centimes <= 0 || libelle.trim() === "") {
-      setErreur("Indiquez de quoi il s'agit, un montant et un libellé.");
+    if (lecture.statut !== "pret") return;
+    const lu = lireEuros(montant);
+    if ("message" in lu || libelle.trim() === "") {
+      setErreur("message" in lu ? lu.message : "Indiquez de quoi il s'agit.");
       return;
     }
-    const ok = await envoyer([
-      ...lignes,
-      { nature, compte_charge: compte, centimes, libelle: libelle.trim() },
-    ]);
-    if (!ok) {
-      return;
-    }
+    const suivantes = listeAEnregistrer(lecture, {
+      nature,
+      compte_charge: compte,
+      centimes: lu.centimes,
+      libelle: libelle.trim(),
+    });
+    if (suivantes === null) return;
+    const ok = await envoyer(suivantes);
+    if (!ok) return;
     setCompte(CHARGES_CLOTURE[0].compte);
     setMontant("");
     setLibelle("");
   }
 
   async function retirer(index: number) {
-    if (lignes === null) return;
-    await envoyer(lignes.filter((_, position) => position !== index));
+    const suivantes = listeSans(lecture, index);
+    if (suivantes === null) return;
+    await envoyer(suivantes);
   }
+
+  const lignes = lecture.statut === "pret" ? lecture.lignes : [];
 
   return (
     <section
@@ -145,10 +133,10 @@ export function ProvisionsCloture({
       <p className="mt-1 text-sm text-subtle">
         Donnez votre estimation. Elle sera prise dans la clôture. Rien n&apos;est deviné.
       </p>
-      {echecLecture && (
-        <EchecLecture message={echecLecture} onReessayer={reessayer} enCours={enCoursLecture} />
+      {lecture.statut === "erreur" && (
+        <Etat type="erreur" className="mt-3" message={lecture.message} onReessayer={relire} />
       )}
-      {lignes !== null && lignes.length > 0 && (
+      {lignes.length > 0 && (
         <ul className="mt-3 space-y-1 text-sm text-ink">
           {lignes.map((ligne, index) => (
             <li
@@ -166,7 +154,7 @@ export function ProvisionsCloture({
                 className="inline-flex h-11 shrink-0 items-center justify-center rounded-md px-3 text-sm font-semibold text-danger outline-none focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)] disabled:opacity-50"
                 disabled={enCours}
                 aria-label={`Retirer ${ligne.libelle}`}
-                onClick={() => retirer(index)}
+                onClick={() => void retirer(index)}
               >
                 Retirer
               </button>
@@ -214,8 +202,8 @@ export function ProvisionsCloture({
           type="button"
           variant="secondary"
           className="h-11 w-full"
-          disabled={enCours || lignes === null}
-          onClick={ajouter}
+          disabled={enCours || lecture.statut !== "pret"}
+          onClick={() => void ajouter()}
         >
           Ajouter
         </Button>

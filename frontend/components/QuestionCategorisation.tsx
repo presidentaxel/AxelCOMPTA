@@ -4,34 +4,34 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ApiError } from "@/lib/api";
-import { trancherTransactionChauffeur } from "@/lib/auth-chauffeur";
 import {
   RACCOURCIS_CATEGORIE,
   intituleProposition,
   libelleCategorie,
-  phrasePourChauffeur,
   questionSelonSigne,
 } from "@/lib/langage-chauffeur";
 import type { TransactionVue } from "@/lib/types";
+
+const PERSONNELLE = "dépense personnelle";
+const REMUNERATION = "ma rémunération";
 
 /** doc 19 §5.6 : « petites questions de catégorisation ... présentée
  * simplement » — même mécanisme de revue que doc 17 §9 bloc C (désormais
  * exclusivement indiv, doc 19 §2.1) mais sans le vocabulaire comptable
  * ("471", "reclasser") : trois réponses fermées d'abord (personnelle, sa
- * rémunération, autre chose), un champ libre seulement pour « autre chose ». */
+ * rémunération, autre chose), un champ libre seulement pour « autre chose ».
+ * L'enregistrement (et son annulation) est à la charge de l'écran. */
 export function QuestionCategorisation({
-  dossierId,
-  ecritureId,
   proposition,
   montantCts,
   origine = null,
   sansProposition = false,
   raccourci = false,
-  onResolu,
+  corriger = false,
+  enCours = false,
+  erreur = null,
+  onReponse,
 }: {
-  dossierId: string;
-  ecritureId: string;
   proposition: { code: string; libelle: string } | null;
   montantCts: number;
   /** D'où vient la proposition : choix passés du chauffeur, ou une règle. */
@@ -40,51 +40,43 @@ export function QuestionCategorisation({
   sansProposition?: boolean;
   /** « O » confirme la proposition. Une seule question de l'écran le porte. */
   raccourci?: boolean;
-  onResolu: (transaction: TransactionVue) => void;
+  /** L'opération a déjà une catégorie : on la remplace. */
+  corriger?: boolean;
+  enCours?: boolean;
+  erreur?: string | null;
+  onReponse: (categorie: string, libelle: string) => void;
 }) {
   const [autreCategorie, setAutreCategorie] = useState("");
   const [afficherAutre, setAfficherAutre] = useState(false);
-  const [enCours, setEnCours] = useState(false);
-  const [erreur, setErreur] = useState<string | null>(null);
-  const enCoursRef = useRef(false);
+  const parti = useRef(false);
+  const pointeurFin = usePointeurFin();
+  const montreTouche = raccourci && pointeurFin;
+
+  useEffect(() => {
+    if (erreur) parti.current = false;
+  }, [erreur]);
 
   const repondre = useCallback(
-    async (categorie: string) => {
-      if (enCoursRef.current || !categorie.trim()) return;
-      enCoursRef.current = true;
-      setEnCours(true);
-      setErreur(null);
-      try {
-        const transaction = await trancherTransactionChauffeur(
-          dossierId,
-          ecritureId,
-          categorie.trim(),
-        );
-        onResolu(transaction);
-      } catch (exception) {
-        setErreur(
-          phrasePourChauffeur(
-            exception instanceof ApiError ? exception.message : "Échec de l'envoi.",
-          ),
-        );
-      } finally {
-        enCoursRef.current = false;
-        setEnCours(false);
-      }
+    (categorie: string, libelle: string) => {
+      if (parti.current || enCours || !categorie.trim()) return;
+      parti.current = true;
+      onReponse(categorie.trim(), libelle);
     },
-    [dossierId, ecritureId, onResolu],
+    [enCours, onReponse],
   );
 
   useEffect(() => {
     if (!raccourci || !proposition || afficherAutre) return;
     const code = proposition.code;
+    const libelle = proposition.libelle;
     function surTouche(evenement: KeyboardEvent) {
+      if (evenement.repeat) return;
       if (evenement.key.toLowerCase() !== "o") return;
       if (evenement.metaKey || evenement.ctrlKey || evenement.altKey) return;
       const cible = evenement.target;
       if (cible instanceof HTMLElement && cible.closest("input, textarea, select")) return;
       evenement.preventDefault();
-      void repondre(code);
+      repondre(code, libelle);
     }
     window.addEventListener("keydown", surTouche);
     return () => window.removeEventListener("keydown", surTouche);
@@ -93,9 +85,11 @@ export function QuestionCategorisation({
   return (
     <div className="rounded-md border border-warning/40 bg-pending-subtle p-3">
       <p className="mb-2 text-sm font-medium text-ink">
-        {proposition
-          ? intituleProposition(proposition.libelle, origine)
-          : questionSelonSigne(montantCts, sansProposition)}
+        {corriger
+          ? "Changer la catégorie ?"
+          : proposition
+            ? intituleProposition(proposition.libelle, origine)
+            : questionSelonSigne(montantCts, sansProposition)}
       </p>
       {!afficherAutre ? (
         <div className="flex flex-col gap-2">
@@ -105,11 +99,11 @@ export function QuestionCategorisation({
               variant="secondary"
               className="h-auto min-h-11 w-full px-3 whitespace-normal!"
               disabled={enCours}
-              aria-keyshortcuts={raccourci ? "o" : undefined}
-              onClick={() => repondre(proposition.code)}
+              aria-keyshortcuts={montreTouche ? "o" : undefined}
+              onClick={() => repondre(proposition.code, proposition.libelle)}
             >
               Oui, c&apos;est ça
-              {raccourci && <Touche>O</Touche>}
+              {montreTouche && <Touche>O</Touche>}
             </Button>
           )}
           <Button
@@ -117,7 +111,7 @@ export function QuestionCategorisation({
             variant="secondary"
             className="h-11 w-full"
             disabled={enCours}
-            onClick={() => repondre("usage_personnel")}
+            onClick={() => repondre("usage_personnel", PERSONNELLE)}
           >
             Personnelle
           </Button>
@@ -128,7 +122,7 @@ export function QuestionCategorisation({
             variant="secondary"
             className="h-11 w-full"
             disabled={enCours}
-            onClick={() => repondre("remuneration_dirigeant")}
+            onClick={() => repondre("remuneration_dirigeant", REMUNERATION)}
           >
             Ma rémunération
           </Button>
@@ -154,7 +148,7 @@ export function QuestionCategorisation({
                 variant="secondary"
                 disabled={enCours}
                 className="h-auto min-h-11 max-w-full whitespace-normal! px-3 py-2"
-                onClick={() => repondre(categorie)}
+                onClick={() => repondre(categorie, libelleCategorie(categorie))}
               >
                 {libelleCategorie(categorie)}
               </Button>
@@ -164,7 +158,7 @@ export function QuestionCategorisation({
             className="flex items-center gap-2"
             onSubmit={(evenement) => {
               evenement.preventDefault();
-              void repondre(autreCategorie);
+              repondre(autreCategorie, autreCategorie.trim());
             }}
           >
             <Input
@@ -190,6 +184,19 @@ export function QuestionCategorisation({
       {erreur && <p className="mt-1 text-xs text-danger">{erreur}</p>}
     </div>
   );
+}
+
+/** Le raccourci clavier ne s'affiche pas sur un écran tactile. */
+function usePointeurFin(): boolean {
+  const [fin, setFin] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const maj = () => setFin(media.matches);
+    maj();
+    media.addEventListener("change", maj);
+    return () => media.removeEventListener("change", maj);
+  }, []);
+  return fin;
 }
 
 function Touche({ children }: { children: string }) {

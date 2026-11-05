@@ -211,7 +211,7 @@ test("un GET en échec puis un ajout n'envoie aucun PUT", async ({ page }) => {
   };
   await ouvrir(page, "/chauffeur/DEMO_sophie/exercice", etat, puts);
   const zone = zoneProvisions(page);
-  await expect(zone.getByRole("alert")).toHaveText("Lecture des provisions impossible.");
+  await expect(zone.getByRole("alert")).toContainText("Lecture des provisions impossible.");
   const reessayer = zone.getByRole("button", { name: "Réessayer" });
   await expect(reessayer).toBeVisible();
   expect((await reessayer.boundingBox())!.height).toBeGreaterThanOrEqual(44);
@@ -292,7 +292,7 @@ test("après une relecture, l'ajout conserve les provisions déjà saisies", asy
   };
   await ouvrir(page, "/chauffeur/DEMO_sophie/exercice", etat, puts);
   const zone = zoneProvisions(page);
-  await expect(zone.getByRole("alert")).toHaveText("Lecture des provisions impossible.");
+  await expect(zone.getByRole("alert")).toContainText("Lecture des provisions impossible.");
   etat.provisions = "assurance";
   await zone.getByRole("button", { name: "Réessayer" }).click();
   await expect(zone.getByRole("button", { name: "Retirer Assurance" })).toBeVisible();
@@ -400,7 +400,7 @@ test("dividendes, paie, clôture et cloche montrent l'échec de lecture", async 
   });
 
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.getByRole("button", { name: "Notifications indisponibles" }).click();
+  await page.getByRole("button", { name: "Notifications" }).click();
   const panneau = page.getByRole("dialog", { name: "Notifications" });
   await expect(panneau.getByText("Lecture des notifications impossible.")).toBeVisible();
   await expect(panneau.getByText("Aucune notification.")).toHaveCount(0);

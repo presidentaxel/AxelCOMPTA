@@ -348,6 +348,30 @@ export async function trancherEnGroupeChauffeur(
   return corps as TransactionVue[];
 }
 
+/** Corrige une décision déjà posée. Une nouvelle décision prévaut ;
+ * l'ancienne reste dans l'historique (doc 05 §5). */
+export async function corrigerTransactionChauffeur(
+  dossierId: string,
+  ecritureId: string,
+  categorie: string,
+): Promise<TransactionVue> {
+  const reponse = await appelChauffeur(
+    `/dossiers/${dossierId}/transactions/${ecritureId}/correction`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ categorie }),
+    },
+  );
+  const corps = await lireCorps(reponse);
+  if (!reponse.ok) {
+    throw erreurApi(corps, reponse);
+  }
+  return corps as TransactionVue;
+}
+
 export async function trancherTransactionChauffeur(
   dossierId: string,
   ecritureId: string,
@@ -427,6 +451,30 @@ export async function marquerNotificationLueChauffeur(
   if (!reponse.ok) {
     throw new ApiError(`HTTP ${reponse.status}`, reponse.status);
   }
+}
+
+/** Pose une décision d'annulation : l'opération redevient à traiter.
+ * L'ancienne décision reste dans l'historique. */
+export async function annulerDecisionChauffeur(
+  dossierId: string,
+  ecritureId: string,
+): Promise<TransactionVue> {
+  return envoyerChauffeur(
+    `/dossiers/${dossierId}/transactions/${ecritureId}/annulation`,
+    {},
+  );
+}
+
+/** Nouvelle décision sur une opération déjà classée. */
+export async function corrigerDecisionChauffeur(
+  dossierId: string,
+  ecritureId: string,
+  categorie: string,
+): Promise<TransactionVue> {
+  return envoyerChauffeur(
+    `/dossiers/${dossierId}/transactions/${ecritureId}/correction`,
+    { categorie },
+  );
 }
 
 export async function lireProvisionsCloture(dossierId: string): Promise<ProvisionClotureVue[]> {

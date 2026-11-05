@@ -219,29 +219,76 @@ function bouchon(operations: TransactionDemo[]) {
   };
 }
 
-async function intercepterApi(page: Page, transactions: TransactionDemo[] = [{ ...ZARA }]) {
-  const operations = transactions.map((transaction) => ({ ...transaction }));
+const ENTETES_CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "*",
+  "access-control-allow-methods": "*",
+};
+
+async function laisserPasser(route: Route): Promise<boolean> {
+  const url = route.request().url();
+  if (url.includes(":3000") || url.startsWith("data:")) {
+    await route.continue();
+    return true;
+  }
+  if (route.request().method() === "OPTIONS") {
+    await route.fulfill({ status: 204, headers: ENTETES_CORS });
+    return true;
+  }
+  return false;
+}
+
+async function intercepterApi(
+  page: Page,
+  argument?: TransactionDemo[] | { transactions?: TransactionDemo[]; dossier?: object },
+) {
+  const options = Array.isArray(argument) || argument === undefined ? { transactions: argument } : argument;
+  const operations = (options.transactions ?? [{ ...ZARA }]).map((transaction) => ({ ...transaction }));
   const repondre = bouchon(operations);
   await page.route("**/*", async (route) => {
+    if (await laisserPasser(route)) return;
     const url = route.request().url();
-    if (url.includes(":3000") || url.startsWith("data:")) {
-      await route.continue();
-      return;
-    }
-    if (route.request().method() === "OPTIONS") {
-      await route.fulfill({
-        status: 204,
-        headers: {
-          "access-control-allow-origin": "*",
-          "access-control-allow-headers": "*",
-          "access-control-allow-methods": "*",
-        },
-      });
+    const methode = route.request().method();
+    if (options.dossier && url.endsWith("/dossiers/DEMO_sophie") && methode === "GET") {
+      await route.fulfill({ json: options.dossier });
       return;
     }
     await repondre(route);
   });
 }
+
+type ReponseApi = "couper" | "serveur" | "suite";
+
+async function selonLeReseau(page: Page, decide: (url: string, methode: string) => ReponseApi) {
+  const repondre = bouchon([{ ...ZARA }]);
+  await page.route("**/*", async (route) => {
+    if (await laisserPasser(route)) return;
+    const choix = decide(route.request().url(), route.request().method());
+    if (choix === "couper") {
+      await route.abort("failed");
+      return;
+    }
+    if (choix === "serveur") {
+      await route.fulfill({ status: 500, json: {} });
+      return;
+    }
+    await repondre(route);
+  });
+}
+
+async function commeSophie(page: Page) {
+  const exp = Math.floor(Date.now() / 1000) + 3600;
+  await session(page, "axelcompta_session_chauffeur", {
+    accessToken: jeton({ exp, app_metadata: { dossier_id: "DEMO_sophie" } }),
+    refreshToken: "rafraichissement",
+    dossierId: "DEMO_sophie",
+    email: "sophie@example.com",
+  });
+}
+
+const MESSAGE_RESEAU =
+  "Le serveur ne répond pas. Vérifiez votre connexion, puis réessayez dans un instant.";
+const MESSAGE_SERVEUR = "Erreur du serveur. Réessayez dans un instant.";
 
 async function session(page: Page, cle: string, corps: object) {
   await page.addInitScript(
@@ -277,7 +324,13 @@ function sessionChauffeur(page: Page, dossierId: string) {
 }
 
 async function ordonnee(page: Page, nom: string) {
-  const boite = await page.getByText(nom, { exact: true }).first().boundingBox();
+  // Un titre peut contenir l'aide « Pourquoi ? » : le nom accessible du
+  // heading suffit, le texte exact du nœud ne le contient plus seul.
+  const boite = await page
+    .getByRole("heading", { name: nom })
+    .or(page.getByText(nom, { exact: true }))
+    .first()
+    .boundingBox();
   expect(boite).not.toBeNull();
   return boite!.y;
 }
@@ -342,13 +395,15 @@ test("Sophie lit une proposition sans code ni pourcentage", async ({ page }) => 
     },
   ]);
   await page.goto("/chauffeur/DEMO_sophie");
+  // Une seule carte : la plus récente d'abord (l'entrée), puis la dépense.
+  await expect(page.getByText("À quoi correspond cette entrée ?")).toBeVisible();
+  await expect(page.getByText("non categorise a verifier")).toHaveCount(0);
+  await expect(page.getByText("À classer").first()).toBeVisible();
+  await page.getByRole("button", { name: "Personnelle" }).click();
   await expect(page.getByText("Proposition : Loyer")).toBeVisible();
   await expect(page.getByText("modèle")).toHaveCount(0);
   await expect(page.getByText("87 %")).toHaveCount(0);
   await expect(page.getByText("loyers locations")).toHaveCount(0);
-  await expect(page.getByText("À quoi correspond cette entrée ?")).toBeVisible();
-  await expect(page.getByText("non categorise a verifier")).toHaveCount(0);
-  await expect(page.getByText("À classer").first()).toBeVisible();
 });
 
 test("la clôture confirme sans recharger et ouvre la liasse", async ({ page }) => {
@@ -390,4 +445,109 @@ test("Sophie tranche une dépense et l'écran suit", async ({ page }) => {
   await expect(page.getByText("ZARA")).toBeVisible();
   await page.getByRole("button", { name: "Personnelle" }).click();
   await expect(page.getByText("Tout est à jour.")).toBeVisible();
+  await page.getByRole("button", { name: "Voir mes mouvements" }).click();
+  await expect(page.getByText("ZARA")).toBeVisible();
+});
+
+test("un dossier sans opération n'a qu'un message, avec une action", async ({ page }) => {
+  await commeSophie(page);
+  await intercepterApi(page, { transactions: [] });
+  await page.goto("/chauffeur/DEMO_sophie");
+  await expect(page.getByRole("heading", { name: "Sophie Martin" })).toBeVisible();
+  await expect(page.getByText("Vos transactions arrivent bientôt.")).toBeVisible();
+  await page.getByRole("button", { name: "Actualiser" }).click();
+  await expect(page.getByText("Vos transactions arrivent bientôt.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Actualiser" })).toBeVisible();
+  await expect(page.getByText("Tout est à jour.")).toHaveCount(0);
+  await expect(page.getByText("Aucun mois")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "À traiter" })).toHaveCount(0);
+});
+
+test("connecter ma banque explique à l'écran pourquoi le bouton est inactif", async ({ page }) => {
+  await commeSophie(page);
+  await intercepterApi(page, {
+    transactions: [],
+    dossier: { ...DOSSIER_SOPHIE, peut_connecter_sa_banque: true },
+  });
+  await page.goto("/chauffeur/DEMO_sophie");
+  const bouton = page.getByRole("button", { name: "Connecter ma banque" });
+  await expect(bouton).toBeDisabled();
+  await expect(bouton).not.toHaveAttribute("title");
+  await expect(page.getByText("Bientôt disponible.")).toBeVisible();
+  await expect(page.getByText("Tout est à jour.")).toHaveCount(0);
+  await expect(page.getByText("Vos transactions arrivent bientôt.")).toHaveCount(0);
+});
+
+test("l'arriéré vide propose de voir les mouvements", async ({ page }) => {
+  await commeSophie(page);
+  await intercepterApi(page, { transactions: [{ ...ZARA, statut: "validé", a_justificatif: true }] });
+  await page.goto("/chauffeur/DEMO_sophie");
+  await expect(page.getByText("Tout est à jour.")).toBeVisible();
+  await page.getByRole("button", { name: "Voir mes mouvements" }).click();
+  await expect(page.getByText("ZARA")).toBeVisible();
+  await expect(page.getByText(/juin\s+2025/i)).toBeVisible();
+});
+
+test("un mois sans entrée propose l'autre sens", async ({ page }) => {
+  await commeSophie(page);
+  await intercepterApi(page);
+  await page.goto("/chauffeur/DEMO_sophie");
+  await page.getByRole("button", { name: "Mouvements" }).click();
+  await page.getByRole("button", { name: "Entrées" }).click();
+  await expect(page.getByText("Aucune entrée ce mois-ci.")).toBeVisible();
+  await page.getByRole("button", { name: "Voir les sorties" }).click();
+  await expect(page.getByText("ZARA")).toBeVisible();
+});
+
+test("la cloche vide propose l'activité, et l'erreur se réessaie", async ({ page }) => {
+  await commeSophie(page);
+  let couperNotifs = true;
+  await selonLeReseau(page, (url, methode) =>
+    couperNotifs && methode === "GET" && url.includes("/notifications") ? "couper" : "suite",
+  );
+  await page.goto("/chauffeur/DEMO_sophie");
+  await expect(page.getByRole("heading", { name: "Sophie Martin" })).toBeVisible();
+  await page.getByRole("button", { name: "Notifications" }).click();
+  await expect(page.getByText(MESSAGE_RESEAU)).toBeVisible();
+  couperNotifs = false;
+  await page.getByRole("button", { name: "Réessayer" }).click();
+  await expect(page.getByText("Aucune notification.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Voir mon activité" })).toBeVisible();
+});
+
+test("couper le réseau propose Réessayer sur chaque page chauffeur", async ({ page }) => {
+  await commeSophie(page);
+  let couper = true;
+  await selonLeReseau(page, () => (couper ? "couper" : "suite"));
+  const pages = [
+    "/chauffeur/DEMO_sophie",
+    "/chauffeur/DEMO_sophie/exercice",
+    "/chauffeur/DEMO_sophie/resultat",
+    "/chauffeur/compte",
+  ];
+  for (const chemin of pages) {
+    couper = true;
+    await page.goto(chemin);
+    await expect(page.getByText(MESSAGE_RESEAU)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Réessayer" })).toBeVisible();
+    await expect(page.getByText("Tout est à jour.")).toHaveCount(0);
+    await expect(page.getByText("Vos transactions arrivent bientôt.")).toHaveCount(0);
+    await expect(page.getByText("Impossible de charger")).toHaveCount(0);
+    couper = false;
+    await page.getByRole("button", { name: "Réessayer" }).click();
+    await expect(page.getByRole("button", { name: "Réessayer" })).toHaveCount(0);
+  }
+  await expect(page.getByText("Sophie Martin · EURL · Impôt sur les sociétés")).toBeVisible();
+});
+
+test("une panne du serveur ne se confond pas avec le réseau", async ({ page }) => {
+  await commeSophie(page);
+  await selonLeReseau(page, (url, methode) =>
+    methode === "GET" && url.endsWith("/dossiers/DEMO_sophie") ? "serveur" : "suite",
+  );
+  await page.goto("/chauffeur/DEMO_sophie");
+  await expect(page.getByText(MESSAGE_SERVEUR)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Réessayer" })).toBeVisible();
+  await expect(page.getByText(MESSAGE_RESEAU)).toHaveCount(0);
+  await expect(page.getByText("Vos transactions arrivent bientôt.")).toHaveCount(0);
 });

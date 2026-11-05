@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Aide } from "@/components/Aide";
-import { EchecLecture, messageEchecLecture } from "@/components/EchecLecture";
+import { Etat } from "@/components/Etat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
@@ -19,6 +19,8 @@ import {
 } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
 import { phrasePourChauffeur } from "@/lib/langage-chauffeur";
+import { lireEuros } from "@/lib/saisie-chauffeur";
+import { messageEchecChargement } from "@/lib/session";
 import type { BulletinVue } from "@/lib/types";
 
 const CHAMPS = [
@@ -36,15 +38,17 @@ const CHAMPS = [
   ["pas", "Impôt prélevé", "Le prélèvement à la source : l'impôt sur le revenu retenu sur le salaire."],
 ] as const;
 
-function enCentimes(valeur: string): number {
-  return Math.round(Number(valeur.replace(",", ".") || "0") * 100);
+function lireEurosOuZero(saisie: string): number | string {
+  const texte = saisie.replace(/[\s\u00a0\u202f]/g, "").replace(",", ".");
+  if (texte === "" || texte === "0" || texte === "0.0" || texte === "0.00") return 0;
+  const lu = lireEuros(saisie);
+  return "centimes" in lu ? lu.centimes : lu.message;
 }
 
 export function PaieSection({ dossierId }: { dossierId: string }) {
   const [bulletins, setBulletins] = useState<BulletinVue[]>([]);
   const [lecturePrete, setLecturePrete] = useState(false);
   const [echecLecture, setEchecLecture] = useState<string | null>(null);
-  const [enCoursLecture, setEnCoursLecture] = useState(false);
   const [mois, setMois] = useState("");
   const [montants, setMontants] = useState<Record<string, string>>({});
   const [enCours, setEnCours] = useState(false);
@@ -68,13 +72,15 @@ export function PaieSection({ dossierId }: { dossierId: string }) {
         setBulletins(liste);
         setLecturePrete(true);
         setEchecLecture(null);
-        setEnCoursLecture(false);
       })
       .catch((exception: unknown) => {
         if (ticket.current !== courant) return;
         setLecturePrete(false);
-        setEnCoursLecture(false);
-        setEchecLecture(messageEchecLecture(exception, "Impossible de charger vos bulletins."));
+        setEchecLecture(
+          phrasePourChauffeur(
+            messageEchecChargement(exception, "Impossible de charger vos bulletins."),
+          ),
+        );
       });
   }, [dossierId]);
 
@@ -82,22 +88,26 @@ export function PaieSection({ dossierId }: { dossierId: string }) {
     relire();
   }, [relire]);
 
-  function reessayer() {
-    setEnCoursLecture(true);
-    relire();
-  }
-
   async function enregistrer() {
     if (!lecturePrete) return;
+    const brut = lireEuros(montants.brut ?? "");
+    const salariales = lireEurosOuZero(montants.salariales ?? "");
+    const patronales = lireEurosOuZero(montants.patronales ?? "");
+    const pas = lireEurosOuZero(montants.pas ?? "");
+    const illisible = [brut, salariales, patronales, pas].find((lu) => typeof lu === "string");
+    if (typeof illisible === "string" || !("centimes" in brut)) {
+      setErreur(typeof illisible === "string" ? illisible : "Indiquez le salaire avant retenues.");
+      return;
+    }
     setEnCours(true);
     setErreur(null);
     try {
       const bulletin = await saisirBulletinChauffeur(dossierId, {
         mois,
-        brut_cts: enCentimes(montants.brut ?? ""),
-        cotisations_salariales_cts: enCentimes(montants.salariales ?? ""),
-        cotisations_patronales_cts: enCentimes(montants.patronales ?? ""),
-        prelevement_a_la_source_cts: enCentimes(montants.pas ?? ""),
+        brut_cts: brut.centimes,
+        cotisations_salariales_cts: salariales as number,
+        cotisations_patronales_cts: patronales as number,
+        prelevement_a_la_source_cts: pas as number,
       });
       setBulletins((liste) => [...liste, bulletin]);
       setMois("");
@@ -124,7 +134,7 @@ export function PaieSection({ dossierId }: { dossierId: string }) {
         <Aide texte="La DSN (déclaration sociale nominative) part chaque mois vers les organismes sociaux, depuis votre logiciel de paie." />
       </p>
       {echecLecture && (
-        <EchecLecture message={echecLecture} onReessayer={reessayer} enCours={enCoursLecture} />
+        <Etat type="erreur" message={echecLecture} onReessayer={relire} />
       )}
       {lecturePrete && bulletins.length > 0 && (
         <ul className="mt-3 space-y-1 text-sm">

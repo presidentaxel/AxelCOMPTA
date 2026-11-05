@@ -28,7 +28,7 @@ from axelcompta.core.ids import DossierId, EcritureId
 from axelcompta.ledger.contrepassation import annulees
 from axelcompta.ledger.service import LedgerService
 
-from .decisions import DecisionRepository
+from .decisions import CATEGORIE_ANNULATION, DecisionRepository
 
 TYPE_A_TRANCHER = "a_trancher"
 # Exercice terminé, en attente de la validation du chauffeur (doc 06 §5) :
@@ -142,10 +142,18 @@ class InMemoryNotificationRepository(NotificationRepository):
 def ecritures_a_trancher(
     ledger: LedgerService, decisions: DecisionRepository, dossier_id: DossierId
 ) -> tuple[EcritureId, ...]:
-    """Écritures au compte d'attente sans décision humaine, hors paires
-    originale + contre-passation."""
+    """Écritures au compte d'attente sans décision en vigueur, hors paires
+    originale + contre-passation. Une annulation rend l'écriture à nouveau
+    comptable : seule la dernière décision compte."""
     ecritures = ledger.grand_livre(dossier_id)
-    exclues = {d.ecriture_id for d in decisions.lister_decisions(dossier_id)} | annulees(ecritures)
+    dernieres: dict[EcritureId, str] = {}
+    for decision in decisions.lister_decisions(dossier_id):
+        dernieres[decision.ecriture_id] = decision.categorie
+    exclues = {
+        ecriture_id
+        for ecriture_id, categorie in dernieres.items()
+        if categorie != CATEGORIE_ANNULATION
+    } | annulees(ecritures)
     return tuple(
         e.id
         for e in ecritures
