@@ -118,12 +118,29 @@ toute autre vente.
   triggers, migration `e7b3d9a15c42`) : la page Entreprises ne reconstruit
   plus chaque dossier (AXE-566).
 
+### Passage en mode réel (05/11)
+
+Serenity a ses premiers chauffeurs sur Digifactory (13 contacts, dont 7
+nouveaux). La base Supabase devient la base réelle du portefeuille ; le
+menu Démo et les faux comptes sont retirés ; Karim, Yanis et
+`demo@axelcompta.fr` sont supprimés, puis Sophie : plus aucune donnée ni
+compte de démo en base.
+Détail : [doc 17](17-plan-demo-backend.md). Le lien avec Rollee devient
+nécessaire pour les recettes des vrais chauffeurs. Tickets ouverts le même
+jour, dans l'ordre :
+- AXE-817 (urgent) : contrat, sandbox et choix entre User API et Company API ;
+- AXE-818 : client API et `RolleeProvider` ;
+- AXE-819 : le chauffeur relie ses comptes Uber et Bolt via Rollee Connect ;
+- AXE-820 : webhooks signés et synchro quotidienne de secours ;
+- AXE-821 : revenus Rollee réconciliés avec le virement Digifactory, puis
+  écritures 706, TVA et commission.
+
+Les relevés CSV (AXE-801) restent la source de secours pour un chauffeur
+sans Rollee.
+
 ### En cours (05/11)
 
-- PR #82 (AXE-704) : annuler une décision et refuser la liasse tant qu'il
-  reste à traiter. En revue.
-- PR #83 (AXE-690) : états vides et erreurs du chauffeur, toujours une
-  action. En revue.
+- PR #82 (AXE-704) et #83 (AXE-690) : mergées le 05/11.
 - **Bug ouvert AXE-685** : les provisions de clôture peuvent être écrasées
   après une lecture ratée. Priorité haute, à corriger avant tout dossier
   réel.
@@ -160,6 +177,57 @@ depuis la quarantaine Digifactory AXE-424).
 - AXE-433 : connexion bancaire directe par le chauffeur (basse priorité).
 - AXE-484 : annexes 2054 à 2059 en détail et Test Compta Demat (basse).
 
+### Ajouté au plan V1 le 2026-11-05 (analyse critique)
+
+Une relecture du plan contre les docs 01, 02, 06, 10 et 14 a montré des trous
+que Linear ne couvrait pas. Tickets créés dans P-AXE-28 :
+
+**Mode expert et responsabilité juridique** (décision de Louis, doc 02 §2.3)
+- AXE-800 (urgent) : le mode expert vise une entreprise avec son
+  expert-comptable ; l'expert prend la charge juridique de chaque
+  changement (rôle dédié, engagement tracé, auteur et motif sur chaque
+  écriture). Le logiciel ne décide jamais.
+
+**Cœur comptable VTC** (sans eux, les comptes d'un vrai chauffeur sont faux)
+- AXE-801 : éclater les versements Uber/Bolt depuis les relevés des
+  plateformes (recette brute, TVA 10 %, commission). Remplace la rustine
+  AXE-731 sans attendre Rollee.
+- AXE-802 : registre des immobilisations et amortissement du véhicule.
+- AXE-803 : véhicule en LOA (loyers, part non déductible, levée d'option).
+- AXE-804 : bilan d'ouverture des sociétés existantes (import FEC ou saisie
+  guidée).
+- AXE-805 : TVA en cours d'année (CA3 mensuelle, échéances, rappels).
+
+**Invariants du doc 06 non tenus**
+- AXE-806 : I4, aucune écriture datée dans un exercice clos.
+- AXE-807 : I3, numérotation continue en base, et I7, contrôle quotidien de
+  la balance.
+
+**Avant d'ouvrir aux 200 dossiers**
+- AXE-808 : rappels hors de l'application, par l'intégration e-mail/SMS du
+  gestionnaire.
+- AXE-809 : création des dossiers en masse avec rapport de validation.
+- AXE-810 : isoler la production. Le menu Démo est retiré le 05/11 et la
+  base devient la production ; restent les routes `demo_api`, `/metrics`
+  et les tags d'entreprises pour exclure les sociétés qui ne sont pas des
+  chauffeurs.
+- AXE-811 : hébergement de production (ADR-003) et restauration
+  chronométrée.
+- AXE-812 : MFA demandée à la connexion, journal des connexions et exports.
+- AXE-813 : CGU/CGV, DPA et engagement de l'expert-comptable, relus par un
+  juriste.
+- AXE-814 : persister les qualifications d'anomalies.
+
+**Calendrier et mesure**
+- AXE-815 : relecture par un expert-comptable **avant le 31/01/2027**, et
+  non plus « tout à la fin » : les liasses 2026 partent en mai 2027.
+- AXE-816 : mesurer les objectifs V1 du doc 01 sur un jeu gelé (bloqué par
+  AXE-423).
+
+Ces tickets ajoutent 72 points au projet. Le 31/12 ne les tiendra
+pas tous : l'arbitrage entre ce qui part au pilote de décembre et ce qui
+glisse en T1 2027 est à faire dans AXE-766.
+
 ### Décisions à prendre (ouvertes dans Linear)
 
 - AXE-766 : valider la définition de « fini » pour novembre (un mois réel
@@ -167,12 +235,14 @@ depuis la quarantaine Digifactory AXE-424).
   continu et décision RGS).
 - AXE-769 : limiter l'UX en cours à 3 tickets pour laisser la place à
   l'ingestion réelle.
+- Offboarding (doc 14 §2 : export et purge d'un tenant, RGPD) : aucun
+  ticket. À décider s'il fait partie de la V1 ou du contrat (AXE-813).
 
 ### Ce qui reste vrai de septembre
 
-- Pas d'expert-comptable avant la toute fin (décision du 26/09). La table
-  comptes → rubriques suit la notice, sans relecture professionnelle. Reste
-  un prérequis de la V1.
+- Expert-comptable : reporté « tout à la fin » le 26/09 ; depuis le 05/11,
+  calé avant le 31/01/2027 (AXE-815). D'ici là, la table comptes →
+  rubriques suit la notice, sans relecture professionnelle.
 - Tous les statuts sont codés (SASU, SAS, EURL, SARL, EI ; IS, IR, option
   IR ; franchise ou réel de TVA). Micro-entreprise non faite.
 - La clôture est décidée par le chauffeur, et par lui seul. Le gestionnaire

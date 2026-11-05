@@ -1,5 +1,15 @@
 # 04 — Ingestion des données : Bridge, fichiers, OCR & justificatifs
 
+> **État au 2026-11-05** (ajouté ; le reste du doc décrit la cible) :
+> - Bancaire : synchro Digifactory réelle, idempotente, avec archive brute,
+>   quarantaine et contre-passation d'une transaction modifiée (doc 16).
+>   Premier vrai dossier chauffeur : AXE-726 à AXE-733.
+> - Fichiers : aucun profil d'import CSV/Excel générique. Premiers profils
+>   prévus pour les relevés Uber et Bolt (AXE-801), et l'import du FEC de
+>   l'outil précédent (AXE-804).
+> - Justificatifs : stockés en base par tenant et dossier (AXE-425), une
+>   photo par dépense. Pas d'OCR, pas de matching automatique, pas de WORM.
+
 > Statut : brouillon à valider — Dernière mise à jour : 2026-09-24
 
 ## 1. Principes

@@ -1,9 +1,9 @@
-"""Dossiers de démo branchés sur les contacts Digifactory réels.
+"""Dossiers du portefeuille branchés sur les contacts Digifactory.
 
-Composition root, comme `demo_seed.py`. Les comptes Auth sont fictifs
-(e-mail `demo-digi-<nr>@axelcompta.fr`, même mot de passe que Karim, Sophie
-et Yanis). Les transactions, elles, viennent de l'API au moment de la
-synchro : rien de bancaire n'est écrit dans le dépôt.
+Composition root, comme `demo_seed.py`. Aucun compte n'est créé ici
+(depuis le 2026-11-05) : le dirigeant est invité avec sa vraie adresse. Les
+transactions viennent de l'API au moment de la synchro : rien de bancaire
+n'est écrit dans le dépôt.
 
 Digifactory ne donne pas la forme juridique. Le dossier est posé en SASU à
 l'IS le temps du premier enregistrement, puis la forme est reprise du
@@ -25,8 +25,6 @@ from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.tenants.models import Dossier
 
 TENANT_DEMO = TenantId("TENANT_DEMO")
-# Déjà documenté pour les trois chauffeurs fictifs (frontend/README.md).
-MOT_DE_PASSE_COMMUN = "DemoChauffeur2026!"
 # Nomenclature des catégories juridiques, niveau III.
 # Depuis juillet 2020, l'INSEE a fondu la SASU (5720) dans la SAS (5710)
 # et l'EURL (5498) dans la SARL (5499). On ne devine pas l'associé unique.
@@ -47,12 +45,6 @@ def numero_contact(contact: Mapping[str, object]) -> str:
     if not numero.isdigit():
         raise ValueError("numéro de contact Digifactory invalide")
     return numero
-
-
-def email_demo(contact_nr: str) -> str:
-    if not contact_nr.isdigit():
-        raise ValueError("numéro de contact Digifactory invalide")
-    return f"demo-digi-{contact_nr}@axelcompta.fr"
 
 
 def nom_affiche(contact: Mapping[str, object], contact_nr: str) -> str:
@@ -81,17 +73,6 @@ def dossier_depuis_contact(contact: Mapping[str, object], aujourd_hui: date) -> 
         contact_nr=numero,
         pack_metier="vtc",
     )
-
-
-def corps_compte_demo(email: str, dossier_id: DossierId, mot_de_passe: str) -> dict[str, object]:
-    """Compte chauffeur confirmé tout de suite : l'e-mail est fictif, personne
-    ne cliquera un lien d'invitation."""
-    return {
-        "email": email,
-        "password": mot_de_passe,
-        "email_confirm": True,
-        "app_metadata": {"dossier_id": str(dossier_id), "env": "demo"},
-    }
 
 
 def siren_contact(contact: Mapping[str, object]) -> str | None:

@@ -1,7 +1,7 @@
 # ADR-004 — Prestataire de signature électronique : Yousign (pressenti)
 
 **Date :** 2026-06-16
-**Statut :** en attente de devis — décision finale à prendre en phase 0
+**Statut :** en attente de devis — décision de périmètre prévue en décembre 2026 (AXE-441, sous AXE-770)
 **Décideurs :** Louis Vedovato
 
 > **Mise à jour 2026-09-11 (doc 20 §4/§6)** : le dépôt des comptes annuels

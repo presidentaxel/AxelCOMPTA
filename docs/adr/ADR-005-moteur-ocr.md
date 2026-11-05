@@ -1,5 +1,9 @@
 # ADR-005 — Moteur OCR pour les justificatifs
 
+> **État au 2026-11-05** (ajouté) : décision prise, pas encore implémentée.
+> Les photos de justificatifs sont stockées (AXE-425), pas lues. Le spike
+> sur 30 tickets réels (doc 12 §0.3) n'est pas fait.
+
 **Date :** 2026-06-16  
 **Mis à jour :** 2026-06-25  
 **Statut :** DÉCIDÉ

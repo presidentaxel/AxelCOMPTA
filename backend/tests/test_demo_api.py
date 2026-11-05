@@ -62,7 +62,6 @@ from axelcompta.demo_api import (
     get_propositions,
     get_provisions_cloture,
     get_registre_anomalies,
-    get_reinitialiseur,
     get_role_membre,
     get_signatures_inpi,
 )
@@ -848,9 +847,9 @@ def test_inviter_dossier_inconnu_est_404_pour_un_gestionnaire() -> None:
     assert reponse.status_code == 404
 
 
-def test_faux_digifactory_masque_connecter_sa_banque_jusqua_au_reglage() -> None:
-    """Démo : Digifactory est branché d'office, le bouton n'est chez personne.
-    Le couper dans les paramètres le fait réapparaître."""
+def test_digifactory_branche_masque_connecter_sa_banque() -> None:
+    """Digifactory est le canal bancaire : le bouton n'est chez personne, et
+    le réglage de démo qui le débranchait n'existe plus."""
     client = _client()
     karim = client.get("/dossiers/DEMO_karim", headers=_en_tete("DEMO_karim")).json()
     sophie = client.get("/dossiers/DEMO_sophie", headers=_en_tete("DEMO_sophie")).json()
@@ -861,20 +860,7 @@ def test_faux_digifactory_masque_connecter_sa_banque_jusqua_au_reglage() -> None
         "Impôt sur les sociétés",
     )
     assert sophie["forme_juridique"] == "EURL"
-    lecture = client.get("/demo/parametres", headers=_en_tete_gestionnaire())
-    assert lecture.status_code == 200
-    assert lecture.json() == {"digifactory_branche": True}
-    assert client.patch("/demo/parametres", json={"digifactory_branche": False}).status_code == 401
-    reglage = client.patch(
-        "/demo/parametres",
-        json={"digifactory_branche": False},
-        headers=_en_tete_gestionnaire(),
-    )
-    assert reglage.status_code == 200
-    karim = client.get("/dossiers/DEMO_karim", headers=_en_tete("DEMO_karim")).json()
-    sophie = client.get("/dossiers/DEMO_sophie", headers=_en_tete("DEMO_sophie")).json()
-    assert karim["peut_connecter_sa_banque"] is True
-    assert sophie["peut_connecter_sa_banque"] is True
+    assert client.get("/demo/parametres", headers=_en_tete_gestionnaire()).status_code == 404
 
 
 def test_karim_est_en_mode_chauffeur_direct_les_autres_en_gestionnaire() -> None:
@@ -1401,68 +1387,6 @@ def test_une_ecriture_contre_passee_nest_plus_a_trancher_nulle_part() -> None:
         f"{url}/{ecriture_id}/decision", json={"categorie": "carburant"}, headers=en_tete
     )
     assert decision.status_code == 409
-
-
-def _client_demo(role: str = "admin") -> tuple[TestClient, list[tuple[str, frozenset[str]]]]:
-    """Le vrai réinitialiseur ouvre la connexion propriétaire : remplacé
-    par un enregistreur d'appels."""
-    client = _client_et_stubs(role=role)[0]
-    appels: list[tuple[str, frozenset[str]]] = []
-
-    def reinitialiser(tenant_id: TenantId, parties: frozenset[str]) -> list[str]:
-        appels.append((str(tenant_id), parties))
-        return ["DEMO_karim"]
-
-    client.app.dependency_overrides[get_reinitialiseur] = lambda: reinitialiser  # type: ignore[attr-defined]
-    return client, appels
-
-
-def test_remise_a_neuf_ne_touche_que_les_parties_cochees() -> None:
-    client, appels = _client_demo()
-
-    reponse = client.post(
-        "/demo/reinitialiser",
-        json={"parties": ["decisions", "rappels"]},
-        headers=_en_tete_gestionnaire(),
-    )
-
-    assert reponse.status_code == 200
-    assert reponse.json() == {"parties": ["decisions", "rappels"], "dossiers": ["DEMO_karim"]}
-    assert appels == [("TENANT_DEMO", frozenset({"decisions", "rappels"}))]
-
-
-def test_remise_a_neuf_liste_ses_parties_sans_le_grand_livre() -> None:
-    client, _ = _client_demo()
-
-    cles = [p["cle"] for p in client.get("/demo/parties", headers=_en_tete_gestionnaire()).json()]
-
-    assert "decisions" in cles
-    assert not any("ecriture" in cle or "ledger" in cle for cle in cles)
-
-
-def test_remise_a_neuf_refuse_une_partie_inconnue_ou_vide() -> None:
-    client, appels = _client_demo()
-    for parties in ([], ["ecritures"]):
-        reponse = client.post(
-            "/demo/reinitialiser", json={"parties": parties}, headers=_en_tete_gestionnaire()
-        )
-        assert reponse.status_code == 400
-    assert appels == []
-
-
-def test_remise_a_neuf_reservee_a_un_admin_du_portefeuille_demo() -> None:
-    membre, appels_membre = _client_demo(role="membre")
-    autre, appels_autre = _client_demo()
-    corps = {"parties": ["decisions"]}
-
-    assert (
-        membre.post("/demo/reinitialiser", json=corps, headers=_en_tete_gestionnaire()).status_code
-        == 403
-    )
-    en_tete_autre = _en_tete_gestionnaire("AUTRE_TENANT")
-    assert autre.post("/demo/reinitialiser", json=corps, headers=en_tete_autre).status_code == 403
-    assert autre.post("/demo/reinitialiser", json=corps).status_code == 401
-    assert appels_membre == appels_autre == []
 
 
 def _poser_notification(
@@ -2154,17 +2078,6 @@ def test_repetition_les_pdf_de_cloture_et_le_greffe() -> None:
     assert signature.status_code == 200 and signature.json()["qualifie"] is False
     apres = client.get("/dossiers/DEMO_karim/greffe-inpi.pdf", headers=en_tete).content
     assert apres.startswith(b"%PDF") and apres != avant
-
-
-def test_repetition_la_remise_a_neuf_cible_decisions_et_frise() -> None:
-    client, appels = _client_demo()
-    reponse = client.post(
-        "/demo/reinitialiser",
-        json={"parties": ["decisions", "jalons"]},
-        headers=_en_tete_gestionnaire(),
-    )
-    assert reponse.status_code == 200
-    assert appels == [("TENANT_DEMO", frozenset({"decisions", "jalons"}))]
 
 
 def test_le_gestionnaire_liste_les_anomalies_de_son_dossier() -> None:

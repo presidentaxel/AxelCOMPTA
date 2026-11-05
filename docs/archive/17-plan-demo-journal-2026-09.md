@@ -5,7 +5,7 @@
 > verticale backend, front minimal en semaine 4 ») est **faux maintenant**.
 > Le principe change : on construit d'abord le parcours complet des deux
 > interfaces produit (gestionnaire PC, chauffeur mobile — détail dans
-> [doc 19](19-parcours-utilisateur.md)), avec de **vrais calculs** tournant
+> [doc 19](../19-parcours-utilisateur.md)), avec de **vrais calculs** tournant
 > sur un **jeu de données synthétique mais réaliste**, plutôt que l'inverse.
 > Le travail déjà fait sur le moteur (§12) n'est pas jeté — il devient le
 > cœur qu'on branche derrière ces deux interfaces.
@@ -16,7 +16,7 @@
 > sans login », « `user_metadata.dossier_id` ») : l'API lit désormais
 > dossiers, ledger et propositions en Postgres (`demo_seed` les amorce), le
 > gestionnaire est authentifié par le lien `tenant_id`, et le lien chauffeur
-> est dans `app_metadata`. Détail et raisons : [doc 18](18-organisation-code.md).
+> est dans `app_metadata`. Détail et raisons : [doc 18](../18-organisation-code.md).
 
 ## 1. Objectif de la démo
 
@@ -130,7 +130,7 @@ premier coup d'œil que ces trois dossiers sont dans des états différents.
 ## 5. Le moteur réutilisé tel quel
 
 Rien ne change dans la logique de calcul déjà construite (détail complet
-en §12 et [doc 18](18-organisation-code.md)) :
+en §12 et [doc 18](../18-organisation-code.md)) :
 
 | Module | Rôle | Statut |
 |---|---|---|
@@ -148,7 +148,7 @@ l'écran de revue derrière chaque profil.
 
 ## 6. Les deux interfaces de la démo
 
-Détail complet du parcours dans [doc 19](19-parcours-utilisateur.md). Pour
+Détail complet du parcours dans [doc 19](../19-parcours-utilisateur.md). Pour
 la démo précisément :
 
 - **Interface gestionnaire (PC/web)** : dashboard des 3 dossiers, file de
@@ -161,7 +161,7 @@ la démo précisément :
 
 ## 7. Connexion bancaire dans la démo
 
-Voir [doc 19 §4](19-parcours-utilisateur.md#4-connexion-bancaire--deux-modes-par-dossier).
+Voir [doc 19 §4](../19-parcours-utilisateur.md#4-connexion-bancaire--deux-modes-par-dossier).
 Résumé : mode `gestionnaire` (Digifactory) câblé en priorité — Louis
 relance le fournisseur pour débloquer le token 401 (doc 16 §7) avant la fin
 du mois. Mode `chauffeur_direct` : **si le temps le permet**, montré en
@@ -657,7 +657,7 @@ se connecter.
   **format réel** (PDF + données structurées, doc 02 §6 phase 1) — pas un
   simple rendu visuel façon CERFA 2065.
 
-> **Spike fait (2026-09-11)** — [doc 20](20-integration-inpi-depot-comptes.md).
+> **Spike fait (2026-09-11)** — [doc 20](../20-integration-inpi-depot-comptes.md).
 > Bonne surprise : contrairement à Digifactory avant le doc 16, l'INPI
 > **documente publiquement** le schéma (`POST /api/annual_accounts`, doc
 > 20 §3) — pas besoin d'attendre un contact fournisseur pour savoir quoi
@@ -681,7 +681,7 @@ se connecter.
 > badge → « signé », PDF retéléchargé effectivement différent (filigrane
 > rouge diagonal + ligne signataire/horodatage). 18 tests ajoutés, tout
 > vert (232 tests backend, `next lint`/`build`). Détail complet :
-> [doc 20 §5](20-integration-inpi-depot-comptes.md#5-ce-que-ça-change-pour-le-plan-doc-17-§9-semaine-4-doc-12).
+> [doc 20 §5](../20-integration-inpi-depot-comptes.md#5-ce-que-ça-change-pour-le-plan-doc-17-§9-semaine-4-doc-12).
 
 - Répétition avec un run pré-cuit en secours, comme dans l'ancien plan.
 
@@ -760,7 +760,7 @@ en détail ni estimé — cette section capture le constat et l'intention,
 pas un plan d'exécution figé.
 
 **Écart réel trouvé en regardant le code (pas juste supposé)** :
-[DESIGN.md](../DESIGN.md) (v1.0) documente déjà une spec de composants
+[DESIGN.md](../../DESIGN.md) (v1.0) documente déjà une spec de composants
 complète — `button-primary/secondary/ghost/danger`, `text-input`,
 plusieurs variantes de `card`, `review-card`, tous les `badge-*` — mais
 **aucun composant React ne les implémente**, à une exception près
@@ -890,7 +890,7 @@ la chaîne complète tient bout-en-bout sur données réelles, avant ce pivot :
   (`filings/fec.py`, `filings/export_comptable.py`).
 
 Détail complet, fichier par fichier, commandes de reproduction :
-[doc 18](18-organisation-code.md) et [backend/README.md](../backend/README.md).
+[doc 18](../18-organisation-code.md) et [backend/README.md](../../backend/README.md).
 **Rien de ce travail n'est perdu** — c'est le contenu du §5 ci-dessus.
 
 ## 13. Rappel — ce plan n'est pas le roadmap

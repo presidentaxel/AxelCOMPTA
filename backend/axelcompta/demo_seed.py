@@ -1,23 +1,22 @@
-"""Amorçage de la base pour la démo : le portefeuille de démo, ses 3 dossiers,
-leur ledger et les propositions du pipeline (doc 17 §4).
+"""Les trois dossiers chauffeur type (Karim, Sophie, Yanis), **pour les tests
+seulement** (doc 17).
+
+**Depuis le 2026-11-05, la base Supabase est la base réelle du portefeuille
+Serenity et ne contient plus aucun dossier ni compte de démo.** Ce module
+n'a plus de commande : `amorcer_demo` et `poser_jalons_demo` servent aux
+tests (jeux en mémoire, et base locale des tests d'intégration).
 
 Composition root comme `demo_api.py` (doc 18). Avant le 2026-09-21, l'API
 recalculait tout ça à chaque requête depuis `chauffeurs_demo.py` ; depuis,
 elle lit Postgres, et ce module y écrit **une fois** ce que le pipeline
 calculait à la volée. Ce sera aussi le point d'entrée des vrais dossiers du
 pilote : mêmes tables, autre source de données (Digifactory, doc 16).
-
-Usage, depuis backend/ (DATABASE_URL défini, migrations appliquées) :
-
-    alembic upgrade head
-    python -m axelcompta.demo_seed
 """
 
 from __future__ import annotations
 
 import dataclasses
 import io
-import sys
 from datetime import UTC, datetime
 
 from reportlab.lib.pagesizes import A4
@@ -25,23 +24,20 @@ from reportlab.pdfgen import canvas
 
 from axelcompta.closing.bilan_simplifie import ClotureSimplifieeService
 from axelcompta.closing.models import ParametresCloture
-from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, UserId
 from axelcompta.demo_chauffeurs_type import construire_ledger, fin_exercice
 from axelcompta.demo_identites import IDENTITES_DEMO
 from axelcompta.demo_jalons import JALONS_EXERCICE
 from axelcompta.filings.inpi_depot import PdfDepotInpiRenderer
 from axelcompta.ingestion.providers.chauffeurs_demo import PROFILS_DEMO, ProfilChauffeurType
-from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
 from axelcompta.tenants.models import Dossier, Tenant
-from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.repository import DossierRepository
 from axelcompta.workflow.propositions import PropositionRepository
-from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
 from axelcompta.workflow.signature import DocumentSigne, SignatureRepository
-from axelcompta.workflow.signature_postgres import PostgresSignatureRepository
 
+# Identifiant historique du portefeuille, gardé tel quel en base : c'est
+# aujourd'hui celui de Serenity (nom affiché « Serenity »).
 TENANT_DEMO = TenantId("TENANT_DEMO")
 _SIGNATAIRE_JALON = UserId("seed-demo")
 
@@ -107,12 +103,14 @@ def amorcer_demo(
     dossiers: DossierRepository,
     ledger: LedgerService,
     propositions: PropositionRepository,
+    profils: tuple[ProfilChauffeurType, ...] = PROFILS_DEMO,
 ) -> list[str]:
     """Idempotent : un dossier dont le ledger est complet est laissé tel quel.
-    Retourne les ids des dossiers effectivement écrits."""
+    Retourne les ids des dossiers effectivement écrits. Le portefeuille n'est
+    créé que s'il n'existe pas (son nom en base n'est jamais écrasé)."""
     dossiers.enregistrer_tenant(Tenant(id=TENANT_DEMO, nom="Portefeuille démo"))
     ecrits: list[str] = []
-    for profil in PROFILS_DEMO:
+    for profil in profils:
         dossiers.enregistrer(_dossier_depuis_profil(profil))
         ledger_calcule, props = construire_ledger(profil)
         attendues = ledger_calcule.grand_livre(profil.dossier_id)
@@ -165,12 +163,17 @@ def _contenu_jalon(type_document: str, dossier: Dossier, ledger: LedgerService) 
 
 
 def poser_jalons_demo(
-    dossiers: DossierRepository, ledger: LedgerService, signatures: SignatureRepository
+    dossiers: DossierRepository,
+    ledger: LedgerService,
+    signatures: SignatureRepository,
+    seulement: frozenset[str] | None = None,
 ) -> list[str]:
     """Enregistre les preuves manquantes de l'exercice 2025. Idempotent :
     une preuve déjà là n'est pas réécrite (table append-only)."""
     poses: list[str] = []
     for dossier_id, types in JALONS_PAR_DOSSIER.items():
+        if seulement is not None and dossier_id not in seulement:
+            continue
         dossier = dossiers.obtenir(DossierId(dossier_id))
         if dossier is None:
             continue
@@ -190,24 +193,3 @@ def poser_jalons_demo(
             )
             poses.append(f"{dossier.id}:{type_document}")
     return poses
-
-
-def main() -> int:
-    engine = engine_depuis_env()
-    dossiers = PostgresDossierRepository(engine)
-    ledger = PostgresLedgerService(engine)
-    ecrits = amorcer_demo(dossiers, ledger, PostgresPropositionRepository(engine))
-    jalons = poser_jalons_demo(dossiers, ledger, PostgresSignatureRepository(engine))
-    if ecrits:
-        print(f"Amorçage terminé : {', '.join(ecrits)}")
-    else:
-        print("Ledger déjà amorcé.")
-    if jalons:
-        print(f"Jalons 2025 posés : {', '.join(jalons)}")
-    else:
-        print("Jalons 2025 déjà en place.")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

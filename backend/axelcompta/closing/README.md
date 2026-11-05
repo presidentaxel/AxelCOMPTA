@@ -40,13 +40,17 @@ pivot de liasse (`LiassePivot`) avant rendu par `filings/`.
 
 ## Statuts
 
-- **Démo (doc 17 semaine 3, fait)** : `ClotureSimplifieeService` produit un
-  compte de résultat et un bilan simplifiés qui s'équilibrent réellement
-  (trésorerie = résultat + TVA à payer, vérifié en test). Pas de
-  rapprochement bancaire, pas de dotations, pas de cadrage TVA de clôture,
-  pas de réintégrations fiscales — la checklist complète (doc 06 §5) reste
-  V1.
-- **V1 (doc 12, phase 3)** : clôture complète, tous les états requis.
+- **Au 2026-11-05** : clôture fiscale (TVA, IS, réintégrations, amendes),
+  liasse 2033 et 2031, réel normal (2050 à 2058-B en totaux, sans PDF),
+  CA3 annuelle (`ca3.py`), contrôles inter-cases (`controles_tdfc.py`),
+  CCA/FNP saisies par le chauffeur (`provisions.py`), paie du président
+  (`paie.py`), affectation du résultat et dividendes, à-nouveaux d'un
+  exercice clos dans AxeLCompta (`ouverture.py`). Le bilan simplifié
+  s'équilibre avec le capital et les immobilisations (AXE-421).
+- **Manque pour la V1** : dotations aux amortissements (AXE-802), LOA
+  (AXE-803), bilan d'ouverture d'une société existante (AXE-804), CA3 par
+  période (AXE-805), rapprochement bancaire, lignes de détail des annexes
+  2054 à 2059 (AXE-484). Bug ouvert : provisions écrasables (AXE-685).
 
 ## Doc de référence
 

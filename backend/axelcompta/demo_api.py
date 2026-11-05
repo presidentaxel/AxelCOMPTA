@@ -21,8 +21,8 @@ censée avoir besoin d'infra pour tourner.
 (`tenants/`), ledger (`PostgresLedgerService`), propositions d'origine du
 pipeline (`workflow/propositions*`). Rien n'est recalculé à la volée. Les
 décisions humaines restent une couche append-only réappliquée par-dessus le
-ledger persisté (`_ledger_avec_decisions`). `python -m axelcompta.demo_seed`
-amorce la base avec les 3 profils de démo ; le portefeuille visible d'un
+ledger persisté (`_ledger_avec_decisions`). Les dossiers viennent de
+Digifactory (`scripts/ajouter_chauffeurs_digifactory.py`) ; le portefeuille visible d'un
 gestionnaire est celui de son `tenant_id` (jeton), pas une constante.
 
 Usage : `uvicorn axelcompta.api.app:app --reload --port 8000` depuis
@@ -35,7 +35,7 @@ from __future__ import annotations
 import dataclasses
 import re
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from collections.abc import Set as AbstractSet
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -90,7 +90,6 @@ from axelcompta.closing.provisions import ProvisionInvalide, valider_provision
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, UserId
 from axelcompta.core.rls import appliquer_rls, contexte_identite
-from axelcompta.demo_admin import CLES_PARTIES, PARTIES, reinitialiser_demo
 from axelcompta.demo_auth import (
     IdentiteAuthentifiee,
     identite_chauffeur_optionnelle,
@@ -107,7 +106,6 @@ from axelcompta.demo_comptes import (
 )
 from axelcompta.demo_jalons import JALONS_EXERCICE, etape_depuis_preuves
 from axelcompta.demo_justificatifs import JustificatifRepository
-from axelcompta.demo_seed import TENANT_DEMO
 from axelcompta.documents.postgres import PostgresJustificatifRepository
 from axelcompta.documents.preparer import JustificatifRefuse
 from axelcompta.exercices import (
@@ -189,12 +187,6 @@ from axelcompta.workflow.signature import DocumentSigne, SignatureRepository
 from axelcompta.workflow.signature_demo import SignatureDemoProvider
 from axelcompta.workflow.signature_postgres import PostgresSignatureRepository
 
-# doc 17 §9 Semaine 3 : racine de stockage des justificatifs de démo — pas
-# le stockage WORM réel (V1, doc 04 §1), juste de quoi prouver que la photo
-# s'attache vraiment à la transaction.
-RACINE_JUSTIFICATIFS_DEMO = (
-    Path(__file__).resolve().parent.parent / "_demo_output" / "justificatifs"
-)
 _TYPES_IMAGE_ACCEPTES = ("image/jpeg", "image/png", "image/webp", "image/heic", "image/heif")
 _EXTENSIONS_IMAGE = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 
@@ -460,12 +452,6 @@ class InvitationVue(BaseModel):
     statut: str  # "invité" | "actif" — jamais "non_invité" ici, ça n'existe qu'en absence
 
 
-class ParametresDemoVue(BaseModel):
-    """Faux Digifactory de la démo. Branché : pas de « Connecter ma banque »."""
-
-    digifactory_branche: bool
-
-
 class SignatureGreffeVue(BaseModel):
     dossier_id: str
     signe: bool
@@ -623,14 +609,15 @@ def _ecritures_avec_cloture(
 
 
 def _digifactory_branche(app: FastAPI) -> bool:
-    """Faux canal Digifactory de la démo. Branché par défaut : personne ne
-    voit « Connecter ma banque ». Le réglage vit le temps du processus."""
+    """Digifactory est le canal bancaire réel du portefeuille : branché, le
+    chauffeur ne voit pas « Connecter ma banque » (AXE-433 viendra pour le
+    mode `chauffeur_direct`)."""
     return bool(getattr(app.state, "digifactory_branche", True))
 
 
 def _peut_connecter_sa_banque(digifactory_branche: bool) -> bool:
-    """Le faux branchement masque l'option pour toute la démo. Débranché,
-    « Connecter ma banque » réapparaît sur l'app chauffeur."""
+    """Tant que la banque passe par Digifactory, l'app chauffeur ne propose
+    pas de connecter sa banque elle-même."""
     return not digifactory_branche
 
 
@@ -1036,7 +1023,7 @@ def get_decisions() -> DecisionRepository:
 
 def get_dossiers() -> DossierRepository:
     """Dépendance FastAPI — dossiers et tenants (`tenants/`), peuplés par
-    `python -m axelcompta.demo_seed` (voir backend/README.md)."""
+    l'import Digifactory (voir docs/17-plan-demo-backend.md)."""
     return PostgresDossierRepository(_engine())
 
 
@@ -1542,21 +1529,6 @@ def _configurer_contexte_rls(app: FastAPI) -> None:
             tenant_id=str(identite.tenant_id) if identite and identite.tenant_id else None,
         ):
             return await call_next(request)
-
-
-def _enregistrer_routes_parametres_demo(app: FastAPI) -> None:
-    @app.get("/demo/parametres", response_model=ParametresDemoVue)
-    def lire_parametres_demo(request: Request, identite: IdentiteDep) -> ParametresDemoVue:
-        _verifier_acces_gestionnaire(identite)
-        return ParametresDemoVue(digifactory_branche=_digifactory_branche(request.app))
-
-    @app.patch("/demo/parametres", response_model=ParametresDemoVue)
-    def regler_parametres_demo(
-        request: Request, corps: ParametresDemoVue, identite: IdentiteDep
-    ) -> ParametresDemoVue:
-        _verifier_acces_gestionnaire(identite)
-        request.app.state.digifactory_branche = corps.digifactory_branche
-        return corps
 
 
 def _agregat_du_dossier(
@@ -3382,78 +3354,6 @@ def _enregistrer_routes_paie(app: FastAPI) -> None:
         return _bulletin_vue(ecriture)
 
 
-class PartieVue(BaseModel):
-    cle: str
-    libelle: str
-    detail: str
-
-
-class RemiseANeufEntree(BaseModel):
-    parties: list[str]
-
-
-class RemiseANeufVue(BaseModel):
-    parties: list[str]
-    dossiers: list[str]
-
-
-Reinitialiseur = Callable[[TenantId, frozenset[str]], list[str]]
-
-_ENGINE_PROPRIETAIRE: Engine | None = None
-
-
-def get_reinitialiseur() -> Reinitialiseur:
-    """Menu Démo (`demo_admin`). Seule route de l'API sur la connexion
-    propriétaire `DATABASE_URL`, construite à la première remise à neuf
-    seulement : les verrous des décisions et des preuves ne cèdent pas au
-    rôle web. Autorisé explicitement par Louis le 2026-09-25, démo seulement."""
-
-    def reinitialiser(tenant_id: TenantId, parties: frozenset[str]) -> list[str]:
-        global _ENGINE_PROPRIETAIRE
-        if _ENGINE_PROPRIETAIRE is None:
-            _ENGINE_PROPRIETAIRE = engine_depuis_env("DATABASE_URL")
-        return reinitialiser_demo(
-            _ENGINE_PROPRIETAIRE, tenant_id, parties, RACINE_JUSTIFICATIFS_DEMO
-        )
-
-    return reinitialiser
-
-
-ReinitialiseurDep = Annotated[Reinitialiseur, Depends(get_reinitialiseur)]
-
-
-def _exiger_admin_demo(identite: IdentiteAuthentifiee | None, role: str) -> TenantId:
-    tenant_id, _identite = _verifier_acces_gestionnaire(identite)
-    if tenant_id != TENANT_DEMO:
-        raise HTTPException(status_code=403, detail="Réservé au portefeuille de démo.")
-    if role != "admin":
-        raise HTTPException(status_code=403, detail="Réservé à un administrateur.")
-    return tenant_id
-
-
-def _enregistrer_routes_demo(app: FastAPI) -> None:
-    @app.get("/demo/parties", response_model=list[PartieVue])
-    def lister_parties(identite: IdentiteDep, role: RoleMembreDep) -> list[PartieVue]:
-        _exiger_admin_demo(identite, role)
-        return [PartieVue(cle=p.cle, libelle=p.libelle, detail=p.detail) for p in PARTIES]
-
-    @app.post("/demo/reinitialiser", response_model=RemiseANeufVue)
-    def reinitialiser(
-        entree: RemiseANeufEntree,
-        identite: IdentiteDep,
-        role: RoleMembreDep,
-        reinitialiseur: ReinitialiseurDep,
-    ) -> RemiseANeufVue:
-        """Remet à neuf les parties cochées du portefeuille de démo. Le
-        grand livre n'en fait jamais partie."""
-        tenant_id = _exiger_admin_demo(identite, role)
-        parties = frozenset(entree.parties)
-        if not parties or not parties <= CLES_PARTIES:
-            raise HTTPException(status_code=400, detail="Choisis au moins une partie connue.")
-        dossiers = reinitialiseur(tenant_id, parties)
-        return RemiseANeufVue(parties=sorted(parties), dossiers=dossiers)
-
-
 def _alerte_vue(alerte: Alerte, etat: str) -> AlerteAnomalieVue:
     return AlerteAnomalieVue(
         id=alerte.id,
@@ -3780,7 +3680,6 @@ def create_app() -> FastAPI:
     app.state.digifactory_branche = True
     _configurer_cors(app)
     _configurer_contexte_rls(app)
-    _enregistrer_routes_parametres_demo(app)
     _enregistrer_routes_dossiers(app)
     _enregistrer_routes_transactions(app)
     _enregistrer_route_correction(app)
@@ -3805,7 +3704,6 @@ def create_app() -> FastAPI:
     _enregistrer_routes_affectation(app)
     _enregistrer_routes_dividendes_paie(app)
     _enregistrer_routes_paie(app)
-    _enregistrer_routes_demo(app)
     return app
 
 

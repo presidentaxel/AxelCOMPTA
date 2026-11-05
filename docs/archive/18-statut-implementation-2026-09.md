@@ -64,13 +64,13 @@
   l'article A.47 A-1 à la lettre. Identité légale : `core/identite.py`,
   persistée par `tenants/identite_json.py`.
 
-Détail et commandes : [backend/README.md](../backend/README.md).
+Détail et commandes : [backend/README.md](../../backend/README.md).
 
 Doc 17 semaines 0 à 4 (version backend-first) sont toutes faites — ce
 travail reste la brique de calcul réutilisée telle quelle. **Pivot du
 2026-09-06** : doc 17 est réécrit pour une démo produit avec deux
 interfaces (gestionnaire PC, chauffeur mobile), parcours cadré dans
-[doc 19](19-parcours-utilisateur.md) (doc 12 §2.7). Aucun code front
+[doc 19](../19-parcours-utilisateur.md) (doc 12 §2.7). Aucun code front
 n'existe encore pour ces deux interfaces — c'est l'objet du nouveau plan.
 
 **Semaine 1 du nouveau plan faite (2026-09-06)** : jeu de données des 3

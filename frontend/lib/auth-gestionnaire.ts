@@ -177,31 +177,6 @@ export function lirePortefeuilleSession(): DossierAgregat[] | null {
   }
 }
 
-export type ParametresDemo = {
-  digifactory_branche: boolean;
-};
-
-/** Faux Digifactory. Branché, l'app chauffeur n'a pas « Connecter ma banque ». */
-export async function lireParametresDemo(): Promise<ParametresDemo> {
-  const reponse = await requeteGestionnaire("/demo/parametres");
-  if (!reponse.ok) {
-    throw new ApiError(`API démo (/demo/parametres) : HTTP ${reponse.status}`, reponse.status);
-  }
-  return (await reponse.json()) as ParametresDemo;
-}
-
-export async function reglerDigifactoryDemo(branche: boolean): Promise<ParametresDemo> {
-  const reponse = await requeteGestionnaire("/demo/parametres", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ digifactory_branche: branche }),
-  });
-  if (!reponse.ok) {
-    throw new ApiError(`API démo (/demo/parametres) : HTTP ${reponse.status}`, reponse.status);
-  }
-  return (await reponse.json()) as ParametresDemo;
-}
-
 /** doc 19 §2.1 : la liste agrégée, tout ce que voit le gestionnaire. */
 export async function listerDossiers(): Promise<DossierAgregat[]> {
   const reponse = await requeteGestionnaire("/dossiers");
@@ -604,37 +579,6 @@ export async function inviterEnMasse(
     );
   }
   return corps as InvitationsMasse;
-}
-
-export type PartieDemo = { cle: string; libelle: string; detail: string };
-
-/** Menu Démo : le portefeuille de démo seulement (`TENANT_DEMO`). */
-export function estPortefeuilleDemo(): boolean {
-  return obtenirSessionGestionnaire()?.tenantId === "TENANT_DEMO";
-}
-
-export async function listerPartiesDemo(): Promise<PartieDemo[]> {
-  const reponse = await requeteGestionnaire("/demo/parties");
-  if (!reponse.ok) {
-    const corps = await reponse.json().catch(() => ({}));
-    throw new ApiError(corps.detail ?? `HTTP ${reponse.status}`, reponse.status);
-  }
-  return (await reponse.json()) as PartieDemo[];
-}
-
-/** Remet à neuf les parties cochées. Le grand livre n'en fait jamais partie. */
-export async function reinitialiserDemo(parties: string[]): Promise<string[]> {
-  const reponse = await requeteGestionnaire("/demo/reinitialiser", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ parties }),
-  });
-  const corps = await reponse.json().catch(() => ({}));
-  if (!reponse.ok) {
-    throw new ApiError(corps.detail ?? `HTTP ${reponse.status}`, reponse.status);
-  }
-  window.sessionStorage.removeItem(CLE_PORTEFEUILLE);
-  return corps.dossiers as string[];
 }
 
 export type ModeRelance = "auto" | "manuel";

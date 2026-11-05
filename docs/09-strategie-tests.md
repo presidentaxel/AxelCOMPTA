@@ -1,5 +1,11 @@
 # 09 — Stratégie de tests
 
+> **État au 2026-11-05** (ajouté) : en plus des tests unitaires, de
+> propriétés et des golden tests de liasse, le frontend a des tests de
+> bout en bout Playwright (`frontend/e2e/`, dont la répétition de la démo,
+> AXE-431). Le jeu de test gelé de catégorisation n'existe pas encore
+> (AXE-423, AXE-816).
+
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-12
 
 ## 1. Doctrine

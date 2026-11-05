@@ -36,10 +36,12 @@ reste.
 
 ## Statuts
 
-- **Démo (doc 17 semaine 0, fait)** : `verifier_equilibre` + les deux
-  implémentations de `LedgerService` (mémoire et Postgres) tournent contre le
-  golden test doc 17 §7, **sans ventilation TVA** (512/706 bruts). La
-  ventilation réelle (512/622x/44566/706/44571) arrive semaine 2 (doc 13 §5.3).
+- **Fait** : `verifier_equilibre`, `LedgerService` mémoire et Postgres,
+  écritures validées immuables en base (I2, 2026-09-24), contre-passation
+  (`contrepassation.py`), ventilation TVA des settlements (doc 13 §5.3).
+- **Au 2026-11-05, invariants non tenus** : I3 numérotation continue en
+  base et I7 contrôle quotidien (AXE-807), I4 aucune écriture dans un
+  exercice clos (AXE-806).
 - **V1 (doc 12, phase 1.2-1.3)** : moteur complet, immobilisations,
   rapprochement bancaire (doc 06 §4), tous les templates du pack VTC (doc 06 §3).
 

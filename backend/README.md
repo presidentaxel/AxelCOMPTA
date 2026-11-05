@@ -3,7 +3,14 @@
 Monolithe modulaire Python (FastAPI / SQLAlchemy / Postgres), découpage complet
 défini en [doc 03 §3](../docs/03-architecture.md#3--découpage-en-modules-monolithe-modulaire).
 
-> **Statut au 2026-09-05 : doc 17 semaines 0 à 3 faites.** Une commande
+> **État au 2026-11-05** : l'état du projet est tenu dans le
+> [doc 12](../docs/12-roadmap-todo.md) ; la carte des modules dans le
+> [doc 18](../docs/18-organisation-code.md). L'API se lance avec
+> `uvicorn axelcompta.api.app:app` (section « Lancer l'API de démo »).
+> Après un `git pull`, `alembic upgrade head` avant l'API. Le bloc
+> ci-dessous date du 2026-09-05 et n'est gardé que pour l'historique.
+
+> **Statut au 2026-09-05 (historique) : doc 17 semaines 0 à 3 faites.** Une commande
 > unique produit un PDF **qui ressemble enfin à un compte de résultat + un
 > bilan** (doc 17 §2 : « coupe verticale d'abord », semaine par semaine on
 > remplace les bouchons par du réel). Ventilation TVA réelle (golden test
@@ -193,8 +200,8 @@ Refusé tant que l'exercice n'est pas terminé ou qu'une opération attend une
 décision. La clôture passe en base les écritures d'inventaire et les
 à-nouveaux, clôt l'exercice dans l'historique et ouvre le suivant (avenant
 de régime en vigueur, sortie de franchise de TVA le cas échéant). Rejouable
-sans doublon. Le menu Démo ne sait pas effacer des à-nouveaux : une clôture
-faite sur la démo reste.
+sans doublon. Une clôture faite reste : rien ne l'efface (le menu Démo qui
+remettait la démo à neuf a été retiré le 2026-11-05).
 
 ### Agrégats du portefeuille (AXE-566)
 
@@ -254,9 +261,14 @@ par le service (crontab de l'utilisateur ou timer systemd avec
 
 Comptes Supabase : `scripts/creer_compte_gestionnaire.py` (gestionnaire),
 `scripts/migrer_liens_vers_app_metadata.py` (comptes chauffeur créés avant
-le 2026-09-21) et `scripts/creer_comptes_demo_chauffeurs.py` (les 3 comptes
+le 2026-09-21) et, jusqu'au 2026-11-05, `scripts/creer_comptes_demo_chauffeurs.py` (supprimé ; les 3 comptes
 chauffeur de démo Karim/Sophie/Yanis, `app_metadata.env: "demo"` pour les
 distinguer de vrais comptes pilote plus tard).
+
+**Depuis le 2026-11-05 (mode réel)** : la base est celle du portefeuille
+Serenity. Karim, Yanis, `demo@axelcompta.fr` et les comptes `demo-digi-*`
+puis Sophie ont été supprimés : plus aucun dossier ni compte de démo en
+base. Le paragraphe suivant est l'historique.
 
 **Comptes de démo créés pour de vrai (2026-09-22)**, persistants — pas des
 comptes de test supprimés après vérification comme jusqu'ici : deux comptes
@@ -321,21 +333,23 @@ Détail complet de la correspondance arbre ↔ docs : [docs/18-organisation-code
 
 ## Modules
 
-| Module | Rôle en une ligne | Démo (doc 17) | V1 (doc 12) |
+| Module | Rôle en une ligne | État au 2026-11-05 | Manque pour la V1 |
 |---|---|---|---|
-| [`core/`](axelcompta/core/README.md) | Types partagés : monnaie, erreurs, ids typés | Actif (minimal) | Actif |
-| [`tenants/`](axelcompta/tenants/README.md) | Tenants, dossiers, statuts/régimes | Réduit (1 dossier en dur) | Actif |
-| [`packs/`](axelcompta/packs/README.md) | Packs métier : taxonomies, règles, templates | Actif (règles + mapping compte) | Actif |
-| [`ingestion/providers/`](axelcompta/ingestion/providers/README.md) | Interface `DataProvider` + implémentations | Actif | Actif |
-| [`documents/`](axelcompta/documents/README.md) | Justificatifs, OCR, Factur-X, matching | Non prévu | Actif |
-| [`categorize/`](axelcompta/categorize/README.md) | Pipeline règles → ML → LLM → revue humaine | Actif (règles + ML, pas de LLM) | Actif |
-| [`anomaly/`](axelcompta/anomaly/README.md) | Détection d'abus / anomalies | Non prévu | Actif |
-| [`ledger/`](axelcompta/ledger/README.md) | ❤️ Moteur comptable pur | Actif | Actif |
-| [`closing/`](axelcompta/closing/README.md) | Clôture d'exercice, états financiers | Actif (compte de résultat + bilan simplifiés) | Actif |
-| [`filings/`](axelcompta/filings/README.md) | Renderers FEC, PDF, EDI-TDFC, INPI | Actif (liasse simplifiée, overlay CERFA 2065 partiel, dossier greffe/INPI démo — doc 20) | Actif |
-| [`workflow/`](axelcompta/workflow/README.md) | Validation, revue, signature électronique | Actif (décisions humaines, revue, signature démo — doc 17 §9, doc 20) | Actif |
-| [`api/`](axelcompta/api/README.md) | Routes FastAPI, auth, permissions | Réduit (pas d'auth) | Actif |
-| [`ml/`](axelcompta/ml/README.md) | Entraînement, évaluation, registry modèles | Non prévu (modèle déjà entraîné réutilisé) | Actif |
+| [`core/`](axelcompta/core/README.md) | Types partagés : monnaie, erreurs, ids typés, accès DB, métriques | Actif | — |
+| [`tenants/`](axelcompta/tenants/README.md) | Tenants, dossiers, matrice statut × régime, avenants, agrégats, MFA | Actif (tous statuts sauf micro) | MFA branchée (AXE-812), création en masse (AXE-809) |
+| [`packs/`](axelcompta/packs/README.md) | Packs métier : taxonomies, règles, templates | 12 règles d'audit | Taxonomie relue (AXE-815) |
+| [`ingestion/providers/`](axelcompta/ingestion/providers/README.md) | Interface `DataProvider` + implémentations | Digifactory réel, settlements sur fixtures | Relevés Uber/Bolt (AXE-801), import FEC (AXE-804) |
+| [`documents/`](axelcompta/documents/README.md) | Justificatifs, OCR, Factur-X, matching | Stockage en base (AXE-425) | OCR, matching, WORM |
+| [`categorize/`](axelcompta/categorize/README.md) | Pipeline règles → ML → LLM → revue humaine | Règles + modèle v2 + apprises | LLM branché, mesure (AXE-816) |
+| [`anomaly/`](axelcompta/anomaly/README.md) | Détection d'abus / anomalies | Détecteurs V1 (AXE-437) | Qualifications en base (AXE-814) |
+| [`ledger/`](axelcompta/ledger/README.md) | ❤️ Moteur comptable pur | I2 tenu, contre-passation | I3/I7 (AXE-807), I4 (AXE-806) |
+| [`closing/`](axelcompta/closing/README.md) | Clôture d'exercice, états financiers | Liasse 2033/2031, réel normal en totaux, CA3 annuelle | Immobilisations (AXE-802), LOA (AXE-803), TVA par période (AXE-805) |
+| [`filings/`](axelcompta/filings/README.md) | Renderers FEC, PDF, EDI-TDFC, INPI | FEC validé, CERFA 2065/2031/2033, dossier INPI | Test Compta Demat (AXE-484), signature RGS (AXE-441) |
+| [`workflow/`](axelcompta/workflow/README.md) | Validation, revue, notifications, signature | Décisions, cloche, synchro | Contre-passations (AXE-420/424), rappels envoyés (AXE-808) |
+| [`api/`](axelcompta/api/README.md) | Routes FastAPI, auth, permissions | `api.app`, rôles, `/metrics` | Routes hors `demo_api` (AXE-428, AXE-810), rôle expert (AXE-800) |
+| [`pseudonymize/`](axelcompta/pseudonymize/) | Seule porte vers un LLM | Fait (AXE-436) | Fournisseur branché |
+| [`jobs/`](axelcompta/jobs/) | File de jobs Postgres (ADR-002) | Posée, inutilisée | Premier usage (AXE-808) |
+| [`ml/`](axelcompta/ml/README.md) | Entraînement, évaluation, registry modèles | Entraînement dans `_AUDIT_DONNEES/` | Registry, dérive |
 
 ## Ce qui existe déjà et sera réutilisé (hors de cet arbre)
 

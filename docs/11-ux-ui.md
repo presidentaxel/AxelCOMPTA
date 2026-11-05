@@ -1,5 +1,14 @@
 # 11 — UX / UI : interface B2B
 
+> **État au 2026-11-05** (ajouté ; le reste du doc décrit la cible
+> d'origine) : l'hypothèse « le chauffeur ne voit que la page de signature »
+> est caduque (doc 19). Écrans réels : côté chauffeur (mobile) Activité,
+> À traiter, Exercice, Mon résultat, Compte et la cloche ; côté
+> gestionnaire Entreprises, Invitations, Rappels, Équipe, Intégrations,
+> Mode expert et Anomalies. Le design system est [DESIGN.md](../DESIGN.md).
+> Les revues UX d'Arthur (AXE-563, AXE-564) ont été traitées le 04/11 et
+> le 05/11.
+
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-16
 >
 > **⚠️ Révisé le 2026-09-11 (doc 19)** : ce doc a été écrit avant la

@@ -36,14 +36,11 @@ bloc B) : `.env.local` a aussi besoin de `NEXT_PUBLIC_SUPABASE_URL` et
 anon est faite pour être publique). Sans ça, le dashboard gestionnaire
 fonctionne normalement — seule la partie chauffeur en a besoin.
 
-Les trois comptes de démo partagent le mot de passe `DemoChauffeur2026!`
-(posé le 2026-09-25, comptes synthétiques) :
-
-| E-mail | Dossier |
-|---|---|
-| `demo-karim@axelcompta.fr` | Karim |
-| `demo-sophie@axelcompta.fr` | Sophie |
-| `demo-yanis@axelcompta.fr` | Yanis |
+**Depuis le 2026-11-05, la base est celle du portefeuille réel (Serenity)
+et ne contient plus aucun compte de démo.** Karim, Sophie et Yanis
+n'existent plus que dans les tests. Les vrais chauffeurs se connectent avec
+leur adresse, après invitation par le gestionnaire. Pour voir l'espace
+chauffeur d'un dossier pendant la période de test : AXE-822.
 
 ## Les trois écrans clés (V1, doc 11 §3)
 
@@ -83,6 +80,12 @@ chauffeur (mobile) est cadré dans [doc 19](../docs/19-parcours-utilisateur.md).
   lot) + 5 liens de téléchargement (liasse/CERFA 2065/FEC/grand livre/
   balance, `demo_api.py`) reflétant les décisions humaines appliquées, pas
   le ledger brut.
+- **Au 2026-11-05** : écrans gestionnaire Entreprises (filtres, tri,
+  pagination, état dans l'URL), Invitations, Rappels, Équipe, Intégrations,
+  Mode expert, Anomalies ; écrans chauffeur Activité, À traiter (une carte
+  à la fois, « Annuler »), Exercice, Mon résultat, Compte et cloche. Revues
+  UX AXE-563 et AXE-564 traitées. Tests Playwright dans `e2e/`
+  (`npm run e2e`).
 - **V1 (doc 12, phase 3-4)** : Next.js complet sur `api/` (le vrai backend,
   auth/MFA, multi-tenant), design system (`DESIGN.md`), maquettes Figma
   validées avec 2 utilisateurs cibles (doc 12 §0.3).

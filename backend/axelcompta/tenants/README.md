@@ -71,8 +71,8 @@ d'héritage implicite (doc 03 §3bis, doc 06 §7).
 
 ## Statuts
 
-- **Démo (doc 17 §3)** : les 3 dossiers de démo sont persistés
-  (`python -m axelcompta.demo_seed`) et appartiennent à un tenant en base ;
+- **Depuis le 2026-11-05** : plus aucun dossier de démo en base ; les
+  dossiers viennent de l'import Digifactory (doc 17) ;
   le gestionnaire ne voit que ceux de son `tenant_id`. **Isolation dans les
   requêtes du repository, pas de RLS Postgres** (V1). Un seul portefeuille
   de démo, pas encore de création de dossier hors amorçage.
