@@ -86,6 +86,7 @@ node_modules
 .next/
 out/
 build/
+frontend/dist-unit/
 
 # Production
 dist/
