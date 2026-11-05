@@ -11,6 +11,7 @@ import { useDossierChauffeur, type Bloc } from "@/app/chauffeur/use-dossier";
 import { Aide } from "@/components/Aide";
 import { Button } from "@/components/ui/button";
 import { DividendesSection } from "@/components/DividendesSection";
+import { Etat } from "@/components/Etat";
 import { ResultatACeJour } from "@/components/ResultatACeJour";
 import { Squelette, SqueletteLignes } from "@/components/Squelette";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,7 @@ import {
 } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
 import { phrasePourChauffeur } from "@/lib/langage-chauffeur";
+import { messageEchecChargement } from "@/lib/session";
 import { lireMontantEuros } from "@/lib/montant";
 import type { AffectationVue, DossierResume, ScenarioAffectation } from "@/lib/types";
 
@@ -31,8 +33,9 @@ export default function ResultatChauffeurPage({
   params: Promise<{ dossierId: string }>;
 }) {
   const { dossierId } = use(params);
-  const { dossier } = useDossierChauffeur(dossierId);
+  const { dossier, reessayer: reessayerDossier } = useDossierChauffeur(dossierId);
   const [vue, setVue] = useState<AffectationVue | null>(null);
+  const [essai, setEssai] = useState(0);
   const [choix, setChoix] = useState<string | null>(null);
   const [montantLibre, setMontantLibre] = useState("");
   const [confirme, setConfirme] = useState(false);
@@ -41,10 +44,27 @@ export default function ResultatChauffeurPage({
   const [fait, setFait] = useState<string | null>(null);
 
   useEffect(() => {
+    let annule = false;
     fetchAvecAuthChauffeur<AffectationVue>(`/dossiers/${dossierId}/affectation`)
-      .then(setVue)
-      .catch(() => setErreur("Impossible de charger votre résultat."));
-  }, [dossierId]);
+      .then((valeur) => {
+        if (!annule) setVue(valeur);
+      })
+      .catch((exception: unknown) => {
+        if (!annule) {
+          setErreur(messageEchecChargement(exception, "Impossible de charger votre résultat."));
+        }
+      });
+    return () => {
+      annule = true;
+    };
+  }, [dossierId, essai]);
+
+  function reessayerTout() {
+    reessayerDossier();
+    setErreur(null);
+    setVue(null);
+    setEssai((valeur) => valeur + 1);
+  }
 
   const retour = (
     <Link
@@ -63,10 +83,14 @@ export default function ResultatChauffeurPage({
       </div>
     );
   }
-  if (vue === null && erreur) {
+  if (dossier.statut === "erreur" || (vue === null && erreur)) {
     return (
       <div>
-        <p className="text-sm text-danger">{erreur}</p>
+        <Etat
+          type="erreur"
+          message={dossier.statut === "erreur" ? dossier.message : (erreur ?? "")}
+          onReessayer={reessayerTout}
+        />
         <div className="mt-4">{retour}</div>
       </div>
     );
@@ -196,16 +220,13 @@ export default function ResultatChauffeurPage({
 }
 
 function BlocResultat({ dossier }: { dossier: Bloc<DossierResume> }) {
-  if (dossier.statut === "en_cours") {
+  if (dossier.statut === "en_cours" || dossier.statut === "erreur") {
     return (
       <div>
         <Squelette className="h-8 w-32" />
         <Squelette className="mt-2 h-4 w-56" />
       </div>
     );
-  }
-  if (dossier.statut === "erreur") {
-    return <p className="text-sm text-danger">{dossier.message}</p>;
   }
   return <ResultatACeJour dossier={dossier.valeur} />;
 }

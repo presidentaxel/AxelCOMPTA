@@ -9,6 +9,7 @@ import { GreffeInpiSection } from "@/components/GreffeInpiSection";
 import { PaieSection } from "@/components/PaieSection";
 import { ProvisionsCloture } from "@/components/ProvisionsCloture";
 import { useDossierChauffeur } from "@/app/chauffeur/use-dossier";
+import { Etat } from "@/components/Etat";
 import { Squelette, SqueletteLignes } from "@/components/Squelette";
 import { fetchAvecAuthChauffeur } from "@/lib/auth-chauffeur";
 import { phraseOperationsRestantes, raisonApresCloture } from "@/lib/etapes-exercice";
@@ -24,7 +25,7 @@ export default function ExerciceChauffeurPage({
   params: Promise<{ dossierId: string }>;
 }) {
   const { dossierId } = use(params);
-  const { dossier, recharger } = useDossierChauffeur(dossierId);
+  const { dossier, recharger, reessayer } = useDossierChauffeur(dossierId);
   const [clos, setClos] = useState(false);
   const [revisionProvisions, setRevisionProvisions] = useState(0);
   const [suivi, setSuivi] = useState(dossierId);
@@ -48,7 +49,9 @@ export default function ExerciceChauffeurPage({
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Exercice</h1>
       {dossier.statut === "en_cours" && <Squelette className="mt-2 h-4 w-56" />}
       {periode && <p className="mt-2 text-sm text-subtle">{periode}</p>}
-      {dossier.statut === "erreur" && <p className="mt-4 text-sm text-danger">{dossier.message}</p>}
+      {dossier.statut === "erreur" && (
+        <Etat type="erreur" message={dossier.message} onReessayer={reessayer} />
+      )}
       {fiche &&
         [fiche.alerte_regime, fiche.alerte_tva]
           .filter((alerte): alerte is string => alerte !== null)

@@ -17,6 +17,7 @@ import {
 } from "@/app/chauffeur/use-decision-differee";
 import { useDossierChauffeur, useOperationsChauffeur } from "@/app/chauffeur/use-dossier";
 import { ConfirmationGroupee } from "@/components/ConfirmationGroupee";
+import { Etat } from "@/components/Etat";
 import { QuestionCategorisation } from "@/components/QuestionCategorisation";
 import { ResultatACeJour } from "@/components/ResultatACeJour";
 import { Squelette, SqueletteLignes } from "@/components/Squelette";
@@ -72,8 +73,13 @@ function Activite({
   const recherche = useSearchParams();
   const etat = lireEtatActivite(recherche);
   const requete = recherche.toString();
-  const { dossier } = useDossierChauffeur(dossierId);
-  const { transactions, remplacer, recharger } = useOperationsChauffeur(dossierId);
+  const { dossier, reessayer: reessayerDossier } = useDossierChauffeur(dossierId);
+  const {
+    transactions,
+    remplacer,
+    recharger,
+    reessayer: reessayerOperations,
+  } = useOperationsChauffeur(dossierId);
   const [horsFile, setHorsFile] = useState<string[]>([]);
   const [epinglee, setEpinglee] = useState<string | null>(null);
   const [annonce, setAnnonce] = useState("");
@@ -133,6 +139,13 @@ function Activite({
   const mois = etat.mois && moisDispo.includes(etat.mois) ? etat.mois : dernierMois;
   const indexMois = mois ? moisDispo.indexOf(mois) : -1;
   const reste = file.length + tickets.length;
+  const sansOperation = transactions.statut === "pret" && operations.length === 0;
+  const peutConnecter = dossier.statut === "pret" && dossier.valeur.peut_connecter_sa_banque;
+
+  function reessayerEchecs() {
+    if (dossier.statut === "erreur") reessayerDossier();
+    if (transactions.statut === "erreur") reessayerOperations();
+  }
   const toast = enAttente
     ? { libelle: enAttente.libelle, onAnnuler: annulerDecision }
     : correction
@@ -259,7 +272,8 @@ function Activite({
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {annonce}
       </div>
-      <Entete dossier={dossier} aDesTransactions={operations.length > 0} />
+      <Entete dossier={dossier} onReessayer={reessayerEchecs} />
+      {transactions.statut === "pret" && !sansOperation && (
       <div className="sticky top-0 z-20 -mx-4 mt-8 bg-canvas-app px-4 pb-3 pt-1">
         <div className="flex gap-2">
           <Onglet actif={etat.vue === "traiter"} onClick={() => mettreAJour({ vue: "traiter" })}>
@@ -279,15 +293,26 @@ function Activite({
           </p>
         )}
       </div>
+      )}
       {erreurAction && (
         <p role="alert" className="mt-4 text-sm text-danger">
           {erreurAction}
         </p>
       )}
-      {transactions.statut === "erreur" ? (
-        <p className="mt-8 text-sm text-danger">{transactions.message}</p>
+      {dossier.statut === "erreur" ? null : transactions.statut === "erreur" ? (
+        <Etat type="erreur" message={transactions.message} onReessayer={reessayerOperations} />
       ) : transactions.statut === "en_cours" ? (
-        <SqueletteLignes nombre={4} className="mt-6 h-14 w-full" />
+        <Etat type="chargement">
+          <SqueletteLignes nombre={4} className="h-14 w-full" />
+        </Etat>
+      ) : sansOperation ? (
+        peutConnecter ? null : (
+          <Etat
+            type="vide"
+            message="Vos transactions arrivent bientôt."
+            action={{ libelle: "Actualiser", onClick: reessayerOperations }}
+          />
+        )
       ) : etat.vue === "traiter" ? (
         <Arriere
           courante={courante}
@@ -299,6 +324,7 @@ function Activite({
           onChange={remplacer}
           onChoisir={classer}
           onGroupe={confirmerGroupe}
+          onVoirMouvements={() => mettreAJour({ vue: "mouvements" })}
         />
       ) : (
         <Mouvements
@@ -317,6 +343,7 @@ function Activite({
           onAvancer={() => mettreAJour({ mois: moisDispo[indexMois + 1] ?? null })}
           sens={etat.sens}
           onSens={(sens) => mettreAJour({ sens })}
+          onActualiser={reessayerOperations}
         />
       )}
       {toast && <ToastDecision libelle={toast.libelle} onAnnuler={toast.onAnnuler} />}
@@ -332,22 +359,22 @@ type CorrectionAffichee = {
 
 function Entete({
   dossier,
-  aDesTransactions,
+  onReessayer,
 }: {
   dossier: { statut: "en_cours" } | { statut: "pret"; valeur: DossierResume } | { statut: "erreur"; message: string };
-  aDesTransactions: boolean;
+  onReessayer: () => void;
 }) {
   if (dossier.statut === "erreur") {
-    return <p className="text-sm text-danger">{dossier.message}</p>;
+    return <Etat type="erreur" message={dossier.message} onReessayer={onReessayer} className="mt-0" />;
   }
   if (dossier.statut === "en_cours") {
     return (
-      <div>
+      <Etat type="chargement" className="mt-0">
         <Squelette className="h-8 w-48" />
         <Squelette className="mt-2 h-4 w-40" />
         <Squelette className="mt-6 h-8 w-32" />
         <Squelette className="mt-2 h-4 w-56" />
-      </div>
+      </Etat>
     );
   }
   const fiche = dossier.valeur;
@@ -360,10 +387,7 @@ function Entete({
       <div className="mt-6">
         <ResultatACeJour dossier={fiche} />
       </div>
-      <ConnexionBancaire
-        peutConnecter={fiche.peut_connecter_sa_banque}
-        aDesTransactions={aDesTransactions}
-      />
+      <ConnexionBancaire peutConnecter={fiche.peut_connecter_sa_banque} />
     </>
   );
 }
@@ -401,6 +425,7 @@ function Arriere({
   onChange,
   onChoisir,
   onGroupe,
+  onVoirMouvements,
 }: {
   courante: TransactionVue | null;
   file: TransactionVue[];
@@ -411,6 +436,7 @@ function Arriere({
   onChange: (transaction: TransactionVue) => void;
   onChoisir: (transaction: TransactionVue, categorie: string, libelle: string) => void;
   onGroupe: (ids: string[], libelle: string) => void;
+  onVoirMouvements: () => void;
 }) {
   const zoneRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -421,7 +447,12 @@ function Arriere({
   if (!courante && tickets.length === 0) {
     return (
       <div ref={zoneRef} tabIndex={-1} role="region" aria-label="À traiter" className={`mt-6 outline-none ${ANNEAU}`}>
-        <p className="text-sm text-subtle">Tout est à jour.</p>
+        <Etat
+          type="vide"
+          className="mt-0"
+          message="Tout est à jour."
+          action={{ libelle: "Voir mes mouvements", onClick: onVoirMouvements }}
+        />
       </div>
     );
   }
@@ -516,6 +547,7 @@ function Mouvements({
   onAvancer,
   sens,
   onSens,
+  onActualiser,
 }: {
   dossierId: string;
   ouverte: string | null;
@@ -532,6 +564,7 @@ function Mouvements({
   onAvancer: () => void;
   sens: SensActivite;
   onSens: (sens: SensActivite) => void;
+  onActualiser: () => void;
 }) {
   const retenues = transactions.filter((transaction) =>
     sens === "sorties" ? transaction.montant_cts < 0 : transaction.montant_cts > 0,
@@ -579,9 +612,20 @@ function Mouvements({
         </p>
       )}
       {jours.length === 0 ? (
-        <p className="mt-6 text-sm text-subtle">
-          {sens === "sorties" ? "Aucune sortie ce mois-ci." : "Aucune entrée ce mois-ci."}
-        </p>
+        <Etat
+          type="vide"
+          message={sens === "sorties" ? "Aucune sortie ce mois-ci." : "Aucune entrée ce mois-ci."}
+          action={actionMoisVide(
+            sens,
+            transactions,
+            peutReculer,
+            peutAvancer,
+            onSens,
+            onReculer,
+            onAvancer,
+            onActualiser,
+          )}
+        />
       ) : (
         jours.map(([jour, lignes]) => (
           <section key={jour} className="mt-6">
@@ -728,24 +772,50 @@ function LigneMontant({
   );
 }
 
-function ConnexionBancaire({
-  peutConnecter,
-  aDesTransactions,
-}: {
-  peutConnecter: boolean;
-  aDesTransactions: boolean;
-}) {
-  if (peutConnecter) {
-    return (
-      <Button type="button" variant="secondary" className="mt-6 w-full" disabled title="Bientôt disponible">
+/** Le bouton reste inactif. L'explication est un texte : un `title` ne se lit pas au doigt. */
+function ConnexionBancaire({ peutConnecter }: { peutConnecter: boolean }) {
+  if (!peutConnecter) return null;
+  return (
+    <div className="mt-6">
+      <Button
+        type="button"
+        variant="secondary"
+        className="h-11 w-full"
+        disabled
+        aria-describedby="connexion-banque-bientot"
+      >
         Connecter ma banque
       </Button>
-    );
+      <p id="connexion-banque-bientot" className="mt-2 text-sm text-subtle">
+        Bientôt disponible.
+      </p>
+    </div>
+  );
+}
+
+function actionMoisVide(
+  sens: SensActivite,
+  transactions: TransactionVue[],
+  peutReculer: boolean,
+  peutAvancer: boolean,
+  onSens: (sens: SensActivite) => void,
+  onReculer: () => void,
+  onAvancer: () => void,
+  onActualiser: () => void,
+): { libelle: string; onClick: () => void } {
+  const autre = sens === "sorties" ? "entrees" : "sorties";
+  const aLAutre = transactions.some((transaction) =>
+    autre === "sorties" ? transaction.montant_cts < 0 : transaction.montant_cts > 0,
+  );
+  if (aLAutre) {
+    return {
+      libelle: autre === "sorties" ? "Voir les sorties" : "Voir les entrées",
+      onClick: () => onSens(autre),
+    };
   }
-  if (!aDesTransactions) {
-    return <p className="mt-6 text-sm text-subtle">Vos transactions arrivent bientôt.</p>;
-  }
-  return null;
+  if (peutReculer) return { libelle: "Mois précédent", onClick: onReculer };
+  if (peutAvancer) return { libelle: "Mois suivant", onClick: onAvancer };
+  return { libelle: "Actualiser", onClick: onActualiser };
 }
 
 /** Une proposition se confirme en un geste, sauf quand la réponse est déjà
