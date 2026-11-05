@@ -114,6 +114,92 @@ def _acte(liasse: LiassePivot) -> tuple[str, str] | None:
     )
 
 
+def _detail_annexe(dispense: bool) -> str:
+    if dispense:
+        return "L'annexe explique les chiffres. Une toute petite société peut ne pas la déposer."
+    return "L'annexe, qui explique les chiffres, est demandée."
+
+
+def _detail_confidentialite_comptes(micro: bool) -> str:
+    if micro:
+        return "Vos chiffres ne sont pas publiés. C'est réservé aux toutes petites sociétés."
+    return "Vos chiffres restent publics. Le secret est réservé aux toutes petites sociétés."
+
+
+def _detail_confidentialite_resultat(petite: bool) -> str:
+    effet = "ce que vous avez gagné et dépensé"
+    if petite:
+        return f"Le compte de résultat, {effet}, peut rester secret."
+    return f"Le compte de résultat, {effet}, reste public."
+
+
+def _detail_presentation(moyenne: bool) -> str:
+    if moyenne:
+        return "Une présentation plus courte, réservée aux sociétés de taille moyenne."
+    return "La présentation complète est demandée."
+
+
+def _lignes_portail(categorie: str, debut: str, fin: str) -> tuple[LignePortail, ...]:
+    micro = categorie == "micro"
+    petite = categorie == "petite"
+    moyenne = categorie == "moyenne"
+    return (
+        LignePortail(
+            "Type de dépôt",
+            "Comptes sociaux",
+            "Les comptes de votre société, pas ceux d'un groupe.",
+        ),
+        LignePortail("Dépôt rectificatif", "Non", "Premier dépôt de cet exercice."),
+        LignePortail("Début de l'exercice", debut, "Le premier jour de l'année comptable."),
+        LignePortail("Clôture de l'exercice", fin, "Le dernier jour de l'année comptable."),
+        LignePortail(
+            "Dispensée de déposer les annexes",
+            "Oui" if micro else "Non",
+            _detail_annexe(micro),
+        ),
+        LignePortail(
+            "Confidentialité des comptes",
+            "Oui" if micro else "Non",
+            _detail_confidentialite_comptes(micro),
+        ),
+        LignePortail(
+            "Confidentialité du compte de résultat",
+            "Oui" if petite else "Non",
+            _detail_confidentialite_resultat(petite),
+        ),
+        LignePortail(
+            "Présentation simplifiée",
+            "Oui" if moyenne else "Non",
+            _detail_presentation(moyenne),
+        ),
+    )
+
+
+def _pieces_greffe(acte: tuple[str, str], avec_annexe: bool) -> tuple[PieceGreffe, ...]:
+    pieces = [
+        PieceGreffe(
+            "Bilan actif / passif",
+            "Ce que la société possède et ce qu'elle doit. Le portail demande ce nom.",
+            "bilan.pdf",
+        ),
+        PieceGreffe(
+            "Compte de résultat",
+            "Ce que vous avez gagné et dépensé sur l'année. Le portail demande ce nom.",
+            "compte-resultat.pdf",
+        ),
+        PieceGreffe(acte[0], acte[1], None),
+    ]
+    if avec_annexe:
+        pieces.append(
+            PieceGreffe(
+                "Annexe comptable",
+                "Le texte qui explique les chiffres. Il n'est pas encore produit ici.",
+                None,
+            )
+        )
+    return tuple(pieces)
+
+
 def guide_greffe(liasse: LiassePivot) -> GuideGreffe:
     """Ce que le chauffeur reporte sur le portail INPI, et les pièces au nom
     demandé par le guichet. Rien n'est déposé depuis ici."""
@@ -126,46 +212,14 @@ def guide_greffe(liasse: LiassePivot) -> GuideGreffe:
     ca = _entier(liasse.cases, "CA_HT")
     effectif = _entier(liasse.cases, "2033E.376")
     categorie = _categorie(bilan, ca, effectif)
-    dispense_annexe = categorie == "micro"
     debut = liasse.exercice_debut.strftime("%d/%m/%Y") if liasse.exercice_debut else ""
     fin = liasse.exercice_fin.strftime("%d/%m/%Y") if liasse.exercice_fin else ""
-
-    lignes = (
-        LignePortail("Type de dépôt", "Comptes sociaux", "Une seule société"),
-        LignePortail("Dépôt rectificatif", "Non", "Premier dépôt de cet exercice"),
-        LignePortail("Début de l'exercice", debut, ""),
-        LignePortail("Clôture de l'exercice", fin, ""),
-        LignePortail(
-            "Dispensée de déposer les annexes",
-            "Oui" if dispense_annexe else "Non",
-            "Micro-entreprise" if dispense_annexe else "L'annexe est demandée",
-        ),
-        LignePortail(
-            "Confidentialité des comptes",
-            "Oui" if categorie == "micro" else "Non",
-            "Réservée aux micro-entreprises",
-        ),
-        LignePortail(
-            "Confidentialité du compte de résultat",
-            "Oui" if categorie == "petite" else "Non",
-            "Réservée aux petites entreprises",
-        ),
-        LignePortail(
-            "Présentation simplifiée",
-            "Oui" if categorie == "moyenne" else "Non",
-            "Réservée aux moyennes entreprises",
-        ),
+    return GuideGreffe(
+        depose=True,
+        lien=LIEN_PORTAIL_INPI,
+        lignes=_lignes_portail(categorie, debut, fin),
+        pieces=_pieces_greffe(acte, categorie != "micro"),
     )
-    pieces = [
-        PieceGreffe("Bilan actif / passif", "", "bilan.pdf"),
-        PieceGreffe("Compte de résultat", "", "compte-resultat.pdf"),
-        PieceGreffe(acte[0], acte[1], None),
-    ]
-    if not dispense_annexe:
-        pieces.append(
-            PieceGreffe("Annexe comptable", "À joindre. Elle n'est pas encore produite ici.", None)
-        )
-    return GuideGreffe(depose=True, lien=LIEN_PORTAIL_INPI, lignes=lignes, pieces=tuple(pieces))
 
 
 def construire_payload_comptes_annuels(liasse: LiassePivot) -> dict[str, Any]:

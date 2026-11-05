@@ -23,7 +23,7 @@ export function Marque({ surFondSombre = false }: { surFondSombre?: boolean }) {
         AxeL
       </span>
       <span
-        className="rounded-full border px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide"
+        className="rounded-full border px-1.5 py-px text-xs font-semibold uppercase tracking-wide"
         style={{ color: alpha, borderColor: filet }}
       >
         Alpha

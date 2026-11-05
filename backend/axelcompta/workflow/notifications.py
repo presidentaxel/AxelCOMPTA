@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 
@@ -27,7 +28,7 @@ from axelcompta.core.ids import DossierId, EcritureId
 from axelcompta.ledger.contrepassation import annulees
 from axelcompta.ledger.service import LedgerService
 
-from .decisions import DecisionRepository
+from .decisions import CATEGORIE_ANNULATION, DecisionRepository
 
 TYPE_A_TRANCHER = "a_trancher"
 # Exercice terminé, en attente de la validation du chauffeur (doc 06 §5) :
@@ -73,6 +74,8 @@ class NotificationEnvoyee:
 
     @property
     def message(self) -> str:
+        """Formulation figée à l'envoi (les écritures alors en attente).
+        La cloche passe par `texte_cloche`, qui recalcule le nombre."""
         if self.type in MESSAGES_FIXES:
             return MESSAGES_FIXES[self.type]
         return message(len(self.ecriture_ids))
@@ -92,6 +95,13 @@ class NotificationRepository(ABC):
     @abstractmethod
     def marquer_lues(self, dossier_id: DossierId, maintenant: datetime) -> int:
         """Marque lues toutes celles qui ne l'étaient pas ; renvoie leur nombre."""
+
+    @abstractmethod
+    def marquer_lue(
+        self, dossier_id: DossierId, notification_id: str, maintenant: datetime
+    ) -> bool:
+        """Marque lue cette notification. False si elle n'appartient pas au dossier.
+        Déjà lue : ne change pas l'instant, et renvoie True."""
 
 
 class InMemoryNotificationRepository(NotificationRepository):
@@ -117,14 +127,33 @@ class InMemoryNotificationRepository(NotificationRepository):
                 nb += 1
         return nb
 
+    def marquer_lue(
+        self, dossier_id: DossierId, notification_id: str, maintenant: datetime
+    ) -> bool:
+        for i, notification in enumerate(self.historique):
+            if notification.id != notification_id or notification.dossier_id != dossier_id:
+                continue
+            if notification.lue_le is None:
+                self.historique[i] = replace(notification, lue_le=maintenant)
+            return True
+        return False
+
 
 def ecritures_a_trancher(
     ledger: LedgerService, decisions: DecisionRepository, dossier_id: DossierId
 ) -> tuple[EcritureId, ...]:
-    """Écritures au compte d'attente sans décision humaine, hors paires
-    originale + contre-passation."""
+    """Écritures au compte d'attente sans décision en vigueur, hors paires
+    originale + contre-passation. Une annulation rend l'écriture à nouveau
+    comptable : seule la dernière décision compte."""
     ecritures = ledger.grand_livre(dossier_id)
-    exclues = {d.ecriture_id for d in decisions.lister_decisions(dossier_id)} | annulees(ecritures)
+    dernieres: dict[EcritureId, str] = {}
+    for decision in decisions.lister_decisions(dossier_id):
+        dernieres[decision.ecriture_id] = decision.categorie
+    exclues = {
+        ecriture_id
+        for ecriture_id, categorie in dernieres.items()
+        if categorie != CATEGORIE_ANNULATION
+    } | annulees(ecritures)
     return tuple(
         e.id
         for e in ecritures
@@ -143,10 +172,75 @@ class ResultatNotification:
 
 def message(nb: int) -> str:
     """Deux textes distincts plutôt qu'un gabarit à trous, pour que le
-    singulier se lise naturellement."""
+    singulier se lise naturellement. « À traiter », comme l'onglet."""
     if nb == 1:
-        return "Une opération attend votre confirmation"
-    return f"{nb} opérations attendent votre confirmation"
+        return "Une opération est à traiter"
+    return f"{nb} opérations sont à traiter"
+
+
+def sujet(type_: str) -> str:
+    """Les paliers bancaires (J-14, J-7, expiré, à refaire) sont un seul
+    sujet : le dernier remplace les précédents dans la cloche."""
+    if type_.startswith("connexion"):
+        return "connexion"
+    return type_
+
+
+def regrouper(
+    notifications: Sequence[NotificationEnvoyee],
+) -> tuple[NotificationEnvoyee, ...]:
+    """Le plus récent de chaque sujet. Les rappels ne s'empilent pas."""
+    retenus: dict[str, NotificationEnvoyee] = {}
+    for notification in sorted(notifications, key=lambda n: n.envoye_le, reverse=True):
+        retenus.setdefault(sujet(notification.type), notification)
+    return tuple(sorted(retenus.values(), key=lambda n: n.envoye_le, reverse=True))
+
+
+def texte_cloche(notification: NotificationEnvoyee, nb_a_trancher: int) -> str | None:
+    """Texte affiché. Le nombre d'opérations est celui du moment : celui de
+    l'envoi resterait après qu'elles ont été traitées. Zéro : on n'affiche
+    pas, pour ne pas ouvrir un écran « Tout est à jour »."""
+    if notification.type == TYPE_A_TRANCHER:
+        if nb_a_trancher < 1:
+            return None
+        return message(nb_a_trancher)
+    if notification.type in MESSAGES_FIXES:
+        return MESSAGES_FIXES[notification.type]
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class NotificationCloche:
+    id: str
+    type: str
+    message: str
+    envoye_le: datetime
+    lue: bool
+
+
+def pour_la_cloche(
+    notifications: Sequence[NotificationEnvoyee],
+    nb_a_trancher: int,
+    limite: int,
+) -> tuple[NotificationCloche, ...]:
+    """Ce que la cloche montre : un sujet, un texte à jour, au plus `limite`."""
+    affichees: list[NotificationCloche] = []
+    for notification in regrouper(notifications):
+        texte = texte_cloche(notification, nb_a_trancher)
+        if texte is None:
+            continue
+        affichees.append(
+            NotificationCloche(
+                id=notification.id,
+                type=notification.type,
+                message=texte,
+                envoye_le=notification.envoye_le,
+                lue=notification.lue_le is not None,
+            )
+        )
+        if len(affichees) >= limite:
+            break
+    return tuple(affichees)
 
 
 def notifier_a_trancher(

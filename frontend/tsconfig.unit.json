@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "outDir": "dist-unit",
+    "rootDir": "lib",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": [
+    "lib/messages-auth.ts",
+    "lib/messages-auth.test.ts",
+    "lib/activite-url.ts",
+    "lib/activite-url.test.ts"
+  ]
+}

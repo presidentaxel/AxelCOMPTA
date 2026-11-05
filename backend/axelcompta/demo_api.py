@@ -37,7 +37,7 @@ import re
 import uuid
 from collections.abc import Callable, Sequence
 from collections.abc import Set as AbstractSet
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol
 
@@ -163,10 +163,19 @@ from axelcompta.tenants.statuts import (
     charger_matrice,
     configuration_de,
 )
-from axelcompta.workflow.decisions import DecisionHumaine, DecisionRepository
+from axelcompta.workflow.decisions import (
+    CATEGORIE_ANNULATION,
+    DecisionHumaine,
+    DecisionRepository,
+    decision_en_vigueur,
+)
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
 from axelcompta.workflow.expert import ImputationRefusee, preparer_imputation
-from axelcompta.workflow.notifications import NotificationRepository
+from axelcompta.workflow.notifications import (
+    NotificationRepository,
+    ecritures_a_trancher,
+    pour_la_cloche,
+)
 from axelcompta.workflow.notifications_postgres import PostgresNotificationRepository
 from axelcompta.workflow.propositions import PropositionRepository
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
@@ -176,7 +185,7 @@ from axelcompta.workflow.revue import (
     appliquer_decisions,
     resoudre_ecriture_a_trancher,
 )
-from axelcompta.workflow.signature import SignatureRepository
+from axelcompta.workflow.signature import DocumentSigne, SignatureRepository
 from axelcompta.workflow.signature_demo import SignatureDemoProvider
 from axelcompta.workflow.signature_postgres import PostgresSignatureRepository
 
@@ -347,6 +356,8 @@ class TransactionVue(BaseModel):
     proposition: str | None = None
     origine_proposition: str | None = None  # "appris" | "regle" | "modele"
     confiance_proposition: float | None = None
+    # Décision humaine en vigueur. None : classée par une règle, ou pas encore.
+    categorie: str | None = None
 
 
 class DecisionEntree(BaseModel):
@@ -541,8 +552,8 @@ def _regimes_a_venir(
 
 
 _MOTIFS_AVENANT = {
-    MotifAvenant.FIN_OPTION_IR: "Fin de l'option pour l'IR (5 exercices)",
-    MotifAvenant.RENONCIATION_OPTION_IR: "Renonciation à l'option pour l'IR",
+    MotifAvenant.FIN_OPTION_IR: ("Fin de l'option pour l'impôt sur le revenu (cinq exercices)"),
+    MotifAvenant.RENONCIATION_OPTION_IR: ("Renonciation à l'option pour l'impôt sur le revenu"),
 }
 
 
@@ -569,8 +580,33 @@ def _exiger_depot_greffe(dossier: Dossier) -> None:
     if not _colonne(dossier).depot_comptes_inpi:
         raise HTTPException(
             status_code=409,
-            detail=f"{_colonne(dossier).libelle} : pas de dépôt des comptes au greffe.",
+            detail=(
+                f"{_colonne(dossier).libelle} ne dépose pas ses comptes au greffe "
+                "du tribunal de commerce."
+            ),
         )
+
+
+def _message_operations_restantes(reste: int) -> str:
+    nom = "opération" if reste == 1 else "opérations"
+    return f"Il reste {reste} {nom} à traiter."
+
+
+def _exiger_operations_tranchees(dossier: Dossier, ledger: InMemoryLedgerService) -> None:
+    """La liasse fiscale et la signature du greffe figent le résultat.
+    Une opération encore au compte d'attente le changerait — même garde
+    que la clôture (`preparer_passage`). Les pièces de travail (FEC,
+    grand livre, balance) restent téléchargeables."""
+    ecritures = ledger.grand_livre(dossier.id)
+    exclues = annulees(ecritures)
+    reste = sum(
+        1
+        for ecriture in ecritures
+        if ecriture.id not in exclues
+        and any(ligne.compte == COMPTE_ATTENTE for ligne in ecriture.lignes)
+    )
+    if reste:
+        raise HTTPException(status_code=409, detail=_message_operations_restantes(reste))
 
 
 def _ecritures_avec_cloture(
@@ -608,12 +644,7 @@ def _resume(
 ) -> DossierResume:
     ecritures = ledger.grand_livre(dossier.id)
     liasse = _construire_liasse(dossier, ledger, provisions)
-    exclues = annulees(ecritures)
-    nb_a_trancher = sum(
-        1
-        for e in ecritures
-        if e.id not in exclues and any(ligne.compte == COMPTE_ATTENTE for ligne in e.lignes)
-    )
+    nb_a_trancher = _nb_a_trancher(ecritures)
     invitation = comptes.statut(dossier.id)
     document_cloture = signatures.dernier(dossier.id, TYPE_DOCUMENT_CLOTURE)
     document_greffe = signatures.dernier(dossier.id, TYPE_DOCUMENT_GREFFE_INPI)
@@ -783,8 +814,25 @@ def _transactions_dossier(
     pipeline: RulesAndMlPipeline | None = None,
 ) -> list[TransactionVue]:
     """Extrait de la route (doc 08 §2 : longueur de fonction)."""
-    vues = _vues_dossier(dossier, ledger, justificatifs)
+    vues = _avec_categories(_vues_dossier(dossier, ledger, justificatifs), decisions)
     return _avec_propositions(dossier, vues, decisions, pipeline)
+
+
+def _avec_categories(
+    vues: list[TransactionVue], decisions: tuple[DecisionHumaine, ...]
+) -> list[TransactionVue]:
+    """La dernière décision d'une écriture est sa catégorie en vigueur."""
+    categories: dict[str, str] = {}
+    for decision in decisions:
+        categories[str(decision.ecriture_id)] = decision.categorie
+    if not categories:
+        return vues
+    return [
+        vue.model_copy(update={"categorie": categories[vue.ecriture_id]})
+        if vue.ecriture_id in categories
+        else vue
+        for vue in vues
+    ]
 
 
 _ORIGINE_PAR_ETAGE = {Etage.REGLE: "regle", Etage.ML: "modele"}
@@ -852,6 +900,15 @@ def _avec_propositions(
     ]
 
 
+def _nb_a_trancher(ecritures: tuple[Ecriture, ...] | list[Ecriture]) -> int:
+    exclues = annulees(ecritures)
+    return sum(
+        1
+        for e in ecritures
+        if e.id not in exclues and any(ligne.compte == COMPTE_ATTENTE for ligne in e.lignes)
+    )
+
+
 def _montant_512(ecriture: Ecriture) -> int:
     """Le sens de la ligne 512 donne le montant signé façon relevé bancaire
     (doc 11 §1 : « chiffres irréprochables »), pas le montant absolu."""
@@ -867,6 +924,13 @@ def _compte_affiche(ecriture: Ecriture) -> str:
     (706/622/44566/44571) — pas un seul compte à afficher tel quel."""
     autres = [ligne.compte for ligne in ecriture.lignes if ligne.compte != "512"]
     return autres[0] if len(autres) == 1 else "règlement plateforme"
+
+
+def _vue_tranchee(ecriture: Ecriture, a_justificatif: bool, categorie: str) -> TransactionVue:
+    """Réponse d'une décision ou d'une correction : la catégorie vient d'être posée."""
+    return _transaction_vue(ecriture, a_justificatif, annulee=False).model_copy(
+        update={"categorie": categorie}
+    )
 
 
 def _transaction_vue(ecriture: Ecriture, a_justificatif: bool, annulee: bool) -> TransactionVue:
@@ -1191,21 +1255,65 @@ def _trancher(
     ecritures = base.grand_livre(dossier.id)
     ecriture = next((e for e in ecritures if e.id == ecriture_id), None)
     if ecriture is None:
-        raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
+        raise HTTPException(status_code=404, detail="Cette opération est introuvable.")
     if ecriture.id in annulees(ecritures):
-        raise HTTPException(status_code=409, detail="Cette écriture a été contre-passée.")
-    if decisions.decision_courante(dossier.id, EcritureId(ecriture_id)) is not None:
+        raise HTTPException(status_code=409, detail="Cette opération a déjà été annulée.")
+    if (
+        decision_en_vigueur(decisions.decision_courante(dossier.id, EcritureId(ecriture_id)))
+        is not None
+    ):
         raise HTTPException(
             status_code=409,
-            detail="Cette écriture a déjà été tranchée (doc 05 §5 : décision immuable).",
+            detail="Cette opération a déjà été classée. Le choix ne se modifie pas.",
         )
     if not any(ligne.compte == COMPTE_ATTENTE for ligne in ecriture.lignes):
-        raise HTTPException(status_code=409, detail="Cette écriture n'est pas à trancher.")
-    proposition = propositions.obtenir(dossier.id, EcritureId(ecriture_id))
+        raise HTTPException(status_code=409, detail="Cette opération n'est pas à classer.")
+    _enregistrer_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
+    return _ecriture_decidee(dossier, base, decisions, ecriture_id)
+
+
+def _corriger(
+    dossier: Dossier,
+    ecriture_id: str,
+    categorie: str,
+    base: LedgerService,
+    decisions: DecisionRepository,
+    propositions: PropositionRepository,
+    decide_par: UserId,
+) -> Ecriture:
+    """Corriger, c'est enregistrer une nouvelle décision. L'ancienne reste
+    (doc 05 §5) : la dernière prévaut, rien n'est modifié en place."""
+    ecritures = base.grand_livre(dossier.id)
+    ecriture = next((e for e in ecritures if e.id == ecriture_id), None)
+    if ecriture is None:
+        raise HTTPException(status_code=404, detail="Cette opération est introuvable.")
+    if ecriture.id in annulees(ecritures):
+        raise HTTPException(status_code=409, detail="Cette opération a déjà été annulée.")
+    if decisions.decision_courante(dossier.id, EcritureId(ecriture_id)) is None:
+        raise HTTPException(status_code=409, detail="Cette opération n'a pas encore été classée.")
+    if not any(ligne.compte == COMPTE_ATTENTE for ligne in ecriture.lignes):
+        raise HTTPException(
+            status_code=409,
+            detail="Cette opération ne se corrige pas par une nouvelle catégorie.",
+        )
+    _enregistrer_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
+    return _ecriture_decidee(dossier, base, decisions, ecriture_id)
+
+
+def _enregistrer_decision(
+    dossier: Dossier,
+    ecriture: Ecriture,
+    categorie: str,
+    decisions: DecisionRepository,
+    propositions: PropositionRepository,
+    decide_par: UserId,
+) -> None:
+    """Pose la décision si la catégorie a un compte. N'écrit rien sinon."""
+    proposition = propositions.obtenir(dossier.id, ecriture.id)
     if proposition is None:
         raise HTTPException(
             status_code=500,
-            detail="Aucune proposition d'origine pour cette écriture (incohérence interne).",
+            detail="Cette opération n'a pas de proposition d'origine.",
         )
     comptes = charger_compte_par_categorie()
     try:
@@ -1214,20 +1322,77 @@ def _trancher(
         )
     except CategorieInconnueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    courante = decisions.decision_courante(dossier.id, ecriture.id)
+    maintenant = datetime.now(UTC)
+    if courante is not None and maintenant <= courante.decide_le:
+        maintenant = courante.decide_le + timedelta(microseconds=1)
+    decisions.enregistrer_decision(
+        DecisionHumaine(
+            dossier_id=dossier.id,
+            ecriture_id=ecriture.id,
+            categorie=categorie,
+            etage_origine=proposition.etage,
+            confiance_origine=proposition.confiance,
+            decide_par=decide_par,
+            decide_le=maintenant,
+        )
+    )
 
+
+def _ecriture_decidee(
+    dossier: Dossier, base: LedgerService, decisions: DecisionRepository, ecriture_id: str
+) -> Ecriture:
+    ledger_a_jour = _ledger_avec_decisions(dossier, base, decisions)
+    return next(e for e in ledger_a_jour.grand_livre(dossier.id) if e.id == ecriture_id)
+
+
+def _decision_suivante(
+    dossier: Dossier,
+    ecriture_id: str,
+    categorie: str,
+    base: LedgerService,
+    decisions: DecisionRepository,
+    justificatifs: JustificatifRepository,
+    decide_par: UserId,
+) -> TransactionVue:
+    """Enregistre une décision qui en remplace une déjà en vigueur."""
+    courante = decisions.decision_courante(dossier.id, EcritureId(ecriture_id))
+    en_vigueur = decision_en_vigueur(courante)
+    if en_vigueur is None:
+        raise HTTPException(status_code=409, detail="Cette opération n'a pas encore été classée.")
+    if categorie != CATEGORIE_ANNULATION:
+        ecritures = base.grand_livre(dossier.id)
+        ecriture = next((e for e in ecritures if e.id == ecriture_id), None)
+        if ecriture is None:
+            raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
+        try:
+            resoudre_ecriture_a_trancher(
+                ecriture,
+                categorie,
+                configuration_de(dossier).comptes_categories_statut(),
+                charger_compte_par_categorie(),
+            )
+        except CategorieInconnueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     decisions.enregistrer_decision(
         DecisionHumaine(
             dossier_id=dossier.id,
             ecriture_id=EcritureId(ecriture_id),
             categorie=categorie,
-            etage_origine=proposition.etage,
-            confiance_origine=proposition.confiance,
+            etage_origine=en_vigueur.etage_origine,
+            confiance_origine=en_vigueur.confiance_origine,
             decide_par=decide_par,
             decide_le=datetime.now(UTC),
         )
     )
-    ledger_a_jour = _ledger_avec_decisions(dossier, base, decisions)
-    return next(e for e in ledger_a_jour.grand_livre(dossier.id) if e.id == ecriture_id)
+    ledger = _ledger_avec_decisions(dossier, base, decisions)
+    ecritures_vues = ledger.grand_livre(dossier.id)
+    ecriture_vue = next(e for e in ecritures_vues if e.id == ecriture_id)
+    return _transaction_vue(
+        ecriture_vue,
+        justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture_vue.id),
+        ecriture_vue.id in annulees(ecritures_vues),
+    )
 
 
 def _a_trancher_ou_refus(
@@ -1235,13 +1400,11 @@ def _a_trancher_ou_refus(
 ) -> Ecriture:
     """Les refus de `_trancher`, pour une opération d'un lot."""
     if ecriture is None:
-        raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
+        raise HTTPException(status_code=404, detail="Cette opération est introuvable.")
     if ecriture.id in deja_traitees:
-        raise HTTPException(status_code=409, detail=f"Opération déjà traitée : {ecriture_id}")
+        raise HTTPException(status_code=409, detail="Cette opération a déjà été classée.")
     if not any(ligne.compte == COMPTE_ATTENTE for ligne in ecriture.lignes):
-        raise HTTPException(
-            status_code=409, detail=f"Opération qui n'est pas à trancher : {ecriture_id}"
-        )
+        raise HTTPException(status_code=409, detail="Cette opération n'est pas à classer.")
     return ecriture
 
 
@@ -1280,7 +1443,7 @@ def _trancher_groupe(
         if proposition is None:
             raise HTTPException(
                 status_code=500,
-                detail="Aucune proposition d'origine pour cette écriture (incohérence interne).",
+                detail="Cette opération n'a pas de proposition d'origine.",
             )
         try:
             resoudre_ecriture_a_trancher(ecriture, entree.categorie, comptes_statut, comptes)
@@ -1331,10 +1494,10 @@ def _joindre_justificatif(
     JPEG de démo tient en mémoire sans souci."""
     ecriture = next((e for e in ledger.grand_livre(dossier.id) if e.id == ecriture_id), None)
     if ecriture is None:
-        raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
+        raise HTTPException(status_code=404, detail="Cette opération est introuvable.")
     if not _photo_acceptee(fichier):
         raise HTTPException(
-            status_code=400, detail="Seules les photos sont acceptées (jpeg/png/webp/heic)."
+            status_code=400, detail="Seules les photos sont acceptées (JPEG, PNG, WebP ou HEIC)."
         )
     contenu = fichier.file.read()
     extension = Path(fichier.filename or "").suffix or ".jpg"
@@ -1537,7 +1700,35 @@ def _enregistrer_routes_revue(app: FastAPI) -> None:
             dossier, entree, base, decisions, propositions, identite.user_id
         )
         avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
-        return [_transaction_vue(e, e.id in avec_photo, annulee=False) for e in ecritures]
+        return [_vue_tranchee(e, e.id in avec_photo, entree.categorie) for e in ecritures]
+
+
+def _enregistrer_route_correction(app: FastAPI) -> None:
+    """Corriger une décision : une nouvelle ligne, jamais une mutation."""
+
+    @app.post(
+        "/dossiers/{dossier_id}/transactions/{ecriture_id}/correction",
+        response_model=TransactionVue,
+    )
+    def corriger_transaction(
+        ecriture_id: str,
+        entree: DecisionEntree,
+        dossier: DossierDep,
+        base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        propositions: PropositionsDep,
+        justificatifs: JustificatifsDep,
+        identite: IdentiteDep,
+    ) -> TransactionVue:
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        ecriture = _corriger(
+            dossier, ecriture_id, entree.categorie, base, decisions, propositions, identite.user_id
+        )
+        return _vue_tranchee(
+            ecriture,
+            justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture.id),
+            entree.categorie,
+        )
 
 
 def _enregistrer_routes_transactions(app: FastAPI) -> None:
@@ -1563,10 +1754,10 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
             dossier, ecriture_id, entree.categorie, base, decisions, propositions, identite.user_id
         )
         # `_trancher` refuse une écriture contre-passée : celle-ci ne l'est pas.
-        return _transaction_vue(
+        return _vue_tranchee(
             ecriture,
             justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture.id),
-            annulee=False,
+            entree.categorie,
         )
 
     @app.post(
@@ -1587,6 +1778,35 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
             ecriture,
             justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture.id),
             ecriture.id in annulees(ledger.grand_livre(dossier.id)),
+        )
+
+
+def _enregistrer_routes_annulation(app: FastAPI) -> None:
+    """Annuler : une nouvelle décision, l'ancienne reste en historique.
+    L'opération redevient à traiter. La correction passe par
+    `_enregistrer_route_correction`."""
+
+    @app.post(
+        "/dossiers/{dossier_id}/transactions/{ecriture_id}/annulation",
+        response_model=TransactionVue,
+    )
+    def annuler_decision(
+        ecriture_id: str,
+        dossier: DossierDep,
+        base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        justificatifs: JustificatifsDep,
+        identite: IdentiteDep,
+    ) -> TransactionVue:
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        return _decision_suivante(
+            dossier,
+            ecriture_id,
+            CATEGORIE_ANNULATION,
+            base,
+            decisions,
+            justificatifs,
+            identite.user_id,
         )
 
 
@@ -2416,7 +2636,10 @@ def _enregistrer_routes_declarations(app: FastAPI) -> None:
         if not _colonne(dossier).soumis_is:
             raise HTTPException(
                 status_code=409,
-                detail=f"{_colonne(dossier).libelle} : la 2065 ne concerne que l'IS.",
+                detail=(
+                    f"{_colonne(dossier).libelle} : la 2065 ne concerne que l'IS, "
+                    "l'impôt sur les sociétés."
+                ),
             )
         pdf = PdfCerfa2065Renderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
@@ -2430,7 +2653,10 @@ def _enregistrer_routes_declarations(app: FastAPI) -> None:
         if _colonne(dossier).soumis_is:
             raise HTTPException(
                 status_code=409,
-                detail=f"{_colonne(dossier).libelle} : la 2031 ne concerne que l'IR.",
+                detail=(
+                    f"{_colonne(dossier).libelle} : la 2031 ne concerne que l'IR, "
+                    "l'impôt sur le revenu."
+                ),
             )
         pdf = PdfCerfa2031Renderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
@@ -2456,6 +2682,7 @@ def _enregistrer_routes_cloture(app: FastAPI) -> None:
     def telecharger_liasse_fiscale(
         dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
     ) -> Response:
+        _exiger_operations_tranchees(dossier, ledger)
         pdf = PdfLiasseFiscaleRenderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
         )
@@ -2563,6 +2790,7 @@ def _enregistrer_routes_greffe_inpi(app: FastAPI) -> None:
     ) -> SignatureGreffeVue:
         identite = _verifier_acces_dossier(dossier.id, identite)
         _exiger_depot_greffe(dossier)
+        _exiger_operations_tranchees(dossier, ledger)
         pdf_non_signe = _document_greffe_inpi(
             dossier, ledger, _provisions_saisies(dossier, provisions)
         )
@@ -2580,8 +2808,14 @@ def _enregistrer_routes_greffe_inpi(app: FastAPI) -> None:
 
 class NotificationVue(BaseModel):
     id: str
+    type: str
     message: str
     cree_le: str
+    lue: bool
+
+
+class NotificationLueVue(BaseModel):
+    id: str
     lue: bool
 
 
@@ -2592,25 +2826,49 @@ class NotificationsLuesVue(BaseModel):
 # Assez pour une cloche : au-delà, les plus anciennes n'apportent rien,
 # l'écran « À traiter » montre déjà tout ce qui attend.
 _NOTIFICATIONS_AFFICHEES = 20
+# Avant regroupement, pour qu'un rappel récent ne cache pas un autre sujet.
+_HISTORIQUE_AVANT_REGROUPEMENT = 200
 
 
 def _enregistrer_routes_notifications(app: FastAPI) -> None:
     """Cloche de l'espace chauffeur (doc 19 §5.2) : indiv seulement, comme
-    le reste de son dossier."""
+    le reste de son dossier. Le nombre d'opérations est recalculé ici."""
 
     @app.get("/dossiers/{dossier_id}/notifications", response_model=list[NotificationVue])
     def lister_notifications(
-        dossier: DossierDep, notifications: NotificationsDep
+        dossier: DossierDep,
+        notifications: NotificationsDep,
+        ledger: LedgerBaseDep,
+        decisions: DecisionsDep,
     ) -> list[NotificationVue]:
+        nb = len(ecritures_a_trancher(ledger, decisions, dossier.id))
+        visibles = pour_la_cloche(
+            notifications.lister(dossier.id, _HISTORIQUE_AVANT_REGROUPEMENT),
+            nb,
+            _NOTIFICATIONS_AFFICHEES,
+        )
         return [
             NotificationVue(
-                id=n.id,
-                message=n.message,
-                cree_le=n.envoye_le.isoformat(),
-                lue=n.lue_le is not None,
+                id=vue.id,
+                type=vue.type,
+                message=vue.message,
+                cree_le=vue.envoye_le.isoformat(),
+                lue=vue.lue,
             )
-            for n in notifications.lister(dossier.id, _NOTIFICATIONS_AFFICHEES)
+            for vue in visibles
         ]
+
+    @app.post(
+        "/dossiers/{dossier_id}/notifications/{notification_id}/lue",
+        response_model=NotificationLueVue,
+    )
+    def marquer_notification_lue(
+        notification_id: str, dossier: DossierDep, notifications: NotificationsDep
+    ) -> NotificationLueVue:
+        maintenant = datetime.now(UTC).replace(tzinfo=None)
+        if not notifications.marquer_lue(dossier.id, notification_id, maintenant):
+            raise HTTPException(status_code=404, detail="Notification introuvable.")
+        return NotificationLueVue(id=notification_id, lue=True)
 
     @app.post("/dossiers/{dossier_id}/notifications/lues", response_model=NotificationsLuesVue)
     def marquer_notifications_lues(
@@ -2632,6 +2890,8 @@ class ClotureExerciceVue(BaseModel):
     changements: list[str] = []
     # Texte à accepter tel quel ; renvoyé à l'identique pour valider.
     attestation: str | None = None
+    # pas_termine | operations | clos | autre. Le texte seul ne sert pas de drapeau.
+    code: str | None = None
 
 
 class ValidationClotureEntree(BaseModel):
@@ -2662,7 +2922,9 @@ def _preparer_cloture(
             provisions,
         )
     except PassageRefuse as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        erreur = HTTPException(status_code=409, detail=str(exc))
+        erreur.code_metier = exc.code  # type: ignore[attr-defined]
+        raise erreur from exc
 
 
 class ProvisionVue(BaseModel):
@@ -2731,6 +2993,26 @@ def _enregistrer_routes_provisions(app: FastAPI) -> None:
         return _vue_provisions(saisies)
 
 
+def _prouver_cloture(
+    dossier: Dossier, signatures: SignatureRepository, signataire: UserId, quand: datetime
+) -> None:
+    """La validation du chauffeur est la preuve `cloture`. La frise et
+    `cloture_faite` ne lisent que sa présence, pas le PDF."""
+    if signatures.dernier(dossier.id, TYPE_DOCUMENT_CLOTURE) is not None:
+        return
+    signatures.enregistrer(
+        dossier.id,
+        TYPE_DOCUMENT_CLOTURE,
+        DocumentSigne(
+            contenu_pdf=b"%PDF-1.4\n",
+            signataire=signataire,
+            signe_le=quand,
+            provider="demo",
+            qualifie=False,
+        ),
+    )
+
+
 def _passage_cloture(
     dossier: Dossier,
     ledger: LedgerService,
@@ -2740,6 +3022,16 @@ def _passage_cloture(
 ) -> PassageExercice:
     return _preparer_cloture(
         dossier, ledger, decisions, avenants, _provisions_saisies(dossier, provisions)
+    )
+
+
+def _vue_cloture_impossible(refus: HTTPException, debut: str, fin: str) -> ClotureExerciceVue:
+    return ClotureExerciceVue(
+        possible=False,
+        raison=str(refus.detail),
+        code=getattr(refus, "code_metier", None),
+        exercice_debut=debut,
+        exercice_fin=fin,
     )
 
 
@@ -2760,9 +3052,7 @@ def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
         try:
             passage = _passage_cloture(dossier, ledger, decisions, avenants, provisions)
         except HTTPException as refus:
-            return ClotureExerciceVue(
-                possible=False, raison=str(refus.detail), exercice_debut=debut, exercice_fin=fin
-            )
+            return _vue_cloture_impossible(refus, debut, fin)
         return ClotureExerciceVue(
             possible=True,
             exercice_debut=debut,
@@ -2783,6 +3073,7 @@ def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
         dossiers: DossiersDep,
         exercices: ExercicesDep,
         provisions: ProvisionsDep,
+        signatures: SignaturesInpiDep,
         identite: IdentiteDep,
     ) -> ClotureExerciceVue:
         identite = _verifier_acces_dossier(dossier.id, identite)
@@ -2794,9 +3085,11 @@ def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
         passage = _passage_cloture(dossier, ledger, decisions, avenants, provisions)
         maintenant = datetime.now(UTC).replace(tzinfo=None)
         executer_passage(passage, ledger, dossiers, exercices, maintenant, identite.user_id, texte)
+        _prouver_cloture(dossier, signatures, identite.user_id, datetime.now(UTC))
         return ClotureExerciceVue(
             possible=False,
-            raison="Exercice clos.",
+            raison="L'exercice est clos.",
+            code="clos",
             exercice_debut=passage.apres.exercice_debut.isoformat(),
             exercice_fin=passage.apres.fin_exercice().isoformat(),
         )
@@ -2841,7 +3134,7 @@ def _avertissements(proposition: PropositionAffectation) -> list[str]:
         f"{taux.pfu_impot_revenu * 100:.1f} % d'impôt et "
         f"{taux.prelevements_sociaux * 100:.1f} % de prélèvements sociaux. L'option pour le "
         "barème progressif dépend de votre foyer : à comparer avant de décider.",
-        "Décision de l'associé unique, à prendre dans les six mois de la clôture.",
+        "C'est vous qui décidez, dans les six mois qui suivent la fin de l'exercice.",
     ]
     if situation.gerant_non_salarie:
         textes.append(
@@ -3490,6 +3783,8 @@ def create_app() -> FastAPI:
     _enregistrer_routes_parametres_demo(app)
     _enregistrer_routes_dossiers(app)
     _enregistrer_routes_transactions(app)
+    _enregistrer_route_correction(app)
+    _enregistrer_routes_annulation(app)
     _enregistrer_routes_anomalies(app)
     _enregistrer_routes_expert(app)
     _enregistrer_routes_revue(app)

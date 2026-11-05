@@ -61,7 +61,7 @@ def seuils(annee: int, debut_activite: date | None = None) -> SeuilsFranchise:
     l'activité a commencé en cours d'année (§ 285)."""
     connus = _seuils_par_annee()
     if annee not in connus:
-        raise MillesimeInconnu(f"seuils de franchise en base inconnus pour {annee}")
+        raise MillesimeInconnu(f"Les seuils de la franchise de TVA sont inconnus pour {annee}.")
     base = connus[annee]
     if debut_activite is None or debut_activite.year != annee:
         return base
@@ -79,21 +79,22 @@ def suivre_franchise(
     if ca_ht_cts > limites.majore_cts:
         etat = EtatFranchise.SEUIL_MAJORE_DEPASSE
         message = (
-            f"Chiffre d'affaires {annee} au-delà du seuil majoré de la franchise de TVA : "
-            "la TVA est due depuis la date du dépassement."
+            f"Votre chiffre d'affaires {annee} dépasse le seuil le plus haut. "
+            "Vous ne facturiez pas la TVA (taxe sur la valeur ajoutée) : "
+            "elle est due depuis la date du dépassement."
         )
     elif ca_ht_cts > limites.base_cts:
         etat = EtatFranchise.SEUIL_BASE_DEPASSE
         message = (
-            f"Chiffre d'affaires {annee} au-delà du seuil de la franchise de TVA : "
-            f"la franchise vaut jusqu'au 31/12/{annee}, la TVA sera due à partir du "
-            f"1er janvier {annee + 1}."
+            f"Votre chiffre d'affaires {annee} dépasse le seuil. "
+            f"Vous pouvez encore ne pas facturer la TVA (taxe sur la valeur ajoutée) "
+            f"jusqu'au 31/12/{annee}. Elle sera due à partir du 1er janvier {annee + 1}."
         )
     elif ca_ht_cts >= limites.base_cts * SEUIL_APPROCHE:
         etat = EtatFranchise.APPROCHE
         message = (
-            f"Chiffre d'affaires {annee} proche du seuil de la franchise de TVA : "
-            "au-delà, la TVA sera due l'année suivante."
+            f"Votre chiffre d'affaires {annee} approche le seuil. "
+            "Au-delà, la TVA (taxe sur la valeur ajoutée) sera due l'année suivante."
         )
     else:
         etat, message = EtatFranchise.SOUS_LE_SEUIL, None

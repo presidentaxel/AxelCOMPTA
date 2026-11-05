@@ -97,5 +97,8 @@ jobs:
       - name: next lint
         run: npm run lint
 
+      - name: Tests unitaires (messages d'auth, URL d'activité)
+        run: npm run test:unit
+
       - name: Build (type-check tsc inclus)
         run: npm run build

@@ -7,9 +7,12 @@
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
 
+import { useDossierChauffeur, type Bloc } from "@/app/chauffeur/use-dossier";
+import { Aide } from "@/components/Aide";
 import { Button } from "@/components/ui/button";
 import { DividendesSection } from "@/components/DividendesSection";
 import { Etat } from "@/components/Etat";
+import { ResultatACeJour } from "@/components/ResultatACeJour";
 import { Squelette, SqueletteLignes } from "@/components/Squelette";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
@@ -19,8 +22,10 @@ import {
   fetchAvecAuthChauffeur,
 } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
+import { phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import { messageEchecChargement } from "@/lib/session";
-import type { AffectationVue, ScenarioAffectation } from "@/lib/types";
+import { lireMontantEuros } from "@/lib/montant";
+import type { AffectationVue, DossierResume, ScenarioAffectation } from "@/lib/types";
 
 export default function ResultatChauffeurPage({
   params,
@@ -28,14 +33,15 @@ export default function ResultatChauffeurPage({
   params: Promise<{ dossierId: string }>;
 }) {
   const { dossierId } = use(params);
+  const { dossier, reessayer: reessayerDossier } = useDossierChauffeur(dossierId);
   const [vue, setVue] = useState<AffectationVue | null>(null);
+  const [essai, setEssai] = useState(0);
   const [choix, setChoix] = useState<string | null>(null);
   const [montantLibre, setMontantLibre] = useState("");
   const [confirme, setConfirme] = useState(false);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [fait, setFait] = useState<string | null>(null);
-  const [tentative, setTentative] = useState(0);
 
   useEffect(() => {
     let annule = false;
@@ -51,16 +57,20 @@ export default function ResultatChauffeurPage({
     return () => {
       annule = true;
     };
-  }, [dossierId, tentative]);
+  }, [dossierId, essai]);
 
-  function reessayer() {
-    setVue(null);
+  function reessayerTout() {
+    reessayerDossier();
     setErreur(null);
-    setTentative((valeur) => valeur + 1);
+    setVue(null);
+    setEssai((valeur) => valeur + 1);
   }
 
   const retour = (
-    <Link href={`/chauffeur/${dossierId}/exercice`} className="text-sm text-subtle underline">
+    <Link
+      href={`/chauffeur/${dossierId}/exercice`}
+      className="inline-flex min-h-11 items-center text-sm text-subtle underline"
+    >
       Retour à l&apos;exercice
     </Link>
   );
@@ -73,10 +83,14 @@ export default function ResultatChauffeurPage({
       </div>
     );
   }
-  if (vue === null && erreur) {
+  if (dossier.statut === "erreur" || (vue === null && erreur)) {
     return (
       <div>
-        <Etat type="erreur" message={erreur} onReessayer={reessayer} className="mt-0" />
+        <Etat
+          type="erreur"
+          message={dossier.statut === "erreur" ? dossier.message : (erreur ?? "")}
+          onReessayer={reessayerTout}
+        />
         <div className="mt-4">{retour}</div>
       </div>
     );
@@ -84,11 +98,9 @@ export default function ResultatChauffeurPage({
   if (vue === null) {
     return (
       <div>
-        <Etat type="chargement" className="mt-0">
-          <Squelette className="h-8 w-40" />
-          <SqueletteLignes nombre={4} className="h-5 w-full" />
-          <Squelette className="mt-8 h-24 w-full" />
-        </Etat>
+        <Squelette className="h-8 w-40" />
+        <SqueletteLignes nombre={4} className="h-5 w-full" />
+        <Squelette className="mt-8 h-24 w-full" />
         <div className="mt-4">{retour}</div>
       </div>
     );
@@ -96,19 +108,20 @@ export default function ResultatChauffeurPage({
   if (!vue.applicable) {
     return (
       <div>
-        <p className="text-sm text-subtle">{vue.raison}</p>
+        <p className="text-sm text-subtle">{vue.raison && phrasePourChauffeur(vue.raison)}</p>
         <DividendesSection dossierId={dossierId} />
         <div className="mt-4">{retour}</div>
       </div>
     );
   }
 
-  const libreCts = Math.round(Number(montantLibre.replace(",", ".")) * 100);
+  const lecture = lireMontantEuros(montantLibre);
   const dividendes =
     choix === "libre"
-      ? libreCts
+      ? lecture.centimes
       : (vue.scenarios.find((scenario) => scenario.cle === choix)?.dividendes_cts ?? null);
-  const pret = choix !== null && dividendes !== null && !Number.isNaN(dividendes) && confirme;
+  const messageMontant = choix === "libre" ? lecture.message : null;
+  const pret = choix !== null && dividendes !== null && confirme;
 
   async function decider() {
     if (choix === null || dividendes === null) return;
@@ -116,12 +129,16 @@ export default function ResultatChauffeurPage({
     setErreur(null);
     try {
       const resultat = await deciderAffectationChauffeur(dossierId, choix, dividendes);
-      setFait(resultat.raison ?? "Décision enregistrée.");
+      setFait(
+        phrasePourChauffeur(resultat.raison ?? "Décision enregistrée."),
+      );
     } catch (exception) {
       setErreur(
-        exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
-          ? exception.message
-          : "Échec de l'enregistrement.",
+        phrasePourChauffeur(
+          exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
+            ? exception.message
+            : "Échec de l'enregistrement.",
+        ),
       );
     } finally {
       setEnCours(false);
@@ -133,11 +150,30 @@ export default function ResultatChauffeurPage({
       <h1 className="text-[28px] font-bold tracking-tight text-ink">
         Mon résultat {vue.annee_exercice}
       </h1>
+      <div className="mt-4">
+        <BlocResultat dossier={dossier} />
+      </div>
       <dl className="mt-4 space-y-1 text-sm">
-        <Ligne libelle="Résultat" cents={vue.resultat_cts} />
-        <Ligne libelle="Réserve légale à doter" cents={vue.reserve_legale_cts} />
-        <Ligne libelle="Distribuable" cents={vue.distribuable_cts} />
-        <Ligne libelle="Trésorerie disponible" cents={vue.disponible_cts} />
+        <Ligne
+          libelle="Ce qui vous reste après charges"
+          cents={vue.resultat_cts}
+          aide="C'est le résultat de l'exercice."
+        />
+        <Ligne
+          libelle="À mettre de côté"
+          cents={vue.reserve_legale_cts}
+          aide="La réserve légale : la loi demande de garder 5 % du bénéfice, jusqu'à 10 % du capital. Vous ne pouvez pas vous la verser."
+        />
+        <Ligne
+          libelle="Ce que vous pouvez vous verser"
+          cents={vue.distribuable_cts}
+          aide="Le bénéfice distribuable : ce qui reste après cette mise de côté."
+        />
+        <Ligne
+          libelle="Disponible en banque"
+          cents={vue.disponible_cts}
+          aide="L'argent en banque, une fois retirées les sommes déjà dues."
+        />
       </dl>
       <h2 className="mt-8 text-sm font-medium text-ink">Que voulez-vous en faire ?</h2>
       <ul className="mt-3 space-y-2">
@@ -149,39 +185,32 @@ export default function ResultatChauffeurPage({
             onChoisir={() => setChoix(scenario.cle)}
           />
         ))}
-        <li>
-          <label className="flex items-center gap-3 rounded-md border border-border bg-canvas p-3 text-sm">
-            <input type="radio" checked={choix === "libre"} onChange={() => setChoix("libre")} />
-            <span className="flex-1 text-ink">Un autre montant de dividendes</span>
-            <Input
-              inputMode="decimal"
-              className="h-8 w-28"
-              placeholder="€"
-              value={montantLibre}
-              onFocus={() => setChoix("libre")}
-              onChange={(evenement) => setMontantLibre(evenement.target.value)}
-            />
-          </label>
-        </li>
+        <ChampMontantLibre
+          choisi={choix === "libre"}
+          montant={montantLibre}
+          message={messageMontant}
+          onChoisir={() => setChoix("libre")}
+          onMontant={setMontantLibre}
+        />
       </ul>
       <ul className="mt-4 space-y-1 text-xs text-subtle">
         {vue.avertissements.map((avertissement) => (
           <li key={avertissement}>{avertissement}</li>
         ))}
       </ul>
-      <label className="mt-4 flex gap-3 text-sm text-ink">
+      <label className="mt-4 flex min-h-11 gap-3 text-base text-ink">
         <input
           type="checkbox"
-          className="mt-1"
+          className="mt-0.5 size-6 shrink-0"
           checked={confirme}
           onChange={(evenement) => setConfirme(evenement.target.checked)}
         />
         <span>
-          Je décide de cette affectation en tant qu&apos;associé unique. AxeLCompta a chiffré les
+          Je décide de cette répartition, en tant que seul associé. AxeLCompta a chiffré les
           scénarios ; le choix est le mien.
         </span>
       </label>
-      <Button className="mt-3" disabled={!pret || enCours} onClick={decider}>
+      <Button className="mt-3 h-11" disabled={!pret || enCours} onClick={decider}>
         {enCours ? "Enregistrement…" : "Enregistrer ma décision"}
       </Button>
       {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}
@@ -190,11 +219,80 @@ export default function ResultatChauffeurPage({
   );
 }
 
-function Ligne({ libelle, cents }: { libelle: string; cents: number }) {
+function BlocResultat({ dossier }: { dossier: Bloc<DossierResume> }) {
+  if (dossier.statut === "en_cours" || dossier.statut === "erreur") {
+    return (
+      <div>
+        <Squelette className="h-8 w-32" />
+        <Squelette className="mt-2 h-4 w-56" />
+      </div>
+    );
+  }
+  return <ResultatACeJour dossier={dossier.valeur} />;
+}
+
+function ChampMontantLibre({
+  choisi,
+  montant,
+  message,
+  onChoisir,
+  onMontant,
+}: {
+  choisi: boolean;
+  montant: string;
+  message: string | null;
+  onChoisir: () => void;
+  onMontant: (valeur: string) => void;
+}) {
   return (
-    <div className="flex justify-between">
-      <dt className="text-subtle">{libelle}</dt>
-      <dd className="tabular-nums text-ink">{formatMontant(cents)}</dd>
+    <li className={`rounded-md border bg-canvas p-3 text-base ${choisi ? "border-ink" : "border-border"}`}>
+      <div className="flex min-h-11 items-center gap-3 text-sm">
+        <input
+          id="scenario-libre"
+          type="radio"
+          name="scenario"
+          value="libre"
+          className="size-6 shrink-0"
+          checked={choisi}
+          onChange={onChoisir}
+        />
+        <label htmlFor="scenario-libre" className="text-ink">
+          Un autre montant de dividendes
+        </label>
+      </div>
+      <div className="mt-3 pl-7">
+        <label htmlFor="montant-dividendes" className="mb-1 block text-sm font-medium text-ink">
+          Montant (€)
+        </label>
+        <Input
+          id="montant-dividendes"
+          name="montant-dividendes"
+          uiSize="lg"
+          inputMode="decimal"
+          value={montant}
+          aria-invalid={message !== null}
+          aria-describedby={message ? "montant-dividendes-message" : undefined}
+          onFocus={onChoisir}
+          onChange={(evenement) => onMontant(evenement.target.value)}
+        />
+        {message && (
+          <p id="montant-dividendes-message" role="alert" className="mt-1 text-sm text-danger">
+            {message}
+          </p>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function Ligne({ libelle, cents, aide }: { libelle: string; cents: number; aide?: string }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <dt className="text-subtle">
+        {libelle}
+        {aide && <Aide texte={aide} />}
+      </dt>
+      <dd className="shrink-0 tabular-nums text-ink">{formatMontant(cents)}</dd>
     </div>
   );
 }
@@ -215,8 +313,15 @@ function CarteScenario({
           choisi ? "border-ink bg-canvas" : "border-border bg-canvas"
         }`}
       >
-        <span className="flex items-center gap-3">
-          <input type="radio" checked={choisi} onChange={onChoisir} />
+        <span className="flex min-h-11 items-center gap-3">
+          <input
+            type="radio"
+            name="scenario"
+            value={scenario.cle}
+            className="size-6 shrink-0"
+            checked={choisi}
+            onChange={onChoisir}
+          />
           <span className="flex-1 font-medium text-ink">{scenario.libelle}</span>
           <span className="tabular-nums text-ink">{formatMontant(scenario.dividendes_cts)}</span>
         </span>

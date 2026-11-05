@@ -20,7 +20,7 @@ class JustificatifRefuse(DomaineError):
 
 def _segment(valeur: str) -> str:
     if not valeur or valeur in {".", ".."} or any(caractere in valeur for caractere in "/\\\x00"):
-        raise JustificatifRefuse("Identifiant de stockage refusé.")
+        raise JustificatifRefuse("La photo n'a pas pu être enregistrée.")
     return valeur
 
 
@@ -35,7 +35,7 @@ def preparer(
         raise JustificatifRefuse("La photo est vide ou dépasse 8 Mo.")
     normalisee = extension.lower()
     if _EXTENSION.fullmatch(normalisee) is None:
-        raise JustificatifRefuse("Extension refusée.")
+        raise JustificatifRefuse("Ce format de photo n'est pas accepté.")
     _segment(tenant_id)
     _segment(dossier_id)
     _segment(ecriture_id)

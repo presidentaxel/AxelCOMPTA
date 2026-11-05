@@ -2,21 +2,15 @@
 
 import { Bell } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Etat } from "@/components/Etat";
-import { Squelette } from "@/components/Squelette";
 import {
   listerNotificationsChauffeur,
-  marquerNotificationsLuesChauffeur,
+  marquerNotificationLueChauffeur,
 } from "@/lib/auth-chauffeur";
 import { messageEchecChargement } from "@/lib/session";
 import type { NotificationVue } from "@/lib/types";
-
-type EtatNotifs =
-  | { statut: "en_cours" }
-  | { statut: "pret"; valeur: NotificationVue[] }
-  | { statut: "erreur"; message: string };
 
 const QUAND = new Intl.DateTimeFormat("fr-FR", {
   day: "numeric",
@@ -25,94 +19,123 @@ const QUAND = new Intl.DateTimeFormat("fr-FR", {
   minute: "2-digit",
 });
 
-/** Notifications internes (doc 19 §5.2) : pas d'e-mail, la cloche est le
- * canal. Ouvrir la liste vaut lecture. Un échec s'explique dans le panneau,
- * avec « Réessayer », sans bloquer le reste de l'écran. */
+/** Sous le bandeau, au-dessus de la barre du bas, avec une marge. */
+const HAUTEUR_PANNEAU = "calc(100dvh - 8rem - env(safe-area-inset-bottom, 0px))";
+
+/** La clôture se valide dans Exercice, la banque se confirme dans Compte.
+ * Les opérations à traiter s'ouvrent sur Activité. */
+export function lienNotification(dossierId: string, type: string): string {
+  if (type === "cloture_a_valider") return `/chauffeur/${dossierId}/exercice`;
+  if (type.startsWith("connexion")) return "/chauffeur/compte";
+  return `/chauffeur/${dossierId}`;
+}
+
+/** Notifications internes (doc 19 §5.2). Ouvrir la cloche ne marque rien :
+ * chaque notification devient lue quand on l'ouvre. Une erreur de chargement
+ * propose de réessayer, un panneau vide renvoie vers l'activité. */
 export function Cloche({ dossierId, chemin }: { dossierId: string; chemin: string }) {
+  const [notifications, setNotifications] = useState<NotificationVue[]>([]);
+  const [statut, setStatut] = useState<"en_cours" | "pret" | "erreur">("en_cours");
+  const [message, setMessage] = useState("");
   const [tentative, setTentative] = useState(0);
-  const [etat, setEtat] = useState<EtatNotifs>({ statut: "en_cours" });
-  const [cycle, setCycle] = useState({ dossierId, tentative });
   const [ouvert, setOuvert] = useState(false);
-  if (cycle.dossierId !== dossierId || cycle.tentative !== tentative) {
-    setCycle({ dossierId, tentative });
-    setEtat({ statut: "en_cours" });
-  }
+  const racine = useRef<HTMLDivElement>(null);
+  const lectures = useRef(new Set<string>());
 
   useEffect(() => {
     let annule = false;
     listerNotificationsChauffeur(dossierId)
-      .then((valeur) => {
-        if (!annule) setEtat({ statut: "pret", valeur });
+      .then((liste) => {
+        if (annule) return;
+        setNotifications(
+          liste.map((notification) =>
+            lectures.current.has(notification.id) ? { ...notification, lue: true } : notification,
+          ),
+        );
+        setStatut("pret");
       })
       .catch((exception: unknown) => {
-        if (!annule) {
-          setEtat({
-            statut: "erreur",
-            message: messageEchecChargement(exception, "Impossible de charger les notifications."),
-          });
-        }
+        if (annule) return;
+        setMessage(messageEchecChargement(exception, "Impossible de charger les notifications."));
+        setStatut("erreur");
       });
     return () => {
       annule = true;
     };
   }, [dossierId, chemin, tentative]);
 
-  const notifications = etat.statut === "pret" ? etat.valeur : [];
+  useEffect(() => {
+    if (!ouvert) return;
+    function fermerSiDehors(event: PointerEvent) {
+      if (!racine.current?.contains(event.target as Node)) setOuvert(false);
+    }
+    function fermerSiEchap(event: KeyboardEvent) {
+      if (event.key === "Escape") setOuvert(false);
+    }
+    document.addEventListener("pointerdown", fermerSiDehors);
+    document.addEventListener("keydown", fermerSiEchap);
+    return () => {
+      document.removeEventListener("pointerdown", fermerSiDehors);
+      document.removeEventListener("keydown", fermerSiEchap);
+    };
+  }, [ouvert]);
+
   const nonLues = notifications.filter((notification) => !notification.lue).length;
 
-  function basculer() {
-    const ouvrir = !ouvert;
-    setOuvert(ouvrir);
-    if (ouvrir && nonLues > 0) {
-      marquerNotificationsLuesChauffeur(dossierId)
-        .then(() =>
-          setEtat((actuel) =>
-            actuel.statut === "pret"
-              ? {
-                  statut: "pret",
-                  valeur: actuel.valeur.map((notification) => ({ ...notification, lue: true })),
-                }
-              : actuel,
-          ),
-        )
-        .catch(() => undefined);
-    }
+  function suivre(notification: NotificationVue) {
+    setOuvert(false);
+    if (notification.lue || lectures.current.has(notification.id)) return;
+    lectures.current.add(notification.id);
+    setNotifications((liste) =>
+      liste.map((item) => (item.id === notification.id ? { ...item, lue: true } : item)),
+    );
+    void marquerNotificationLueChauffeur(dossierId, notification.id).catch(() => {
+      lectures.current.delete(notification.id);
+    });
   }
 
   return (
-    <div className="relative ml-auto">
+    <div className="relative ml-auto" ref={racine}>
       <button
         type="button"
-        onClick={basculer}
+        onClick={() => setOuvert((actuel) => !actuel)}
         aria-expanded={ouvert}
+        aria-haspopup="dialog"
         aria-label={nonLues > 0 ? `Notifications, ${nonLues} non lues` : "Notifications"}
-        className="relative flex h-10 w-10 items-center justify-center rounded-full text-ink"
+        className="relative flex h-11 w-11 items-center justify-center rounded-full text-ink outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]"
       >
         <Bell className="h-5 w-5" aria-hidden />
         {nonLues > 0 && (
-          <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-on-primary">
+          <span className="absolute right-0 top-0 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1 text-xs font-semibold leading-none text-on-primary">
             {nonLues}
           </span>
         )}
       </button>
       {ouvert && (
-        <div className="absolute right-0 top-12 w-72 rounded-lg border border-border bg-canvas p-2 shadow-lg">
-          {etat.statut === "erreur" ? (
+        <div
+          role="dialog"
+          aria-label="Notifications"
+          style={{ maxHeight: HAUTEUR_PANNEAU }}
+          className="absolute right-0 top-12 z-20 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-lg border border-border bg-canvas p-2 shadow-lg"
+        >
+          {statut === "erreur" ? (
             <Etat
               type="erreur"
-              className="mt-0 px-1"
-              message={etat.message}
-              onReessayer={() => setTentative((valeur) => valeur + 1)}
+              className="mt-0"
+              message={message}
+              onReessayer={() => {
+                setStatut("en_cours");
+                setTentative((valeur) => valeur + 1);
+              }}
             />
-          ) : etat.statut === "en_cours" ? (
-            <Etat type="chargement" className="mt-0 px-1 py-3">
-              <Squelette className="h-4 w-full" />
-              <Squelette className="mt-2 h-4 w-2/3" />
+          ) : statut === "en_cours" ? (
+            <Etat type="chargement" className="mt-0">
+              <div className="h-11 animate-pulse rounded-md bg-canvas-app" />
             </Etat>
           ) : notifications.length === 0 ? (
             <Etat
               type="vide"
-              className="mt-0 px-1 py-1"
+              className="mt-0"
               message="Aucune notification."
               action={{
                 libelle: "Voir mon activité",
@@ -125,11 +148,13 @@ export function Cloche({ dossierId, chemin }: { dossierId: string; chemin: strin
               {notifications.map((notification) => (
                 <li key={notification.id}>
                   <Link
-                    href={`/chauffeur/${dossierId}`}
-                    onClick={() => setOuvert(false)}
-                    className="block rounded-md p-3 hover:bg-canvas-app"
+                    href={lienNotification(dossierId, notification.type)}
+                    onClick={() => suivre(notification)}
+                    className="block min-h-11 rounded-md p-3 hover:bg-canvas-app"
                   >
-                    <p className={`text-sm ${notification.lue ? "text-subtle" : "font-medium text-ink"}`}>
+                    <p
+                      className={`text-sm break-words ${notification.lue ? "text-subtle" : "font-medium text-ink"}`}
+                    >
                       {notification.message}
                     </p>
                     <p className="mt-0.5 text-xs text-subtle">

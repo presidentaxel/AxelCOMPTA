@@ -13,17 +13,12 @@ import {
   lireProvisionsCloture,
 } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
+import { CHARGES_CLOTURE, NOM_NATURE, phrasePourChauffeur } from "@/lib/langage-chauffeur";
+import { lireEuros, listeAEnregistrer, listeSans } from "@/lib/saisie-chauffeur";
 import type { ProvisionClotureVue } from "@/lib/types";
 
-function eurosEnCentimes(saisie: string): number | null {
-  const texte = saisie.trim().replace(/\s/g, "").replace(",", ".");
-  const morceaux = /^(\d+)(?:\.(\d{1,2}))?$/.exec(texte);
-  if (morceaux === null) {
-    return null;
-  }
-  const cents = (morceaux[2] ?? "").padEnd(2, "0");
-  return Number(morceaux[1]) * 100 + Number(cents);
-}
+const CHAMP =
+  "h-11 w-full rounded-md border border-border bg-canvas px-3 text-base text-ink outline-none placeholder:text-muted focus-visible:border-border-focus focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)]";
 
 export function ProvisionsCloture({
   dossierId,
@@ -33,17 +28,34 @@ export function ProvisionsCloture({
   onChange: () => void;
 }) {
   const [lignes, setLignes] = useState<ProvisionClotureVue[]>([]);
+  const [chargees, setChargees] = useState(false);
+  const [cle, setCle] = useState(dossierId);
+  if (cle !== dossierId) {
+    setCle(dossierId);
+    setLignes([]);
+    setChargees(false);
+  }
   const [nature, setNature] = useState<"cca" | "fnp">("fnp");
-  const [compte, setCompte] = useState("");
+  const [compte, setCompte] = useState<string>(CHARGES_CLOTURE[0].compte);
   const [montant, setMontant] = useState("");
   const [libelle, setLibelle] = useState("");
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
 
   useEffect(() => {
+    let annule = false;
     lireProvisionsCloture(dossierId)
-      .then(setLignes)
-      .catch(() => setLignes([]));
+      .then((lues) => {
+        if (annule) return;
+        setLignes(lues);
+        setChargees(true);
+      })
+      .catch(() => {
+        if (!annule) setErreur("Impossible de charger les charges déjà notées.");
+      });
+    return () => {
+      annule = true;
+    };
   }, [dossierId]);
 
   async function envoyer(suivantes: ProvisionClotureVue[]): Promise<boolean> {
@@ -56,9 +68,11 @@ export function ProvisionsCloture({
       return true;
     } catch (exception) {
       setErreur(
-        exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
-          ? exception.message
-          : "Échec de l'enregistrement.",
+        phrasePourChauffeur(
+          exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
+            ? exception.message
+            : "Échec de l'enregistrement.",
+        ),
       );
       return false;
     } finally {
@@ -67,61 +81,86 @@ export function ProvisionsCloture({
   }
 
   async function ajouter() {
-    const centimes = eurosEnCentimes(montant);
-    if (centimes === null || centimes <= 0 || compte.trim() === "" || libelle.trim() === "") {
-      setErreur("Indiquez un compte de charge, un montant et un libellé.");
+    const lu = lireEuros(montant);
+    if (!chargees) {
+      setErreur("Les charges déjà notées ne sont pas chargées. Réessayez avant d'en ajouter.");
       return;
     }
-    const ok = await envoyer([
-      ...lignes,
-      { nature, compte_charge: compte.trim(), centimes, libelle: libelle.trim() },
-    ]);
+    if ("message" in lu || libelle.trim() === "") {
+      setErreur("message" in lu ? lu.message : "Indiquez de quoi il s'agit.");
+      return;
+    }
+    const suivantes = listeAEnregistrer(
+      { statut: "pret", lignes },
+      { nature, compte_charge: compte, centimes: lu.centimes, libelle: libelle.trim() },
+    );
+    if (suivantes === null) return;
+    const ok = await envoyer(suivantes);
     if (!ok) {
       return;
     }
-    setCompte("");
+    setCompte(CHARGES_CLOTURE[0].compte);
     setMontant("");
     setLibelle("");
   }
 
+  async function retirer(index: number) {
+    const suivantes = listeSans({ statut: "pret", lignes }, index);
+    if (suivantes === null || !chargees) return;
+    await envoyer(suivantes);
+  }
+
   return (
-    <div className="mt-4 rounded-md border border-border bg-canvas p-3">
+    <div className="mt-8 rounded-md border border-border bg-canvas p-3">
       <p className="text-sm text-ink">Une charge de cet exercice n&apos;est pas encore passée ?</p>
       <p className="mt-1 text-sm text-subtle">
         Donnez votre estimation. Elle sera prise dans la clôture. Rien n&apos;est deviné.
       </p>
       {lignes.length > 0 && (
         <ul className="mt-3 space-y-1 text-sm text-ink">
-          {lignes.map((ligne) => (
-            <li key={`${ligne.nature}-${ligne.compte_charge}-${ligne.libelle}`} className="flex justify-between gap-3">
+          {lignes.map((ligne, index) => (
+            <li key={`${ligne.nature}-${ligne.compte_charge}-${ligne.libelle}`} className="flex items-center justify-between gap-3">
               <span>
-                {ligne.nature === "cca" ? "Payée d'avance" : "Facture pas encore reçue"} —{" "}
-                {ligne.libelle} ({ligne.compte_charge})
+                {NOM_NATURE[ligne.nature]} — {ligne.libelle}
               </span>
-              <span>{formatMontant(ligne.centimes)}</span>
+              <span className="flex items-center gap-2">
+                <span>{formatMontant(ligne.centimes)}</span>
+                <button
+                  type="button"
+                  className="min-h-11 text-sm font-medium text-primary"
+                  disabled={enCours}
+                  onClick={() => void retirer(index)}
+                >
+                  Retirer
+                </button>
+              </span>
             </li>
           ))}
         </ul>
       )}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="mt-3 flex flex-col gap-2">
         <select
-          className="h-8 rounded-sm border border-border bg-canvas px-2 text-sm"
+          className={CHAMP}
           value={nature}
           onChange={(evenement) => setNature(evenement.target.value === "cca" ? "cca" : "fnp")}
         >
-          <option value="fnp">Facture pas encore reçue</option>
-          <option value="cca">Déjà payée, pour plus tard</option>
+          <option value="fnp">{NOM_NATURE.fnp}</option>
+          <option value="cca">{NOM_NATURE.cca}</option>
         </select>
-        <input
-          className="h-8 w-24 rounded-sm border border-border px-2 text-sm"
-          inputMode="numeric"
-          placeholder="Compte"
-          aria-label="Compte de charge"
+        <select
+          className={CHAMP}
+          aria-label="De quoi s'agit-il ?"
           value={compte}
           onChange={(evenement) => setCompte(evenement.target.value)}
-        />
+        >
+          {CHARGES_CLOTURE.map((charge) => (
+            <option key={charge.compte} value={charge.compte}>
+              {charge.libelle}
+            </option>
+          ))}
+        </select>
         <input
-          className="h-8 w-24 rounded-sm border border-border px-2 text-sm"
+          className={CHAMP}
           inputMode="decimal"
           placeholder="Montant"
           aria-label="Montant"
@@ -129,13 +168,13 @@ export function ProvisionsCloture({
           onChange={(evenement) => setMontant(evenement.target.value)}
         />
         <input
-          className="h-8 min-w-40 flex-1 rounded-sm border border-border px-2 text-sm"
+          className={CHAMP}
           placeholder="Libellé"
           aria-label="Libellé"
           value={libelle}
           onChange={(evenement) => setLibelle(evenement.target.value)}
         />
-        <Button type="button" variant="secondary" disabled={enCours} onClick={ajouter}>
+        <Button type="button" variant="secondary" className="h-11 w-full" disabled={enCours} onClick={ajouter}>
           Ajouter
         </Button>
       </div>
