@@ -16,7 +16,9 @@ export type Bloc<T> =
 function sessionOuvreLeDossier(dossierId: string, router: ReturnType<typeof useRouter>): boolean {
   const session = obtenirSession();
   if (session === null) {
-    router.push("/chauffeur/login");
+    const retour = `${window.location.pathname}${window.location.search}`;
+    const parametres = new URLSearchParams({ retour });
+    router.replace(`/chauffeur/login?${parametres.toString()}`);
     return false;
   }
   if (session.dossierId !== dossierId) {
@@ -28,8 +30,13 @@ function sessionOuvreLeDossier(dossierId: string, router: ReturnType<typeof useR
 
 /** Charge le résumé du dossier du chauffeur connecté. Les opérations ont
  * leur propre chargement (`useOperationsChauffeur`) : les écrans qui n'en ont
- * pas besoin, comme Exercice et Compte, ne les demandent pas. */
-export function useDossierChauffeur(dossierId: string): { dossier: Bloc<DossierResume> } {
+ * pas besoin, comme Exercice et Compte, ne les demandent pas.
+ * `recharger` relit la fiche sans remettre le squelette (après une clôture,
+ * les chiffres et la période changent). */
+export function useDossierChauffeur(dossierId: string): {
+  dossier: Bloc<DossierResume>;
+  recharger: () => void;
+} {
   const router = useRouter();
   const [dossier, setDossier] = useState<Bloc<DossierResume>>({ statut: "en_cours" });
   const [cle, setCle] = useState(dossierId);
@@ -53,7 +60,13 @@ export function useDossierChauffeur(dossierId: string): { dossier: Bloc<DossierR
     };
   }, [dossierId, router]);
 
-  return { dossier };
+  function recharger() {
+    fetchAvecAuthChauffeur<DossierResume>(`/dossiers/${dossierId}`)
+      .then((valeur) => setDossier({ statut: "pret", valeur }))
+      .catch(() => undefined);
+  }
+
+  return { dossier, recharger };
 }
 
 /** Charge les opérations du dossier. Seul l'écran Activité s'en sert.

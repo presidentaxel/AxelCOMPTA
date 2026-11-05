@@ -55,13 +55,17 @@ def verifier(bulletin: Bulletin) -> None:
         bulletin.prelevement_a_la_source,
     )
     if any(m < 0 for m in montants) or bulletin.brut == 0:
-        raise BulletinIncoherent("montants négatifs ou salaire brut nul")
+        raise BulletinIncoherent(
+            "Les montants sont négatifs, ou le salaire avant retenues est nul."
+        )
     if bulletin.net_a_payer <= 0:
-        raise BulletinIncoherent("les retenues dépassent le salaire brut")
+        raise BulletinIncoherent("Les retenues dépassent le salaire avant retenues.")
     try:
         bulletin.fin_du_mois()
     except ValueError as exc:
-        raise BulletinIncoherent(f"mois « {bulletin.mois} » illisible (AAAA-MM)") from exc
+        raise BulletinIncoherent(
+            f"Le mois « {bulletin.mois} » est illisible. Indiquez-le sous la forme AAAA-MM."
+        ) from exc
 
 
 def id_bulletin(dossier_id: DossierId, mois: str) -> EcritureId:

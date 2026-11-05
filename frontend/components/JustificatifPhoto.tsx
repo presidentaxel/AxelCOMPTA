@@ -57,7 +57,7 @@ export function JustificatifPhoto({
         type="button"
         disabled={enCours}
         onClick={() => inputRef.current?.click()}
-        className={`py-1 text-sm font-medium ${aJustificatif ? "text-validated" : "text-primary"} disabled:opacity-50`}
+        className={`inline-flex min-h-11 items-center py-1 text-sm font-medium outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb] ${aJustificatif ? "text-validated" : "text-primary"} disabled:opacity-50`}
       >
         {aJustificatif ? "Photo jointe" : enCours ? "Envoi…" : "Ajouter une photo"}
       </button>

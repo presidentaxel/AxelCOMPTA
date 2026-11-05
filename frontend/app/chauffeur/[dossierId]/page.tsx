@@ -1,7 +1,8 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { use, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, use, useEffect, useRef, useState } from "react";
 
 import {
   annonceAnnulee,
@@ -10,17 +11,27 @@ import {
   questionsRestantes,
   ticketsSeuls,
 } from "@/app/chauffeur/file-a-traiter";
-import { useDossierChauffeur, useOperationsChauffeur } from "@/app/chauffeur/use-dossier";
 import { useDecisionDifferee } from "@/app/chauffeur/use-decision-differee";
+import { useDossierChauffeur, useOperationsChauffeur } from "@/app/chauffeur/use-dossier";
 import { ConfirmationGroupee } from "@/components/ConfirmationGroupee";
 import { QuestionCategorisation } from "@/components/QuestionCategorisation";
+import { ResultatACeJour } from "@/components/ResultatACeJour";
 import { Squelette, SqueletteLignes } from "@/components/Squelette";
 import { StationTickets } from "@/components/StationTickets";
 import { ToastDecision } from "@/components/ToastDecision";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
+import {
+  ecrireEtatActivite,
+  lireEtatActivite,
+  memoriserActivite,
+  relireActivite,
+  type EtatActivite,
+  type SensActivite,
+} from "@/lib/activite-url";
 import { corrigerTransactionChauffeur, joindreJustificatifChauffeur } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
+import { libelleCategorie, phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import { ticketPrioritaire } from "@/lib/tickets";
 import type { DossierResume, TransactionVue } from "@/lib/types";
 
@@ -36,11 +47,26 @@ export default function DossierChauffeurPage({
 }: {
   params: Promise<{ dossierId: string }>;
 }) {
+  return (
+    <Suspense fallback={<SqueletteLignes nombre={4} className="mt-6 h-14 w-full" />}>
+      <Activite params={params} />
+    </Suspense>
+  );
+}
+
+function Activite({
+  params,
+}: {
+  params: Promise<{ dossierId: string }>;
+}) {
   const { dossierId } = use(params);
+  const router = useRouter();
+  const pathname = usePathname();
+  const recherche = useSearchParams();
+  const etat = lireEtatActivite(recherche);
+  const requete = recherche.toString();
   const { dossier } = useDossierChauffeur(dossierId);
   const { transactions, remplacer, recharger } = useOperationsChauffeur(dossierId);
-  const [vue, setVue] = useState<"traiter" | "mouvements">("traiter");
-  const [moisChoisi, setMoisChoisi] = useState<string | null>(null);
   const [horsFile, setHorsFile] = useState<string[]>([]);
   const [epinglee, setEpinglee] = useState<string | null>(null);
   const [annonce, setAnnonce] = useState("");
@@ -59,12 +85,28 @@ export default function DossierChauffeurPage({
     setHorsFile((ids) => ids.filter((id) => id !== original.ecriture_id));
     remplacer(original);
     setEpinglee(original.ecriture_id);
-    setErreurAction(message);
+    setErreurAction(phrasePourChauffeur(message));
     setAnnonce("L'enregistrement a échoué.");
     setSuit(true);
   }
 
   const { enAttente, poser, annuler } = useDecisionDifferee(dossierId, enregistree, echec);
+
+  useEffect(() => {
+    if (requete) {
+      memoriserActivite(dossierId, requete);
+      return;
+    }
+    const sauve = relireActivite(dossierId);
+    if (!sauve) return;
+    router.replace(`${pathname}?${sauve}`, { scroll: false });
+  }, [dossierId, requete, pathname, router]);
+
+  function mettreAJour(maj: Partial<EtatActivite>) {
+    const suivante = ecrireEtatActivite(recherche, maj);
+    memoriserActivite(dossierId, suivante);
+    router.replace(suivante ? `${pathname}?${suivante}` : pathname, { scroll: false });
+  }
 
   const operations = transactions.statut === "pret" ? transactions.valeur : [];
   const aVerifier = operations
@@ -79,7 +121,7 @@ export default function DossierChauffeurPage({
     null;
   const moisDispo = [...new Set(operations.map((transaction) => transaction.date.slice(0, 7)))].sort();
   const dernierMois = moisDispo.at(-1);
-  const mois = moisChoisi && moisDispo.includes(moisChoisi) ? moisChoisi : dernierMois;
+  const mois = etat.mois && moisDispo.includes(etat.mois) ? etat.mois : dernierMois;
   const indexMois = mois ? moisDispo.indexOf(mois) : -1;
   const reste = file.length + tickets.length;
   const toast = enAttente
@@ -127,7 +169,7 @@ export default function DossierChauffeurPage({
       }
     } catch (exception) {
       const message = exception instanceof ApiError ? exception.message : "Échec de l'envoi.";
-      setErreurAction(message);
+      setErreurAction(phrasePourChauffeur(message));
       setAnnonce("L'enregistrement a échoué.");
     } finally {
       setEnCoursCorrection(false);
@@ -160,7 +202,7 @@ export default function DossierChauffeurPage({
       setAnnonce(annonceAnnulee(operation ? presenter(operation.libelle).nom : "L'opération"));
     } catch (exception) {
       const message = exception instanceof ApiError ? exception.message : "Échec de l'envoi.";
-      setErreurAction(message);
+      setErreurAction(phrasePourChauffeur(message));
     } finally {
       setEnCoursCorrection(false);
     }
@@ -187,16 +229,16 @@ export default function DossierChauffeurPage({
         {annonce}
       </div>
       <Entete dossier={dossier} aDesTransactions={operations.length > 0} />
-      <div className="sticky top-14 z-20 -mx-4 mt-8 bg-canvas-app px-4 pb-3 pt-1">
+      <div className="sticky top-0 z-20 -mx-4 mt-8 bg-canvas-app px-4 pb-3 pt-1">
         <div className="flex gap-2">
-          <Onglet actif={vue === "traiter"} onClick={() => setVue("traiter")}>
+          <Onglet actif={etat.vue === "traiter"} onClick={() => mettreAJour({ vue: "traiter" })}>
             {reste > 0 ? `À traiter · ${reste}` : "À traiter"}
           </Onglet>
-          <Onglet actif={vue === "mouvements"} onClick={() => setVue("mouvements")}>
+          <Onglet actif={etat.vue === "mouvements"} onClick={() => mettreAJour({ vue: "mouvements" })}>
             Mouvements
           </Onglet>
         </div>
-        {vue === "traiter" && (file.length > 0 || tickets.length > 0) && (
+        {etat.vue === "traiter" && (file.length > 0 || tickets.length > 0) && (
           <p className="mt-3 text-sm font-medium text-ink">
             {file.length > 0
               ? `${position} sur ${total}`
@@ -215,7 +257,7 @@ export default function DossierChauffeurPage({
         <p className="mt-8 text-sm text-danger">{transactions.message}</p>
       ) : transactions.statut === "en_cours" ? (
         <SqueletteLignes nombre={4} className="mt-6 h-14 w-full" />
-      ) : vue === "traiter" ? (
+      ) : etat.vue === "traiter" ? (
         <Arriere
           courante={courante}
           file={file}
@@ -240,8 +282,10 @@ export default function DossierChauffeurPage({
           mois={mois}
           peutReculer={indexMois > 0}
           peutAvancer={indexMois >= 0 && indexMois < moisDispo.length - 1}
-          onReculer={() => setMoisChoisi(moisDispo[indexMois - 1] ?? null)}
-          onAvancer={() => setMoisChoisi(moisDispo[indexMois + 1] ?? null)}
+          onReculer={() => mettreAJour({ mois: moisDispo[indexMois - 1] ?? null })}
+          onAvancer={() => mettreAJour({ mois: moisDispo[indexMois + 1] ?? null })}
+          sens={etat.sens}
+          onSens={(sens) => mettreAJour({ sens })}
         />
       )}
       {toast && <ToastDecision libelle={toast.libelle} onAnnuler={toast.onAnnuler} />}
@@ -271,7 +315,7 @@ function Entete({
         <Squelette className="h-8 w-48" />
         <Squelette className="mt-2 h-4 w-40" />
         <Squelette className="mt-6 h-8 w-32" />
-        <Squelette className="mt-2 h-4 w-36" />
+        <Squelette className="mt-2 h-4 w-56" />
       </div>
     );
   }
@@ -282,14 +326,9 @@ function Entete({
       <p className="mt-1 text-sm text-subtle">
         {fiche.forme_juridique} · {fiche.regime_libelle}
       </p>
-      <p
-        className={`mt-6 text-[28px] font-bold tabular-nums tracking-tight ${
-          fiche.resultat_cts < 0 ? "text-amount-negative" : "text-amount-positive"
-        }`}
-      >
-        {formatMontant(fiche.resultat_cts)}
-      </p>
-      <p className="text-sm text-subtle">Résultat de l&apos;exercice</p>
+      <div className="mt-6">
+        <ResultatACeJour dossier={fiche} />
+      </div>
       <ConnexionBancaire
         peutConnecter={fiche.peut_connecter_sa_banque}
         aDesTransactions={aDesTransactions}
@@ -312,7 +351,7 @@ function Onglet({
       type="button"
       aria-pressed={actif}
       onClick={onClick}
-      className={`h-9 rounded-full px-4 text-sm font-medium ${ANNEAU} ${
+      className={`inline-flex h-11 items-center rounded-full px-4 text-sm font-medium ${ANNEAU} ${
         actif ? "bg-ink text-canvas" : "text-subtle"
       }`}
     >
@@ -378,7 +417,7 @@ function Arriere({
               key={courante.ecriture_id}
               proposition={confirmableIci ? proposition : null}
               origine={courante.origine_proposition}
-              confiance={courante.confiance_proposition}
+              montantCts={courante.montant_cts}
               sansProposition={proposition === null}
               raccourci={confirmableIci}
               erreur={erreur}
@@ -444,6 +483,8 @@ function Mouvements({
   peutAvancer,
   onReculer,
   onAvancer,
+  sens,
+  onSens,
 }: {
   dossierId: string;
   ouverte: string | null;
@@ -458,8 +499,9 @@ function Mouvements({
   peutAvancer: boolean;
   onReculer: () => void;
   onAvancer: () => void;
+  sens: SensActivite;
+  onSens: (sens: SensActivite) => void;
 }) {
-  const [sens, setSens] = useState<"sorties" | "entrees">("sorties");
   const retenues = transactions.filter((transaction) =>
     sens === "sorties" ? transaction.montant_cts < 0 : transaction.montant_cts > 0,
   );
@@ -489,10 +531,10 @@ function Mouvements({
         </button>
       </div>
       <div className="mt-2 flex gap-2">
-        <Onglet actif={sens === "sorties"} onClick={() => setSens("sorties")}>
+        <Onglet actif={sens === "sorties"} onClick={() => onSens("sorties")}>
           Sorties
         </Onglet>
-        <Onglet actif={sens === "entrees"} onClick={() => setSens("entrees")}>
+        <Onglet actif={sens === "entrees"} onClick={() => onSens("entrees")}>
           Entrées
         </Onglet>
       </div>
@@ -550,7 +592,7 @@ function Mouvements({
                               : null
                           }
                           origine={transaction.origine_proposition}
-                          confiance={transaction.confiance_proposition}
+                          montantCts={transaction.montant_cts}
                           sansProposition={proposition === null}
                           enCours={enCours}
                           erreur={erreur}
@@ -592,7 +634,11 @@ function AjouterTicketSortie({
     try {
       onJointe(await joindreJustificatifChauffeur(dossierId, transaction.ecriture_id, fichier));
     } catch (exception) {
-      setErreur(exception instanceof ApiError ? exception.message : "Échec de l'envoi de la photo.");
+      setErreur(
+        phrasePourChauffeur(
+          exception instanceof ApiError ? exception.message : "Échec de l'envoi de la photo.",
+        ),
+      );
     } finally {
       setEnvoi(false);
     }
@@ -615,7 +661,7 @@ function AjouterTicketSortie({
         type="button"
         disabled={envoi}
         onClick={() => inputRef.current?.click()}
-        className={`mt-1 rounded-md px-1 py-1 text-sm font-medium text-primary disabled:opacity-50 ${ANNEAU}`}
+        className={`mt-1 inline-flex min-h-11 items-center rounded-md px-1 text-sm font-medium text-primary disabled:opacity-50 ${ANNEAU}`}
       >
         {envoi ? "Envoi…" : "Ajouter un ticket"}
       </button>
@@ -669,33 +715,6 @@ function ConnexionBancaire({
     return <p className="mt-6 text-sm text-subtle">Vos transactions arrivent bientôt.</p>;
   }
   return null;
-}
-
-const DETAILS: Record<string, string> = {
-  usage_personnel_suspect: "À confirmer",
-  usage_personnel: "Dépense personnelle",
-  carburant: "Carburant",
-  peage_stationnement: "Péage",
-  repas_et_receptions: "Repas",
-  assurance_vehicule: "Assurance",
-  telecommunications: "Téléphone",
-  entretien_reparation_vehicule: "Entretien",
-  charges_sociales_impots: "Charges",
-  honoraires_comptable_juridique: "Honoraires",
-  recettes_plateformes: "Courses",
-  remuneration_dirigeant: "Ma rémunération",
-  compte_courant_associe: "Compte courant d'associé",
-  virement_interne: "Virement entre mes comptes",
-  salaires_personnel: "Salaire d'un salarié",
-  frais_bancaires: "Frais bancaires",
-  abonnements_logiciels: "Abonnement",
-  fournitures_administratives: "Fournitures",
-  amendes_infractions: "Amende",
-  subventions: "Aide publique",
-};
-
-function libelleCategorie(code: string): string {
-  return DETAILS[code] ?? code.replaceAll("_", " ");
 }
 
 /** Une proposition se confirme en un geste, sauf quand la réponse est déjà

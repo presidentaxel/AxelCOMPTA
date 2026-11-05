@@ -15,6 +15,15 @@
  */
 
 import { ApiError } from "./api";
+import {
+  absenceDeCompte,
+  messageMotDePasseCourt,
+  MESSAGE_LIEN_EXPIRE,
+  MESSAGE_SANS_DOSSIER,
+  MESSAGE_SESSION,
+  traduireCorpsAuth,
+  traduireExceptionAuth,
+} from "./messages-auth";
 import { appelAuthentifie, erreurApi, lireCorps } from "./session";
 import type {
   AffectationVue,
@@ -38,7 +47,9 @@ export type SessionChauffeur = {
   email: string;
 };
 
-export class ErreurAuthChauffeur extends Error {}
+export class ErreurAuthChauffeur extends Error {
+  override name = "ErreurAuthChauffeur";
+}
 
 export const URL_SUPABASE = SUPABASE_URL;
 
@@ -56,13 +67,13 @@ export function enTetesSupabase(accessToken?: string): Record<string, string> {
 export function decoderChargeUtileJwt(jeton: string): Record<string, unknown> {
   const partie = jeton.split(".")[1];
   if (!partie) {
-    throw new ErreurAuthChauffeur("Lien invalide ou expiré.");
+    throw new ErreurAuthChauffeur(MESSAGE_LIEN_EXPIRE);
   }
   try {
     const normalise = partie.replace(/-/g, "+").replace(/_/g, "/");
     return JSON.parse(atob(normalise)) as Record<string, unknown>;
   } catch {
-    throw new ErreurAuthChauffeur("Lien invalide ou expiré.");
+    throw new ErreurAuthChauffeur(MESSAGE_LIEN_EXPIRE);
   }
 }
 
@@ -73,7 +84,7 @@ function dossierIdDepuisJeton(accessToken: string): string {
   const metadata = charge.app_metadata as { dossier_id?: string } | undefined;
   const dossierId = metadata?.dossier_id;
   if (!dossierId) {
-    throw new ErreurAuthChauffeur("Ce compte n'est lié à aucun dossier.");
+    throw new ErreurAuthChauffeur(MESSAGE_SANS_DOSSIER);
   }
   return dossierId;
 }
@@ -106,17 +117,27 @@ export function deconnecter(): void {
 }
 
 export async function extraireErreurSupabase(reponse: Response): Promise<never> {
-  const corps = (await reponse.json().catch(() => ({}))) as {
-    error_description?: string;
-    msg?: string;
-    message?: string;
-  };
-  throw new ErreurAuthChauffeur(
-    corps.error_description ??
-      corps.msg ??
-      corps.message ??
-      `Échec de l'authentification (HTTP ${reponse.status}).`,
-  );
+  const corps = await reponse.json().catch(() => ({}));
+  throw new ErreurAuthChauffeur(traduireCorpsAuth(corps, reponse.status));
+}
+
+/** `fetch` vers Supabase Auth. Une coupure réseau devient un message
+ * français, jamais « Failed to fetch ». */
+async function appelSupabase(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (exception) {
+    throw new ErreurAuthChauffeur(traduireExceptionAuth(exception));
+  }
+}
+
+/** Lien magique et réinitialisation : une adresse inconnue ne se distingue
+ * pas d'un envoi réussi. Le formulaire garde alors sa phrase neutre. */
+async function ignorerAbsenceDeCompte(reponse: Response): Promise<void> {
+  if (reponse.ok) return;
+  const corps = await reponse.json().catch(() => ({}));
+  if (absenceDeCompte(corps)) return;
+  throw new ErreurAuthChauffeur(traduireCorpsAuth(corps, reponse.status));
 }
 
 /** Page qui reçoit les jetons Supabase (fragment `#access_token`), pour le
@@ -127,7 +148,7 @@ export function urlRetourAuth(): string {
 }
 
 export async function envoyerLienMagique(email: string): Promise<void> {
-  const reponse = await fetch(
+  const reponse = await appelSupabase(
     `${SUPABASE_URL}/auth/v1/otp?redirect_to=${encodeURIComponent(urlRetourAuth())}`,
     {
       method: "POST",
@@ -135,13 +156,11 @@ export async function envoyerLienMagique(email: string): Promise<void> {
       body: JSON.stringify({ email, create_user: false }),
     },
   );
-  if (!reponse.ok) {
-    await extraireErreurSupabase(reponse);
-  }
+  await ignorerAbsenceDeCompte(reponse);
 }
 
 export async function demanderReinitialisation(email: string): Promise<void> {
-  const reponse = await fetch(
+  const reponse = await appelSupabase(
     `${SUPABASE_URL}/auth/v1/recover?redirect_to=${encodeURIComponent(urlRetourAuth())}`,
     {
       method: "POST",
@@ -149,16 +168,16 @@ export async function demanderReinitialisation(email: string): Promise<void> {
       body: JSON.stringify({ email }),
     },
   );
-  if (!reponse.ok) {
-    await extraireErreurSupabase(reponse);
-  }
+  await ignorerAbsenceDeCompte(reponse);
 }
 
 export async function definirMotDePasseAvecJeton(
   accessToken: string,
   motDePasse: string,
 ): Promise<void> {
-  const reponse = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+  const tropCourt = messageMotDePasseCourt(motDePasse);
+  if (tropCourt) throw new ErreurAuthChauffeur(tropCourt);
+  const reponse = await appelSupabase(`${SUPABASE_URL}/auth/v1/user`, {
     method: "PUT",
     headers: enTetesSupabase(accessToken),
     body: JSON.stringify({ password: motDePasse }),
@@ -169,7 +188,7 @@ export async function definirMotDePasseAvecJeton(
 }
 
 export async function changerEmailAvecJeton(accessToken: string, email: string): Promise<void> {
-  const reponse = await fetch(
+  const reponse = await appelSupabase(
     `${SUPABASE_URL}/auth/v1/user?redirect_to=${encodeURIComponent(urlRetourAuth())}`,
     {
       method: "PUT",
@@ -186,7 +205,7 @@ export async function connexionParMotDePasse(
   email: string,
   motDePasse: string,
 ): Promise<SessionChauffeur> {
-  const reponse = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+  const reponse = await appelSupabase(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: enTetesSupabase(),
     body: JSON.stringify({ email, password: motDePasse }),
@@ -212,9 +231,9 @@ export async function accepterInvitation(fragmentUrl: string): Promise<SessionCh
   const accessToken = parametres.get("access_token");
   const refreshToken = parametres.get("refresh_token");
   if (!accessToken || !refreshToken) {
-    throw new ErreurAuthChauffeur("Lien d'invitation invalide ou expiré.");
+    throw new ErreurAuthChauffeur(MESSAGE_LIEN_EXPIRE);
   }
-  const reponse = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+  const reponse = await appelSupabase(`${SUPABASE_URL}/auth/v1/user`, {
     headers: enTetesSupabase(accessToken),
   });
   if (!reponse.ok) {
@@ -234,7 +253,7 @@ export async function accepterInvitation(fragmentUrl: string): Promise<SessionCh
 export async function definirMotDePasse(motDePasse: string): Promise<void> {
   const session = obtenirSession();
   if (!session) {
-    throw new ErreurAuthChauffeur("Aucune session active.");
+    throw new ErreurAuthChauffeur(MESSAGE_SESSION);
   }
   await definirMotDePasseAvecJeton(session.accessToken, motDePasse);
 }
@@ -420,11 +439,15 @@ export async function listerNotificationsChauffeur(dossierId: string): Promise<N
   return fetchAvecAuthChauffeur<NotificationVue[]>(`/dossiers/${dossierId}/notifications`);
 }
 
-/** Ouvrir la cloche vaut lecture : tout ce qui n'était pas lu le devient. */
-export async function marquerNotificationsLuesChauffeur(dossierId: string): Promise<void> {
-  const reponse = await appelChauffeur(`/dossiers/${dossierId}/notifications/lues`, {
-    method: "POST",
-  });
+/** Une notification devient lue quand le chauffeur l'ouvre, pas toute la cloche. */
+export async function marquerNotificationLueChauffeur(
+  dossierId: string,
+  notificationId: string,
+): Promise<void> {
+  const reponse = await appelChauffeur(
+    `/dossiers/${dossierId}/notifications/${encodeURIComponent(notificationId)}/lue`,
+    { method: "POST" },
+  );
   if (!reponse.ok) {
     throw new ApiError(`HTTP ${reponse.status}`, reponse.status);
   }
