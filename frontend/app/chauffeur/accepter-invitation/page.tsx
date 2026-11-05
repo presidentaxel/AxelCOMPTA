@@ -12,6 +12,7 @@ import {
   ErreurAuthChauffeur,
 } from "@/lib/auth-chauffeur";
 import { lireFragmentAuth, pageInvitation } from "@/lib/auth-lien";
+import { MOT_DE_PASSE_MIN, motDePasseAcceptable } from "@/lib/messages-auth";
 
 type Etape = "verification" | "definir_mot_de_passe" | "erreur";
 
@@ -66,8 +67,13 @@ export default function AccepterInvitationPage() {
     setEnCours(true);
     setErreur(null);
     try {
+      const refus = motDePasseAcceptable(motDePasse);
+      if (refus) {
+        setErreur(refus);
+        return;
+      }
       await definirMotDePasse(motDePasse);
-      router.push(`/chauffeur/${dossierId}`);
+      router.replace(`/chauffeur/${dossierId}`);
     } catch (exception) {
       setErreur(
         exception instanceof ErreurAuthChauffeur
@@ -86,13 +92,18 @@ export default function AccepterInvitationPage() {
   if (etape === "erreur") {
     return (
       <div>
-        <p className="text-sm text-danger">{erreur}</p>
+        <p role="alert" className="text-sm text-danger">
+          {erreur}
+        </p>
         <p className="mt-2 text-sm text-subtle">
-          Redemandez une invitation à votre gestionnaire, ou{" "}
+          <Link href="/chauffeur/login?mode=lien" className="text-primary hover:underline">
+            Recevoir un nouveau lien
+          </Link>
+          {" · "}
           <Link href="/chauffeur/login" className="text-primary hover:underline">
-            connectez-vous
-          </Link>{" "}
-          si vous avez déjà un mot de passe.
+            Se connecter
+          </Link>
+          . Vous pouvez aussi redemander une invitation à votre gestionnaire.
         </p>
       </div>
     );
@@ -102,20 +113,29 @@ export default function AccepterInvitationPage() {
     <div>
       <h1 className="mb-1 text-xl font-bold text-ink">Bienvenue</h1>
       <p className="mb-6 text-sm text-subtle">
-        Choisissez un mot de passe pour vos prochaines connexions.
+        Choisissez un mot de passe d&apos;au moins {MOT_DE_PASSE_MIN} caractères pour vos
+        prochaines connexions.
       </p>
       <form className="space-y-3" onSubmit={valider}>
+        <label className="block text-sm text-subtle" htmlFor="invitation-mot-de-passe">
+          Nouveau mot de passe
+        </label>
         <Input
+          id="invitation-mot-de-passe"
           type="password"
           uiSize="lg"
+          autoComplete="new-password"
           value={motDePasse}
           onChange={(evenement) => setMotDePasse(evenement.target.value)}
-          placeholder="Nouveau mot de passe"
           required
-          minLength={8}
+          minLength={MOT_DE_PASSE_MIN}
           disabled={enCours}
         />
-        {erreur && <p className="text-sm text-danger">{erreur}</p>}
+        {erreur && (
+          <p role="alert" className="text-sm text-danger">
+            {erreur}
+          </p>
+        )}
         <Button type="submit" disabled={enCours} className="w-full">
           {enCours ? "Enregistrement…" : "Valider"}
         </Button>

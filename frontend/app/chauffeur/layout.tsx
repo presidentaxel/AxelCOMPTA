@@ -28,14 +28,18 @@ export default function ChauffeurLayout({ children }: { children: React.ReactNod
   const espace = session !== null && !PAGES_PUBLIQUES.has(chemin);
 
   return (
-    <div className="min-h-screen bg-canvas-app">
-      <header className="sticky top-0 z-10 border-b border-border bg-canvas">
+    <div className="chauffeur-ecran min-h-dvh bg-canvas-app">
+      <header className="sticky top-0 z-10 border-b border-border bg-canvas pt-[env(safe-area-inset-top)]">
         <div className="mx-auto flex h-14 max-w-md items-center px-4">
           <Marque />
           {espace && session && <Cloche dossierId={session.dossierId} chemin={chemin} />}
         </div>
       </header>
-      <main className={`mx-auto min-w-0 max-w-md overflow-x-clip px-4 py-6 ${espace ? "pb-24" : ""}`}>
+      <main
+        className={`mx-auto min-w-0 max-w-md overflow-x-clip px-4 py-6 ${
+          espace ? "pb-[calc(6rem+env(safe-area-inset-bottom))]" : ""
+        }`}
+      >
         {children}
       </main>
       {espace && session && <Barre dossierId={session.dossierId} chemin={chemin} />}
@@ -47,9 +51,20 @@ function Barre({ dossierId, chemin }: { dossierId: string; chemin: string }) {
   const activite = `/chauffeur/${dossierId}`;
   const exercice = `/chauffeur/${dossierId}/exercice`;
   const compte = "/chauffeur/compte";
+  const resultat = `/chauffeur/${dossierId}/resultat`;
   const liens = [
-    { href: activite, libelle: "Activité", Icone: List, actif: chemin === activite },
-    { href: exercice, libelle: "Exercice", Icone: FileText, actif: chemin === exercice },
+    {
+      href: activite,
+      libelle: "Activité",
+      Icone: List,
+      actif: chemin === activite,
+    },
+    {
+      href: exercice,
+      libelle: "Exercice",
+      Icone: FileText,
+      actif: chemin === exercice || chemin === resultat,
+    },
     { href: compte, libelle: "Compte", Icone: UserRound, actif: chemin === compte },
   ];
 
@@ -60,7 +75,7 @@ function Barre({ dossierId, chemin }: { dossierId: string; chemin: string }) {
           <Link
             key={href}
             href={href}
-            className={`flex h-14 flex-col items-center justify-center gap-0.5 text-[11px] ${
+            className={`flex h-14 flex-col items-center justify-center gap-0.5 text-xs ${
               actif ? "font-semibold text-ink" : "text-subtle"
             }`}
           >

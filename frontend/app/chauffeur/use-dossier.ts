@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { fetchAvecAuthChauffeur, obtenirSession } from "@/lib/auth-chauffeur";
+import { messageVisible } from "@/lib/messages";
 import type { DossierResume, TransactionVue } from "@/lib/types";
 
 export type Bloc<T> =
@@ -16,7 +17,7 @@ export type Bloc<T> =
 function sessionOuvreLeDossier(dossierId: string, router: ReturnType<typeof useRouter>): boolean {
   const session = obtenirSession();
   if (session === null) {
-    router.push("/chauffeur/login");
+    router.replace("/chauffeur/login");
     return false;
   }
   if (session.dossierId !== dossierId) {
@@ -29,9 +30,14 @@ function sessionOuvreLeDossier(dossierId: string, router: ReturnType<typeof useR
 /** Charge le résumé du dossier du chauffeur connecté. Les opérations ont
  * leur propre chargement (`useOperationsChauffeur`) : les écrans qui n'en ont
  * pas besoin, comme Exercice et Compte, ne les demandent pas. */
-export function useDossierChauffeur(dossierId: string): { dossier: Bloc<DossierResume> } {
+export function useDossierChauffeur(dossierId: string): {
+  dossier: Bloc<DossierResume>;
+  reessayer: () => void;
+  rafraichir: () => void;
+} {
   const router = useRouter();
   const [dossier, setDossier] = useState<Bloc<DossierResume>>({ statut: "en_cours" });
+  const [essai, setEssai] = useState(0);
   const [cle, setCle] = useState(dossierId);
   if (cle !== dossierId) {
     setCle(dossierId);
@@ -45,15 +51,38 @@ export function useDossierChauffeur(dossierId: string): { dossier: Bloc<DossierR
       .then((valeur) => {
         if (!annule) setDossier({ statut: "pret", valeur });
       })
-      .catch(() => {
-        if (!annule) setDossier({ statut: "erreur", message: "Impossible de charger le dossier." });
+      .catch((exception: unknown) => {
+        if (!annule) {
+          setDossier({
+            statut: "erreur",
+            message: messageVisible(exception, "Impossible de charger le dossier."),
+          });
+        }
       });
     return () => {
       annule = true;
     };
-  }, [dossierId, router]);
+  }, [dossierId, essai, router]);
 
-  return { dossier };
+  function rafraichir() {
+    fetchAvecAuthChauffeur<DossierResume>(`/dossiers/${dossierId}`)
+      .then((valeur) => setDossier({ statut: "pret", valeur }))
+      .catch((exception: unknown) =>
+        setDossier({
+          statut: "erreur",
+          message: messageVisible(exception, "Impossible de charger le dossier."),
+        }),
+      );
+  }
+
+  return {
+    dossier,
+    rafraichir,
+    reessayer: () => {
+      setDossier({ statut: "en_cours" });
+      setEssai((n) => n + 1);
+    },
+  };
 }
 
 /** Charge les opérations du dossier. Seul l'écran Activité s'en sert.
@@ -63,9 +92,11 @@ export function useOperationsChauffeur(dossierId: string): {
   transactions: Bloc<TransactionVue[]>;
   remplacer: (transaction: TransactionVue) => void;
   recharger: () => void;
+  reessayer: () => void;
 } {
   const router = useRouter();
   const [transactions, setTransactions] = useState<Bloc<TransactionVue[]>>({ statut: "en_cours" });
+  const [essai, setEssai] = useState(0);
   const [cle, setCle] = useState(dossierId);
   if (cle !== dossierId) {
     setCle(dossierId);
@@ -79,15 +110,18 @@ export function useOperationsChauffeur(dossierId: string): {
       .then((valeur) => {
         if (!annule) setTransactions({ statut: "pret", valeur });
       })
-      .catch(() => {
+      .catch((exception: unknown) => {
         if (!annule) {
-          setTransactions({ statut: "erreur", message: "Impossible de charger les opérations." });
+          setTransactions({
+            statut: "erreur",
+            message: messageVisible(exception, "Impossible de charger les opérations."),
+          });
         }
       });
     return () => {
       annule = true;
     };
-  }, [dossierId, router]);
+  }, [dossierId, essai, router]);
 
   function remplacer(transaction: TransactionVue) {
     setTransactions((etat) =>
@@ -112,5 +146,13 @@ export function useOperationsChauffeur(dossierId: string): {
       .catch(() => undefined);
   }
 
-  return { transactions, remplacer, recharger };
+  return {
+    transactions,
+    remplacer,
+    recharger,
+    reessayer: () => {
+      setTransactions({ statut: "en_cours" });
+      setEssai((n) => n + 1);
+    },
+  };
 }

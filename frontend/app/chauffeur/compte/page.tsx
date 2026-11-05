@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { useDossierChauffeur } from "@/app/chauffeur/use-dossier";
+import { EtatErreur } from "@/components/EtatChargement";
 import { FormulaireCompte } from "@/components/FormulaireCompte";
 import { Squelette } from "@/components/Squelette";
 import {
@@ -53,10 +54,10 @@ export default function CompteChauffeurPage() {
       />
       <button
         type="button"
-        className="mt-10 text-sm font-medium text-danger"
+        className="mt-10 min-h-11 text-sm font-medium text-danger"
         onClick={() => {
           deconnecter();
-          router.push("/chauffeur/login");
+          router.replace("/chauffeur/login");
         }}
       >
         Se déconnecter
@@ -66,10 +67,10 @@ export default function CompteChauffeurPage() {
 }
 
 function StatutDossier({ dossierId }: { dossierId: string }) {
-  const { dossier } = useDossierChauffeur(dossierId);
+  const { dossier, reessayer } = useDossierChauffeur(dossierId);
   if (dossier.statut === "en_cours") return <Squelette className="mb-6 h-4 w-64" />;
   if (dossier.statut === "erreur") {
-    return <p className="mb-6 text-sm text-danger">{dossier.message}</p>;
+    return <EtatErreur message={dossier.message} onReessayer={reessayer} />;
   }
   return (
     <p className="mb-6 text-sm text-subtle">

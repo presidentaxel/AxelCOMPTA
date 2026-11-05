@@ -14,6 +14,7 @@ import {
 } from "@/lib/auth-chauffeur";
 import type { DossierResume } from "@/lib/types";
 
+import { Aide } from "./Aide";
 import { Badge } from "./Badge";
 
 function messageErreur(exception: unknown, repli: string): string {
@@ -22,7 +23,15 @@ function messageErreur(exception: unknown, repli: string): string {
     : repli;
 }
 
-export function GreffeInpiSection({ dossier }: { dossier: DossierResume }) {
+export function GreffeInpiSection({
+  dossier,
+  bloque = false,
+  raison = "",
+}: {
+  dossier: DossierResume;
+  bloque?: boolean;
+  raison?: string;
+}) {
   const guide = dossier.guide_greffe;
   const [signe, setSigne] = useState(dossier.greffe_inpi_signe);
   const [enCours, setEnCours] = useState(false);
@@ -53,19 +62,33 @@ export function GreffeInpiSection({ dossier }: { dossier: DossierResume }) {
   return (
     <section className="mt-10">
       <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-base font-semibold text-ink">Greffe</h2>
-        {signe ? <Badge variant="validated">Signé</Badge> : <Badge variant="pending">À signer</Badge>}
+        <h2 className="text-base font-semibold text-ink">
+          Dépôt des comptes
+          <Aide tactile texte="Le greffe du tribunal de commerce. Vous déposez vous-même : rien n'est envoyé d'ici." />
+        </h2>
+        {bloque ? null : signe ? (
+          <Badge variant="validated">Signé</Badge>
+        ) : (
+          <Badge variant="pending">À signer</Badge>
+        )}
       </div>
+      {bloque && <p className="mt-2 text-sm text-ink">{raison}</p>}
       {guide.depose ? (
         <>
           <p className="mt-1 text-sm text-subtle">
             À reporter sur le portail. Rien n&apos;est envoyé d&apos;ici.
           </p>
-          <Button asChild className="mt-4 w-full">
-            <a href={guide.lien} target="_blank" rel="noopener noreferrer">
-              Ouvrir le portail INPI
-            </a>
-          </Button>
+          {bloque ? (
+            <Button type="button" className="mt-4 h-11 w-full" disabled>
+              Ouvrir le portail
+            </Button>
+          ) : (
+            <Button asChild className="mt-4 h-11 w-full">
+              <a href={guide.lien} target="_blank" rel="noopener noreferrer">
+                Ouvrir le portail
+              </a>
+            </Button>
+          )}
           <ul className="mt-4">
             {guide.lignes.map((ligne) => (
               <li key={ligne.question} className="border-b border-hairline py-3">
@@ -88,13 +111,14 @@ export function GreffeInpiSection({ dossier }: { dossier: DossierResume }) {
                     {document && (
                       <button
                         type="button"
+                        disabled={bloque}
                         onClick={() =>
                           void telecharger(
                             `/dossiers/${dossier.dossier_id}/${document}`,
                             `${document.replace(".pdf", "")}-${dossier.dossier_id}.pdf`,
                           )
                         }
-                        className="shrink-0 text-sm text-primary"
+                        className="min-h-11 shrink-0 text-sm text-primary disabled:opacity-50"
                       >
                         Télécharger
                       </button>
@@ -111,10 +135,11 @@ export function GreffeInpiSection({ dossier }: { dossier: DossierResume }) {
       )}
       <button
         type="button"
+        disabled={bloque}
         onClick={() =>
           void telecharger(cheminGreffeInpi(dossier.dossier_id), `greffe-inpi-${dossier.dossier_id}.pdf`)
         }
-        className="mt-4 py-2 text-left text-sm text-primary"
+        className="mt-4 min-h-11 py-2 text-left text-sm text-primary disabled:opacity-50"
       >
         Télécharger le dossier de synthèse
       </button>
@@ -122,8 +147,8 @@ export function GreffeInpiSection({ dossier }: { dossier: DossierResume }) {
         <Button
           type="button"
           variant="secondary"
-          className="mt-2 w-full"
-          disabled={enCours}
+          className="mt-2 h-11 w-full"
+          disabled={enCours || bloque}
           onClick={() => void signer()}
         >
           {enCours ? "Signature…" : "Signer"}

@@ -149,6 +149,7 @@ export type DocumentCloture =
 /** Cloche de l'espace chauffeur : posée par les tâches planifiées. */
 export type NotificationVue = {
   id: string;
+  type: string;
   message: string;
   cree_le: string;
   lue: boolean;
@@ -197,6 +198,7 @@ export type ClotureExerciceVue = {
   ecritures: string[];
   changements: string[];
   attestation: string | null;
+  code: string | null;
 };
 
 /** Affectation du résultat : scénarios chiffrés par l'API, choix du

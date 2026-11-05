@@ -2,9 +2,11 @@
 
 import { useRef, useState } from "react";
 
+import { QuestionCategorisation } from "@/components/QuestionCategorisation";
 import { ApiError } from "@/lib/api";
 import { joindreJustificatifChauffeur } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
+import { libelleCategorie } from "@/lib/libelles-chauffeur";
 import type { TransactionVue } from "@/lib/types";
 
 const JOUR = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
@@ -58,11 +60,15 @@ export function StationTickets({
   dossierId,
   depenses,
   onJointe,
+  onTranche,
 }: {
   dossierId: string;
   depenses: TransactionVue[];
   onJointe: (transaction: TransactionVue) => void;
+  onTranche: (transaction: TransactionVue, libelle: string) => void;
 }) {
+  const [ouvert, setOuvert] = useState(false);
+  const [index, setIndex] = useState(0);
   const prioritaires = depenses
     .filter(ticketPrioritaire)
     .sort(
@@ -73,21 +79,51 @@ export function StationTickets({
     );
 
   if (prioritaires.length === 0) return null;
+  const place = Math.min(index, prioritaires.length - 1);
+  const courant = prioritaires[place];
+  if (!courant) return null;
 
   return (
     <section className="mt-6 border-b border-hairline pb-4">
-      <h2 className="text-base font-semibold text-ink">Tickets</h2>
-      <p className="mt-1 text-sm text-subtle">{phrase(prioritaires.length)}</p>
-      <ul className="mt-2">
-        {prioritaires.map((depense) => (
-          <LigneTicket
-            key={depense.ecriture_id}
-            dossierId={dossierId}
-            depense={depense}
-            onJointe={onJointe}
-          />
-        ))}
-      </ul>
+      <button
+        type="button"
+        aria-expanded={ouvert}
+        onClick={() => setOuvert((actuel) => !actuel)}
+        className={`flex min-h-11 w-full items-center justify-between text-left ${ANNEAU}`}
+      >
+        <span>
+          <span className="block text-base font-semibold text-ink">Tickets · {prioritaires.length}</span>
+          <span className="mt-0.5 block text-sm text-subtle">{phrase(prioritaires.length)}</span>
+        </span>
+        <span className="text-sm font-medium text-primary">{ouvert ? "Replier" : "Voir"}</span>
+      </button>
+      {ouvert && (
+        <div className="mt-3">
+          <p className="text-sm font-medium text-ink">
+            {place + 1} sur {prioritaires.length}
+          </p>
+          <LigneTicket dossierId={dossierId} depense={courant} onJointe={onJointe} />
+          {courant.statut === "à trancher" && (
+            <div className="mt-3">
+              <QuestionCategorisation
+                dossierId={dossierId}
+                ecritureId={courant.ecriture_id}
+                montantCts={courant.montant_cts}
+                proposition={
+                  courant.proposition
+                    ? { code: courant.proposition, libelle: libelleCategorie(courant.proposition) }
+                    : null
+                }
+                origine={courant.origine_proposition}
+                onResolu={(transaction, libelle) => {
+                  onTranche(transaction, libelle);
+                  setIndex(place);
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -160,7 +196,11 @@ function LigneTicket({
       >
         {envoi ? "Envoi…" : `Ajouter le ticket de ${nom}`}
       </button>
-      {erreur && <p className="mt-1 text-xs text-danger">{erreur}</p>}
+      {erreur && (
+        <p role="alert" className="mt-1 text-sm text-danger">
+          {erreur}
+        </p>
+      )}
     </li>
   );
 }

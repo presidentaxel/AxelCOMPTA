@@ -19,6 +19,8 @@ import {
   pageInvitation,
   type FragmentAuth,
 } from "@/lib/auth-lien";
+import { MOT_DE_PASSE_MIN, motDePasseAcceptable } from "@/lib/messages-auth";
+import { messageVisible } from "@/lib/messages";
 
 type Etape = "lecture" | "mot_de_passe" | "email_confirme" | "erreur";
 
@@ -68,7 +70,7 @@ export default function LienAuthPage() {
       }
       router.replace(chemin);
     } catch (exception) {
-      setErreur(exception instanceof Error ? exception.message : "Lien invalide.");
+      setErreur(messageVisible(exception, "Lien invalide."));
       setEtape("erreur");
     }
     /* eslint-enable react-hooks/set-state-in-effect */
@@ -80,6 +82,11 @@ export default function LienAuthPage() {
     setEnCours(true);
     setErreur(null);
     try {
+      const refus = motDePasseAcceptable(motDePasse);
+      if (refus) {
+        setErreur(refus);
+        return;
+      }
       await definirMotDePasseAvecJeton(fragment.accessToken, motDePasse);
       const charge = decoderChargeUtileJwt(fragment.accessToken);
       const email = typeof charge.email === "string" ? charge.email : "";
@@ -109,14 +116,21 @@ export default function LienAuthPage() {
   if (etape === "erreur") {
     return (
       <main className="mx-auto mt-24 max-w-sm px-4">
-        <p className="text-sm text-danger">{erreur}</p>
-        <p className="mt-2 text-sm text-subtle">
-          <Link href="/connexion" className="text-primary hover:underline">
-            Connexion gestionnaire
+        <p role="alert" className="text-sm text-danger">
+          {erreur ?? "Ce lien est invalide ou expiré."}
+        </p>
+        <p className="mt-2 flex flex-col gap-2 text-sm text-subtle">
+          <Link href="/chauffeur/login?mode=lien" className="min-h-11 text-primary hover:underline">
+            Recevoir un nouveau lien
           </Link>
-          {" · "}
-          <Link href="/chauffeur/login" className="text-primary hover:underline">
+          <Link href="/chauffeur/login?mode=oubli" className="min-h-11 text-primary hover:underline">
+            Mot de passe oublié
+          </Link>
+          <Link href="/chauffeur/login" className="min-h-11 text-primary hover:underline">
             Connexion chauffeur
+          </Link>
+          <Link href="/connexion" className="min-h-11 text-primary hover:underline">
+            Connexion gestionnaire
           </Link>
         </p>
       </main>
@@ -141,20 +155,29 @@ export default function LienAuthPage() {
         {premiereConnexion ? "Bienvenue" : "Nouveau mot de passe"}
       </h1>
       <p className="mb-6 text-sm text-subtle">
-        Choisissez un mot de passe pour vos prochaines connexions.
+        Choisissez un mot de passe d&apos;au moins {MOT_DE_PASSE_MIN} caractères pour vos
+        prochaines connexions.
       </p>
       <form className="space-y-3" onSubmit={valider}>
+        <label className="block text-sm text-subtle" htmlFor="lien-mot-de-passe">
+          Nouveau mot de passe
+        </label>
         <Input
+          id="lien-mot-de-passe"
           type="password"
           uiSize="lg"
+          autoComplete="new-password"
           value={motDePasse}
           onChange={(evenement) => setMotDePasse(evenement.target.value)}
-          placeholder="Nouveau mot de passe"
           required
-          minLength={8}
+          minLength={MOT_DE_PASSE_MIN}
           disabled={enCours}
         />
-        {erreur && <p className="text-sm text-danger">{erreur}</p>}
+        {erreur && (
+          <p role="alert" className="text-sm text-danger">
+            {erreur}
+          </p>
+        )}
         <Button type="submit" disabled={enCours} className="w-full">
           {enCours ? "Enregistrement…" : "Valider"}
         </Button>

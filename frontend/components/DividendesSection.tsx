@@ -5,8 +5,10 @@
 // et les prélèvements sociaux, et les reverse avec la déclaration 2777 avant
 // le 15 du mois suivant. Le virement net et le paiement de la 2777 se
 // catégorisent ensuite depuis la banque.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
+import { Aide } from "@/components/Aide";
+import { EtatErreur } from "@/components/EtatChargement";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
@@ -16,23 +18,51 @@ import {
   fetchAvecAuthChauffeur,
 } from "@/lib/auth-chauffeur";
 import { formatDate, formatMontant } from "@/lib/format";
+import { messageVisible } from "@/lib/messages";
 import type { DividendesVue } from "@/lib/types";
 
 export function DividendesSection({ dossierId }: { dossierId: string }) {
   const [vue, setVue] = useState<DividendesVue | null>(null);
+  const [echec, setEchec] = useState<string | null>(null);
   const [verseLe, setVerseLe] = useState(() => new Date().toISOString().slice(0, 10));
   const [dispense, setDispense] = useState(false);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
-  useEffect(() => {
+  const charger = useCallback(() => {
+    let annule = false;
     fetchAvecAuthChauffeur<DividendesVue>(`/dossiers/${dossierId}/dividendes`)
-      .then(setVue)
-      .catch(() => setVue(null));
+      .then((valeur) => {
+        if (annule) return;
+        setVue(valeur);
+        setEchec(null);
+      })
+      .catch((exception: unknown) => {
+        if (!annule) setEchec(messageVisible(exception, "Impossible de charger vos dividendes."));
+      });
+    return () => {
+      annule = true;
+    };
   }, [dossierId]);
 
-  if (!vue?.applicable) {
+  useEffect(() => charger(), [charger]);
+
+  if (echec) {
+    return (
+      <EtatErreur
+        message={echec}
+        onReessayer={() => {
+          setEchec(null);
+          charger();
+        }}
+      />
+    );
+  }
+  if (vue === null) {
     return null;
+  }
+  if (!vue.applicable) {
+    return vue.raison ? <p className="mt-8 text-sm text-subtle">{vue.raison}</p> : null;
   }
 
   async function declarer() {
@@ -55,19 +85,30 @@ export function DividendesSection({ dossierId }: { dossierId: string }) {
     <section className="mt-8">
       <h2 className="text-sm font-medium text-ink">Mes dividendes {vue.annee_exercice}</h2>
       <dl className="mt-3 space-y-1 text-sm">
-        <Ligne libelle="Dividendes décidés" cents={vue.brut_cts} />
-        <Ligne libelle="Prélèvement forfaitaire (12,8 %)" cents={vue.prelevement_forfaitaire_cts} />
-        <Ligne libelle="CSG" cents={vue.csg_cts} />
-        <Ligne libelle="CRDS" cents={vue.crds_cts} />
-        <Ligne libelle="Prélèvement de solidarité" cents={vue.solidarite_cts} />
-        <Ligne libelle="Net à vous virer" cents={vue.net_a_virer_cts} />
+        <Ligne libelle="Montant décidé" cents={vue.brut_cts} />
+        <Ligne
+          libelle="Impôt retenu (12,8 %)"
+          aide="Le prélèvement forfaitaire. Il est retenu par la société avant de vous virer le reste."
+          cents={vue.prelevement_forfaitaire_cts}
+        />
+        <Ligne
+          libelle="Cotisations sociales"
+          aide="CSG, CRDS et prélèvement de solidarité, retenus en même temps."
+          cents={vue.csg_cts + vue.crds_cts + vue.solidarite_cts}
+        />
+        <Ligne libelle="Ce que vous recevez" cents={vue.net_a_virer_cts} />
       </dl>
       {vue.declare ? (
         <p className="mt-4 rounded-md border border-border bg-canvas p-3 text-sm text-ink">
-          Versés le {vue.verse_le && formatDate(vue.verse_le)}. Déclaration 2777 à déposer et
-          payer avant le {vue.echeance_2777 && formatDate(vue.echeance_2777)} :{" "}
-          {formatMontant(vue.total_retenu_cts)}. Catégorisez ensuite votre virement comme « Mes
-          dividendes » et ce paiement comme « Impôts sur mes dividendes ».
+          Versés le {vue.verse_le && formatDate(vue.verse_le)}. Déclarez et payez{" "}
+          {formatMontant(vue.total_retenu_cts)} avant le{" "}
+          {vue.echeance_2777 && formatDate(vue.echeance_2777)}
+          <Aide
+            tactile
+            texte="La déclaration 2777 : c'est elle qui dit à l'administration ce qui a été retenu sur vos dividendes."
+          />
+          . Ensuite, classez votre virement en « Mes dividendes » et ce paiement en « Impôts sur
+          mes dividendes ».
         </p>
       ) : (
         <div className="mt-4 space-y-3 text-sm">
@@ -75,7 +116,9 @@ export function DividendesSection({ dossierId }: { dossierId: string }) {
             <span className="text-subtle">Date du versement</span>
             <Input
               type="date"
-              className="h-8 w-40"
+              uiSize="lg"
+              className="w-44"
+              aria-label="Date du versement"
               value={verseLe}
               onChange={(evenement) => setVerseLe(evenement.target.value)}
             />
@@ -93,7 +136,7 @@ export function DividendesSection({ dossierId }: { dossierId: string }) {
               sociaux restent dus.
             </span>
           </label>
-          <Button disabled={enCours} onClick={declarer}>
+          <Button className="h-11" disabled={enCours} onClick={declarer}>
             {enCours ? "Déclaration…" : "J'ai versé mes dividendes"}
           </Button>
           {erreur && <p className="text-sm text-danger">{erreur}</p>}
@@ -103,11 +146,14 @@ export function DividendesSection({ dossierId }: { dossierId: string }) {
   );
 }
 
-function Ligne({ libelle, cents }: { libelle: string; cents: number }) {
+function Ligne({ libelle, cents, aide }: { libelle: string; cents: number; aide?: string }) {
   return (
-    <div className="flex justify-between">
-      <dt className="text-subtle">{libelle}</dt>
-      <dd className="tabular-nums text-ink">{formatMontant(cents)}</dd>
+    <div className="flex justify-between gap-3">
+      <dt className="text-subtle">
+        {libelle}
+        {aide && <Aide tactile texte={aide} />}
+      </dt>
+      <dd className="text-right tabular-nums text-ink">{formatMontant(cents)}</dd>
     </div>
   );
 }

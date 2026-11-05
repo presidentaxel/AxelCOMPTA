@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MOT_DE_PASSE_MIN, motDePasseAcceptable } from "@/lib/messages-auth";
 
 /** Changement de mot de passe (session déjà ouverte) et demande de
  * changement d'adresse. L'adresse ne bouge qu'après le clic sur le lien
@@ -26,9 +27,10 @@ export function FormulaireCompte({
       <Formulaire
         titre="Nouveau mot de passe"
         type="password"
-        placeholder="Au moins 8 caractères"
+        placeholder={`Au moins ${MOT_DE_PASSE_MIN} caractères`}
         libelle="Enregistrer le mot de passe"
-        minLength={8}
+        minLength={MOT_DE_PASSE_MIN}
+        autoComplete="new-password"
         onValider={onMotDePasse}
         succes="Mot de passe mis à jour."
       />
@@ -37,6 +39,7 @@ export function FormulaireCompte({
         type="email"
         placeholder="nouvelle@adresse.fr"
         libelle="Recevoir le lien de confirmation"
+        autoComplete="email"
         onValider={onEmail}
         succes="Un lien de confirmation a été envoyé à cette adresse. L'ancienne reste active jusqu'au clic."
       />
@@ -50,6 +53,7 @@ function Formulaire({
   placeholder,
   libelle,
   minLength,
+  autoComplete,
   onValider,
   succes,
 }: {
@@ -58,6 +62,7 @@ function Formulaire({
   placeholder: string;
   libelle: string;
   minLength?: number;
+  autoComplete: string;
   onValider: (valeur: string) => Promise<void>;
   succes: string;
 }) {
@@ -72,7 +77,15 @@ function Formulaire({
     setErreur(null);
     setInfo(null);
     try {
-      await onValider(valeur.trim());
+      const saisie = type === "email" ? valeur.trim() : valeur;
+      if (type === "password") {
+        const refus = motDePasseAcceptable(saisie);
+        if (refus) {
+          setErreur(refus);
+          return;
+        }
+      }
+      await onValider(saisie);
       setValeur("");
       setInfo(succes);
     } catch (exception) {
@@ -84,10 +97,17 @@ function Formulaire({
 
   return (
     <form className="space-y-3" onSubmit={soumettre}>
-      <h2 className="text-sm font-semibold text-ink">{titre}</h2>
+      <h2 className="text-sm font-semibold text-ink">
+        <label htmlFor={`compte-${type}`}>{titre}</label>
+      </h2>
+      {type === "password" && (
+        <p className="text-sm text-subtle">Au moins {MOT_DE_PASSE_MIN} caractères.</p>
+      )}
       <Input
+        id={`compte-${type}`}
         type={type}
         uiSize="lg"
+        autoComplete={autoComplete}
         value={valeur}
         onChange={(evenement) => setValeur(evenement.target.value)}
         placeholder={placeholder}
@@ -95,7 +115,11 @@ function Formulaire({
         minLength={minLength}
         disabled={enCours}
       />
-      {erreur && <p className="text-sm text-danger">{erreur}</p>}
+      {erreur && (
+        <p role="alert" className="text-sm text-danger">
+          {erreur}
+        </p>
+      )}
       {info && <p className="text-sm text-subtle">{info}</p>}
       <Button type="submit" disabled={enCours}>
         {enCours ? "Envoi…" : libelle}

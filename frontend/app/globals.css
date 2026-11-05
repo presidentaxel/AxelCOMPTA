@@ -18,7 +18,8 @@
   --color-ink: #0f172a;
   --color-body: #1e293b;
   --color-subtle: #475569;
-  --color-muted: #94a3b8;
+  /* Placeholder : le gris précédent (#94a3b8) est sous le AA. */
+  --color-muted: #475569;
   --color-faint: #cbd5e1;
   --color-on-dark: #f8fafc;
   --color-on-dark-mute: rgba(248, 250, 252, 0.65);
@@ -37,7 +38,8 @@
   --color-hairline: #f1f5f9;
 
   /* Sémantiques générales */
-  --color-success: #16a34a;
+  /* Plus foncé que #16a34a (environ 3,3:1 sur blanc) pour viser le AA. */
+  --color-success: #166534;
   --color-success-subtle: #f0fdf4;
   --color-success-border: #86efac;
   --color-warning: #d97706;
@@ -51,12 +53,12 @@
   --color-info-border: #7dd3fc;
 
   /* Sémantiques comptables (doc DESIGN.md — usage strict, ne pas détourner) */
-  --color-amount-positive: #16a34a;
+  --color-amount-positive: #166534;
   --color-amount-negative: #dc2626;
   --color-amount-neutral: #0f172a;
-  --color-validated: #16a34a;
+  --color-validated: #166534;
   --color-validated-subtle: #f0fdf4;
-  --color-pending: #d97706;
+  --color-pending: #92400e;
   --color-pending-subtle: #fffbeb;
   --color-auto-rule: #0284c7;
   --color-auto-rule-subtle: #f0f9ff;
@@ -110,6 +112,18 @@
 body {
   background-color: #f8fafc;
   color: #0f172a;
+}
+
+/* Espace chauffeur : cibles 44 px, champs 16 px (pas de zoom iOS). */
+.chauffeur-ecran button,
+.chauffeur-ecran a {
+  min-height: 44px;
+}
+.chauffeur-ecran input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.chauffeur-ecran select,
+.chauffeur-ecran textarea {
+  min-height: 44px;
+  font-size: 16px;
 }
 
 /* DESIGN.md — règle des montants : invariant non négociable. */

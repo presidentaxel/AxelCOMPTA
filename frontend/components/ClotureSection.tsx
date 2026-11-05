@@ -13,6 +13,7 @@
 import { Download } from "lucide-react";
 import { useState } from "react";
 
+import { Aide } from "@/components/Aide";
 import { Dialogue } from "@/components/Dialogue";
 import { Button } from "@/components/ui/button";
 import { cheminTelechargementCloture } from "@/lib/api";
@@ -24,19 +25,45 @@ const LIASSE: DocumentCloture = "liasse-fiscale.pdf";
 
 /** Pièces à emporter pour les impôts. Pas une télédéclaration : rien n'est
  * envoyé à l'administration depuis cet écran. */
-const PIECES: Array<{ document: DocumentCloture; label: string; detail: string }> = [
+const PIECES: Array<{ document: DocumentCloture; label: string; detail: string; aide: string }> = [
   // AXE-422 : on garde le .txt légal (A.47 A-1). Pas de PDF : ce n'est pas
   // le format qu'un contrôle demande.
   {
     document: "fec.txt",
-    label: "FEC",
-    detail: "Texte .txt",
+    label: "Fichier de contrôle",
+    detail: "Texte",
+    aide: "Le FEC : la liste de chaque écriture, au format que l'administration demande lors d'un contrôle.",
   },
-  { document: "grand-livre.pdf", label: "Grand livre", detail: "PDF" },
-  { document: "balance.pdf", label: "Balance", detail: "PDF" },
-  { document: "liasse.pdf", label: "Synthèse", detail: "Lecture courte du résultat" },
-  { document: "grand-livre.csv", label: "Grand livre", detail: "Tableur" },
-  { document: "balance.csv", label: "Balance", detail: "Tableur" },
+  {
+    document: "grand-livre.pdf",
+    label: "Détail de chaque opération",
+    detail: "PDF",
+    aide: "Le grand livre : chaque opération, ligne par ligne.",
+  },
+  {
+    document: "balance.pdf",
+    label: "Totaux par catégorie",
+    detail: "PDF",
+    aide: "La balance : le total de chaque catégorie de comptes.",
+  },
+  {
+    document: "liasse.pdf",
+    label: "Résumé à lire",
+    detail: "Lecture courte",
+    aide: "Une lecture courte du résultat, pas le dossier envoyé aux impôts.",
+  },
+  {
+    document: "grand-livre.csv",
+    label: "Détail de chaque opération",
+    detail: "Tableur",
+    aide: "Le même détail, à ouvrir dans un tableur.",
+  },
+  {
+    document: "balance.csv",
+    label: "Totaux par catégorie",
+    detail: "Tableur",
+    aide: "Les mêmes totaux, à ouvrir dans un tableur.",
+  },
 ];
 
 /** 2065 à l'IS, 2031 à l'IR : c'est l'API qui le dit (matrice des statuts). */
@@ -44,12 +71,24 @@ function pieceDeclaration(dossier: DossierResume) {
   const numero = dossier.declaration_resultat;
   return {
     document: `cerfa-${numero}.pdf` as DocumentCloture,
-    label: `Formulaire ${numero}`,
-    detail: "Page de garde de la liasse",
+    label: "Déclaration de résultat",
+    detail: "Page de garde",
+    aide: `Le formulaire ${numero}, page de garde du dossier pour les impôts.`,
   };
 }
 
-export function ClotureSection({ dossier }: { dossier: DossierResume }) {
+export function ClotureSection({
+  dossier,
+  operationsRestantes,
+}: {
+  dossier: DossierResume;
+  operationsRestantes: number;
+}) {
+  const documentsPrets = dossier.cloture_faite && operationsRestantes === 0;
+  const raisonBlocage =
+    operationsRestantes > 0
+      ? `Il reste ${operationsRestantes} opération${operationsRestantes > 1 ? "s" : ""} à traiter.`
+      : "Clôturez d'abord l'exercice.";
   const [erreur, setErreur] = useState<string | null>(null);
   const [avertissementLiasse, setAvertissementLiasse] = useState(false);
   const [avertissementLu, setAvertissementLu] = useState(false);
@@ -94,17 +133,27 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
       <dl className="mt-3 space-y-2 text-sm">
         <Ligne label="CA HT" cents={dossier.ca_ht_cts} />
         <Ligne label="Charges" cents={dossier.charges_cts} />
-        <Ligne label="Résultat" cents={dossier.resultat_cts} emphasise />
         <Ligne label="Trésorerie" cents={dossier.tresorerie_cts} />
         <Ligne label="TVA à payer" cents={dossier.tva_a_payer_cts} />
       </dl>
-      <h2 className="mt-8 text-base font-semibold text-ink">Pour les impôts</h2>
+      <h2 className="mt-8 text-base font-semibold text-ink">
+        Pour les impôts
+        <Aide tactile texte="La liasse fiscale : le dossier que vous gardez pour la déclaration. Rien n'est envoyé d'ici." />
+      </h2>
       <p className="mt-1 text-sm text-subtle">
-        Les comptes ne sont pas clôturés. À télécharger et à conserver. La déclaration
-        n&apos;est pas envoyée d&apos;ici.
+        {dossier.cloture_faite
+          ? "Les comptes sont clôturés. À télécharger et à conserver. La déclaration n'est pas envoyée d'ici."
+          : "Les comptes ne sont pas clôturés. La déclaration n'est pas envoyée d'ici."}
       </p>
-      <Button type="button" variant="secondary" className="mt-4 w-full" onClick={ouvrirAvertissement}>
-        Récupérer la liasse
+      {!documentsPrets && <p className="mt-2 text-sm text-ink">{raisonBlocage}</p>}
+      <Button
+        type="button"
+        variant="secondary"
+        className="mt-4 h-11 w-full"
+        disabled={!documentsPrets}
+        onClick={ouvrirAvertissement}
+      >
+        Récupérer le dossier pour les impôts
       </Button>
       {avertissementLiasse && (
         <Dialogue titre="Comptes non clôturés" titreId="titre-liasse" onFermer={fermerAvertissement}>
@@ -160,13 +209,14 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
         contrôle. Il liste chaque écriture, au format texte, pas en PDF.
       </p>
       <ul className="mt-2">
-        {[pieceDeclaration(dossier), ...PIECES].map(({ document, label, detail }) => (
-          <li key={document} className="border-b border-hairline">
+        {[pieceDeclaration(dossier), ...PIECES].map(({ document, label, detail, aide }) => (
+          <li key={document} className="flex items-center border-b border-hairline">
             <button
               type="button"
               aria-label={`Télécharger ${label} (${detail})`}
+              disabled={!documentsPrets}
               onClick={() => void telecharger(document)}
-              className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-md px-2 py-3 text-left outline-none hover:bg-primary-subtle focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]"
+              className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-4 rounded-md px-2 py-3 text-left outline-none hover:bg-primary-subtle focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="text-sm font-medium text-primary">{label}</span>
               <span className="flex shrink-0 items-center gap-2 text-sm text-subtle">
@@ -174,6 +224,7 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
                 <Download className="h-4 w-4 text-primary" aria-hidden />
               </span>
             </button>
+            <Aide tactile texte={aide} />
           </li>
         ))}
       </ul>

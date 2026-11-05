@@ -15,6 +15,7 @@
  */
 
 import { ApiError } from "./api";
+import { adresseInconnue, messageAuthFrancais } from "./messages-auth";
 import { appelAuthentifie, erreurApi, lireCorps } from "./session";
 import type {
   AffectationVue,
@@ -105,18 +106,36 @@ export function deconnecter(): void {
   }
 }
 
-export async function extraireErreurSupabase(reponse: Response): Promise<never> {
+async function texteErreurSupabase(reponse: Response): Promise<string> {
   const corps = (await reponse.json().catch(() => ({}))) as {
     error_description?: string;
     msg?: string;
     message?: string;
+    error_code?: string;
   };
-  throw new ErreurAuthChauffeur(
+  return (
     corps.error_description ??
-      corps.msg ??
-      corps.message ??
-      `Échec de l'authentification (HTTP ${reponse.status}).`,
+    corps.msg ??
+    corps.message ??
+    corps.error_code ??
+    `HTTP ${reponse.status}`
   );
+}
+
+export async function extraireErreurSupabase(reponse: Response): Promise<never> {
+  const brut = await texteErreurSupabase(reponse);
+  throw new ErreurAuthChauffeur(messageAuthFrancais(brut, reponse.status));
+}
+
+/** Appel Supabase : une coupure réseau devient une phrase française. */
+async function appelSupabase(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (exception) {
+    throw new ErreurAuthChauffeur(
+      messageAuthFrancais(exception instanceof Error ? exception.message : ""),
+    );
+  }
 }
 
 /** Page qui reçoit les jetons Supabase (fragment `#access_token`), pour le
@@ -127,7 +146,7 @@ export function urlRetourAuth(): string {
 }
 
 export async function envoyerLienMagique(email: string): Promise<void> {
-  const reponse = await fetch(
+  const reponse = await appelSupabase(
     `${SUPABASE_URL}/auth/v1/otp?redirect_to=${encodeURIComponent(urlRetourAuth())}`,
     {
       method: "POST",
@@ -136,12 +155,15 @@ export async function envoyerLienMagique(email: string): Promise<void> {
     },
   );
   if (!reponse.ok) {
-    await extraireErreurSupabase(reponse);
+    const brut = await texteErreurSupabase(reponse);
+    // Adresse inconnue : le message affiché reste neutre, sans contredire.
+    if (adresseInconnue(brut)) return;
+    throw new ErreurAuthChauffeur(messageAuthFrancais(brut, reponse.status));
   }
 }
 
 export async function demanderReinitialisation(email: string): Promise<void> {
-  const reponse = await fetch(
+  const reponse = await appelSupabase(
     `${SUPABASE_URL}/auth/v1/recover?redirect_to=${encodeURIComponent(urlRetourAuth())}`,
     {
       method: "POST",
@@ -150,7 +172,9 @@ export async function demanderReinitialisation(email: string): Promise<void> {
     },
   );
   if (!reponse.ok) {
-    await extraireErreurSupabase(reponse);
+    const brut = await texteErreurSupabase(reponse);
+    if (adresseInconnue(brut)) return;
+    throw new ErreurAuthChauffeur(messageAuthFrancais(brut, reponse.status));
   }
 }
 
@@ -158,7 +182,7 @@ export async function definirMotDePasseAvecJeton(
   accessToken: string,
   motDePasse: string,
 ): Promise<void> {
-  const reponse = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+  const reponse = await appelSupabase(`${SUPABASE_URL}/auth/v1/user`, {
     method: "PUT",
     headers: enTetesSupabase(accessToken),
     body: JSON.stringify({ password: motDePasse }),
@@ -169,7 +193,7 @@ export async function definirMotDePasseAvecJeton(
 }
 
 export async function changerEmailAvecJeton(accessToken: string, email: string): Promise<void> {
-  const reponse = await fetch(
+  const reponse = await appelSupabase(
     `${SUPABASE_URL}/auth/v1/user?redirect_to=${encodeURIComponent(urlRetourAuth())}`,
     {
       method: "PUT",
@@ -186,7 +210,7 @@ export async function connexionParMotDePasse(
   email: string,
   motDePasse: string,
 ): Promise<SessionChauffeur> {
-  const reponse = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+  const reponse = await appelSupabase(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: enTetesSupabase(),
     body: JSON.stringify({ email, password: motDePasse }),
@@ -214,7 +238,7 @@ export async function accepterInvitation(fragmentUrl: string): Promise<SessionCh
   if (!accessToken || !refreshToken) {
     throw new ErreurAuthChauffeur("Lien d'invitation invalide ou expiré.");
   }
-  const reponse = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+  const reponse = await appelSupabase(`${SUPABASE_URL}/auth/v1/user`, {
     headers: enTetesSupabase(accessToken),
   });
   if (!reponse.ok) {
@@ -396,14 +420,39 @@ export async function listerNotificationsChauffeur(dossierId: string): Promise<N
   return fetchAvecAuthChauffeur<NotificationVue[]>(`/dossiers/${dossierId}/notifications`);
 }
 
-/** Ouvrir la cloche vaut lecture : tout ce qui n'était pas lu le devient. */
-export async function marquerNotificationsLuesChauffeur(dossierId: string): Promise<void> {
-  const reponse = await appelChauffeur(`/dossiers/${dossierId}/notifications/lues`, {
-    method: "POST",
-  });
+/** Une notification devient lue quand on l'ouvre, pas tout le panneau. */
+export async function marquerNotificationLueChauffeur(
+  dossierId: string,
+  notificationId: string,
+): Promise<void> {
+  const reponse = await appelChauffeur(
+    `/dossiers/${dossierId}/notifications/${notificationId}/lue`,
+    { method: "POST" },
+  );
   if (!reponse.ok) {
-    throw new ApiError(`HTTP ${reponse.status}`, reponse.status);
+    throw erreurApi(await lireCorps(reponse), reponse);
   }
+}
+
+export async function annulerDecisionChauffeur(
+  dossierId: string,
+  ecritureId: string,
+): Promise<TransactionVue> {
+  return envoyerChauffeur(
+    `/dossiers/${dossierId}/transactions/${ecritureId}/annulation`,
+    {},
+  );
+}
+
+export async function corrigerDecisionChauffeur(
+  dossierId: string,
+  ecritureId: string,
+  categorie: string,
+): Promise<TransactionVue> {
+  return envoyerChauffeur(
+    `/dossiers/${dossierId}/transactions/${ecritureId}/correction`,
+    { categorie },
+  );
 }
 
 export async function lireProvisionsCloture(dossierId: string): Promise<ProvisionClotureVue[]> {
