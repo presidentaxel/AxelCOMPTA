@@ -2,8 +2,9 @@
 
 import { Bell } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { EchecLecture, messageEchecLecture } from "@/components/EchecLecture";
 import {
   listerNotificationsChauffeur,
   marquerNotificationLueChauffeur,
@@ -29,32 +30,54 @@ export function lienNotification(dossierId: string, type: string): string {
 }
 
 /** Notifications internes (doc 19 §5.2). Ouvrir la cloche ne marque rien :
- * chaque notification devient lue quand on l'ouvre. Une erreur de chargement
- * laisse la cloche muette. */
+ * chaque notification devient lue quand on l'ouvre. Une lecture ratée
+ * s'affiche dans le panneau : elle ne se confond pas avec une cloche vide. */
 export function Cloche({ dossierId, chemin }: { dossierId: string; chemin: string }) {
   const [notifications, setNotifications] = useState<NotificationVue[]>([]);
+  const [echec, setEchec] = useState<string | null>(null);
+  const [enCours, setEnCours] = useState(true);
   const [ouvert, setOuvert] = useState(false);
+  const [suivi, setSuivi] = useState(dossierId);
   const racine = useRef<HTMLDivElement>(null);
   const lectures = useRef(new Set<string>());
+  const ticket = useRef(0);
 
-  useEffect(() => {
-    let annule = false;
+  if (suivi !== dossierId) {
+    setSuivi(dossierId);
+    setNotifications([]);
+    setEchec(null);
+    setEnCours(true);
+  }
+
+  const charger = useCallback(() => {
+    const courant = ++ticket.current;
     listerNotificationsChauffeur(dossierId)
       .then((liste) => {
-        if (annule) return;
+        if (ticket.current !== courant) return;
+        setEchec(null);
+        setEnCours(false);
         setNotifications(
           liste.map((notification) =>
             lectures.current.has(notification.id) ? { ...notification, lue: true } : notification,
           ),
         );
       })
-      .catch(() => {
-        if (!annule) setNotifications([]);
+      .catch((exception: unknown) => {
+        if (ticket.current !== courant) return;
+        setNotifications([]);
+        setEnCours(false);
+        setEchec(messageEchecLecture(exception, "Impossible de charger les notifications."));
       });
-    return () => {
-      annule = true;
-    };
-  }, [dossierId, chemin]);
+  }, [dossierId]);
+
+  useEffect(() => {
+    charger();
+  }, [charger, chemin]);
+
+  function reessayer() {
+    setEnCours(true);
+    charger();
+  }
 
   useEffect(() => {
     if (!ouvert) return;
@@ -93,7 +116,13 @@ export function Cloche({ dossierId, chemin }: { dossierId: string; chemin: strin
         onClick={() => setOuvert((actuel) => !actuel)}
         aria-expanded={ouvert}
         aria-haspopup="dialog"
-        aria-label={nonLues > 0 ? `Notifications, ${nonLues} non lues` : "Notifications"}
+        aria-label={
+          echec
+            ? "Notifications indisponibles"
+            : nonLues > 0
+              ? `Notifications, ${nonLues} non lues`
+              : "Notifications"
+        }
         className="relative flex h-11 w-11 items-center justify-center rounded-full text-ink outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]"
       >
         <Bell className="h-5 w-5" aria-hidden />
@@ -110,8 +139,17 @@ export function Cloche({ dossierId, chemin }: { dossierId: string; chemin: strin
           style={{ maxHeight: HAUTEUR_PANNEAU }}
           className="absolute right-0 top-12 z-20 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-lg border border-border bg-canvas p-2 shadow-lg"
         >
-          {notifications.length === 0 ? (
-            <p className="p-3 text-sm text-subtle">Aucune notification.</p>
+          {echec ? (
+            <EchecLecture
+              className="p-1"
+              message={echec}
+              onReessayer={reessayer}
+              enCours={enCours}
+            />
+          ) : notifications.length === 0 ? (
+            <p className="p-3 text-sm text-subtle">
+              {enCours ? "Chargement…" : "Aucune notification."}
+            </p>
           ) : (
             <ul>
               {notifications.map((notification) => (

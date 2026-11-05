@@ -5,8 +5,9 @@
 // clôture va faire, accepte l'attestation et valide. Personne d'autre ne
 // peut le faire à sa place, et sans lui rien ne se passe.
 // Les provisions, qui changent le résultat, sont saisies avant cette étape.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { EchecLecture, messageEchecLecture } from "@/components/EchecLecture";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import {
@@ -35,16 +36,45 @@ export function ClotureExerciceSection({
   onClos: () => void;
 }) {
   const [apercu, setApercu] = useState<ClotureExerciceVue | null>(null);
+  const [echecLecture, setEchecLecture] = useState<string | null>(null);
+  const [enCoursLecture, setEnCoursLecture] = useState(false);
   const [accepte, setAccepte] = useState(false);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [succes, setSucces] = useState<string | null>(null);
+  const [suivi, setSuivi] = useState(dossierId);
+  const ticket = useRef(0);
+
+  if (suivi !== dossierId) {
+    setSuivi(dossierId);
+    setApercu(null);
+    setEchecLecture(null);
+    setErreur(null);
+    setSucces(null);
+    setAccepte(false);
+  }
 
   const charger = useCallback(() => {
+    const courant = ++ticket.current;
     fetchAvecAuthChauffeur<ClotureExerciceVue>(`/dossiers/${dossierId}/cloture-exercice`)
-      .then(setApercu)
-      .catch(() => setApercu(null));
+      .then((vue) => {
+        if (ticket.current !== courant) return;
+        setApercu(vue);
+        setEchecLecture(null);
+        setEnCoursLecture(false);
+      })
+      .catch((exception: unknown) => {
+        if (ticket.current !== courant) return;
+        setApercu(null);
+        setEnCoursLecture(false);
+        setEchecLecture(messageEchecLecture(exception, "Impossible de charger la clôture."));
+      });
   }, [dossierId]);
+
+  function reessayer() {
+    setEnCoursLecture(true);
+    charger();
+  }
 
   useEffect(() => {
     charger();
@@ -66,6 +96,17 @@ export function ClotureExerciceSection({
       <section className="mt-8">
         <h2 className="text-sm font-medium text-ink">Clôture de l&apos;exercice</h2>
         <p className="mt-2 text-sm text-ink">{raisonBlocage}</p>
+      </section>
+    );
+  }
+
+  if (echecLecture) {
+    return (
+      <section className="mt-8" aria-labelledby="titre-cloture">
+        <h2 id="titre-cloture" className="text-sm font-medium text-ink">
+          Clôture de l&apos;exercice
+        </h2>
+        <EchecLecture message={echecLecture} onReessayer={reessayer} enCours={enCoursLecture} />
       </section>
     );
   }
