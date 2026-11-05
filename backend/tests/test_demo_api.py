@@ -1006,6 +1006,26 @@ def test_telecharger_la_liasse_fiscale_complete() -> None:
     assert reponse.content.startswith(b"%PDF-")
 
 
+def test_liasse_definitive_et_signature_greffe_attendent_les_operations() -> None:
+    """Tant qu'une opération est à trancher, les chiffres bougeraient.
+    La liasse fiscale et la signature du greffe refusent. Les pièces de
+    travail (FEC, synthèse) restent disponibles."""
+    client = _client()
+    en_tete = _en_tete("DEMO_sophie")
+    reste = client.get("/dossiers/DEMO_sophie", headers=en_tete).json()["nb_a_trancher"]
+    assert reste > 0
+    nom = "opération" if reste == 1 else "opérations"
+    attendu = f"Il reste {reste} {nom} à traiter."
+
+    liasse = client.get("/dossiers/DEMO_sophie/liasse-fiscale.pdf", headers=en_tete)
+    signature = client.post("/dossiers/DEMO_sophie/greffe-inpi/signature", headers=en_tete)
+
+    assert liasse.status_code == 409 and liasse.json()["detail"] == attendu
+    assert signature.status_code == 409 and signature.json()["detail"] == attendu
+    assert client.get("/dossiers/DEMO_sophie/fec.txt", headers=en_tete).status_code == 200
+    assert client.get("/dossiers/DEMO_sophie/liasse.pdf", headers=en_tete).status_code == 200
+
+
 # --- Greffe/INPI (doc 20, Louis 2026-09-11) --------------------------------
 
 
@@ -1481,10 +1501,12 @@ def test_la_cloture_se_prepare_puis_se_valide_par_le_chauffeur_lui_meme() -> Non
     refus = client.post(url, headers=en_tete, json={"attestation": "j'accepte"})
     assert refus.status_code == 422
 
+    assert client.get("/dossiers/DEMO_karim", headers=en_tete).json()["cloture_faite"] is False
     valide = client.post(url, headers=en_tete, json={"attestation": apercu["attestation"]})
     assert valide.status_code == 200
     fiche = client.get("/dossiers/DEMO_karim", headers=en_tete).json()
     assert fiche["exercice_debut"] == "2026-01-01"
+    assert fiche["cloture_faite"] is True
     exercices = client.app.dependency_overrides[get_exercices]()  # type: ignore[attr-defined]
     (clos,) = exercices.lister(DossierId("DEMO_karim"))
     assert (clos.clos_par, clos.attestation) == ("user-123", apercu["attestation"])
