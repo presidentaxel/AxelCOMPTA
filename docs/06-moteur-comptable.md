@@ -1,5 +1,19 @@
 # 06 — Moteur comptable (`ledger` + `closing` + `filings`)
 
+> **État au 2026-11-05** (ajouté ; le reste du doc décrit la cible) :
+> - Invariants : I2 tenu en base (2026-09-24). **I3, I4 et I7 ne le sont
+>   pas** (AXE-807, AXE-806). I8 : validateur A.47 A-1 en place, Test
+>   Compta Demat pas passé (AXE-484).
+> - Templates du pack VTC manquants : versements de plateformes éclatés
+>   (AXE-801), immobilisations et amortissement du véhicule (AXE-802), LOA
+>   (AXE-803).
+> - Clôture : décidée par le chauffeur seul, CCA/FNP saisies par lui (le
+>   moteur ne provisionne jamais seul), à-nouveaux d'un exercice clos dans
+>   AxeLCompta (`closing/ouverture.py`). Bilan d'ouverture d'une société
+>   existante : AXE-804. TVA en cours d'année : AXE-805.
+> - Aucune relecture par un expert-comptable à ce jour : prévue avant le
+>   31/01/2027 (AXE-815).
+
 > Statut : brouillon à valider — Dernière mise à jour : 2026-09-24
 
 Le module le plus critique du système. C'est lui qui doit être « incassable » :

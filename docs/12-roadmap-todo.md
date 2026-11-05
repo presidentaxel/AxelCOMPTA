@@ -215,6 +215,8 @@ glisse en T1 2027 est à faire dans AXE-766.
   continu et décision RGS).
 - AXE-769 : limiter l'UX en cours à 3 tickets pour laisser la place à
   l'ingestion réelle.
+- Offboarding (doc 14 §2 : export et purge d'un tenant, RGPD) : aucun
+  ticket. À décider s'il fait partie de la V1 ou du contrat (AXE-813).
 
 ### Ce qui reste vrai de septembre
 

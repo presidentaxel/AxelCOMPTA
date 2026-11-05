@@ -1,5 +1,9 @@
 # 20 — Dépôt des comptes annuels (Guichet Unique INPI)
 
+> **État au 2026-11-05** (ajouté) : le dossier de dépôt est généré et la
+> signature reste fictive. Le choix du périmètre de la signature qualifiée
+> RGS est prévu en décembre (AXE-441, ADR-004). Le dépôt reste manuel.
+
 > **Statut : spike fait, renderer démo construit, le 2026-09-11** (doc 17
 > §9 Semaine 4, doc 17 §10 — risque « schéma du dossier greffe/INPI
 > inconnu »). Contrairement à Digifactory (doc 16) avant le doc 16, le

@@ -1,5 +1,18 @@
 # 05 — Pipeline de catégorisation hybride et détection d'anomalies
 
+> **État au 2026-11-05** (ajouté ; le reste du doc décrit la cible) :
+> - Étage 1 (règles) et étage 2 (modèle v2 calibré : proposition au-dessus
+>   de 0,6, imputation automatique au-dessus de 0,95 pour 9 catégories
+>   seulement) en place, plus les propositions apprises des décisions du
+>   chauffeur.
+> - Étage 3 (LLM) : la pseudonymisation et l'interface `LLMProvider` existent
+>   (AXE-436), aucun fournisseur n'est branché.
+> - Étage 4 (humain) : « À traiter » côté chauffeur, mode expert côté
+>   expert-comptable (AXE-800).
+> - Anomalies (§6) : profils et détecteurs V1 faits (AXE-437) ; les
+>   qualifications sont encore en mémoire (AXE-814).
+> - Aucun objectif du doc 01 §6 n'est encore mesuré (AXE-816).
+
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-12
 
 C'est le cœur « intelligent » du système, conçu exactement comme exprimé dans le

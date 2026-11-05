@@ -1,5 +1,11 @@
 # 13 — Intégrations de plateformes et pattern DataProvider
 
+> **État au 2026-11-05** (ajouté) : la réconciliation et les écritures de
+> settlement (§4, §5) sont codées et testées sur fixtures (golden test
+> §5.3, autoliquidation Bolt). Rollee n'est pas contractualisé (AXE-440).
+> En attendant, les settlements viendront des relevés exportés par le
+> chauffeur depuis Uber et Bolt (AXE-801).
+
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-16
 
 ## 1. Le problème : deux types de données d'entrée distincts

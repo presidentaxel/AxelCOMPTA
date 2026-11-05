@@ -1,5 +1,10 @@
 # 15 — Observabilité, métriques et monitoring
 
+> **État au 2026-11-05** (ajouté) : `GET /metrics` au format Prometheus,
+> journal JSON structuré et Sentry si `SENTRY_DSN` est posé (AXE-426).
+> Pas encore : dashboards, alerting, métriques métier (taux de
+> catégorisation, coût LLM), contrôle quotidien de la balance (AXE-807).
+
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-16
 
 L'observabilité d'AxeLCompta a deux finalités distinctes qu'il ne faut pas mélanger :

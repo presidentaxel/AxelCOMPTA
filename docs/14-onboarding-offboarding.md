@@ -1,5 +1,14 @@
 # 14 — Onboarding et offboarding des tenants
 
+> **État au 2026-11-05** (ajouté ; le reste du doc décrit la cible) :
+> - Fait : invitations en masse, renvoi et annulation (AXE-702) ; écran des
+>   connexions bancaires Digifactory et relances dans la cloche.
+> - Prévu : création des dossiers en masse (AXE-809), reprise d'historique
+>   par import FEC ou saisie guidée (§1.6, AXE-804), confirmation de sa
+>   configuration par le chauffeur (AXE-730).
+> - Pas planifié : l'offboarding (§2 export et purge d'un tenant), aucun
+>   ticket à ce jour.
+
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-16
 
 ## 1. Onboarding d'un nouveau client (tenant)

@@ -1,5 +1,11 @@
 # 16 — Intégration Digifactory (source bancaire)
 
+> **État au 2026-11-05** (ajouté) : synchro réelle codée (curseur, archive
+> brute, quarantaine, contre-passation), premier chargement découpé et
+> santé de connexion relevée (AXE-443). Six dossiers `DIGI_` de démo, dont
+> aucun chauffeur VTC. Prochaine étape : de vrais chauffeurs, hors démo
+> (AXE-726 à AXE-729), puis un mois exporté (AXE-733).
+
 > **Statut : les 4 routes vérifiées en réel le 2026-09-11 — voir §7.** Le
 > 401 n'était pas un problème côté Digifactory : c'était un mauvais type
 > d'en-tête utilisé côté client depuis le début (§2). Chemin A implémenté

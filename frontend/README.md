@@ -83,6 +83,12 @@ chauffeur (mobile) est cadré dans [doc 19](../docs/19-parcours-utilisateur.md).
   lot) + 5 liens de téléchargement (liasse/CERFA 2065/FEC/grand livre/
   balance, `demo_api.py`) reflétant les décisions humaines appliquées, pas
   le ledger brut.
+- **Au 2026-11-05** : écrans gestionnaire Entreprises (filtres, tri,
+  pagination, état dans l'URL), Invitations, Rappels, Équipe, Intégrations,
+  Mode expert, Anomalies ; écrans chauffeur Activité, À traiter (une carte
+  à la fois, « Annuler »), Exercice, Mon résultat, Compte et cloche. Revues
+  UX AXE-563 et AXE-564 traitées. Tests Playwright dans `e2e/`
+  (`npm run e2e`).
 - **V1 (doc 12, phase 3-4)** : Next.js complet sur `api/` (le vrai backend,
   auth/MFA, multi-tenant), design system (`DESIGN.md`), maquettes Figma
   validées avec 2 utilisateurs cibles (doc 12 §0.3).

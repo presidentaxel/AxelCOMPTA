@@ -61,7 +61,11 @@ ne dépend jamais d'`ingestion` en retour, règle absolue doc 03 §3).
 - **V1 (doc 12, phase 1)** : retries, monitoring des flux par dossier,
   planificateur (file de jobs, ADR-002), normalisation centralisée.
   Orchestration multi-dossiers : **faite le 2026-09-22** en lancement manuel
-  (`python -m axelcompta.synchro_digifactory`).
+  (`python -m axelcompta.synchro_digifactory`), lancée toutes les heures
+  par le cron `axelcompta.taches`.
+- **Prévu au 2026-11-05** : vrais chauffeurs hors démo (AXE-726 à
+  AXE-729), relevés Uber et Bolt comme source de settlements (AXE-801),
+  import du FEC de l'outil précédent (AXE-804).
 
 ## Doc de référence
 

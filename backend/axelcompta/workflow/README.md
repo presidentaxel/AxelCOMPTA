@@ -89,8 +89,13 @@ seul module autorisé à transformer une `ProposedEntry` (sortie de
   « usage_personnel » (doc 06 §3.6), n'importe quel autre compte du pack
   sinon. Montants et sens inchangés : une reclassification, pas un nouveau
   calcul.
-- **V1 (doc 12, phase 3)** : actif, prestataire de signature tranché,
-  persistance Postgres (pas la version mémoire).
+- **2026-11-05** : le chauffeur peut corriger une décision (nouvelle
+  décision, la première reste en base) et annuler pendant 6 secondes
+  (PR #81, #82). La notification se marque lue à l'ouverture (AXE-691).
+- **V1 (doc 12, phase 3)** : actif, prestataire de signature tranché
+  (AXE-441), contre-passations des décisions humaines (AXE-420) et depuis
+  la quarantaine (AXE-424), envoi des rappels hors de l'application
+  (AXE-808).
 
 ## Doc de référence
 
