@@ -4,12 +4,22 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, use, useEffect, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import {
+  annonceAnnulee,
+  annonceClassee,
+  compteurFile,
+  questionsRestantes,
+  ticketsSeuls,
+} from "@/app/chauffeur/file-a-traiter";
+import { useDecisionDifferee } from "@/app/chauffeur/use-decision-differee";
+import { useDossierChauffeur, useOperationsChauffeur } from "@/app/chauffeur/use-dossier";
 import { ConfirmationGroupee } from "@/components/ConfirmationGroupee";
 import { QuestionCategorisation } from "@/components/QuestionCategorisation";
 import { ResultatACeJour } from "@/components/ResultatACeJour";
-import { StationTickets, ticketPrioritaire } from "@/components/StationTickets";
-import { useDossierChauffeur, useOperationsChauffeur } from "@/app/chauffeur/use-dossier";
+import { Squelette, SqueletteLignes } from "@/components/Squelette";
+import { StationTickets } from "@/components/StationTickets";
+import { ToastDecision } from "@/components/ToastDecision";
+import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import {
   ecrireEtatActivite,
@@ -19,11 +29,11 @@ import {
   type EtatActivite,
   type SensActivite,
 } from "@/lib/activite-url";
-import { joindreJustificatifChauffeur } from "@/lib/auth-chauffeur";
+import { corrigerTransactionChauffeur, joindreJustificatifChauffeur } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
 import { libelleCategorie, phrasePourChauffeur } from "@/lib/langage-chauffeur";
+import { ticketPrioritaire } from "@/lib/tickets";
 import type { DossierResume, TransactionVue } from "@/lib/types";
-import { Squelette, SqueletteLignes } from "@/components/Squelette";
 
 const MOIS = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
 const JOUR = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
@@ -57,6 +67,30 @@ function Activite({
   const requete = recherche.toString();
   const { dossier } = useDossierChauffeur(dossierId);
   const { transactions, remplacer, recharger } = useOperationsChauffeur(dossierId);
+  const [horsFile, setHorsFile] = useState<string[]>([]);
+  const [epinglee, setEpinglee] = useState<string | null>(null);
+  const [annonce, setAnnonce] = useState("");
+  const [suit, setSuit] = useState(false);
+  const [erreurAction, setErreurAction] = useState<string | null>(null);
+  const [correction, setCorrection] = useState<CorrectionAffichee | null>(null);
+  const [enCoursCorrection, setEnCoursCorrection] = useState(false);
+  const [ouverte, setOuverte] = useState<string | null>(null);
+
+  function enregistree(transaction: TransactionVue) {
+    remplacer(transaction);
+    recharger();
+  }
+
+  function echec(original: TransactionVue, message: string) {
+    setHorsFile((ids) => ids.filter((id) => id !== original.ecriture_id));
+    remplacer(original);
+    setEpinglee(original.ecriture_id);
+    setErreurAction(phrasePourChauffeur(message));
+    setAnnonce("L'enregistrement a échoué.");
+    setSuit(true);
+  }
+
+  const { enAttente, poser, annuler } = useDecisionDifferee(dossierId, enregistree, echec);
 
   useEffect(() => {
     if (requete) {
@@ -69,50 +103,180 @@ function Activite({
   }, [dossierId, requete, pathname, router]);
 
   function mettreAJour(maj: Partial<EtatActivite>) {
-    const requete = ecrireEtatActivite(recherche, maj);
-    memoriserActivite(dossierId, requete);
-    router.replace(requete ? `${pathname}?${requete}` : pathname, { scroll: false });
+    const suivante = ecrireEtatActivite(recherche, maj);
+    memoriserActivite(dossierId, suivante);
+    router.replace(suivante ? `${pathname}?${suivante}` : pathname, { scroll: false });
   }
 
   const operations = transactions.statut === "pret" ? transactions.valeur : [];
   const aVerifier = operations
     .filter((transaction) => transaction.statut === "à trancher")
     .sort((a, b) => b.date.localeCompare(a.date));
+  const file = questionsRestantes(aVerifier, horsFile);
+  const tickets = ticketsSeuls(operations);
+  const { position, total } = compteurFile(file.length, horsFile.length, tickets.length);
+  const courante =
+    (epinglee ? file.find((operation) => operation.ecriture_id === epinglee) : undefined) ??
+    file[0] ??
+    null;
   const moisDispo = [...new Set(operations.map((transaction) => transaction.date.slice(0, 7)))].sort();
   const dernierMois = moisDispo.at(-1);
   const mois = etat.mois && moisDispo.includes(etat.mois) ? etat.mois : dernierMois;
   const indexMois = mois ? moisDispo.indexOf(mois) : -1;
+  const reste = file.length + tickets.length;
+  const toast = enAttente
+    ? { libelle: enAttente.libelle, onAnnuler: annulerDecision }
+    : correction
+      ? { libelle: correction.libelle, onAnnuler: annulerDecision }
+      : null;
+
+  function classer(transaction: TransactionVue, categorie: string, libelle: string) {
+    setErreurAction(null);
+    setCorrection(null);
+    if (transaction.statut === "validé") {
+      void lancerCorrection(transaction, categorie, libelle);
+      return;
+    }
+    const apres = file.filter((operation) => operation.ecriture_id !== transaction.ecriture_id);
+    poser({ original: transaction, categorie, libelle });
+    setHorsFile((ids) => (ids.includes(transaction.ecriture_id) ? ids : [...ids, transaction.ecriture_id]));
+    setEpinglee(null);
+    setOuverte(null);
+    remplacer({ ...transaction, statut: "validé", categorie });
+    setAnnonce(annonceClassee(presenter(transaction.libelle).nom, libelle, suiteApres(apres)));
+    setSuit(true);
+  }
+
+  function suiteApres(apres: TransactionVue[]): string {
+    const suivante = apres[0];
+    if (suivante) return `Suivante : « ${presenter(suivante.libelle).nom} ».`;
+    if (tickets.length > 0) return "Il reste des tickets.";
+    return "Plus rien à traiter.";
+  }
+
+  async function lancerCorrection(transaction: TransactionVue, categorie: string, libelle: string) {
+    const precedente = transaction.categorie ?? null;
+    setEnCoursCorrection(true);
+    try {
+      remplacer(
+        await corrigerTransactionChauffeur(dossierId, transaction.ecriture_id, categorie),
+      );
+      recharger();
+      setOuverte(null);
+      setAnnonce(annonceClassee(presenter(transaction.libelle).nom, libelle, null));
+      if (precedente && precedente !== categorie) {
+        setCorrection({ libelle, precedente, ecritureId: transaction.ecriture_id });
+      }
+    } catch (exception) {
+      const message = exception instanceof ApiError ? exception.message : "Échec de l'envoi.";
+      setErreurAction(phrasePourChauffeur(message));
+      setAnnonce("L'enregistrement a échoué.");
+    } finally {
+      setEnCoursCorrection(false);
+    }
+  }
+
+  function annulerDecision() {
+    if (correction && !enAttente) {
+      void annulerCorrection();
+      return;
+    }
+    const decision = annuler();
+    if (!decision) return;
+    setHorsFile((ids) => ids.filter((id) => id !== decision.original.ecriture_id));
+    remplacer(decision.original);
+    setEpinglee(decision.original.ecriture_id);
+    setAnnonce(annonceAnnulee(presenter(decision.original.libelle).nom));
+    setSuit(true);
+    setErreurAction(null);
+  }
+
+  async function annulerCorrection() {
+    if (!correction) return;
+    const { precedente, ecritureId } = correction;
+    const operation = operations.find((ligne) => ligne.ecriture_id === ecritureId);
+    setCorrection(null);
+    setEnCoursCorrection(true);
+    try {
+      remplacer(await corrigerTransactionChauffeur(dossierId, ecritureId, precedente));
+      setAnnonce(annonceAnnulee(operation ? presenter(operation.libelle).nom : "L'opération"));
+    } catch (exception) {
+      const message = exception instanceof ApiError ? exception.message : "Échec de l'envoi.";
+      setErreurAction(phrasePourChauffeur(message));
+    } finally {
+      setEnCoursCorrection(false);
+    }
+  }
+
+  function confirmerGroupe(ids: string[], libelle: string) {
+    setHorsFile((liste) => {
+      const connus = new Set(liste);
+      return [...liste, ...ids.filter((id) => !connus.has(id))];
+    });
+    setEpinglee(null);
+    setAnnonce(
+      ids.length > 1
+        ? `${ids.length} opérations classées en « ${libelle} ».`
+        : `1 opération classée en « ${libelle} ».`,
+    );
+    setSuit(true);
+    recharger();
+  }
 
   return (
     <div>
-      <Entete dossier={dossier} aDesTransactions={operations.length > 0} />
-      <div className="mt-8 flex gap-2">
-        <Onglet actif={etat.vue === "traiter"} onClick={() => mettreAJour({ vue: "traiter" })}>
-          {aVerifier.length > 0 ? `À traiter · ${aVerifier.length}` : "À traiter"}
-        </Onglet>
-        <Onglet actif={etat.vue === "mouvements"} onClick={() => mettreAJour({ vue: "mouvements" })}>
-          Mouvements
-        </Onglet>
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {annonce}
       </div>
+      <Entete dossier={dossier} aDesTransactions={operations.length > 0} />
+      <div className="sticky top-0 z-20 -mx-4 mt-8 bg-canvas-app px-4 pb-3 pt-1">
+        <div className="flex gap-2">
+          <Onglet actif={etat.vue === "traiter"} onClick={() => mettreAJour({ vue: "traiter" })}>
+            {reste > 0 ? `À traiter · ${reste}` : "À traiter"}
+          </Onglet>
+          <Onglet actif={etat.vue === "mouvements"} onClick={() => mettreAJour({ vue: "mouvements" })}>
+            Mouvements
+          </Onglet>
+        </div>
+        {etat.vue === "traiter" && (file.length > 0 || tickets.length > 0) && (
+          <p className="mt-3 text-sm font-medium text-ink">
+            {file.length > 0
+              ? `${position} sur ${total}`
+              : tickets.length > 1
+                ? `${tickets.length} tickets`
+                : "1 ticket"}
+          </p>
+        )}
+      </div>
+      {erreurAction && (
+        <p role="alert" className="mt-4 text-sm text-danger">
+          {erreurAction}
+        </p>
+      )}
       {transactions.statut === "erreur" ? (
         <p className="mt-8 text-sm text-danger">{transactions.message}</p>
       ) : transactions.statut === "en_cours" ? (
         <SqueletteLignes nombre={4} className="mt-6 h-14 w-full" />
       ) : etat.vue === "traiter" ? (
         <Arriere
-          aVerifier={aVerifier}
+          courante={courante}
+          file={file}
+          tickets={tickets}
           dossierId={dossierId}
-          depenses={operations.filter(ticketPrioritaire)}
+          suit={suit}
+          erreur={erreurAction}
           onChange={remplacer}
-          onTranche={(transaction) => {
-            remplacer(transaction);
-            recharger();
-          }}
-          onGroupeTranche={recharger}
+          onChoisir={classer}
+          onGroupe={confirmerGroupe}
         />
       ) : (
         <Mouvements
           dossierId={dossierId}
+          ouverte={ouverte}
+          enCours={enCoursCorrection}
+          erreur={erreurAction}
+          onOuvrir={setOuverte}
+          onChoisir={classer}
           onJointe={remplacer}
           transactions={operations.filter((transaction) => transaction.date.startsWith(mois ?? ""))}
           mois={mois}
@@ -124,9 +288,16 @@ function Activite({
           onSens={(sens) => mettreAJour({ sens })}
         />
       )}
+      {toast && <ToastDecision libelle={toast.libelle} onAnnuler={toast.onAnnuler} />}
     </div>
   );
 }
+
+type CorrectionAffichee = {
+  libelle: string;
+  precedente: string;
+  ecritureId: string;
+};
 
 function Entete({
   dossier,
@@ -190,78 +361,97 @@ function Onglet({
 }
 
 function Arriere({
-  aVerifier,
+  courante,
+  file,
+  tickets,
   dossierId,
-  depenses,
+  suit,
+  erreur,
   onChange,
-  onTranche,
-  onGroupeTranche,
+  onChoisir,
+  onGroupe,
 }: {
-  aVerifier: TransactionVue[];
+  courante: TransactionVue | null;
+  file: TransactionVue[];
+  tickets: TransactionVue[];
   dossierId: string;
-  depenses: TransactionVue[];
+  suit: boolean;
+  erreur: string | null;
   onChange: (transaction: TransactionVue) => void;
-  onTranche: (transaction: TransactionVue) => void;
-  onGroupeTranche: () => void;
+  onChoisir: (transaction: TransactionVue, categorie: string, libelle: string) => void;
+  onGroupe: (ids: string[], libelle: string) => void;
 }) {
-  const premiereConfirmable = aVerifier.find(
-    (transaction) =>
-      transaction.proposition !== null &&
-      confirmable(transaction.proposition, transaction.origine_proposition),
-  )?.ecriture_id;
-  if (aVerifier.length === 0 && depenses.length === 0) {
-    return <p className="mt-10 text-sm text-subtle">Tout est à jour.</p>;
+  const zoneRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!suit) return;
+    zoneRef.current?.focus({ preventScroll: true });
+  }, [suit, courante?.ecriture_id]);
+
+  if (!courante && tickets.length === 0) {
+    return (
+      <div ref={zoneRef} tabIndex={-1} role="region" aria-label="À traiter" className={`mt-6 outline-none ${ANNEAU}`}>
+        <p className="text-sm text-subtle">Tout est à jour.</p>
+      </div>
+    );
   }
+  const groupe = courante ? groupeCourant(courante, file) : null;
+  const proposition = courante?.proposition
+    ? { code: courante.proposition, libelle: libelleCategorie(courante.proposition) }
+    : null;
+  const confirmableIci =
+    proposition !== null && confirmable(proposition.code, courante?.origine_proposition ?? null);
   return (
-    <div>
-      <StationTickets dossierId={dossierId} depenses={depenses} onJointe={onChange} />
-      {groupesSemblables(aVerifier).map(([categorie, operations]) => (
-        <ConfirmationGroupee
-          key={categorie}
-          dossierId={dossierId}
-          categorie={categorie}
-          libelle={libelleCategorie(categorie)}
-          operations={operations.map((operation) => ({
-            ecritureId: operation.ecriture_id,
-            nom: presenter(operation.libelle).nom,
-            montantCts: operation.montant_cts,
-          }))}
-          onConfirme={onGroupeTranche}
-        />
-      ))}
-      <ul className="mt-2">
-        {aVerifier.map((transaction) => {
-          const { nom } = presenter(transaction.libelle);
-          const proposition = transaction.proposition
-            ? { code: transaction.proposition, libelle: libelleCategorie(transaction.proposition) }
-            : null;
-          const confirmableIci =
-            proposition !== null &&
-            confirmable(proposition.code, transaction.origine_proposition);
-          return (
-            <li key={transaction.ecriture_id} className="min-w-0 border-b border-hairline py-4">
-              <LigneMontant
-                nom={nom}
-                detail={proposition?.libelle ?? null}
-                transaction={transaction}
-              />
-              <div className="mt-3">
-                <QuestionCategorisation
-                  dossierId={dossierId}
-                  ecritureId={transaction.ecriture_id}
-                  proposition={confirmableIci ? proposition : null}
-                  origine={transaction.origine_proposition}
-                  montantCts={transaction.montant_cts}
-                  sansProposition={proposition === null}
-                  raccourci={confirmableIci && transaction.ecriture_id === premiereConfirmable}
-                  onResolu={onTranche}
-                />
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+    <div ref={zoneRef} tabIndex={-1} role="region" aria-label="À traiter" className={`outline-none ${ANNEAU}`}>
+      {courante && (
+        <div className="mt-4 border-b border-hairline pb-4">
+          <LigneMontant
+            nom={presenter(courante.libelle).nom}
+            detail={proposition?.libelle ?? null}
+            transaction={courante}
+          />
+          {ticketPrioritaire(courante) && (
+            <AjouterTicketSortie dossierId={dossierId} transaction={courante} onJointe={onChange} />
+          )}
+          <div className="mt-3">
+            <QuestionCategorisation
+              key={courante.ecriture_id}
+              proposition={confirmableIci ? proposition : null}
+              origine={courante.origine_proposition}
+              montantCts={courante.montant_cts}
+              sansProposition={proposition === null}
+              raccourci={confirmableIci}
+              erreur={erreur}
+              onReponse={(categorie, libelle) => onChoisir(courante, categorie, libelle)}
+            />
+          </div>
+          {groupe && (
+            <ConfirmationGroupee
+              dossierId={dossierId}
+              categorie={groupe[0]}
+              libelle={libelleCategorie(groupe[0])}
+              operations={groupe[1].map((operation) => ({
+                ecritureId: operation.ecriture_id,
+                nom: presenter(operation.libelle).nom,
+                montantCts: operation.montant_cts,
+              }))}
+              onConfirme={() => onGroupe(groupe[1].map((operation) => operation.ecriture_id), libelleCategorie(groupe[0]))}
+            />
+          )}
+        </div>
+      )}
+      <StationTickets dossierId={dossierId} depenses={tickets} onJointe={onChange} />
     </div>
+  );
+}
+
+function groupeCourant(
+  courante: TransactionVue,
+  file: TransactionVue[],
+): [string, TransactionVue[]] | null {
+  return (
+    groupesSemblables(file).find(([, operations]) =>
+      operations.some((operation) => operation.ecriture_id === courante.ecriture_id),
+    ) ?? null
   );
 }
 
@@ -281,6 +471,11 @@ function groupesSemblables(aVerifier: TransactionVue[]): [string, TransactionVue
 
 function Mouvements({
   dossierId,
+  ouverte,
+  enCours,
+  erreur,
+  onOuvrir,
+  onChoisir,
   onJointe,
   transactions,
   mois,
@@ -292,6 +487,11 @@ function Mouvements({
   onSens,
 }: {
   dossierId: string;
+  ouverte: string | null;
+  enCours: boolean;
+  erreur: string | null;
+  onOuvrir: (ecritureId: string | null) => void;
+  onChoisir: (transaction: TransactionVue, categorie: string, libelle: string) => void;
   onJointe: (transaction: TransactionVue) => void;
   transactions: TransactionVue[];
   mois: string | undefined;
@@ -358,6 +558,10 @@ function Mouvements({
             <ul>
               {lignes.map((transaction) => {
                 const { nom, detail } = presenter(transaction.libelle);
+                const estOuverte = ouverte === transaction.ecriture_id;
+                const proposition = transaction.proposition
+                  ? { code: transaction.proposition, libelle: libelleCategorie(transaction.proposition) }
+                  : null;
                 return (
                   <li key={transaction.ecriture_id} className="border-b border-hairline py-3">
                     <LigneMontant nom={nom} detail={detail} transaction={transaction} />
@@ -367,6 +571,34 @@ function Mouvements({
                         transaction={transaction}
                         onJointe={onJointe}
                       />
+                    )}
+                    <button
+                      type="button"
+                      aria-expanded={estOuverte}
+                      aria-label={`Corriger ${nom}`}
+                      onClick={() => onOuvrir(estOuverte ? null : transaction.ecriture_id)}
+                      className={`mt-1 min-h-11 rounded-md px-1 text-sm font-medium text-primary ${ANNEAU}`}
+                    >
+                      Corriger
+                    </button>
+                    {estOuverte && (
+                      <div className="mt-3">
+                        <QuestionCategorisation
+                          corriger={transaction.statut === "validé"}
+                          proposition={
+                            proposition !== null &&
+                            confirmable(proposition.code, transaction.origine_proposition)
+                              ? proposition
+                              : null
+                          }
+                          origine={transaction.origine_proposition}
+                          montantCts={transaction.montant_cts}
+                          sansProposition={proposition === null}
+                          enCours={enCours}
+                          erreur={erreur}
+                          onReponse={(categorie, libelle) => onChoisir(transaction, categorie, libelle)}
+                        />
+                      </div>
                     )}
                   </li>
                 );

@@ -179,6 +179,9 @@ export type TransactionVue = {
   proposition: string | null;
   origine_proposition: "appris" | "regle" | "modele" | null;
   confiance_proposition: number | null;
+  // Décision humaine en vigueur, quand il y en a une. Absente des réponses
+  // antérieures à AXE-686 : le client la traite comme nulle.
+  categorie?: string | null;
 };
 
 /** Clôture de l'exercice, préparée par l'API et validée par le chauffeur

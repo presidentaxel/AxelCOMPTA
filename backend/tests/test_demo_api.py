@@ -539,6 +539,105 @@ def test_trancher_diminue_le_compteur_nb_a_trancher() -> None:
     assert apres == avant - 1
 
 
+def test_corriger_remplace_la_categorie_sans_effacer_la_premiere() -> None:
+    """doc 05 §5 : corriger, c'est une nouvelle décision. La dernière prévaut."""
+    client, decisions, _, _ = _client_et_stubs()
+    en_tete = _en_tete("DEMO_sophie")
+    ecriture_id = _premiere_a_trancher(client, "DEMO_sophie")
+    client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/decision",
+        json={"categorie": "usage_personnel"},
+        headers=en_tete,
+    )
+
+    correction = client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/correction",
+        json={"categorie": "carburant"},
+        headers=en_tete,
+    )
+
+    assert correction.status_code == 200
+    assert correction.json()["compte"] == "6061"
+    assert correction.json()["categorie"] == "carburant"
+    historique = [
+        decision.categorie
+        for decision in decisions.lister_decisions(DossierId("DEMO_sophie"))
+        if decision.ecriture_id == ecriture_id
+    ]
+    assert historique == ["usage_personnel", "carburant"]
+    relu = _transaction(client, "DEMO_sophie", ecriture_id)
+    assert relu["compte"] == "6061"
+    assert relu["categorie"] == "carburant"
+
+
+def test_annuler_une_correction_repose_la_categorie_precedente() -> None:
+    client = _client()
+    en_tete = _en_tete("DEMO_sophie")
+    ecriture_id = _premiere_a_trancher(client, "DEMO_sophie")
+    url = f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/correction"
+    client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/decision",
+        json={"categorie": "usage_personnel"},
+        headers=en_tete,
+    )
+    client.post(url, json={"categorie": "carburant"}, headers=en_tete)
+
+    retour = client.post(url, json={"categorie": "usage_personnel"}, headers=en_tete)
+
+    assert retour.status_code == 200
+    assert retour.json()["compte"] == "455"
+    assert _transaction(client, "DEMO_sophie", ecriture_id)["categorie"] == "usage_personnel"
+
+
+def test_corriger_sans_decision_ou_hors_attente_est_refuse() -> None:
+    client = _client()
+    sophie = _en_tete("DEMO_sophie")
+    ecriture_id = _premiere_a_trancher(client, "DEMO_sophie")
+    sans_decision = client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/correction",
+        json={"categorie": "carburant"},
+        headers=sophie,
+    )
+    assert sans_decision.status_code == 409
+    karim = _en_tete("DEMO_karim")
+    validees = [
+        t
+        for t in client.get("/dossiers/DEMO_karim/transactions", headers=karim).json()
+        if t["statut"] == "validé"
+    ]
+    hors_file = client.post(
+        f"/dossiers/DEMO_karim/transactions/{validees[0]['ecriture_id']}/correction",
+        json={"categorie": "usage_personnel"},
+        headers=karim,
+    )
+    assert hors_file.status_code == 409
+
+
+def test_corriger_vers_une_categorie_inconnue_necrit_rien() -> None:
+    client = _client()
+    en_tete = _en_tete("DEMO_sophie")
+    ecriture_id = _premiere_a_trancher(client, "DEMO_sophie")
+    client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/decision",
+        json={"categorie": "usage_personnel"},
+        headers=en_tete,
+    )
+
+    reponse = client.post(
+        f"/dossiers/DEMO_sophie/transactions/{ecriture_id}/correction",
+        json={"categorie": "categorie_qui_nexiste_pas"},
+        headers=en_tete,
+    )
+
+    assert reponse.status_code == 400
+    assert _transaction(client, "DEMO_sophie", ecriture_id)["compte"] == "455"
+
+
+def _transaction(client: TestClient, dossier_id: str, ecriture_id: str) -> dict[str, Any]:
+    transactions = client.get(f"/dossiers/{dossier_id}/transactions", headers=_en_tete(dossier_id))
+    return next(t for t in transactions.json() if t["ecriture_id"] == ecriture_id)
+
+
 def test_trancher_deux_fois_la_meme_ecriture_est_refuse() -> None:
     """doc 05 §5 : la décision humaine est immuable, pas de deuxième
     écriture qui l'écrase silencieusement."""
