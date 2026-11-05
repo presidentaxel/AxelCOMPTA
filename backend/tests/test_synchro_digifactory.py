@@ -6,15 +6,22 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 from datetime import date, datetime
+from typing import Any, cast
 
 from axelcompta.categorize.rules_and_ml import RulesAndMlPipeline
 from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.ingestion.comptes_bancaires import CompteBancaireMemoire
+from axelcompta.ingestion.consentement import ReleveSante, StatutConsentement
 from axelcompta.ingestion.journal import InMemoryJournalIngestion
 from axelcompta.ingestion.providers.base import LotTransactions
 from axelcompta.ingestion.providers.digifactory import DigifactoryProvider
 from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.packs.vtc_demo import charger_compte_par_categorie, charger_regles
-from axelcompta.synchro_digifactory import synchroniser_dossiers
+from axelcompta.synchro_digifactory import (
+    ResultatDossier,
+    _relever_consentements,
+    synchroniser_dossiers,
+)
 from axelcompta.tenants.models import Dossier
 from axelcompta.workflow.propositions import InMemoryPropositionRepository
 
@@ -123,3 +130,63 @@ def test_un_lot_vide_est_un_succes_et_un_401_ne_bloque_pas_le_suivant() -> None:
     assert vide.rapport is not None and vide.rapport.nouvelles == 0
     assert echec.erreur is not None
     assert suivant.rapport is not None and suivant.rapport.nouvelles == 1
+
+
+class _ClientComptes:
+    def __init__(self, reponses: dict[str, object]) -> None:
+        self._reponses = reponses
+
+    async def accounts(self, contact_nr: str | int) -> dict[str, Any] | list[Any]:
+        reponse = self._reponses[str(contact_nr)]
+        if isinstance(reponse, Exception):
+            raise reponse
+        return cast("dict[str, Any] | list[Any]", reponse)
+
+
+class _Consentements:
+    def __init__(self) -> None:
+        self.statuts: dict[DossierId, StatutConsentement] = {}
+
+    def enregistrer(
+        self,
+        dossier_id: DossierId,
+        expire_le: date | None,
+        statut: StatutConsentement,
+        releve_le: datetime,
+        sante: ReleveSante,
+    ) -> None:
+        self.statuts[dossier_id] = statut
+
+
+def test_le_releve_garde_le_nom_et_le_solde_de_chaque_compte_bancaire() -> None:
+    """AXE-832 : `/accounts` donne nom et solde ; un compte sans transaction
+    reçoit quand même son sous-compte. Un échec sur un dossier n'arrête pas
+    les autres."""
+    b = dataclasses.replace(BASE, id=DossierId("b"), contact_nr="2")
+    client = _ClientComptes(
+        {
+            "1": {
+                "67078853": {"id": "67078853", "name": "Compte Courant", "balance": 733.49},
+                "67078894": {"id": "67078894", "name": "Compte PRO", "balance": 1.1},
+            },
+            "2": RuntimeError("Digifactory a répondu 500"),
+        }
+    )
+    consentements = _Consentements()
+    comptes = CompteBancaireMemoire()
+    resultats = [ResultatDossier(BASE.id), ResultatDossier(b.id)]
+
+    releves = asyncio.run(
+        _relever_consentements(
+            client, (BASE, b), resultats, (consentements, comptes), date(2026, 11, 5)
+        )
+    )
+
+    assert [r.dossier_id for r in releves] == ["a", "b"]
+    assert BASE.id in consentements.statuts and b.id not in consentements.statuts
+    par_id = {c.identifiant: c for c in comptes.lister(BASE.id)}
+    assert par_id["67078853"].compte_comptable == "5121"
+    assert par_id["67078853"].nom == "Compte Courant"
+    assert par_id["67078853"].solde_banque_cts == 73_349
+    assert par_id["67078894"].solde_banque_cts == 110
+    assert comptes.lister(b.id) == ()

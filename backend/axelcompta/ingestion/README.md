@@ -53,6 +53,18 @@ ne dépend jamais d'`ingestion` en retour, règle absolue doc 03 §3).
   pour `DigifactoryProvider`).
 - File de jobs (Postgres SKIP LOCKED au départ, doc 03 §2).
 
+## Comptes bancaires (AXE-832)
+
+- `comptes_bancaires.py` : registre des comptes bancaires d'un dossier et de
+  leur sous-compte de banque (5121, 5122… dans l'ordre d'apparition, jamais
+  renuméroté). `compte_de()` donne le sous-compte d'une opération à partir
+  de son `compte_bancaire` (Digifactory : `account_id`) ; banque inconnue :
+  512. `comptes_releves()` lit `GET /accounts` (nom, solde).
+- `comptes_bancaires_postgres.py` : table `comptes_bancaires` (migration
+  `c3f7a2e81d45`, RLS par dossier, rôle web en lecture seule).
+- `journal.comptes_des_transactions()` relit l'`account_id` de chaque
+  transaction archivée, pour la reprise des écritures restées au 512.
+
 ## Statuts
 
 - **Démo (doc 17 semaines 0-2, fait)** : réconciliation réelle + génération

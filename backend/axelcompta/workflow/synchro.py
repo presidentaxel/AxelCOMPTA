@@ -25,10 +25,13 @@ from typing import Protocol
 from axelcompta.categorize.models import Etage, ProposedEntry
 from axelcompta.categorize.pipeline import CategorizationPipeline
 from axelcompta.core.ids import EcritureId
+from axelcompta.core.pcg import COMPTE_BANQUE
+from axelcompta.ingestion.comptes_bancaires import CompteBancaireRepository, compte_de
 from axelcompta.ingestion.journal import JournalIngestion
 from axelcompta.ingestion.providers.base import LotTransactions
+from axelcompta.ledger.banque import montant_bancaire
 from axelcompta.ledger.contrepassation import contrepasser, id_contrepassation
-from axelcompta.ledger.models import Ecriture, Sens
+from axelcompta.ledger.models import Ecriture
 from axelcompta.ledger.service import LedgerService
 from axelcompta.tenants.models import Dossier
 
@@ -84,12 +87,8 @@ def choisir_compte(proposition: ProposedEntry, comptes: dict[str, str]) -> str:
 
 def _signature(ecriture: Ecriture) -> tuple[int, object]:
     """(montant signé côté banque, date) : ce qui ne doit plus bouger une fois
-    comptabilisé."""
-    for ligne in ecriture.lignes:
-        if ligne.compte == "512":
-            signe = 1 if ligne.sens is Sens.DEBIT else -1
-            return signe * ligne.montant.centimes, ecriture.date
-    return 0, ecriture.date
+    comptabilisé. Lu sur 512 ou sur un sous-compte 512x (AXE-832)."""
+    return montant_bancaire(ecriture), ecriture.date
 
 
 def _annuler(
@@ -143,6 +142,7 @@ def _traiter_transactions(
     propositions: PropositionRepository,
     pipeline: CategorizationPipeline,
     comptes: dict[str, str],
+    comptes_bancaires: CompteBancaireRepository | None,
 ) -> _Compteurs:
     compteurs = _Compteurs()
     for transaction in lot.transactions:
@@ -169,8 +169,14 @@ def _traiter_transactions(
             continue
         proposition = pipeline.categoriser(dossier.id, transaction)
         compte = choisir_compte(proposition, comptes)
+        banque = (
+            COMPTE_BANQUE
+            if comptes_bancaires is None
+            else compte_de(comptes_bancaires, dossier.id, transaction.compte_bancaire)
+        )
         ecriture = dataclasses.replace(
-            construire_ecriture_categorisee(transaction, proposition, compte, 0), id=ecriture_id
+            construire_ecriture_categorisee(transaction, proposition, compte, 0, banque),
+            id=ecriture_id,
         )
         propositions.enregistrer(ecriture_id, proposition)
         ledger.enregistrer(ecriture)
@@ -213,7 +219,10 @@ async def synchroniser_dossier(
     propositions: PropositionRepository,
     pipeline: CategorizationPipeline,
     comptes_par_categorie: dict[str, str],
+    comptes_bancaires: CompteBancaireRepository | None = None,
 ) -> RapportSynchro:
+    """`comptes_bancaires` : registre des sous-comptes 512x (AXE-832). Sans
+    lui, toute opération va au 512, comme avant."""
     lot = await source.lire_lot(dossier, journal.curseur(dossier.id, source_nom))
     _archiver_lot(dossier, source_nom, journal, lot)
     comptabilisees = {e.id: e for e in ledger.grand_livre(dossier.id)}
@@ -227,6 +236,7 @@ async def synchroniser_dossier(
         propositions,
         pipeline,
         comptes_par_categorie,
+        comptes_bancaires,
     )
     supprimees = _signaler_supprimees(dossier, source_nom, lot, comptabilisees, journal, ledger)
     # Curseur en dernier : une interruption plus haut se rattrape au prochain passage.

@@ -31,6 +31,8 @@ from axelcompta.core.ids import DossierId, EcritureId, TenantId, UserId
 from axelcompta.core.money import Money
 from axelcompta.core.rls import appliquer_rls, contexte_identite
 from axelcompta.documents.postgres import PostgresJustificatifRepository
+from axelcompta.ingestion.comptes_bancaires import CompteBancaire
+from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
 from axelcompta.ingestion.consentement import ReleveSante, SanteConnexion, StatutConsentement
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
@@ -469,3 +471,23 @@ def test_un_justificatif_reste_dans_son_dossier(
         assert repo.a_un_justificatif(TenantId("tenant-a"), DossierId("karim"), photo) is False
     with contexte_identite(dossier_id=None, tenant_id="tenant-a"):
         assert repo.a_un_justificatif(TenantId("tenant-a"), DossierId("karim"), photo) is True
+
+
+def test_un_compte_bancaire_reste_dans_son_dossier(
+    engine: Engine, engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """Migration `c3f7a2e81d45` (AXE-832) : Karim lit ses comptes, Sophie et
+    le gestionnaire de l'autre portefeuille non ; le rôle web ne peut rien
+    écrire (l'attribution passe par la synchro)."""
+    PostgresCompteBancaireRepository(engine).ajouter(
+        CompteBancaire(DossierId("karim"), "pro", "5121", "Compte PRO")
+    )
+    web = PostgresCompteBancaireRepository(engine_web)
+    with contexte_identite(dossier_id="karim", tenant_id=None):
+        assert [c.compte_comptable for c in web.lister(DossierId("karim"))] == ["5121"]
+        with pytest.raises((ProgrammingError, DBAPIError)):
+            web.ajouter(CompteBancaire(DossierId("karim"), "autre", "5122"))
+    with contexte_identite(dossier_id="sophie", tenant_id=None):
+        assert web.lister(DossierId("karim")) == ()
+    with contexte_identite(dossier_id=None, tenant_id="tenant-b"):
+        assert web.lister(DossierId("karim")) == ()

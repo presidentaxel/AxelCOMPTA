@@ -22,6 +22,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from axelcompta.core.errors import DomaineError
 from axelcompta.core.ids import EcritureId
 from axelcompta.core.money import Money
+from axelcompta.core.pcg import COMPTE_BANQUE
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 
 from .providers.base import NormalizedTransaction, PlatformSettlement
@@ -101,7 +102,7 @@ def _lignes_commission(
     ]
 
 
-def _lignes_franchise(settlement: PlatformSettlement) -> list[LigneEcriture]:
+def _lignes_franchise(settlement: PlatformSettlement, compte_banque: str) -> list[LigneEcriture]:
     """doc 13 §5.3 « cas franchise » : pas de TVA collectée sur les recettes
     (le brut plateforme est déjà le montant comptable), commission plateforme
     non récupérable donc comptabilisée TTC intégralement (pas de ligne
@@ -117,7 +118,7 @@ def _lignes_franchise(settlement: PlatformSettlement) -> list[LigneEcriture]:
             "doc 17 §3 (pas de cas limites dans la démo)"
         )
     return [
-        LigneEcriture("512", Sens.DEBIT, Money(settlement.net_payout_cts)),
+        LigneEcriture(compte_banque, Sens.DEBIT, Money(settlement.net_payout_cts)),
         LigneEcriture("622", Sens.DEBIT, Money(settlement.commission_cts)),  # TTC, non récupérable
         LigneEcriture("706", Sens.CREDIT, Money(settlement.gross_earnings_cts)),  # pas de TVA
     ]
@@ -129,6 +130,7 @@ def construire_ecriture_settlement(
     numero: int,
     *,
     tva_recettes_regime: str = "assujetti_taux_reduit",
+    compte_banque: str = COMPTE_BANQUE,
 ) -> Ecriture:
     """doc 13 §5.3. Le montant du 512 est celui du settlement
     (`net_payout_cts`), pas celui de la transaction bancaire : les deux
@@ -137,12 +139,15 @@ def construire_ecriture_settlement(
 
     `tva_recettes_regime` est une configuration de dossier (doc 14 §1.2),
     jamais devinée depuis les données du settlement.
+
+    `compte_banque` : sous-compte 512x du compte bancaire qui a reçu le
+    virement (AXE-832), 512 par défaut.
     """
     if tva_recettes_regime not in TAUX_TVA_RECETTES_PAR_REGIME:
         raise RegimeTvaRecettesInconnu(tva_recettes_regime)
 
     if tva_recettes_regime == "franchise":
-        lignes = _lignes_franchise(settlement)
+        lignes = _lignes_franchise(settlement, compte_banque)
     else:
         template = TEMPLATES_COMMISSION.get(settlement.commission_tva_regime)
         if template is None:
@@ -151,7 +156,7 @@ def construire_ecriture_settlement(
         assert taux is not None  # tous les régimes non-franchise ont un taux (garanti par le dict)
         recettes_ht, tva_collectee = _ventiler(settlement.gross_earnings_cts, taux)
         lignes = [
-            LigneEcriture("512", Sens.DEBIT, Money(settlement.net_payout_cts)),
+            LigneEcriture(compte_banque, Sens.DEBIT, Money(settlement.net_payout_cts)),
             *_lignes_commission(settlement, template, recettes_ht, tva_collectee),
         ]
 

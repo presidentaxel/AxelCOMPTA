@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from axelcompta.core.errors import DomaineError
 from axelcompta.core.ids import DossierId
+from axelcompta.core.pcg import est_compte_banque
 from axelcompta.ledger.models import Ecriture, Sens
 
 from .ca3 import declaration_ca3
@@ -134,7 +135,7 @@ def _cases_historiques(balance: Balance, balance_avant: Balance) -> dict[str, in
         "CA_HT": produits,
         "CHARGES": charges,
         "RESULTAT": produits - charges,
-        "TRESORERIE": balance.get("512", 0),
+        "TRESORERIE": sum(s for c, s in balance.items() if est_compte_banque(c)),
         "TVA_A_PAYER": tva,
     }
 

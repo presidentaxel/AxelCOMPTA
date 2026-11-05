@@ -12,7 +12,7 @@ from axelcompta.ingestion.ecritures_settlement import (
     construire_ecriture_settlement,
 )
 from axelcompta.ingestion.providers.base import NormalizedTransaction, PlatformSettlement
-from axelcompta.ledger.invariants import solde
+from axelcompta.ledger.invariants import solde, verifier_equilibre
 from axelcompta.ledger.models import Ecriture, Sens
 
 
@@ -124,3 +124,19 @@ def test_regime_tva_recettes_inconnu_leve_une_erreur_explicite() -> None:
         construire_ecriture_settlement(
             _transaction(90_00), settlement, numero=1, tva_recettes_regime="jamais_vu"
         )
+
+
+@pytest.mark.parametrize("regime", ["assujetti_taux_reduit", "franchise"])
+def test_le_virement_va_au_sous_compte_de_la_banque_qui_l_a_recu(regime: str) -> None:
+    """AXE-832 : le settlement crédite le 512x du compte bancaire du virement."""
+    settlement = _settlement(1_040_00, 192_00, 848_00, "france_20")
+    ecriture = construire_ecriture_settlement(
+        _transaction(848_00),
+        settlement,
+        numero=1,
+        tva_recettes_regime=regime,
+        compte_banque="5122",
+    )
+    banques = [ligne for ligne in ecriture.lignes if ligne.compte.startswith("512")]
+    assert [ligne.compte for ligne in banques] == ["5122"]
+    verifier_equilibre(ecriture)

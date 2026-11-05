@@ -89,6 +89,7 @@ from axelcompta.closing.paie import Bulletin, BulletinIncoherent
 from axelcompta.closing.provisions import ProvisionInvalide, valider_provision
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, UserId
+from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
 from axelcompta.core.rls import appliquer_rls, contexte_identite
 from axelcompta.demo_auth import (
     IdentiteAuthentifiee,
@@ -124,9 +125,16 @@ from axelcompta.filings.inpi_depot import GuideGreffe, PdfDepotInpiRenderer, gui
 from axelcompta.filings.liasse_fiscale import PdfLiasseFiscaleRenderer
 from axelcompta.filings.liasse_simplifiee import PdfLiasseSimplifieeRenderer
 from axelcompta.filings.pdf_export_comptable import rendre_balance_pdf, rendre_grand_livre_pdf
+from axelcompta.ingestion.comptes_bancaires import CompteBancaire, CompteBancaireRepository
+from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
 from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion, classer
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
 from axelcompta.ingestion.providers.base import NormalizedTransaction
+from axelcompta.ledger.banque import (
+    comptes_hors_banque,
+    est_reclassement_bancaire,
+    montant_bancaire,
+)
 from axelcompta.ledger.contrepassation import annulees, contrepasser
 from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.ledger.models import Ecriture, Sens
@@ -331,6 +339,19 @@ class AlerteAnomalieVue(BaseModel):
 class InstructionAnomalieEntree(BaseModel):
     decision: Literal["en_instruction", "justifiee", "usage_personnel", "faux_positif"]
     commentaire: str = ""
+
+
+class CompteBancaireVue(BaseModel):
+    """AXE-832 : un compte bancaire, son sous-compte et ses deux soldes. Le
+    solde de la banque est celui du dernier relevé, `None` s'il n'a jamais
+    été relevé ; l'écart aussi."""
+
+    compte: str
+    nom: str | None
+    solde_comptable_cts: int
+    solde_banque_cts: int | None
+    releve_le: str | None
+    ecart_cts: int | None
 
 
 class TransactionVue(BaseModel):
@@ -790,7 +811,13 @@ def _vues_dossier(
     ecritures = ledger.grand_livre(dossier.id)
     exclues = annulees(ecritures)
     avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
-    return [_transaction_vue(e, e.id in avec_photo, e.id in exclues) for e in ecritures]
+    # Un reclassement entre banques (ventilation 512 → 512x, AXE-832) n'est
+    # pas une opération du relevé : le chauffeur ne le voit pas.
+    return [
+        _transaction_vue(e, e.id in avec_photo, e.id in exclues)
+        for e in ecritures
+        if not est_reclassement_bancaire(e)
+    ]
 
 
 def _transactions_dossier(
@@ -897,19 +924,16 @@ def _nb_a_trancher(ecritures: tuple[Ecriture, ...] | list[Ecriture]) -> int:
 
 
 def _montant_512(ecriture: Ecriture) -> int:
-    """Le sens de la ligne 512 donne le montant signé façon relevé bancaire
-    (doc 11 §1 : « chiffres irréprochables »), pas le montant absolu."""
-    for ligne in ecriture.lignes:
-        if ligne.compte == "512":
-            signe = 1 if ligne.sens is Sens.DEBIT else -1
-            return signe * ligne.montant.centimes
-    return 0
+    """Le sens de la ligne de banque (512 ou 512x) donne le montant signé
+    façon relevé bancaire (doc 11 §1 : « chiffres irréprochables »), pas le
+    montant absolu."""
+    return montant_bancaire(ecriture)
 
 
 def _compte_affiche(ecriture: Ecriture) -> str:
     """Une écriture de settlement a plusieurs comptes en contrepartie du 512
     (706/622/44566/44571) — pas un seul compte à afficher tel quel."""
-    autres = [ligne.compte for ligne in ecriture.lignes if ligne.compte != "512"]
+    autres = comptes_hors_banque(ecriture)
     return autres[0] if len(autres) == 1 else "règlement plateforme"
 
 
@@ -946,7 +970,7 @@ def _mouvement_anomalie(
     categorie: str,
     a_justificatif: bool,
 ) -> MouvementSurveille | None:
-    autres = [ligne.compte for ligne in ecriture.lignes if ligne.compte != "512"]
+    autres = comptes_hors_banque(ecriture)
     if len(autres) != 1 or not categorie:
         return None
     return MouvementSurveille(
@@ -980,7 +1004,7 @@ def _mouvements_surveilles(
     for ecriture in ecritures:
         if ecriture.id in exclues or len(mouvements) >= 10_000:
             continue
-        autres = [ligne.compte for ligne in ecriture.lignes if ligne.compte != "512"]
+        autres = comptes_hors_banque(ecriture)
         categorie = decidees.get(ecriture.id, "")
         if not categorie and len(autres) == 1:
             categorie = par_compte.get(autres[0], "")
@@ -1146,6 +1170,15 @@ def get_justificatifs() -> JustificatifRepository:
 
 
 JustificatifsDep = Annotated[JustificatifRepository, Depends(get_justificatifs)]
+
+
+def get_comptes_bancaires() -> CompteBancaireRepository:
+    """Postgres, rôle web (lecture seule), policies RLS. Les tests surchargent
+    avec `CompteBancaireMemoire`."""
+    return PostgresCompteBancaireRepository(_engine())
+
+
+ComptesBancairesDep = Annotated[CompteBancaireRepository, Depends(get_comptes_bancaires)]
 
 _REGISTRE_ANOMALIES = RegistreInstructions()
 
@@ -2662,7 +2695,10 @@ def _enregistrer_routes_cloture(app: FastAPI) -> None:
 
     @app.get("/dossiers/{dossier_id}/fec.txt")
     def telecharger_fec(
-        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+        dossier: DossierDep,
+        ledger: LedgerDossierDep,
+        provisions: ProvisionsDep,
+        comptes: ComptesBancairesDep,
     ) -> Response:
         ecritures = _ecritures_avec_cloture(
             dossier, ledger, _provisions_saisies(dossier, provisions)
@@ -2673,7 +2709,69 @@ def _enregistrer_routes_cloture(app: FastAPI) -> None:
             if dossier.identite is not None
             else f"fec-{dossier.id}.txt"
         )
-        return _fichier(exporter_fec(ecritures), "text/plain; charset=utf-8", nom)
+        fec = exporter_fec(ecritures, libelles_banques(comptes.lister(dossier.id)))
+        return _fichier(fec, "text/plain; charset=utf-8", nom)
+
+
+def _soldes_par_compte(ecritures: tuple[Ecriture, ...]) -> dict[str, int]:
+    """Solde débiteur de chaque compte de banque, en centimes."""
+    soldes: dict[str, int] = {}
+    for ecriture in ecritures:
+        for ligne in ecriture.lignes:
+            if est_compte_banque(ligne.compte):
+                signe = 1 if ligne.sens is Sens.DEBIT else -1
+                soldes[ligne.compte] = soldes.get(ligne.compte, 0) + signe * ligne.montant.centimes
+    return soldes
+
+
+def _vue_compte_bancaire(compte: CompteBancaire, solde_comptable: int) -> CompteBancaireVue:
+    banque = compte.solde_banque_cts
+    return CompteBancaireVue(
+        compte=compte.compte_comptable,
+        nom=compte.nom,
+        solde_comptable_cts=solde_comptable,
+        solde_banque_cts=banque,
+        releve_le=compte.solde_releve_le.isoformat() if compte.solde_releve_le else None,
+        ecart_cts=None if banque is None else solde_comptable - banque,
+    )
+
+
+def vues_comptes_bancaires(
+    comptes: tuple[CompteBancaire, ...], ecritures: tuple[Ecriture, ...]
+) -> list[CompteBancaireVue]:
+    """Un compte par sous-compte 512x, plus le 512 non ventilé s'il porte
+    encore un solde (écritures d'avant AXE-832, ou banque inconnue)."""
+    soldes = _soldes_par_compte(ecritures)
+    vues = [_vue_compte_bancaire(c, soldes.get(c.compte_comptable, 0)) for c in comptes]
+    reste = soldes.get(COMPTE_BANQUE, 0)
+    if reste:
+        vues.append(
+            CompteBancaireVue(
+                compte=COMPTE_BANQUE,
+                nom=None,
+                solde_comptable_cts=reste,
+                solde_banque_cts=None,
+                releve_le=None,
+                ecart_cts=None,
+            )
+        )
+    return vues
+
+
+def libelles_banques(comptes: tuple[CompteBancaire, ...]) -> dict[str, str]:
+    """Libellé FEC de chaque sous-compte : « Banque — <nom du compte> »."""
+    return {c.compte_comptable: f"Banque — {c.nom}" for c in comptes if c.nom}
+
+
+def _enregistrer_routes_comptes_bancaires(app: FastAPI) -> None:
+    @app.get("/dossiers/{dossier_id}/comptes-bancaires", response_model=list[CompteBancaireVue])
+    def lister_comptes_bancaires(
+        dossier: DossierDep, ledger: LedgerDossierDep, comptes: ComptesBancairesDep
+    ) -> list[CompteBancaireVue]:
+        """AXE-832 : soldes comptable et bancaire de chaque compte, côte à
+        côte. Réservé au chauffeur du dossier (doc 19 : le gestionnaire ne
+        voit pas de solde)."""
+        return vues_comptes_bancaires(comptes.lister(dossier.id), ledger.grand_livre(dossier.id))
 
 
 def _enregistrer_routes_exports(app: FastAPI) -> None:
@@ -3459,7 +3557,7 @@ def _compte_suggere(proposition: str | None) -> str | None:
     if not proposition:
         return None
     compte = charger_compte_par_categorie().get(proposition)
-    if compte and compte != "512" and not compte.startswith("445"):
+    if compte and not est_compte_banque(compte) and not compte.startswith("445"):
         return compte
     return None
 
@@ -3480,7 +3578,7 @@ def _comptes_expert() -> list[CompteChoix]:
         {
             compte
             for compte in charger_compte_par_categorie().values()
-            if compte != "512" and not compte.startswith("445")
+            if not est_compte_banque(compte) and not compte.startswith("445")
         }
     )
     return [CompteChoix(compte=compte, libelle=libelle_compte(compte)) for compte in comptes]
@@ -3695,6 +3793,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_invitation(app)
     _enregistrer_routes_cloture(app)
     _enregistrer_routes_exports(app)
+    _enregistrer_routes_comptes_bancaires(app)
     _enregistrer_routes_provisions(app)
     _enregistrer_routes_declarations(app)
     _enregistrer_routes_pieces_greffe(app)

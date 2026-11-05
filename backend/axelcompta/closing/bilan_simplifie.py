@@ -19,7 +19,7 @@ Identité, soldes signés débit positif :
 from __future__ import annotations
 
 from axelcompta.core.ids import DossierId
-from axelcompta.core.pcg import nature_depuis_compte
+from axelcompta.core.pcg import est_compte_banque, nature_depuis_compte
 from axelcompta.ledger.models import Ecriture, Sens
 from axelcompta.ledger.service import LedgerService
 
@@ -47,7 +47,7 @@ def _ventiler(balance: dict[str, int]) -> dict[str, int]:
     positif (classe 1). `COMPTES_NON_VENTILES` garde le signe débit."""
     tresorerie = immobilisations = capitaux = non_ventiles = 0
     for compte, solde in balance.items():
-        if compte == "512":
+        if est_compte_banque(compte):
             tresorerie += solde
         elif compte in {"44566", "44571"} or compte.startswith(("6", "7")):
             continue
