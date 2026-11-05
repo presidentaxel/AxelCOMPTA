@@ -93,7 +93,7 @@ function LienAffectation({ dossierId }: { dossierId: string }) {
       href={`/chauffeur/${dossierId}/resultat`}
       className="mt-8 block rounded-md border border-border bg-canvas p-3 text-sm text-ink"
     >
-      Décider de l&apos;affectation de mon résultat {vue.annee_exercice} →
+      Décider de ce que je fais de mon résultat {vue.annee_exercice} →
     </Link>
   );
 }

@@ -3,7 +3,7 @@
 # Ajouter un statut, c'est ajouter des données ici (et ses formulaires), pas
 # une migration. Toute modification change `version`.
 
-version = "2026-09-27"
+version = "2026-11-05"
 
 # Une colonne de la matrice = un traitement comptable et fiscal.
 # - disponible : le moteur sait produire ses comptes et sa liasse de bout en bout.
@@ -15,7 +15,7 @@ version = "2026-09-27"
 #   cadre E, 2033-F) ; faux pour l'exploitant d'une entreprise individuelle.
 
 [colonnes.societe_is]
-libelle = "Société à l'IS"
+libelle = "Impôt sur les sociétés"
 disponible = true
 entite = "la société"
 comptabilite = "engagement"
@@ -26,7 +26,7 @@ compte_usage_personnel = "455"
 associes = true
 
 [colonnes.societe_ir]
-libelle = "Société à l'IR"
+libelle = "Impôt sur le revenu"
 # 2031 + 2033 produites depuis le 2026-09-26 (filings/cerfa_2031.py).
 disponible = true
 entite = "la société"

@@ -541,8 +541,8 @@ def _regimes_a_venir(
 
 
 _MOTIFS_AVENANT = {
-    MotifAvenant.FIN_OPTION_IR: "Fin de l'option pour l'IR (5 exercices)",
-    MotifAvenant.RENONCIATION_OPTION_IR: "Renonciation à l'option pour l'IR",
+    MotifAvenant.FIN_OPTION_IR: ("Fin de l'option pour l'impôt sur le revenu (cinq exercices)"),
+    MotifAvenant.RENONCIATION_OPTION_IR: ("Renonciation à l'option pour l'impôt sur le revenu"),
 }
 
 
@@ -569,7 +569,10 @@ def _exiger_depot_greffe(dossier: Dossier) -> None:
     if not _colonne(dossier).depot_comptes_inpi:
         raise HTTPException(
             status_code=409,
-            detail=f"{_colonne(dossier).libelle} : pas de dépôt des comptes au greffe.",
+            detail=(
+                f"{_colonne(dossier).libelle} ne dépose pas ses comptes au greffe "
+                "du tribunal de commerce."
+            ),
         )
 
 
@@ -1191,21 +1194,21 @@ def _trancher(
     ecritures = base.grand_livre(dossier.id)
     ecriture = next((e for e in ecritures if e.id == ecriture_id), None)
     if ecriture is None:
-        raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
+        raise HTTPException(status_code=404, detail="Cette opération est introuvable.")
     if ecriture.id in annulees(ecritures):
-        raise HTTPException(status_code=409, detail="Cette écriture a été contre-passée.")
+        raise HTTPException(status_code=409, detail="Cette opération a déjà été annulée.")
     if decisions.decision_courante(dossier.id, EcritureId(ecriture_id)) is not None:
         raise HTTPException(
             status_code=409,
-            detail="Cette écriture a déjà été tranchée (doc 05 §5 : décision immuable).",
+            detail="Cette opération a déjà été classée. Le choix ne se modifie pas.",
         )
     if not any(ligne.compte == COMPTE_ATTENTE for ligne in ecriture.lignes):
-        raise HTTPException(status_code=409, detail="Cette écriture n'est pas à trancher.")
+        raise HTTPException(status_code=409, detail="Cette opération n'est pas à classer.")
     proposition = propositions.obtenir(dossier.id, EcritureId(ecriture_id))
     if proposition is None:
         raise HTTPException(
             status_code=500,
-            detail="Aucune proposition d'origine pour cette écriture (incohérence interne).",
+            detail="Cette opération n'a pas de proposition d'origine.",
         )
     comptes = charger_compte_par_categorie()
     try:
@@ -1235,13 +1238,11 @@ def _a_trancher_ou_refus(
 ) -> Ecriture:
     """Les refus de `_trancher`, pour une opération d'un lot."""
     if ecriture is None:
-        raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
+        raise HTTPException(status_code=404, detail="Cette opération est introuvable.")
     if ecriture.id in deja_traitees:
-        raise HTTPException(status_code=409, detail=f"Opération déjà traitée : {ecriture_id}")
+        raise HTTPException(status_code=409, detail="Cette opération a déjà été classée.")
     if not any(ligne.compte == COMPTE_ATTENTE for ligne in ecriture.lignes):
-        raise HTTPException(
-            status_code=409, detail=f"Opération qui n'est pas à trancher : {ecriture_id}"
-        )
+        raise HTTPException(status_code=409, detail="Cette opération n'est pas à classer.")
     return ecriture
 
 
@@ -1280,7 +1281,7 @@ def _trancher_groupe(
         if proposition is None:
             raise HTTPException(
                 status_code=500,
-                detail="Aucune proposition d'origine pour cette écriture (incohérence interne).",
+                detail="Cette opération n'a pas de proposition d'origine.",
             )
         try:
             resoudre_ecriture_a_trancher(ecriture, entree.categorie, comptes_statut, comptes)
@@ -1331,10 +1332,10 @@ def _joindre_justificatif(
     JPEG de démo tient en mémoire sans souci."""
     ecriture = next((e for e in ledger.grand_livre(dossier.id) if e.id == ecriture_id), None)
     if ecriture is None:
-        raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
+        raise HTTPException(status_code=404, detail="Cette opération est introuvable.")
     if not _photo_acceptee(fichier):
         raise HTTPException(
-            status_code=400, detail="Seules les photos sont acceptées (jpeg/png/webp/heic)."
+            status_code=400, detail="Seules les photos sont acceptées (JPEG, PNG, WebP ou HEIC)."
         )
     contenu = fichier.file.read()
     extension = Path(fichier.filename or "").suffix or ".jpg"
@@ -2416,7 +2417,10 @@ def _enregistrer_routes_declarations(app: FastAPI) -> None:
         if not _colonne(dossier).soumis_is:
             raise HTTPException(
                 status_code=409,
-                detail=f"{_colonne(dossier).libelle} : la 2065 ne concerne que l'IS.",
+                detail=(
+                    f"{_colonne(dossier).libelle} : la 2065 ne concerne que l'IS, "
+                    "l'impôt sur les sociétés."
+                ),
             )
         pdf = PdfCerfa2065Renderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
@@ -2430,7 +2434,10 @@ def _enregistrer_routes_declarations(app: FastAPI) -> None:
         if _colonne(dossier).soumis_is:
             raise HTTPException(
                 status_code=409,
-                detail=f"{_colonne(dossier).libelle} : la 2031 ne concerne que l'IR.",
+                detail=(
+                    f"{_colonne(dossier).libelle} : la 2031 ne concerne que l'IR, "
+                    "l'impôt sur le revenu."
+                ),
             )
         pdf = PdfCerfa2031Renderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
@@ -2841,7 +2848,7 @@ def _avertissements(proposition: PropositionAffectation) -> list[str]:
         f"{taux.pfu_impot_revenu * 100:.1f} % d'impôt et "
         f"{taux.prelevements_sociaux * 100:.1f} % de prélèvements sociaux. L'option pour le "
         "barème progressif dépend de votre foyer : à comparer avant de décider.",
-        "Décision de l'associé unique, à prendre dans les six mois de la clôture.",
+        "C'est vous qui décidez, dans les six mois qui suivent la fin de l'exercice.",
     ]
     if situation.gerant_non_salarie:
         textes.append(

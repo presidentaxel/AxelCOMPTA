@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
 
+import { Aide } from "@/components/Aide";
 import { Button } from "@/components/ui/button";
 import { DividendesSection } from "@/components/DividendesSection";
 import { Squelette, SqueletteLignes } from "@/components/Squelette";
@@ -18,6 +19,7 @@ import {
   fetchAvecAuthChauffeur,
 } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
+import { phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import type { AffectationVue, ScenarioAffectation } from "@/lib/types";
 
 export default function ResultatChauffeurPage({
@@ -75,7 +77,7 @@ export default function ResultatChauffeurPage({
   if (!vue.applicable) {
     return (
       <div>
-        <p className="text-sm text-subtle">{vue.raison}</p>
+        <p className="text-sm text-subtle">{vue.raison && phrasePourChauffeur(vue.raison)}</p>
         <DividendesSection dossierId={dossierId} />
         <div className="mt-4">{retour}</div>
       </div>
@@ -95,12 +97,16 @@ export default function ResultatChauffeurPage({
     setErreur(null);
     try {
       const resultat = await deciderAffectationChauffeur(dossierId, choix, dividendes);
-      setFait(resultat.raison ?? "Décision enregistrée.");
+      setFait(
+        phrasePourChauffeur(resultat.raison ?? "Décision enregistrée."),
+      );
     } catch (exception) {
       setErreur(
-        exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
-          ? exception.message
-          : "Échec de l'enregistrement.",
+        phrasePourChauffeur(
+          exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
+            ? exception.message
+            : "Échec de l'enregistrement.",
+        ),
       );
     } finally {
       setEnCours(false);
@@ -113,10 +119,26 @@ export default function ResultatChauffeurPage({
         Mon résultat {vue.annee_exercice}
       </h1>
       <dl className="mt-4 space-y-1 text-sm">
-        <Ligne libelle="Résultat" cents={vue.resultat_cts} />
-        <Ligne libelle="Réserve légale à doter" cents={vue.reserve_legale_cts} />
-        <Ligne libelle="Distribuable" cents={vue.distribuable_cts} />
-        <Ligne libelle="Trésorerie disponible" cents={vue.disponible_cts} />
+        <Ligne
+          libelle="Ce qui vous reste après charges"
+          cents={vue.resultat_cts}
+          aide="C'est le résultat de l'exercice."
+        />
+        <Ligne
+          libelle="À mettre de côté"
+          cents={vue.reserve_legale_cts}
+          aide="La réserve légale : la loi demande de garder 5 % du bénéfice, jusqu'à 10 % du capital. Vous ne pouvez pas vous la verser."
+        />
+        <Ligne
+          libelle="Ce que vous pouvez vous verser"
+          cents={vue.distribuable_cts}
+          aide="Le bénéfice distribuable : ce qui reste après cette mise de côté."
+        />
+        <Ligne
+          libelle="Disponible en banque"
+          cents={vue.disponible_cts}
+          aide="L'argent en banque, une fois retirées les sommes déjà dues."
+        />
       </dl>
       <h2 className="mt-8 text-sm font-medium text-ink">Que voulez-vous en faire ?</h2>
       <ul className="mt-3 space-y-2">
@@ -156,7 +178,7 @@ export default function ResultatChauffeurPage({
           onChange={(evenement) => setConfirme(evenement.target.checked)}
         />
         <span>
-          Je décide de cette affectation en tant qu&apos;associé unique. AxeLCompta a chiffré les
+          Je décide de cette répartition, en tant que seul associé. AxeLCompta a chiffré les
           scénarios ; le choix est le mien.
         </span>
       </label>
@@ -169,11 +191,14 @@ export default function ResultatChauffeurPage({
   );
 }
 
-function Ligne({ libelle, cents }: { libelle: string; cents: number }) {
+function Ligne({ libelle, cents, aide }: { libelle: string; cents: number; aide?: string }) {
   return (
-    <div className="flex justify-between">
-      <dt className="text-subtle">{libelle}</dt>
-      <dd className="tabular-nums text-ink">{formatMontant(cents)}</dd>
+    <div className="flex justify-between gap-3">
+      <dt className="text-subtle">
+        {libelle}
+        {aide && <Aide texte={aide} />}
+      </dt>
+      <dd className="shrink-0 tabular-nums text-ink">{formatMontant(cents)}</dd>
     </div>
   );
 }

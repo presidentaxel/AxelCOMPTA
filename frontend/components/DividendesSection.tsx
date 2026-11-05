@@ -7,6 +7,7 @@
 // catégorisent ensuite depuis la banque.
 import { useEffect, useState } from "react";
 
+import { Aide } from "@/components/Aide";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
@@ -16,6 +17,7 @@ import {
   fetchAvecAuthChauffeur,
 } from "@/lib/auth-chauffeur";
 import { formatDate, formatMontant } from "@/lib/format";
+import { phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import type { DividendesVue } from "@/lib/types";
 
 export function DividendesSection({ dossierId }: { dossierId: string }) {
@@ -42,9 +44,11 @@ export function DividendesSection({ dossierId }: { dossierId: string }) {
       setVue(await declarerDividendesChauffeur(dossierId, verseLe, dispense));
     } catch (exception) {
       setErreur(
-        exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
-          ? exception.message
-          : "Échec de la déclaration.",
+        phrasePourChauffeur(
+          exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
+            ? exception.message
+            : "Échec de la déclaration.",
+        ),
       );
     } finally {
       setEnCours(false);
@@ -56,18 +60,35 @@ export function DividendesSection({ dossierId }: { dossierId: string }) {
       <h2 className="text-sm font-medium text-ink">Mes dividendes {vue.annee_exercice}</h2>
       <dl className="mt-3 space-y-1 text-sm">
         <Ligne libelle="Dividendes décidés" cents={vue.brut_cts} />
-        <Ligne libelle="Prélèvement forfaitaire (12,8 %)" cents={vue.prelevement_forfaitaire_cts} />
-        <Ligne libelle="CSG" cents={vue.csg_cts} />
-        <Ligne libelle="CRDS" cents={vue.crds_cts} />
-        <Ligne libelle="Prélèvement de solidarité" cents={vue.solidarite_cts} />
+        <Ligne
+          libelle="Impôt retenu (12,8 %)"
+          cents={vue.prelevement_forfaitaire_cts}
+          aide="Le prélèvement forfaitaire : l'impôt gardé sur les dividendes, avant les retenues sociales."
+        />
+        <Ligne
+          libelle="Retenue pour la sécurité sociale"
+          cents={vue.csg_cts}
+          aide="La CSG, contribution sociale généralisée."
+        />
+        <Ligne
+          libelle="Retenue pour la dette sociale"
+          cents={vue.crds_cts}
+          aide="La CRDS, contribution au remboursement de la dette sociale."
+        />
+        <Ligne
+          libelle="Retenue de solidarité"
+          cents={vue.solidarite_cts}
+          aide="Le prélèvement de solidarité : une autre retenue sociale sur les dividendes."
+        />
         <Ligne libelle="Net à vous virer" cents={vue.net_a_virer_cts} />
       </dl>
       {vue.declare ? (
         <p className="mt-4 rounded-md border border-border bg-canvas p-3 text-sm text-ink">
-          Versés le {vue.verse_le && formatDate(vue.verse_le)}. Déclaration 2777 à déposer et
-          payer avant le {vue.echeance_2777 && formatDate(vue.echeance_2777)} :{" "}
-          {formatMontant(vue.total_retenu_cts)}. Catégorisez ensuite votre virement comme « Mes
-          dividendes » et ce paiement comme « Impôts sur mes dividendes ».
+          Versés le {vue.verse_le && formatDate(vue.verse_le)}. Déposez et payez avant le{" "}
+          {vue.echeance_2777 && formatDate(vue.echeance_2777)} la déclaration des retenues
+          (formulaire 2777) : {formatMontant(vue.total_retenu_cts)}. C&apos;est l&apos;impôt et les
+          prélèvements gardés sur vos dividendes. Classez ensuite votre virement en « Mes
+          dividendes » et ce paiement en « Impôts sur mes dividendes ».
         </p>
       ) : (
         <div className="mt-4 space-y-3 text-sm">
@@ -103,10 +124,13 @@ export function DividendesSection({ dossierId }: { dossierId: string }) {
   );
 }
 
-function Ligne({ libelle, cents }: { libelle: string; cents: number }) {
+function Ligne({ libelle, cents, aide }: { libelle: string; cents: number; aide?: string }) {
   return (
-    <div className="flex justify-between">
-      <dt className="text-subtle">{libelle}</dt>
+    <div className="flex justify-between gap-3">
+      <dt className="text-subtle">
+        {libelle}
+        {aide && <Aide texte={aide} />}
+      </dt>
       <dd className="tabular-nums text-ink">{formatMontant(cents)}</dd>
     </div>
   );

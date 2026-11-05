@@ -76,7 +76,11 @@ const ZARA = {
   confiance_proposition: null,
 };
 
-async function bouchon(route: Route) {
+function creerBouchon(transactions: object[]) {
+  const operations = transactions.map((transaction) => ({
+    ...(transaction as Record<string, unknown>),
+  }));
+  return async function bouchon(route: Route) {
   const url = route.request().url();
   const methode = route.request().method();
   if (url.endsWith("/dossiers") && methode === "GET") {
@@ -90,11 +94,17 @@ async function bouchon(route: Route) {
     return;
   }
   if (url.endsWith("/transactions") && methode === "GET") {
-    await route.fulfill({ json: [ZARA] });
+    await route.fulfill({ json: operations });
     return;
   }
   if (url.endsWith("/decision") && methode === "POST") {
-    await route.fulfill({ json: { ...ZARA, statut: "validé", compte: "455" } });
+    const ecritureId = url.split("/").at(-2);
+    const ligne = operations.find((operation) => operation.ecriture_id === ecritureId);
+    if (ligne) {
+      ligne.statut = "validé";
+      ligne.compte = "455";
+    }
+    await route.fulfill({ json: ligne ?? { ...ZARA, statut: "validé", compte: "455" } });
     return;
   }
   if (url.includes("/cloture-exercice") && methode === "GET") {
@@ -136,9 +146,11 @@ async function bouchon(route: Route) {
     return;
   }
   await route.fulfill({ json: [] });
+  };
 }
 
-async function intercepterApi(page: Page) {
+async function intercepterApi(page: Page, transactions: object[] = [ZARA]) {
+  const repondre = creerBouchon(transactions);
   await page.route("**/*", async (route) => {
     const url = route.request().url();
     if (url.includes(":3000") || url.startsWith("data:")) {
@@ -156,7 +168,7 @@ async function intercepterApi(page: Page) {
       });
       return;
     }
-    await bouchon(route);
+    await repondre(route);
   });
 }
 
@@ -194,12 +206,55 @@ test("Sophie saisit une facture pas encore reçue", async ({ page }) => {
   await intercepterApi(page);
   await page.goto("/chauffeur/DEMO_sophie/exercice");
   await expect(page.getByRole("heading", { name: "Exercice", exact: true })).toBeVisible();
-  await page.getByLabel("Compte de charge").fill("622");
+  await expect(page.getByRole("button", { name: "Récupérer le dossier fiscal" })).toBeVisible();
+  await expect(page.getByText("Chaque opération").first()).toBeVisible();
+  await expect(page.getByText("Grand livre")).toHaveCount(0);
+  await expect(page.getByText("Formulaire 2065")).toHaveCount(0);
+  await page.getByLabel("De quoi s'agit-il ?").selectOption({ label: "Honoraires" });
   await page.getByLabel("Montant").fill("80");
   await page.getByLabel("Libellé").fill("honoraire de décembre");
   await page.getByRole("button", { name: "Ajouter" }).click();
-  await expect(page.getByText("honoraire de décembre")).toBeVisible();
-  await expect(page.getByText("Facture pas encore reçue — honoraire de décembre (622)")).toBeVisible();
+  await expect(page.getByText("Facture pas encore reçue — honoraire de décembre")).toBeVisible();
+  await expect(page.getByText("622")).toHaveCount(0);
+});
+
+test("Sophie lit une proposition sans code ni pourcentage", async ({ page }) => {
+  const exp = Math.floor(Date.now() / 1000) + 3600;
+  await session(page, "axelcompta_session_chauffeur", {
+    accessToken: jeton({ exp, app_metadata: { dossier_id: "DEMO_sophie" } }),
+    refreshToken: "rafraichissement",
+    dossierId: "DEMO_sophie",
+    email: "sophie@example.com",
+  });
+  await intercepterApi(page, [
+    {
+      ...ZARA,
+      ecriture_id: "loyer-1",
+      libelle: "SCI DUPONT (loyers_locations)",
+      montant_cts: -90_000,
+      proposition: "loyers_locations",
+      origine_proposition: "modele",
+      confiance_proposition: 0.87,
+    },
+    {
+      ...ZARA,
+      ecriture_id: "entree-1",
+      libelle: "UBER BV",
+      date: "2025-06-02",
+      montant_cts: 12_000,
+      proposition: "non_categorise_a_verifier",
+      origine_proposition: "regle",
+      confiance_proposition: 0.2,
+    },
+  ]);
+  await page.goto("/chauffeur/DEMO_sophie");
+  await expect(page.getByText("Proposition : Loyer")).toBeVisible();
+  await expect(page.getByText("modèle")).toHaveCount(0);
+  await expect(page.getByText("87 %")).toHaveCount(0);
+  await expect(page.getByText("loyers locations")).toHaveCount(0);
+  await expect(page.getByText("À quoi correspond cette entrée ?")).toBeVisible();
+  await expect(page.getByText("non categorise a verifier")).toHaveCount(0);
+  await expect(page.getByText("À classer").first()).toBeVisible();
 });
 
 test("Sophie tranche une dépense et l'écran suit", async ({ page }) => {

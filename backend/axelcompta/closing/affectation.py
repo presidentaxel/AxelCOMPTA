@@ -67,7 +67,9 @@ def _fiscalites(chemin: Path = CHEMIN_FISCALITE) -> dict[int, FiscaliteDividende
 def fiscalite(annee_versement: int) -> FiscaliteDividendes:
     connues = _fiscalites()
     if annee_versement not in connues:
-        raise MillesimeDividendesInconnu(f"taux des dividendes inconnus pour {annee_versement}")
+        raise MillesimeDividendesInconnu(
+            f"Les taux des dividendes sont inconnus pour {annee_versement}."
+        )
     return connues[annee_versement]
 
 

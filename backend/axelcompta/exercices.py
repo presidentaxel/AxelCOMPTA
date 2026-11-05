@@ -82,10 +82,12 @@ def preparer_passage(
 ) -> PassageExercice:
     fin = dossier.fin_exercice()
     if fin >= aujourd_hui:
-        raise PassageRefuse(f"l'exercice se termine le {fin:%d/%m/%Y}, il n'est pas terminé")
+        raise PassageRefuse(f"L'exercice se termine le {fin:%d/%m/%Y}. Il n'est pas terminé.")
     en_attente = ecritures_a_trancher(ledger, decisions, dossier.id)
     if en_attente:
-        raise PassageRefuse(f"{len(en_attente)} opération(s) attendent encore une décision")
+        nombre = len(en_attente)
+        sujet = "Une opération attend" if nombre == 1 else f"{nombre} opérations attendent"
+        raise PassageRefuse(f"{sujet} encore une décision.")
     configuration = configuration_de(dossier)
     colonne = configuration.colonne
     tranchees = appliquer_decisions(
@@ -153,9 +155,9 @@ def attestation(dossier: Dossier, signataire: str) -> str:
     fin = dossier.fin_exercice()
     return (
         f"Je soussigné(e) {signataire}, dirigeant(e) de {dossier.nom}, ai relu les comptes "
-        f"de l'exercice du {dossier.exercice_debut:%d/%m/%Y} au {fin:%d/%m/%Y} et j'en valide "
-        "la clôture. AxeLCompta a préparé les écritures ; je reste seul(e) responsable de "
-        "ma comptabilité et de ma décision."
+        f"de l'exercice du {dossier.exercice_debut:%d/%m/%Y} au {fin:%d/%m/%Y} et je les "
+        "valide. AxeLCompta a préparé les chiffres ; je reste seul(e) responsable de ces "
+        "comptes et de ma décision."
     )
 
 

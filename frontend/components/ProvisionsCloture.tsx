@@ -13,6 +13,7 @@ import {
   lireProvisionsCloture,
 } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
+import { CHARGES_CLOTURE, NOM_NATURE, phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import type { ProvisionClotureVue } from "@/lib/types";
 
 function eurosEnCentimes(saisie: string): number | null {
@@ -34,7 +35,7 @@ export function ProvisionsCloture({
 }) {
   const [lignes, setLignes] = useState<ProvisionClotureVue[]>([]);
   const [nature, setNature] = useState<"cca" | "fnp">("fnp");
-  const [compte, setCompte] = useState("");
+  const [compte, setCompte] = useState<string>(CHARGES_CLOTURE[0].compte);
   const [montant, setMontant] = useState("");
   const [libelle, setLibelle] = useState("");
   const [erreur, setErreur] = useState<string | null>(null);
@@ -56,9 +57,11 @@ export function ProvisionsCloture({
       return true;
     } catch (exception) {
       setErreur(
-        exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
-          ? exception.message
-          : "Échec de l'enregistrement.",
+        phrasePourChauffeur(
+          exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
+            ? exception.message
+            : "Échec de l'enregistrement.",
+        ),
       );
       return false;
     } finally {
@@ -68,18 +71,18 @@ export function ProvisionsCloture({
 
   async function ajouter() {
     const centimes = eurosEnCentimes(montant);
-    if (centimes === null || centimes <= 0 || compte.trim() === "" || libelle.trim() === "") {
-      setErreur("Indiquez un compte de charge, un montant et un libellé.");
+    if (centimes === null || centimes <= 0 || libelle.trim() === "") {
+      setErreur("Indiquez de quoi il s'agit, un montant et un libellé.");
       return;
     }
     const ok = await envoyer([
       ...lignes,
-      { nature, compte_charge: compte.trim(), centimes, libelle: libelle.trim() },
+      { nature, compte_charge: compte, centimes, libelle: libelle.trim() },
     ]);
     if (!ok) {
       return;
     }
-    setCompte("");
+    setCompte(CHARGES_CLOTURE[0].compte);
     setMontant("");
     setLibelle("");
   }
@@ -95,8 +98,7 @@ export function ProvisionsCloture({
           {lignes.map((ligne) => (
             <li key={`${ligne.nature}-${ligne.compte_charge}-${ligne.libelle}`} className="flex justify-between gap-3">
               <span>
-                {ligne.nature === "cca" ? "Payée d'avance" : "Facture pas encore reçue"} —{" "}
-                {ligne.libelle} ({ligne.compte_charge})
+                {NOM_NATURE[ligne.nature]} — {ligne.libelle}
               </span>
               <span>{formatMontant(ligne.centimes)}</span>
             </li>
@@ -109,17 +111,21 @@ export function ProvisionsCloture({
           value={nature}
           onChange={(evenement) => setNature(evenement.target.value === "cca" ? "cca" : "fnp")}
         >
-          <option value="fnp">Facture pas encore reçue</option>
-          <option value="cca">Déjà payée, pour plus tard</option>
+          <option value="fnp">{NOM_NATURE.fnp}</option>
+          <option value="cca">{NOM_NATURE.cca}</option>
         </select>
-        <input
-          className="h-8 w-24 rounded-sm border border-border px-2 text-sm"
-          inputMode="numeric"
-          placeholder="Compte"
-          aria-label="Compte de charge"
+        <select
+          className="h-8 rounded-sm border border-border bg-canvas px-2 text-sm"
+          aria-label="De quoi s'agit-il ?"
           value={compte}
           onChange={(evenement) => setCompte(evenement.target.value)}
-        />
+        >
+          {CHARGES_CLOTURE.map((charge) => (
+            <option key={charge.compte} value={charge.compte}>
+              {charge.libelle}
+            </option>
+          ))}
+        </select>
         <input
           className="h-8 w-24 rounded-sm border border-border px-2 text-sm"
           inputMode="decimal"

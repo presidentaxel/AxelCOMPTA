@@ -5,6 +5,7 @@
 // demandé par le portail. La signature qualifiée reste un bouchon (ADR-004).
 import { useState } from "react";
 
+import { Aide } from "@/components/Aide";
 import { Button } from "@/components/ui/button";
 import { ApiError, cheminGreffeInpi } from "@/lib/api";
 import {
@@ -12,14 +13,17 @@ import {
   signerGreffeInpiChauffeur,
   telechargerAvecAuthChauffeur,
 } from "@/lib/auth-chauffeur";
+import { phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import type { DossierResume } from "@/lib/types";
 
 import { Badge } from "./Badge";
 
 function messageErreur(exception: unknown, repli: string): string {
-  return exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
-    ? exception.message
-    : repli;
+  const brut =
+    exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
+      ? exception.message
+      : repli;
+  return phrasePourChauffeur(brut);
 }
 
 export function GreffeInpiSection({ dossier }: { dossier: DossierResume }) {
@@ -53,7 +57,10 @@ export function GreffeInpiSection({ dossier }: { dossier: DossierResume }) {
   return (
     <section className="mt-10">
       <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-base font-semibold text-ink">Greffe</h2>
+        <h2 className="text-base font-semibold text-ink">
+          Dépôt des comptes
+          <Aide texte="Le greffe du tribunal de commerce reçoit les comptes de l'année, sur le portail de l'INPI. Rien n'est envoyé depuis ici." />
+        </h2>
         {signe ? <Badge variant="validated">Signé</Badge> : <Badge variant="pending">À signer</Badge>}
       </div>
       {guide.depose ? (
@@ -107,7 +114,7 @@ export function GreffeInpiSection({ dossier }: { dossier: DossierResume }) {
           </ul>
         </>
       ) : (
-        <p className="mt-2 text-sm text-subtle">Pas de dépôt de comptes au greffe pour cette forme.</p>
+        <p className="mt-2 text-sm text-subtle">Cette forme de société ne dépose pas ses comptes.</p>
       )}
       <button
         type="button"
