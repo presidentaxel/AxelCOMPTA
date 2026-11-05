@@ -29,7 +29,7 @@ export default function ChauffeurLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-canvas-app">
-      <header className="sticky top-0 z-10 border-b border-border bg-canvas">
+      <header className="sticky top-0 z-30 border-b border-border bg-canvas">
         <div className="mx-auto flex h-14 max-w-md items-center px-4">
           <Marque />
           {espace && session && <Cloche dossierId={session.dossierId} chemin={chemin} />}
