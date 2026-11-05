@@ -15,6 +15,11 @@ import {
   validerClotureChauffeur,
 } from "@/lib/auth-chauffeur";
 import { formatDate } from "@/lib/format";
+import {
+  phraseChangement,
+  phraseEcritureCloture,
+  phrasePourChauffeur,
+} from "@/lib/langage-chauffeur";
 import type { ClotureExerciceVue } from "@/lib/types";
 
 export function ClotureExerciceSection({
@@ -73,7 +78,7 @@ export function ClotureExerciceSection({
     return apercu.raison && !apercu.raison.includes("pas terminé") ? (
       <section className="mt-8">
         <h2 className="text-sm font-medium text-ink">Clôture de l&apos;exercice</h2>
-        <p className="mt-2 text-sm text-subtle">{apercu.raison}</p>
+        <p className="mt-2 text-sm text-subtle">{phrasePourChauffeur(apercu.raison)}</p>
       </section>
     ) : null;
   }
@@ -87,9 +92,11 @@ export function ClotureExerciceSection({
       onClos();
     } catch (exception) {
       setErreur(
-        exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
-          ? exception.message
-          : "Échec de la clôture.",
+        phrasePourChauffeur(
+          exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
+            ? exception.message
+            : "Échec de la clôture.",
+        ),
       );
     } finally {
       setEnCours(false);
@@ -105,13 +112,13 @@ export function ClotureExerciceSection({
       </p>
       <ul className="mt-3 space-y-1 text-sm text-ink">
         {apercu.ecritures.map((libelle) => (
-          <li key={libelle}>{libelle}</li>
+          <li key={libelle}>{phraseEcritureCloture(libelle)}</li>
         ))}
         {apercu.nouvel_exercice_debut && (
           <li>Ouverture du nouvel exercice le {formatDate(apercu.nouvel_exercice_debut)}</li>
         )}
         {apercu.changements.map((changement) => (
-          <li key={changement}>{changement}</li>
+          <li key={changement}>{phraseChangement(changement)}</li>
         ))}
       </ul>
       {apercu.attestation && (

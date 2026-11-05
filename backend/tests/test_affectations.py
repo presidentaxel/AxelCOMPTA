@@ -51,7 +51,7 @@ class Demo:
 
 
 def test_rien_a_affecter_tant_que_l_exercice_n_est_pas_clos() -> None:
-    with pytest.raises(AffectationImpossible, match="clôturez d'abord"):
+    with pytest.raises(AffectationImpossible, match="Clôturez d'abord"):
         Demo().proposer(KARIM)
 
 

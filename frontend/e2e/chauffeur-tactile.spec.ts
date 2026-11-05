@@ -275,12 +275,12 @@ test("les contrôles du dossier chauffeur font 44 px et passent AA", async ({ pa
 
   await page.getByRole("link", { name: "Exercice" }).click();
   await expect(page.getByRole("heading", { name: "Exercice", exact: true })).toBeVisible();
-  const compte = page.getByLabel("Compte de charge");
+  const compte = page.getByLabel("De quoi s'agit-il ?");
   await expect(compte).toBeVisible();
   expect(await taillePolice(compte)).toBeGreaterThanOrEqual(16);
   expect(await hauteur(page, compte)).toBeGreaterThanOrEqual(44);
   expect(await hauteur(page, page.getByLabel("Montant"))).toBeGreaterThanOrEqual(44);
-  const paie = page.getByPlaceholder("Salaire brut (€)");
+  const paie = page.getByLabel("Salaire avant retenues");
   await expect(paie).toBeVisible();
   expect(await taillePolice(paie)).toBeGreaterThanOrEqual(16);
   expect(await hauteur(page, paie)).toBeGreaterThanOrEqual(44);

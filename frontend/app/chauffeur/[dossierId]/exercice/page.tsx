@@ -164,7 +164,7 @@ function LienAffectation({
   if (affectation?.applicable) {
     return (
       <Link href={`/chauffeur/${dossierId}/resultat`} className={LIEN}>
-        Décider de l&apos;affectation de mon résultat {affectation.annee_exercice} →
+        Décider de ce que je fais de mon résultat {affectation.annee_exercice} →
       </Link>
     );
   }
