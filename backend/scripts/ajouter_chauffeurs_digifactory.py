@@ -6,11 +6,18 @@ de chaque société est invité par le gestionnaire avec sa vraie adresse
 (AXE-730). La forme juridique est reprise de Sirene quand le contact a un
 SIREN ; le reste de la configuration est une valeur par défaut.
 
+Le compte Digifactory de Serenity contient aussi des contacts qui ne sont
+pas des chauffeurs (ses propres sociétés, des plateformes) : on ne crée de
+dossier **que pour les contacts listés** (AXE-726). Un contact hors liste
+est signalé, jamais enregistré. `--lister` affiche les contacts sans rien
+écrire, pour choisir.
+
 Usage, depuis backend/ :
 
-    python scripts/ajouter_chauffeurs_digifactory.py               # dossiers + synchro
-    python scripts/ajouter_chauffeurs_digifactory.py --sans-synchro # dossiers seulement
-    python scripts/ajouter_chauffeurs_digifactory.py --formes       # formes Sirene seulement
+    python scripts/ajouter_chauffeurs_digifactory.py --lister
+    python scripts/ajouter_chauffeurs_digifactory.py --contacts 7416,8780 --sans-synchro
+    python scripts/ajouter_chauffeurs_digifactory.py --contacts 7416,8780
+    python scripts/ajouter_chauffeurs_digifactory.py --formes
 
 Idempotent : un contact déjà mappé est laissé tel quel. La synchro rejoue
 sans doublon (curseur).
@@ -18,6 +25,7 @@ sans doublon (curseur).
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import sys
 from datetime import date
@@ -31,6 +39,7 @@ from axelcompta.demo_digifactory import (
     TENANT_DEMO,
     dossier_depuis_contact,
     forme_depuis_nature_juridique,
+    nom_affiche,
     numero_contact,
     siren_contact,
 )
@@ -101,27 +110,56 @@ def _aligner_formes(depot: PostgresDossierRepository) -> None:
         print(f"{dossier.id} : {forme}", flush=True)
 
 
-def main() -> int:
-    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
-    depot = PostgresDossierRepository(engine_depuis_env())
-    if len(sys.argv) > 1 and sys.argv[1] == "--formes":
-        _aligner_formes(depot)
-        return 0
-    depot.enregistrer_tenant(Tenant(id=TENANT_DEMO, nom="Portefeuille démo"))
-    voulus = tuple(
-        dossier_depuis_contact(contact, date.today())
-        for contact in asyncio.run(_contacts_bruts()).values()
+def _arguments() -> argparse.Namespace:
+    parseur = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    action = parseur.add_mutually_exclusive_group(required=True)
+    action.add_argument("--lister", action="store_true", help="affiche les contacts, n'écrit rien")
+    action.add_argument(
+        "--contacts", help="numéros de contact à importer, séparés par des virgules"
     )
-    dossiers = tuple(_poser(depot, voulu) for voulu in voulus)
+    action.add_argument("--formes", action="store_true", help="reprend les formes Sirene")
+    parseur.add_argument("--sans-synchro", action="store_true", help="dossiers seulement")
+    return parseur.parse_args()
+
+
+def _numeros(valeur: str) -> frozenset[str]:
+    numeros = frozenset(n.strip() for n in valeur.split(",") if n.strip())
+    if not numeros or not all(n.isdigit() for n in numeros):
+        raise SystemExit("--contacts attend des numéros séparés par des virgules")
+    return numeros
+
+
+def _lister(depot: PostgresDossierRepository, contacts: dict[str, dict[str, object]]) -> None:
+    for numero, contact in sorted(contacts.items(), key=lambda c: int(c[0])):
+        deja = depot.par_contact_nr(numero)
+        etat = f"déjà en base ({deja.id})" if deja else "pas en base"
+        print(f"{numero} : {nom_affiche(contact, numero)} — {etat}", flush=True)
+
+
+def _importer(
+    depot: PostgresDossierRepository, contacts: dict[str, dict[str, object]], liste: str
+) -> tuple[Dossier, ...]:
+    voulus_nr = _numeros(liste)
+    inconnus = voulus_nr - contacts.keys()
+    if inconnus:
+        raise SystemExit(f"contacts absents de Digifactory : {', '.join(sorted(inconnus))}")
+    for numero in sorted(contacts.keys() - voulus_nr, key=int):
+        print(f"{numero} : hors liste, ignoré", flush=True)
+    depot.enregistrer_tenant(Tenant(id=TENANT_DEMO, nom="Portefeuille démo"))
+    dossiers = tuple(
+        _poser(depot, dossier_depuis_contact(contacts[numero], date.today()))
+        for numero in sorted(voulus_nr, key=int)
+    )
     _aligner_formes(depot)
-    if "--sans-synchro" in sys.argv[1:]:
-        return 0
+    return dossiers
+
+
+def _synchroniser(dossiers: tuple[Dossier, ...]) -> int:
     engine = engine_depuis_env()
     erreurs = 0
     for dossier in dossiers:
         print(f"Synchro {dossier.id}…", flush=True)
-        resultats = synchroniser_portefeuille(engine, (dossier,))
-        for resultat in resultats:
+        for resultat in synchroniser_portefeuille(engine, (dossier,)):
             if resultat.erreur:
                 erreurs += 1
                 print(f"  ECHEC {resultat.erreur}", flush=True)
@@ -133,6 +171,21 @@ def main() -> int:
                     flush=True,
                 )
     return 1 if erreurs else 0
+
+
+def main() -> int:
+    arguments = _arguments()
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+    depot = PostgresDossierRepository(engine_depuis_env())
+    if arguments.formes:
+        _aligner_formes(depot)
+        return 0
+    contacts = asyncio.run(_contacts_bruts())
+    if arguments.lister:
+        _lister(depot, contacts)
+        return 0
+    dossiers = _importer(depot, contacts, arguments.contacts)
+    return 0 if arguments.sans_synchro else _synchroniser(dossiers)
 
 
 def _poser(depot: PostgresDossierRepository, voulu: Dossier) -> Dossier:

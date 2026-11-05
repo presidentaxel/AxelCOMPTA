@@ -63,9 +63,15 @@ d'intégration sur une base locale), jamais dans la base Supabase.
 Depuis `backend/` (`.env` à la racine) :
 
 ```bash
-.venv/bin/python scripts/ajouter_chauffeurs_digifactory.py --sans-synchro  # dossiers seulement
-.venv/bin/python scripts/ajouter_chauffeurs_digifactory.py                 # dossiers puis synchro
+.venv/bin/python scripts/ajouter_chauffeurs_digifactory.py --lister            # contacts, rien n'est écrit
+.venv/bin/python scripts/ajouter_chauffeurs_digifactory.py --contacts 7416,8780 --sans-synchro
+.venv/bin/python scripts/ajouter_chauffeurs_digifactory.py --contacts 7416,8780  # puis synchro
 ```
+
+Le compte Digifactory de Serenity contient aussi des contacts qui ne sont
+pas des chauffeurs (ses sociétés, des plateformes) : seuls les contacts
+listés deviennent des dossiers (AXE-726). Au 2026-11-05, 7 contacts ne sont
+pas encore en base : 7416, 8780, 9692, 20550, 21430, 22755 et 86930.
 
 Un dossier `DIGI_<nr>` par contact, posé en SASU à l'IS sur l'année civile,
 forme reprise de Sirene quand le contact a un SIREN. Le reste de la

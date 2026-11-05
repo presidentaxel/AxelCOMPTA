@@ -28,9 +28,7 @@ from axelcompta.demo_comptes import SupabaseConfig
 
 # Depuis le 2026-11-05, seul le dossier de review UX (Sophie) reste en base :
 # Karim et Yanis ont été supprimés, la base est celle du portefeuille réel.
-COMPTES_DEMO = (
-    ("demo-sophie@axelcompta.fr", "DEMO_sophie"),
-)
+COMPTES_DEMO = (("demo-sophie@axelcompta.fr", "DEMO_sophie"),)
 
 
 def main() -> int:
