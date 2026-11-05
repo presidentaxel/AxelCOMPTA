@@ -41,7 +41,10 @@ export default function ResultatChauffeurPage({
   }, [dossierId]);
 
   const retour = (
-    <Link href={`/chauffeur/${dossierId}/exercice`} className="text-sm text-subtle underline">
+    <Link
+      href={`/chauffeur/${dossierId}/exercice`}
+      className="inline-flex min-h-11 items-center text-sm text-subtle underline"
+    >
       Retour à l&apos;exercice
     </Link>
   );
@@ -129,13 +132,21 @@ export default function ResultatChauffeurPage({
           />
         ))}
         <li>
-          <label className="flex items-center gap-3 rounded-md border border-border bg-canvas p-3 text-sm">
-            <input type="radio" checked={choix === "libre"} onChange={() => setChoix("libre")} />
-            <span className="flex-1 text-ink">Un autre montant de dividendes</span>
+          <label className="flex min-h-11 flex-col gap-3 rounded-md border border-border bg-canvas p-3 text-base">
+            <span className="flex min-h-11 items-center gap-3">
+              <input
+                type="radio"
+                className="size-6 shrink-0"
+                checked={choix === "libre"}
+                onChange={() => setChoix("libre")}
+              />
+              <span className="flex-1 text-ink">Un autre montant de dividendes</span>
+            </span>
             <Input
               inputMode="decimal"
-              className="h-8 w-28"
+              className="h-11 text-base"
               placeholder="€"
+              aria-label="Montant libre de dividendes"
               value={montantLibre}
               onFocus={() => setChoix("libre")}
               onChange={(evenement) => setMontantLibre(evenement.target.value)}
@@ -148,10 +159,10 @@ export default function ResultatChauffeurPage({
           <li key={avertissement}>{avertissement}</li>
         ))}
       </ul>
-      <label className="mt-4 flex gap-3 text-sm text-ink">
+      <label className="mt-4 flex min-h-11 gap-3 text-base text-ink">
         <input
           type="checkbox"
-          className="mt-1"
+          className="mt-0.5 size-6 shrink-0"
           checked={confirme}
           onChange={(evenement) => setConfirme(evenement.target.checked)}
         />
@@ -160,7 +171,7 @@ export default function ResultatChauffeurPage({
           scénarios ; le choix est le mien.
         </span>
       </label>
-      <Button className="mt-3" disabled={!pret || enCours} onClick={decider}>
+      <Button className="mt-3 h-11" disabled={!pret || enCours} onClick={decider}>
         {enCours ? "Enregistrement…" : "Enregistrer ma décision"}
       </Button>
       {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}
@@ -194,8 +205,8 @@ function CarteScenario({
           choisi ? "border-ink bg-canvas" : "border-border bg-canvas"
         }`}
       >
-        <span className="flex items-center gap-3">
-          <input type="radio" checked={choisi} onChange={onChoisir} />
+        <span className="flex min-h-11 items-center gap-3">
+          <input type="radio" className="size-6 shrink-0" checked={choisi} onChange={onChoisir} />
           <span className="flex-1 font-medium text-ink">{scenario.libelle}</span>
           <span className="tabular-nums text-ink">{formatMontant(scenario.dividendes_cts)}</span>
         </span>

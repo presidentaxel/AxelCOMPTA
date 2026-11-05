@@ -108,10 +108,10 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
       </Button>
       {avertissementLiasse && (
         <Dialogue titre="Comptes non clôturés" titreId="titre-liasse" onFermer={fermerAvertissement}>
-          <label className="mt-4 flex items-start gap-3 text-sm text-ink">
+          <label className="mt-4 flex min-h-11 items-start gap-3 text-sm text-ink">
             <input
               type="checkbox"
-              className="mt-0.5 size-4 shrink-0"
+              className="mt-0.5 size-6 shrink-0"
               checked={avertissementLu}
               onChange={(event) => setAvertissementLu(event.target.checked)}
             />
@@ -126,10 +126,10 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
                 La signature électronique arrivera plus tard. En attendant, cette
                 validation engage sur la liasse telle qu&apos;elle est.
               </p>
-              <label className="mt-4 flex items-start gap-3 text-sm text-ink">
+              <label className="mt-4 flex min-h-11 items-start gap-3 text-sm text-ink">
                 <input
                   type="checkbox"
-                  className="mt-0.5 size-4 shrink-0"
+                  className="mt-0.5 size-6 shrink-0"
                   checked={liasseLue}
                   onChange={(event) => setLiasseLue(event.target.checked)}
                 />
@@ -166,7 +166,7 @@ export function ClotureSection({ dossier }: { dossier: DossierResume }) {
               type="button"
               aria-label={`Télécharger ${label} (${detail})`}
               onClick={() => void telecharger(document)}
-              className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-md px-2 py-3 text-left outline-none hover:bg-primary-subtle focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]"
+              className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-4 rounded-md px-2 py-3 text-left outline-none hover:bg-primary-subtle focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]"
             >
               <span className="text-sm font-medium text-primary">{label}</span>
               <span className="flex shrink-0 items-center gap-2 text-sm text-subtle">

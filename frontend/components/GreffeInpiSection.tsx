@@ -94,7 +94,7 @@ export function GreffeInpiSection({ dossier }: { dossier: DossierResume }) {
                             `${document.replace(".pdf", "")}-${dossier.dossier_id}.pdf`,
                           )
                         }
-                        className="shrink-0 text-sm text-primary"
+                        className="inline-flex min-h-11 shrink-0 items-center text-sm text-primary outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]"
                       >
                         Télécharger
                       </button>
@@ -114,7 +114,7 @@ export function GreffeInpiSection({ dossier }: { dossier: DossierResume }) {
         onClick={() =>
           void telecharger(cheminGreffeInpi(dossier.dossier_id), `greffe-inpi-${dossier.dossier_id}.pdf`)
         }
-        className="mt-4 py-2 text-left text-sm text-primary"
+        className="mt-4 inline-flex min-h-11 items-center text-left text-sm text-primary outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]"
       >
         Télécharger le dossier de synthèse
       </button>

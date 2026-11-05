@@ -141,7 +141,7 @@ function Onglet({
       type="button"
       aria-pressed={actif}
       onClick={onClick}
-      className={`h-9 rounded-full px-4 text-sm font-medium ${ANNEAU} ${
+      className={`inline-flex h-11 items-center rounded-full px-4 text-sm font-medium ${ANNEAU} ${
         actif ? "bg-ink text-canvas" : "text-subtle"
       }`}
     >
@@ -383,7 +383,7 @@ function AjouterTicketSortie({
         type="button"
         disabled={envoi}
         onClick={() => inputRef.current?.click()}
-        className={`mt-1 rounded-md px-1 py-1 text-sm font-medium text-primary disabled:opacity-50 ${ANNEAU}`}
+        className={`mt-1 inline-flex min-h-11 items-center rounded-md px-1 text-sm font-medium text-primary disabled:opacity-50 ${ANNEAU}`}
       >
         {envoi ? "Envoi…" : "Ajouter un ticket"}
       </button>

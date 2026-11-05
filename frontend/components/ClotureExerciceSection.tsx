@@ -90,17 +90,17 @@ export function ClotureExerciceSection({
       </ul>
       {apercu.attestation && (
         <>
-          <label className="mt-4 flex gap-3 rounded-md border border-border bg-canvas p-3 text-sm text-ink">
+          <label className="mt-4 flex min-h-11 gap-3 rounded-md border border-border bg-canvas p-3 text-sm text-ink">
             <input
               type="checkbox"
-              className="mt-1"
+              className="mt-0.5 size-6 shrink-0"
               checked={accepte}
               onChange={(evenement) => setAccepte(evenement.target.checked)}
             />
             <span>{apercu.attestation}</span>
           </label>
           <Button
-            className="mt-3"
+            className="mt-3 h-11"
             disabled={!accepte || enCours}
             onClick={() => apercu.attestation && valider(apercu.attestation)}
           >

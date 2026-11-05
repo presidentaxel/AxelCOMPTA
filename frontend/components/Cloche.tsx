@@ -51,11 +51,11 @@ export function Cloche({ dossierId, chemin }: { dossierId: string; chemin: strin
         onClick={basculer}
         aria-expanded={ouvert}
         aria-label={nonLues > 0 ? `Notifications, ${nonLues} non lues` : "Notifications"}
-        className="relative flex h-10 w-10 items-center justify-center rounded-full text-ink"
+        className="relative flex h-11 w-11 items-center justify-center rounded-full text-ink outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]"
       >
         <Bell className="h-5 w-5" aria-hidden />
         {nonLues > 0 && (
-          <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-on-primary">
+          <span className="absolute right-0 top-0 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1 text-xs font-semibold leading-none text-on-primary">
             {nonLues}
           </span>
         )}
@@ -71,7 +71,7 @@ export function Cloche({ dossierId, chemin }: { dossierId: string; chemin: strin
                   <Link
                     href={`/chauffeur/${dossierId}`}
                     onClick={() => setOuvert(false)}
-                    className="block rounded-md p-3 hover:bg-canvas-app"
+                    className="block min-h-11 rounded-md p-3 hover:bg-canvas-app"
                   >
                     <p className={`text-sm ${notification.lue ? "text-subtle" : "font-medium text-ink"}`}>
                       {notification.message}
