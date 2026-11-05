@@ -37,7 +37,7 @@ import re
 import uuid
 from collections.abc import Callable, Sequence
 from collections.abc import Set as AbstractSet
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol
 
@@ -347,6 +347,8 @@ class TransactionVue(BaseModel):
     proposition: str | None = None
     origine_proposition: str | None = None  # "appris" | "regle" | "modele"
     confiance_proposition: float | None = None
+    # Décision humaine en vigueur. None : classée par une règle, ou pas encore.
+    categorie: str | None = None
 
 
 class DecisionEntree(BaseModel):
@@ -783,8 +785,25 @@ def _transactions_dossier(
     pipeline: RulesAndMlPipeline | None = None,
 ) -> list[TransactionVue]:
     """Extrait de la route (doc 08 §2 : longueur de fonction)."""
-    vues = _vues_dossier(dossier, ledger, justificatifs)
+    vues = _avec_categories(_vues_dossier(dossier, ledger, justificatifs), decisions)
     return _avec_propositions(dossier, vues, decisions, pipeline)
+
+
+def _avec_categories(
+    vues: list[TransactionVue], decisions: tuple[DecisionHumaine, ...]
+) -> list[TransactionVue]:
+    """La dernière décision d'une écriture est sa catégorie en vigueur."""
+    categories: dict[str, str] = {}
+    for decision in decisions:
+        categories[str(decision.ecriture_id)] = decision.categorie
+    if not categories:
+        return vues
+    return [
+        vue.model_copy(update={"categorie": categories[vue.ecriture_id]})
+        if vue.ecriture_id in categories
+        else vue
+        for vue in vues
+    ]
 
 
 _ORIGINE_PAR_ETAGE = {Etage.REGLE: "regle", Etage.ML: "modele"}
@@ -867,6 +886,13 @@ def _compte_affiche(ecriture: Ecriture) -> str:
     (706/622/44566/44571) — pas un seul compte à afficher tel quel."""
     autres = [ligne.compte for ligne in ecriture.lignes if ligne.compte != "512"]
     return autres[0] if len(autres) == 1 else "règlement plateforme"
+
+
+def _vue_tranchee(ecriture: Ecriture, a_justificatif: bool, categorie: str) -> TransactionVue:
+    """Réponse d'une décision ou d'une correction : la catégorie vient d'être posée."""
+    return _transaction_vue(ecriture, a_justificatif, annulee=False).model_copy(
+        update={"categorie": categorie}
+    )
 
 
 def _transaction_vue(ecriture: Ecriture, a_justificatif: bool, annulee: bool) -> TransactionVue:
@@ -1201,7 +1227,48 @@ def _trancher(
         )
     if not any(ligne.compte == COMPTE_ATTENTE for ligne in ecriture.lignes):
         raise HTTPException(status_code=409, detail="Cette écriture n'est pas à trancher.")
-    proposition = propositions.obtenir(dossier.id, EcritureId(ecriture_id))
+    _enregistrer_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
+    return _ecriture_decidee(dossier, base, decisions, ecriture_id)
+
+
+def _corriger(
+    dossier: Dossier,
+    ecriture_id: str,
+    categorie: str,
+    base: LedgerService,
+    decisions: DecisionRepository,
+    propositions: PropositionRepository,
+    decide_par: UserId,
+) -> Ecriture:
+    """Corriger, c'est enregistrer une nouvelle décision. L'ancienne reste
+    (doc 05 §5) : la dernière prévaut, rien n'est modifié en place."""
+    ecritures = base.grand_livre(dossier.id)
+    ecriture = next((e for e in ecritures if e.id == ecriture_id), None)
+    if ecriture is None:
+        raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
+    if ecriture.id in annulees(ecritures):
+        raise HTTPException(status_code=409, detail="Cette écriture a été contre-passée.")
+    if decisions.decision_courante(dossier.id, EcritureId(ecriture_id)) is None:
+        raise HTTPException(status_code=409, detail="Cette écriture n'a pas encore été tranchée.")
+    if not any(ligne.compte == COMPTE_ATTENTE for ligne in ecriture.lignes):
+        raise HTTPException(
+            status_code=409,
+            detail="Cette écriture ne se corrige pas par une nouvelle catégorie.",
+        )
+    _enregistrer_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
+    return _ecriture_decidee(dossier, base, decisions, ecriture_id)
+
+
+def _enregistrer_decision(
+    dossier: Dossier,
+    ecriture: Ecriture,
+    categorie: str,
+    decisions: DecisionRepository,
+    propositions: PropositionRepository,
+    decide_par: UserId,
+) -> None:
+    """Pose la décision si la catégorie a un compte. N'écrit rien sinon."""
+    proposition = propositions.obtenir(dossier.id, ecriture.id)
     if proposition is None:
         raise HTTPException(
             status_code=500,
@@ -1214,18 +1281,26 @@ def _trancher(
         )
     except CategorieInconnueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
+    courante = decisions.decision_courante(dossier.id, ecriture.id)
+    maintenant = datetime.now(UTC)
+    if courante is not None and maintenant <= courante.decide_le:
+        maintenant = courante.decide_le + timedelta(microseconds=1)
     decisions.enregistrer_decision(
         DecisionHumaine(
             dossier_id=dossier.id,
-            ecriture_id=EcritureId(ecriture_id),
+            ecriture_id=ecriture.id,
             categorie=categorie,
             etage_origine=proposition.etage,
             confiance_origine=proposition.confiance,
             decide_par=decide_par,
-            decide_le=datetime.now(UTC),
+            decide_le=maintenant,
         )
     )
+
+
+def _ecriture_decidee(
+    dossier: Dossier, base: LedgerService, decisions: DecisionRepository, ecriture_id: str
+) -> Ecriture:
     ledger_a_jour = _ledger_avec_decisions(dossier, base, decisions)
     return next(e for e in ledger_a_jour.grand_livre(dossier.id) if e.id == ecriture_id)
 
@@ -1537,7 +1612,35 @@ def _enregistrer_routes_revue(app: FastAPI) -> None:
             dossier, entree, base, decisions, propositions, identite.user_id
         )
         avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
-        return [_transaction_vue(e, e.id in avec_photo, annulee=False) for e in ecritures]
+        return [_vue_tranchee(e, e.id in avec_photo, entree.categorie) for e in ecritures]
+
+
+def _enregistrer_route_correction(app: FastAPI) -> None:
+    """Corriger une décision : une nouvelle ligne, jamais une mutation."""
+
+    @app.post(
+        "/dossiers/{dossier_id}/transactions/{ecriture_id}/correction",
+        response_model=TransactionVue,
+    )
+    def corriger_transaction(
+        ecriture_id: str,
+        entree: DecisionEntree,
+        dossier: DossierDep,
+        base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        propositions: PropositionsDep,
+        justificatifs: JustificatifsDep,
+        identite: IdentiteDep,
+    ) -> TransactionVue:
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        ecriture = _corriger(
+            dossier, ecriture_id, entree.categorie, base, decisions, propositions, identite.user_id
+        )
+        return _vue_tranchee(
+            ecriture,
+            justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture.id),
+            entree.categorie,
+        )
 
 
 def _enregistrer_routes_transactions(app: FastAPI) -> None:
@@ -1563,10 +1666,10 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
             dossier, ecriture_id, entree.categorie, base, decisions, propositions, identite.user_id
         )
         # `_trancher` refuse une écriture contre-passée : celle-ci ne l'est pas.
-        return _transaction_vue(
+        return _vue_tranchee(
             ecriture,
             justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture.id),
-            annulee=False,
+            entree.categorie,
         )
 
     @app.post(
@@ -3490,6 +3593,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_parametres_demo(app)
     _enregistrer_routes_dossiers(app)
     _enregistrer_routes_transactions(app)
+    _enregistrer_route_correction(app)
     _enregistrer_routes_anomalies(app)
     _enregistrer_routes_expert(app)
     _enregistrer_routes_revue(app)
