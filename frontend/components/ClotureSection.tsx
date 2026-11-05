@@ -14,6 +14,7 @@ import { Download } from "lucide-react";
 import { useState } from "react";
 
 import { Dialogue } from "@/components/Dialogue";
+import { ResultatACeJour } from "@/components/ResultatACeJour";
 import { Button } from "@/components/ui/button";
 import { cheminTelechargementCloture } from "@/lib/api";
 import { ErreurAuthChauffeur, telechargerAvecAuthChauffeur } from "@/lib/auth-chauffeur";
@@ -64,11 +65,10 @@ function texteDocuments(operationsRestantes: number, comptesClos: boolean): stri
 export function ChiffresExercice({ dossier }: { dossier: DossierResume }) {
   return (
     <section>
-      <h2 className="text-sm font-medium text-ink">Résultat</h2>
-      <dl className="mt-3 space-y-2 text-sm">
+      <ResultatACeJour dossier={dossier} />
+      <dl className="mt-4 space-y-2 text-sm">
         <Ligne label="CA HT" cents={dossier.ca_ht_cts} />
         <Ligne label="Charges" cents={dossier.charges_cts} />
-        <Ligne label="Résultat" cents={dossier.resultat_cts} emphasise />
         <Ligne label="Trésorerie" cents={dossier.tresorerie_cts} />
         <Ligne label="TVA à payer" cents={dossier.tva_a_payer_cts} />
       </dl>
@@ -197,24 +197,11 @@ export function ClotureSection({
   );
 }
 
-function Ligne({
-  label,
-  cents,
-  emphasise,
-}: {
-  label: string;
-  cents: number;
-  emphasise?: boolean;
-}) {
-  const negatif = cents < 0;
+function Ligne({ label, cents }: { label: string; cents: number }) {
   return (
     <div className="flex items-baseline justify-between">
       <dt className="text-subtle">{label}</dt>
-      <dd
-        className={`tabular-nums text-right ${emphasise ? "font-semibold" : ""} ${
-          negatif ? "text-amount-negative" : emphasise ? "text-amount-positive" : "text-ink"
-        }`}
-      >
+      <dd className={`tabular-nums text-right ${cents < 0 ? "text-amount-negative" : "text-ink"}`}>
         {formatMontant(cents)}
       </dd>
     </div>

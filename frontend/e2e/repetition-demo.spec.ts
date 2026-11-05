@@ -90,111 +90,125 @@ const ZARA = {
   confiance_proposition: null,
 };
 
-async function bouchon(route: Route, etat: { tranchee: boolean }) {
-  const url = route.request().url();
-  const methode = route.request().method();
-  if (url.endsWith("/dossiers") && methode === "GET") {
-    await route.fulfill({
-      json: [agregat("DEMO_karim", "Karim"), agregat("DEMO_sophie", "Sophie"), agregat("DEMO_yanis", "Yanis")],
-    });
-    return;
-  }
-  if (url.endsWith("/dossiers/DEMO_sophie") && methode === "GET") {
-    await route.fulfill({ json: DOSSIER_SOPHIE });
-    return;
-  }
-  if (url.endsWith("/dossiers/DEMO_pret") && methode === "GET") {
-    await route.fulfill({ json: dossierExercice("DEMO_pret", "Prêt Clos", { nb_a_trancher: 0 }) });
-    return;
-  }
-  if (url.endsWith("/dossiers/DEMO_clos") && methode === "GET") {
-    await route.fulfill({
-      json: dossierExercice("DEMO_clos", "Déjà clos", { nb_a_trancher: 0, cloture_faite: true }),
-    });
-    return;
-  }
-  if (url.endsWith("/transactions") && methode === "GET") {
-    const ligne = etat.tranchee ? { ...ZARA, statut: "validé" as const, compte: "455" } : ZARA;
-    await route.fulfill({ json: [ligne] });
-    return;
-  }
-  if (url.endsWith("/decision") && methode === "POST") {
-    etat.tranchee = true;
-    await route.fulfill({ json: { ...ZARA, statut: "validé", compte: "455" } });
-    return;
-  }
-  if (url.includes("/cloture-exercice") && methode === "GET") {
-    if (url.includes("DEMO_clos")) {
+type TransactionDemo = Omit<typeof ZARA, "statut" | "compte"> & {
+  statut: "à trancher" | "validé";
+  compte: string;
+};
+
+/** Après une décision, la relecture des opérations renvoie la ligne déjà
+ * tranchée : l'écran recharge la liste, il ne garde pas seulement la réponse
+ * du POST. */
+function bouchon(operations: TransactionDemo[]) {
+  return async (route: Route) => {
+    const url = route.request().url();
+    const methode = route.request().method();
+    if (url.endsWith("/dossiers") && methode === "GET") {
+      await route.fulfill({
+        json: [agregat("DEMO_karim", "Karim"), agregat("DEMO_sophie", "Sophie"), agregat("DEMO_yanis", "Yanis")],
+      });
+      return;
+    }
+    if (url.endsWith("/dossiers/DEMO_sophie") && methode === "GET") {
+      await route.fulfill({ json: DOSSIER_SOPHIE });
+      return;
+    }
+    if (url.endsWith("/dossiers/DEMO_pret") && methode === "GET") {
+      await route.fulfill({ json: dossierExercice("DEMO_pret", "Prêt Clos", { nb_a_trancher: 0 }) });
+      return;
+    }
+    if (url.endsWith("/dossiers/DEMO_clos") && methode === "GET") {
+      await route.fulfill({
+        json: dossierExercice("DEMO_clos", "Déjà clos", { nb_a_trancher: 0, cloture_faite: true }),
+      });
+      return;
+    }
+    if (url.endsWith("/transactions") && methode === "GET") {
+      await route.fulfill({ json: operations });
+      return;
+    }
+    if (url.endsWith("/decision") && methode === "POST") {
+      const validee: TransactionDemo = { ...ZARA, statut: "validé", compte: "455" };
+      operations.splice(0, operations.length, validee);
+      await route.fulfill({ json: validee });
+      return;
+    }
+    if (url.includes("/cloture-exercice") && methode === "GET") {
+      if (url.includes("DEMO_clos")) {
+        await route.fulfill({
+          json: {
+            possible: false,
+            raison: "l'exercice se termine le 31/12/2026, il n'est pas terminé",
+            exercice_debut: "2026-01-01",
+            exercice_fin: "2026-12-31",
+            nouvel_exercice_debut: null,
+            ecritures: [],
+            changements: [],
+            attestation: null,
+          },
+        });
+        return;
+      }
       await route.fulfill({
         json: {
-          possible: false,
-          raison: "l'exercice se termine le 31/12/2026, il n'est pas terminé",
-          exercice_debut: "2026-01-01",
-          exercice_fin: "2026-12-31",
+          possible: true,
+          raison: null,
+          exercice_debut: "2025-01-01",
+          exercice_fin: "2025-12-31",
+          nouvel_exercice_debut: "2026-01-01",
+          ecritures: ["Liquidation de la TVA de l'exercice"],
+          changements: [],
+          attestation: "J'atteste la clôture.",
         },
       });
       return;
     }
-    await route.fulfill({
-      json: {
-        possible: true,
-        raison: null,
-        exercice_debut: "2025-01-01",
-        exercice_fin: "2025-12-31",
-        nouvel_exercice_debut: "2026-01-01",
-        ecritures: ["Liquidation de la TVA de l'exercice"],
-        changements: [],
-        attestation: "J'atteste la clôture.",
-      },
-    });
-    return;
-  }
-  if (url.includes("/provisions-cloture") && methode === "GET") {
-    await route.fulfill({ json: { lignes: [] } });
-    return;
-  }
-  if (url.includes("/provisions-cloture") && methode === "PUT") {
-    await route.fulfill({ json: route.request().postDataJSON() });
-    return;
-  }
-  if (url.includes("/affectation")) {
-    await route.fulfill({
-      json: {
-        applicable: false,
-        raison: url.includes("DEMO_clos") ? "Résultat 2025 affecté." : null,
-        annee_exercice: 2025,
-      },
-    });
-    return;
-  }
-  if (url.includes("/dividendes") && methode === "GET") {
-    await route.fulfill({
-      json: {
-        applicable: url.includes("DEMO_clos"),
-        raison: null,
-        annee_exercice: 2025,
-        declare: false,
-        brut_cts: 10_000,
-      },
-    });
-    return;
-  }
-  if (url.includes("connexions-bancaires")) {
-    await route.fulfill({
-      json: {
-        relance_portefeuille: "auto",
-        compteurs: { actif: 0, a_renouveler: 0, expire: 0, jamais_connecte: 0 },
-        a_reconnecter: 0,
-        dossiers: [],
-      },
-    });
-    return;
-  }
-  await route.fulfill({ json: [] });
+    if (url.includes("/provisions-cloture") && methode === "GET") {
+      await route.fulfill({ json: { lignes: [] } });
+      return;
+    }
+    if (url.includes("/provisions-cloture") && methode === "PUT") {
+      await route.fulfill({ json: route.request().postDataJSON() });
+      return;
+    }
+    if (url.includes("/affectation")) {
+      await route.fulfill({
+        json: {
+          applicable: false,
+          raison: url.includes("DEMO_clos") ? "Résultat 2025 affecté." : null,
+          annee_exercice: 2025,
+        },
+      });
+      return;
+    }
+    if (url.includes("/dividendes") && methode === "GET") {
+      await route.fulfill({
+        json: {
+          applicable: url.includes("DEMO_clos"),
+          raison: null,
+          annee_exercice: 2025,
+          declare: false,
+          brut_cts: 10_000,
+        },
+      });
+      return;
+    }
+    if (url.includes("connexions-bancaires")) {
+      await route.fulfill({
+        json: {
+          relance_portefeuille: "auto",
+          compteurs: { actif: 0, a_renouveler: 0, expire: 0, jamais_connecte: 0 },
+          a_reconnecter: 0,
+          dossiers: [],
+        },
+      });
+      return;
+    }
+    await route.fulfill({ json: [] });
+  };
 }
 
 async function intercepterApi(page: Page) {
-  const etat = { tranchee: false };
+  const repondre = bouchon([{ ...ZARA }]);
   await page.route("**/*", async (route) => {
     const url = route.request().url();
     if (url.includes(":3000") || url.startsWith("data:")) {
@@ -212,7 +226,7 @@ async function intercepterApi(page: Page) {
       });
       return;
     }
-    await bouchon(route, etat);
+    await repondre(route);
   });
 }
 
