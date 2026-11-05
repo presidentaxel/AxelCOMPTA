@@ -1,255 +1,192 @@
 # 12 — Roadmap et TODO maître
 
-> Statut : brouillon à valider. Dernière mise à jour : 2026-09-26.
-> **Seule source de l'état du projet** (fait, en cours, jalons). Les docs 17
-> et 18 n'en tiennent plus de copie. Les sections « Statuts » des READMEs de
-> modules en gardent une, en partie périmée, à retirer.
+> Statut : brouillon à valider. Dernière mise à jour : 2026-11-05.
+> **Seule source de l'état du projet dans le repo** (fait, en cours, prévu).
+> Le suivi au jour le jour est dans Linear, projet
+> [Axel Compta — V1 prod](https://linear.app/axel-project/project/axel-compta-v1-prod-api-ingestion-fiabilite-899778ce7b41)
+> (P-AXE-28) ; ce doc en donne la photo et les décisions. Les docs 17 et 18
+> n'en tiennent pas de copie.
 >
-> Hypothèse de capacité : **1 dev (Louis, seul sur le produit)** — l'associé
-> initialement pressenti n'est plus sur ce produit (segmentation actée le
-> week-end du 2026-09-05/06, voir §0.1). Les durées de ce doc supposaient
-> encore 1 à 2 devs à sa rédaction (2026-08-01) : à recalibrer, étirer
-> d'environ ×1,7 par rapport aux ordres de grandeur ci-dessous.
+> Capacité : Louis sur le produit, Arthur en renfort depuis fin octobre
+> (revues UX AXE-563/564, performance AXE-565 à 567). Une partie du code
+> d'octobre et de novembre est écrite par des agents (Cursor) et relue par
+> Louis.
 >
-> **Ce doc a pris du retard sur le code** entre le 01/08 et le 02/09 : le
-> sprint du 2026-09-02 au 2026-09-06 (voir doc 17, doc 18) a produit
-> l'essentiel du moteur démo, l'audit dataset et une première UI — pas
-> encore reflété ligne à ligne ci-dessous. Les sections §0.2 et §0.3 ont été
-> corrigées pour refléter l'état réel ; le reste (phases 1-5) reste à
-> recaler sur ce qui existe déjà en code (doc 18) avant de servir à nouveau
-> de plan d'exécution fiable.
+> Le recalage de septembre (jalons J1 à J6, travail du 21/09 au 27/09, PR
+> #3 à #39) est archivé tel quel dans
+> [archive/12-recalage-2026-09.md](archive/12-recalage-2026-09.md).
 
-## Recalage du 2026-09-21 (à lire avant tout le reste)
+## État au 2026-11-05 (à lire avant tout le reste)
 
-Un imprévu a interrompu le travail du 2026-09-12 au 2026-09-20 environ : aucun
-commit depuis le 2026-09-11, seule la préparation de la relecture des 500
-lignes a avancé (le 13/09). Les échéances « week-end du 12/13 » ci-dessous ne
-sont pas tenues. Ce bloc les remplace ; le gantt et les durées des phases plus
-bas restent des ordres de grandeur non recalés, à ne pas lire comme des dates.
+**En une phrase :** le produit démo est complet et a été poli (deux revues
+UX traitées). Ce qui manque pour la V1, c'est un **vrai dossier chauffeur**
+qui passe de bout en bout, puis la mise en production.
 
-**Fait pendant ce recalage :** écart ML tranché (ADR-007 amendé, 79,5 % de
-référence, le 94,4 % venait du token PCG absent à l'inférence).
+**Où on en est par rapport au plan.** Le projet Linear « Moteur & exports
+(démo) » est clos depuis le 17/10. Le projet « V1 prod » (cible
+**31/12/2026**, initiative « Prod-ready trio → Market janv. 2027 ») a avancé
+sur l'API, la fiabilité et l'UX. Il n'a **pas encore avancé sur son chemin
+critique** : l'ingestion réelle Digifactory et les contre-passations. Aucun
+dossier `DIGI_` n'a encore été tranché ni clôturé de bout en bout (ancien J3).
 
-**Fait le 2026-09-23 (doc 17 §15), hors jalons :** liasse fiscale complète
-(2065, 2065-bis, 2033-A à G) sur les formulaires officiels 2026, clôture
-fiscale (TVA, IS, réintégrations), FEC conforme au texte de l'A.47 A-1,
-identité légale des dossiers. Pas d'expert-comptable pour la démo (décision
-de Louis) : le J6 ne bloque pas la démo, il reste un prérequis de la V1.
+Client de référence V1 : Serenity Gestion, installé étape par étape avant
+toute autre vente.
 
-**Fait le 2026-09-24, hors démo et prévu (doc 17 §16) :** durcissement V1
-tiré des items §1.1 à §1.3 de ce doc, pas du plan de démo. Signature greffe
-persistée en Postgres (PR #4), écritures validées verrouillées (I2, PR #5),
-classement du consentement bancaire à J-14 à chaque synchro (PR #6), journal
-d'audit append-only des décisions et signatures (PR #7), décisions et
-signatures verrouillées en base (PR #8), contre-passation d'une transaction
-modifiée ou supprimée côté Digifactory (PR #9). scikit-learn épinglé en 1.9.0
-(PR #3). Le détail est coché dans §1.1 (journal), §1.2 (consentements) et
-§1.3 (verrous) ci-dessous. Les PR #6 à #10 avaient été mergées dans des
-branches empilées au lieu de `main` ; rattrapées le même jour par une PR
-unique.
+### Fait depuis le 2026-09-27 (PR #41 à #81)
 
-**Fait le 2026-09-24 (soir) : base applicative sur Supabase** (ADR-003).
-Jusqu'ici seule l'auth y était ; les données restaient sur un Postgres docker
-local. Migrations et seed de démo appliqués sur le projet `AxelCompta-demo`,
-API vérifiée de bout en bout. Le docker local ne sert plus qu'aux tests
-d'intégration, verrouillés sur une base locale. Droits par défaut de `anon`
-et `authenticated` retirés (migration `e4c7a9d25b13`).
+**Liasse et exports (AXE-438, AXE-422, AXE-557, AXE-558 ; 14-15/10 et 24-25/10)**
+- La liasse est contrôlée avant d'être livrée : équilibre, résultat,
+  totaux, contrôles inter-cases (`test_controles_tdfc`).
+- CA3 calculée en centimes et rangée dans la liasse pivot.
+- Réel normal (`regime_liasse = "2050"`) : bilan 2050/2051, compte de
+  résultat 2052/2053, totaux 2054, 2055, 2056, 2058-A et 2058-B, repris des
+  mêmes chiffres que la 2033. Pas de PDF CERFA 2050, pas de lignes de
+  détail. La 2033 reste la liasse par défaut.
+- CCA et FNP : le chauffeur saisit le montant, le compte et le libellé ;
+  l'estimation entre dans la liasse, le FEC et l'aperçu de clôture
+  (`provisions_cloture`). Le moteur ne décide jamais seul d'une provision.
+- FEC : validateur A.47 A-1 (colonnes, dates, équilibre). Il reste un
+  fichier texte, affiché « FEC » à l'écran. Toujours pas passé dans Test
+  Compta Demat (outil Windows de la DGFiP).
+- Une case à zéro reste vide sur les formulaires et les exports ; le FEC
+  garde `0,00`.
+- Bilan simplifié équilibré avec le capital (101x) et les immobilisations
+  (2x) (AXE-421).
+- Amendes : le calcul était déjà juste (CGI art. 39-2), verrouillé par un
+  test (AXE-559).
+- Reste sur AXE-484 (priorité basse) : lignes de détail du 2054, 2057,
+  2058-C, 2059, Test Compta Demat.
 
-**Fait le 2026-09-25 : écran gestionnaire** (PR #13 à #15). Liste des
-entreprises sur `/portefeuille`, deux frises réglementaires par entreprise,
-rappels (règles enregistrées, envoi non branché), équipe avec rôles Admin,
-Membre et Lecture, nom d'organisation, retrait d'une entreprise, liens
-Supabase ouverts dans l'application, premier chargement Digifactory découpé.
-La frise de l'année d'avant montre l'exercice terminé en cours de
-traitement, jamais cochée d'office (doc 19 §2.1).
+**Modules V1 posés (23-25/10)**
+- `anomaly/` (AXE-437) : profil par dossier et détecteurs V1 (personnel,
+  enseigne ambiguë, écart 3σ, doublon de pièce, double plein). Le
+  gestionnaire qualifie une alerte sur `/anomalies/{dossier}`.
+  **Limite : les qualifications sont en mémoire de process**, perdues au
+  redémarrage.
+- `documents/` (AXE-425) : les photos de justificatifs sont en base
+  (`justificatifs`), par tenant et dossier, avec empreinte, 8 Mo max, RLS.
+  La photo n'est toujours pas lue (pas d'OCR).
+- `pseudonymize/` (AXE-436) : seule porte vers un LLM. Un prompt qui
+  contient encore un IBAN, un e-mail, un téléphone, une carte, une plaque,
+  un NIR ou un nom connu du dossier est refusé. `LLMProvider` n'accepte que
+  ce type. **Aucun fournisseur LLM n'est branché.**
+- `jobs/` et `tenants/mfa.py` (AXE-442) : file de jobs Postgres
+  (`FOR UPDATE SKIP LOCKED`, ADR-002), TOTP RFC 6238, rôles lecture,
+  membre, admin. **Posés, pas branchés** : le cron `axelcompta.taches` reste
+  le mécanisme réel, et la connexion ne demande pas encore de code TOTP.
+- Observabilité (AXE-426) : `GET /metrics` (Prometheus), journal JSON,
+  Sentry s'il y a un DSN (vide en local).
+- `api.app` est le point d'entrée (`uvicorn axelcompta.api.app:app`, AXE-428)
+  avec `GET /sante`. Les routes vivent encore dans `demo_api.py` : la
+  migration route par route vers les façades reste à faire.
 
-**Fait le 2026-09-25/26 (PR #17 et #18) :**
-- Frise par jalons : chaque étape après le compte (clôture, signature de
-  validation, greffe, impôts, signature légale) est une preuve dans
-  `documents_signes`, et la frise s'arrête au premier jalon absent
-  (`demo_jalons.py`, `demo_seed.poser_jalons_demo`).
-- Refonte UX du parcours chauffeur (retour du 22/09) : app utilisable au
-  téléphone, jusqu'à la liasse et au greffe.
-- Menu Démo du gestionnaire : remise à neuf à la carte. Les données
-  verrouillées s'effacent par la connexion propriétaire, verrous suspendus
-  le temps d'une seule transaction, portefeuille de démo et admin seulement
-  (`demo_admin.py`, doc 17 §6).
+**Gestionnaire**
+- Mode expert (AXE-560, puis AXE-694/695) : file de tout ce qui est à
+  traiter, tous dossiers confondus, 50 par page, filtres. « Imputer »
+  annonce qu'il écrit en comptabilité, contre-passe l'écriture d'origine,
+  et s'annule.
+- Entreprises (AXE-561, AXE-696/697) : filtres par étape restante, état
+  dans l'URL, tri, pagination à 25, fiche qui reste à l'écran, dossiers
+  retirés qui se restaurent.
+- Rôles appliqués dans l'interface (AXE-701) : le rôle Lecture ne voit pas
+  les actions d'écriture ; retirer un membre pose le rôle `retire`.
+- Invitations (AXE-702) : en masse, renvoi, annulation.
+- Rappels (AXE-698/699) : plus de doublons de règles préfaites, règles
+  suspendables, un seul vocabulaire de relance. L'envoi n'est toujours pas
+  branché et l'écran le dit.
+- Anomalies accessibles depuis le mode expert (AXE-700), navigation et
+  focus clavier (AXE-703).
 
-**Fait le 2026-09-26 (PR #19 à #22) :**
-- État des invitations d'équipe (envoyée ou acceptée) et bon écran au
-  premier clic d'un lien d'invitation (PR #19).
-- Jalons recalés : J2 annulé (tous les formats seront codés), J6 reporté à
-  la toute fin, SMTP de Supabase Auth configuré (PR #20).
-- Notifications internes : la cloche de l'espace chauffeur remplace
-  l'e-mail. Pas de SMTP chez AxeLCompta : e-mail et SMS sont des
-  intégrations du gestionnaire. Cron horaire `axelcompta.taches` (synchro
-  Digifactory puis notifications) installé sur le poste de démo, même
-  script prévu pour le serveur (PR #21, migration `e8c4f1a93b27`).
-- Configuration de dossier sur une matrice statut × régime versionnée
-  (`tenants/matrice_statuts.toml`), validée à chaque écriture ; le moteur
-  lit la matrice pour l'usage personnel, l'IS, la 2065 et le dépôt au
-  greffe (PR #22, migration `f1b6d3e82a47`, §1.1 ci-dessous).
-- Liasse 2031 + 2031-bis sur le formulaire officiel pour les sociétés à
-  l'IR ; l'écran Exercice propose la 2065 ou la 2031 et masque le dépôt au
-  greffe selon la matrice (PR #24, liasse pivot au §3).
-- Fin de l'option IR : alertes N-1/N et bascule vers l'IS enregistrée par
-  avenant daté, append-only, par le cron (§1.1, option IR bornée).
-- Entreprise individuelle au réel opérationnelle : 2031 + 2033, bilan de
-  l'exploitant, sans associés ni dépôt au greffe (§3, liasse pivot).
-- Seuils de la franchise en base de TVA surveillés, alerte au chauffeur et
-  au gestionnaire (§1.3, paramétrage TVA).
-- Passage à l'exercice suivant (`python -m axelcompta.exercices`, simulation
-  par défaut, migration `b8e3f5a1c762`) : refusé tant que l'exercice n'est
-  pas terminé ou que des opérations attendent une décision ; écritures
-  d'inventaire (TVA, IS) passées en base, à-nouveaux (journal AN, résultat
-  en 120 ou 129 en attente d'affectation), exercice clos dans un historique
-  append-only, dossier ouvert sur l'exercice suivant avec le régime de
-  l'avenant en vigueur (fin d'option IR) et la sortie de franchise de TVA
-  si le seuil de base a été dépassé. Rejouable sans doublon. Rien ne le
-  déclenche seul : la décision de clore reste humaine.
-- **Clôture par le chauffeur, et par lui seul** (décision de Louis du
-  2026-09-26) : légalement responsable de sa comptabilité, il doit pouvoir
-  prouver qu'il en reste maître de A à Z ; le gestionnaire n'a aucun droit
-  sur les comptes, seulement une vue. L'automatisation prépare (aperçu de
-  ce que la clôture fera) et relance : notification « exercice terminé,
-  à valider » dans la cloche, puis rappel hebdomadaire, par le cron. Le
-  chauffeur relit et accepte une attestation, gardée mot pour mot avec son
-  identité (`exercices_clos.attestation`, journal d'audit dans la même
-  transaction). Sans sa décision, rien ne se passe. Routes
-  `GET/POST /dossiers/{id}/cloture-exercice`, écran Exercice, migration
-  `c5f2a8d3e914` (droits d'écriture minimaux de l'API, sous les policies
-  par dossier). La ligne de commande ne fait plus que simuler.
-- Report à nouveau : un résultat d'exercice antérieur repris en
-  à-nouveaux et pas encore affecté figure en 2033-A ligne 134, la ligne
-  136 ne portant que le résultat de l'exercice.
-- **Rémunération du dirigeant** catégorisée par le chauffeur lui-même
-  (« Ma rémunération » dans la question de catégorisation) : 644 pour le
-  gérant d'EURL (non salarié), 108 pour l'exploitant d'EI (prélèvement),
-  lus dans la matrice des statuts. Pour une SARL, le compte dépend de la
-  situation du gérant (majoritaire ou non) : demandé plutôt que deviné.
-  **Depuis le 2026-09-27**, le président de SASU/SAS saisit ses bulletins
-  (écran Exercice, « Ma paie » ; `closing/paie.py`) : 641 brut, 645
-  patronales, 431 cotisations, 4421 prélèvement à la source, 421 net à
-  payer ; son virement net solde le 421. Ses cotisations payées à
-  l'URSSAF se catégorisent « Mes cotisations sociales » (431 pour le
-  président, 646 pour le gérant non salarié et l'exploitant). AxeLCompta
-  n'établit ni le bulletin ni la DSN : c'est le rôle d'un logiciel de
-  paie.
-- **Affectation du résultat par le chauffeur, sur son propre écran**
-  (`/chauffeur/{id}/resultat`, sociétés à l'IS) : après la clôture, on
-  chiffre la réserve légale (5 % jusqu'à 10 % du capital), le
-  distribuable (pertes antérieures, report à nouveau) et la trésorerie
-  disponible (après IS, TVA et dividendes déjà dus), puis quatre
-  scénarios du moins au plus de dividendes (tout garder, prudent avec
-  trois mois de charges de côté, la moitié, le maximum), chacun avec son
-  impôt, ses prélèvements sociaux, le net perçu et ce qui reste en
-  société. Le chauffeur retient un scénario ou son propre montant ; sa
-  décision est tracée (table `affectations_resultat`, journal d'audit,
-  migration `d6a9c4e17b83`) et l'écriture solde le résultat (119, 1061,
-  457, 110). Taux par année de versement
-  (`closing/fiscalite_dividendes.toml`) : PFU 12,8 % + prélèvements
-  sociaux 18,6 % en 2026 (LFSS 2026, art. 12), 17,2 % en 2025. Pas chiffré,
-  et dit comme tel : les cotisations du gérant non salarié sur la part au-
-  delà de 10 % du capital, et l'option pour le barème progressif (dépend
-  du foyer).
-- **Versement des dividendes** (2026-09-27, `closing/dividendes.py`,
-  section « Mes dividendes » de l'écran Mon résultat) : le chauffeur
-  déclare la date du versement et, s'il l'a demandée, la dispense du
-  prélèvement forfaitaire ; les retenues à la source (12,8 % sauf
-  dispense, CSG, CRDS, solidarité, taux de l'année du versement) passent
-  du 457 au 4423, avec l'échéance de la déclaration 2777 (le 15 du mois
-  suivant). Le virement net se catégorise « Mes dividendes » (457), le
-  paiement de la 2777 « Impôts sur mes dividendes » (4423). Pas produit :
-  le formulaire 2777 lui-même.
+**Chauffeur**
+- Ticket : une photo vise une seule dépense, nommée avant l'envoi (AXE-483).
+- Squelettes de chargement, blocs remplis dans l'ordre d'arrivée (AXE-562).
+- Correctifs de la revue UX d'Arthur (AXE-704, 05/11) : un seul « résultat
+  à ce jour » (AXE-688), écran Exercice dans l'ordre avec étapes bloquées
+  tant qu'il reste à traiter, et l'API refuse la liasse et la signature
+  greffe dans ce cas (AXE-687), cloche bornée avec un lien par type
+  (AXE-691), cibles de 44 px et contrastes AA (AXE-692), langage en effets
+  plutôt qu'en codes (AXE-689), erreurs d'authentification en français
+  (AXE-693), À traiter avec une carte à la fois, un compteur et « Annuler »
+  (AXE-686, #81).
 
-**Fait le 2026-09-27 (PR #33 à #35) :**
-- Dossiers de démo branchés sur les contacts Digifactory réels
-  (`scripts/ajouter_chauffeurs_digifactory.py`) : un dossier `DIGI_<nr>` et un
-  compte fictif par contact, forme juridique reprise de Sirene quand le
-  contact a un SIREN, puis synchro. Les 6 dossiers existent ; 2 ont des
-  transactions (338 et 2 049), et **aucun des deux n'est un chauffeur VTC**
-  (un employeur qui verse la paie de sa flotte, une activité de services).
-  La remise à neuf de la démo ne touche pas ces dossiers.
-- Écran chauffeur : forme et régime affichés, proposition du modèle
-  confirmable en un geste (« Oui, c'est ça »).
-- **ML, enquête sur ces deux dossiers** : presque aucune ligne bien traitée.
-  Causes trouvées et corrigées :
-  - bug de signe : le modèle, entraîné en convention FEC (charge positive),
-    recevait des montants bancaires (encaissement positif) ; chaque
-    encaissement lui arrivait comme une dépense ;
-  - aucune garde de sens : 40 % et 69 % des propositions proposaient une
-    charge pour un encaissement ou l'inverse. Plus aucune, pour les règles
-    comme pour le modèle ;
-  - aucune abstention : sous 0,5 de confiance, l'écran dit « pas de
-    proposition automatique » ;
-  - taxonomie trop étroite : `compte_courant_associe` (455, 108 en EI),
-    `virement_interne` (580) et `salaires_personnel` (421) ajoutés ; 1 302
-    mouvements de compte courant d'associé du jeu d'audit étaient jetés de
-    l'entraînement.
-- **Modèle v2** (`_AUDIT_DONNEES/entrainer_modele.py`, pondération en racine,
-  validation croisée en 5 plis par dossier) : 78,9 % d'exactitude, 72,6 % des
-  lignes proposées à 0,5 et justes à 91,1 % (v1 sur les mêmes plis : 76,2 %,
-  64 %, 91,6 %).
-- **Le ML apprend des décisions** : une opération semblable à une opération
-  déjà tranchée par l'indiv reprend sa catégorie en proposition
-  (`categorize/appris.py`), et `entrainer_modele.py --decisions` réentraîne
-  sur les décisions en base. Aucune décision en base au 2026-09-27.
-- Tous les seuils sont choisis sur le jeu d'audit, jamais sur les dossiers
-  réels. Karim, Sophie et Yanis ne passent que par les règles : la démo
-  n'exerce pas l'étage ML, et leurs 310 écritures n'ont pas bougé.
-- **Confirmation groupée** (PR #37) : une décision, et les opérations
-  semblables du dossier sont proposées ensemble (« N opérations
-  ressemblent… », liste consultable, « Tout classer »), écrites en une
-  seule transaction, tout ou rien. La proposition de chaque opération à
-  trancher est désormais calculée à la lecture (décisions de l'indiv, puis
-  règles et modèle en vigueur) et affiche son origine (« Proposition du
-  modèle (72 %) »), ce qui rafraîchit d'office les dossiers `DIGI_`. Sur
-  `DIGI_4952`, une décision « SOLDE SALAIRE » en propose 295 autres, toutes
-  des salaires. Une seule ligne `DIGI_` reste imputée à tort par l'ancien
-  modèle (un encaissement « LOCATION » en 6135, verrouillé).
-- **Calibration et seuils par catégorie** (PR #39) : confiance calibrée
-  (ECE 0,097 -> 0,019), proposition au-dessus de 0,6, imputation
-  automatique au-dessus de 0,95 pour 9 catégories admises seulement
-  (29,8 % des lignes, 98,5 % justes en validation croisée imbriquée). Au
-  seuil global de 0,90, `subventions` s'imputait juste à 63,6 % : exclue,
-  comme les catégories à enjeu et à risque d'usage personnel. Les règles
-  « repas » et « usage personnel suspect » passent en confiance basse : à
-  0,75, elles atteignaient le seuil d'imputation des règles malgré leur
-  mention « pas d'auto-validation ».
-- Restent ouverts : les ventes de services (TVA collectée à trancher avant
-  d'en faire une catégorie), le bulletin des salariés (seul le net en 421
-  est passé), et les propositions déjà en base des dossiers `DIGI_` (non
-  recalculées ; il faut effacer ces dossiers et resynchroniser).
+**Performance (Arthur, 31/10, mergé le 04/11)**
+- Le pipeline garde son résultat par (libellé, montant) ; Exercice et
+  Compte ne chargent plus les opérations (AXE-565).
+- La file expert ne calcule plus de propositions et lit chaque dossier une
+  fois (AXE-567).
+- Agrégats du portefeuille en base (`agregats_dossier`, invalidés par
+  triggers, migration `e7b3d9a15c42`) : la page Entreprises ne reconstruit
+  plus chaque dossier (AXE-566).
 
-**Jalons recalés** (proposition à confirmer ; tant qu'aucune date externe
-n'est imposée, on suit l'ordre plutôt que les dates) :
+### En cours (05/11)
 
-| Jalon | Cible | Pourquoi dans cet ordre |
-|---|---|---|
-| J1. 500 lignes relues (~2 h avec la pré-passe), **week-end uniquement**. **7/500 au 2026-09-27** | 2026-09-26/27 | Débloque la vraie mesure ML et le premier jeu de test gelé |
-| ~~J2. Liste pilote statut/régime/TVA par chauffeur~~ **Annulé le 2026-09-26** (décision de Louis) : on code tous les formats (SASU, SAS, EURL, SARL, EI, IS, IR, franchise ou réel de TVA), le mélange exact du pilote n'a plus à être collecté à l'avance. Le statut de chaque dossier reste à renseigner, dossier par dossier, quand il est créé | annulé | |
-| J3. Digifactory branché, synchro idempotente avec curseur, archive brute et quarantaine (**code fait le 2026-09-22**, doc 18) ; reste : un vrai dossier de bout en bout. Digifactory n'a que 6 contacts au 2026-09-26, c'est attendu : la démo sert à obtenir l'engagement du pilote, les chauffeurs y seront ajoutés ensuite. Le vrai dossier de bout en bout peut se faire sur l'un des 6. **Au 2026-09-27** : les 6 dossiers `DIGI_` existent, 2 ont des transactions, aucun n'est un chauffeur VTC ; reste à dérouler l'un d'eux de bout en bout (trancher, clôturer) | 2026-10-02 | Premier flux réel, remplace les fixtures |
-| J4. Auth gestionnaire réelle + Postgres branché dans l'API + migrations (**fait le 2026-09-21**, doc 18) | fait | Aujourd'hui tout est en mémoire, `UTILISATEUR_DEMO` en dur |
-| J5. Notifications + invitations en masse (**code fait le 2026-09-22**). **Notifications internes depuis le 2026-09-26** (cloche de l'espace chauffeur, plus d'e-mail : e-mail et SMS sont des intégrations du gestionnaire) et **cron installé** (`axelcompta.taches`, toutes les heures sur le poste de démo, même script sur le futur serveur). SMTP de Supabase Auth configuré le 2026-09-26 (invitations plus plafonnées) | fait | |
-| J6. Premier échange expert-comptable (taxonomie, templates, question CCA/FNP). **Reporté tout à la fin le 2026-09-26** (décision de Louis) : aucun expert-comptable disponible aujourd'hui, pas de moyen de le lancer. Ne pas le relancer d'ici là | tout à la fin | Reste un prérequis de la V1 |
+- PR #82 (AXE-704) : annuler une décision et refuser la liasse tant qu'il
+  reste à traiter. En revue.
+- PR #83 (AXE-690) : états vides et erreurs du chauffeur, toujours une
+  action. En revue.
+- **Bug ouvert AXE-685** : les provisions de clôture peuvent être écrasées
+  après une lecture ratée. Priorité haute, à corriger avant tout dossier
+  réel.
 
-**À lancer en parallèle dès cette semaine (attente externe, coût faible) :**
-devis de signature qualifiée RGS (ADR-004), trame CGU/CGV/DPA, relance
-Digifactory pour le volume initial découpé (doc 16 §5).
+### Prévu
 
-**Contrainte de rythme (2026-09-21) :** les tâches qui demandent le jugement de Louis sur les données (relecture des 500 lignes, données pilote) ne se font que le week-end ; la semaine est réservée au code. Le J4 et le J5 sont donc les jalons de semaine, faisables sans attendre J1.
+**Novembre — confiance client : un mois réel exporté** (AXE-767, urgent).
+Dans l'ordre :
 
-**Capacité :** 1 dev seul, et cette estimation ne réserve aucun temps pour
-d'autres engagements (mémoire, études). Si un autre chantier prend la même
-énergie, les cibles glissent d'autant ; le J1 est le seul qui ne
-doit pas glisser, parce que tout le reste en dépend.
+1. AXE-726 : le script de démo ne crée plus tous les contacts Digifactory.
+2. AXE-727 : dossiers pilotes des vrais chauffeurs, hors démo.
+3. AXE-729 : retenir les comptes professionnels d'un contact Digifactory.
+4. AXE-728 : première synchro et bulletin de connexion des chauffeurs réels.
+5. AXE-731 : versement de plateforme sans l'éclater, en attendant Rollee ;
+   AXE-732 : mesurer le pack VTC sur ce premier flux réel.
+6. **AXE-733 (le jalon)** : un mois d'un dossier réel, tranché, équilibré,
+   exporté.
+
+À côté : AXE-730 (le chauffeur confirme sa configuration et entre avec son
+e-mail), AXE-768 (contre-passations des décisions humaines AXE-420 et
+depuis la quarantaine Digifactory AXE-424).
+
+**Décembre — prod fiable au 31/12** (AXE-770, échéance 15/12)
+- AXE-427 : branche prod et déploiement continu.
+- AXE-441 : décider du périmètre de la signature qualifiée RGS (devis
+  Yousign/Docusign, ADR-004), puis le circuit clôture → archive.
+
+**Après, ou à trancher**
+- AXE-440 : pack VTC complet, Rollee réel, relecture par un
+  expert-comptable. À trancher : Rollee est-il bloquant, ou AXE-731
+  suffit-il pour le pilote ?
+- AXE-423 : finir l'audit du dataset 10 ans. La relecture des 500 lignes
+  (ancien J1) en est toujours à 7/500.
+- AXE-433 : connexion bancaire directe par le chauffeur (basse priorité).
+- AXE-484 : annexes 2054 à 2059 en détail et Test Compta Demat (basse).
+
+### Décisions à prendre (ouvertes dans Linear)
+
+- AXE-766 : valider la définition de « fini » pour novembre (un mois réel
+  exporté et l'UX P0, pas tout le polish) et pour décembre (déploiement
+  continu et décision RGS).
+- AXE-769 : limiter l'UX en cours à 3 tickets pour laisser la place à
+  l'ingestion réelle.
+
+### Ce qui reste vrai de septembre
+
+- Pas d'expert-comptable avant la toute fin (décision du 26/09). La table
+  comptes → rubriques suit la notice, sans relecture professionnelle. Reste
+  un prérequis de la V1.
+- Tous les statuts sont codés (SASU, SAS, EURL, SARL, EI ; IS, IR, option
+  IR ; franchise ou réel de TVA). Micro-entreprise non faite.
+- La clôture est décidée par le chauffeur, et par lui seul. Le gestionnaire
+  ne voit que des agrégats.
+- Pas de SMTP chez AxeLCompta : la cloche est le canal, e-mail et SMS
+  seront des intégrations du gestionnaire.
+- À lancer en attente externe : devis de signature RGS, trame CGU/CGV/DPA.
 
 ## Vue d'ensemble des phases
 
 ```mermaid
 gantt
     dateFormat  YYYY-MM
-    title Trajectoire AxeLCompta (ordres de grandeur, 2 devs)
+    title Trajectoire AxeLCompta (ordres de grandeur d'août, non recalés)
     section Phase 0 — Cadrage
     Validation docs, juridique, données   :p0, 2026-06, 2M
     section Phase 1 — Fondations
@@ -309,7 +246,7 @@ la phase suivante avec des invariants non tenus.
 - [x] Table de mapping comptes historiques → taxonomie — **fait (2026-09-02)**, brouillon (`_AUDIT_DONNEES/packs_vtc/mapping_pcg_categorie.csv`), même réserve que ci-dessus.
 - [ ] 500 lignes relues à la main = premier jeu de test gelé. Échantillon
       généré (`_AUDIT_DONNEES/resultats/echantillon_500_a_relire.csv`),
-      **7/500 relues à ce jour (2026-09-21)**, outillage prêt
+      **7/500 relues au 2026-11-05** (inchangé depuis le 21/09, AXE-423), outillage prêt
       (`relecture_rapide.py`, pré-passe qui réduit à ~200 lignes à regarder).
       Prévu le week-end du 2026-09-12/13, **non fait** ; nouvelle cible dans le
       recalage ci-dessous.
@@ -359,8 +296,8 @@ testé (ou développement mené contre fixtures si le token reste bloqué — do
       au suivant, qui n'existe pas encore dans le code (un dossier n'a
       qu'un exercice) et devra lire `regime_pour_exercice`.
 - [ ] **Création de dossiers en masse** : import CSV/XLSX de la configuration (SIREN, forme, régime, dates d'exercice, option IR…) pour onboarder 200 dossiers sans 200 saisies manuelles, avec rapport de validation avant création.
-- [ ] Auth B2B : email + MFA TOTP, rôles V1, journal d'audit append-only. **Tranche journal (2026-09-24)** : décisions et signatures seulement (`journal_audit`). Auth/MFA et le journal consultations/exports restent ouverts.
-- [ ] Observabilité : logs JSON structurés, Sentry, premières métriques.
+- [ ] Auth B2B : email + MFA TOTP, rôles V1, journal d'audit append-only. **Tranche journal (2026-09-24)** : décisions et signatures seulement (`journal_audit`). Auth/MFA et le journal consultations/exports restent ouverts. **Posés le 2026-10-25 (AXE-442)** : TOTP RFC 6238 (`tenants/mfa.py`) et rôles lecture/membre/admin, appliqués dans l'interface gestionnaire le 2026-11-04 (AXE-701). Le TOTP n'est pas encore demandé à la connexion ; connexion, export et consultation ne sont pas encore journalisés.
+- [x] Observabilité : logs JSON structurés, Sentry, premières métriques. **Fait le 2026-10-25 (AXE-426)** : `GET /metrics` Prometheus, journal JSON, Sentry si `SENTRY_DSN` est posé. Restent les dashboards et l'alerting (doc 15).
 
 ### 1.2 Ingestion
 - [ ] Archivage brut immuable (hash, horodatage) de tout ce qui entre.
@@ -431,29 +368,33 @@ couverture ledger ≥ 95 %.
 - [ ] Monitoring de dérive (taux de correction par classe, confiances).
 
 ### 2.3 LLM
-- [ ] **Module de pseudonymisation + tests de fuite bloquants** (doc 10 §4) — avant le premier appel réel.
-- [ ] Abstraction LLMProvider (Claude/Gemini/OpenAI), sortie JSON schema contrainte, retry/fallback, cache par libellé-type, budget par tenant.
+- [x] **Module de pseudonymisation + tests de fuite bloquants** (doc 10 §4) — avant le premier appel réel. **Fait le 2026-10-25 (AXE-436)** : `pseudonymize/`, `tests/pseudonymize/test_fuite.py`.
+- [ ] Abstraction LLMProvider (Claude/Gemini/OpenAI), sortie JSON schema contrainte, retry/fallback, cache par libellé-type, budget par tenant. **Interface posée le 2026-10-25** (n'accepte qu'un prompt pseudonymisé ; le LLM seul n'impute jamais) ; aucun fournisseur branché.
 - [ ] Politique de décision ML×LLM (doc 05 §4) + journalisation des motifs d'escalade.
 
 ### 2.4 Pipeline assemblé + revue humaine
 - [ ] Orchestration 4 étages + auto-validation configurable par tenant.
-- [ ] **File de revue** (l'écran clé, doc 11 §3.1) avec raccourcis clavier — **côté indiv, pas gestionnaire, depuis le 2026-09-11 (doc 19 §5.2)**, déclenchée par notification au fil de l'eau plutôt qu'en session groupée.
+- [ ] **File de revue** (l'écran clé, doc 11 §3.1) avec raccourcis clavier — **côté indiv, pas gestionnaire, depuis le 2026-09-11 (doc 19 §5.2)**, déclenchée par notification au fil de l'eau plutôt qu'en session groupée. **Existe** : « À traiter » du chauffeur (une carte à la fois, raccourci O, « Annuler », 05/11) et mode expert du gestionnaire (AXE-560). Restent les contre-passations des décisions humaines (AXE-420).
 - [ ] Boucle de feedback : corrections → labels → réentraînement mensuel → rapport.
 - [ ] Tests de la matrice de scénarios pipeline (doc 09 §2.3).
 
 ### 2.5 Anomalies
-- [ ] **Profils comportementaux par dossier** (doc 05 §6.2, doc 07 §3.3) : agrégats incrémentaux par catégorie, construits automatiquement à l'import de l'historique.
-- [ ] Détecteurs V1 : catégories personnelles, enseigne ambiguë sans/avec ticket incohérent, écart au profil comportemental (3σ), doublons de pièce, double plein.
-- [ ] Cycle de vie d'alerte + UI d'instruction (doc 11 §3.2, écart au profil affiché) + templates comptables de résolution (455/108 selon statut du dossier).
+- [x] **Profils comportementaux par dossier** (doc 05 §6.2, doc 07 §3.3) — **fait le 2026-10-24 (AXE-437)**, recalculés à la lecture : agrégats incrémentaux par catégorie, construits automatiquement à l'import de l'historique.
+- [x] Détecteurs V1 : catégories personnelles, enseigne ambiguë sans/avec ticket incohérent, écart au profil comportemental (3σ), doublons de pièce, double plein. **Fait le 2026-10-24 (AXE-437).**
+- [ ] Cycle de vie d'alerte + UI d'instruction (doc 11 §3.2, écart au profil affiché) + templates comptables de résolution (455/108 selon statut du dossier). **UI d'instruction faite le 2026-10-24** (`/anomalies/{dossier}`, ouverte → en instruction → justifiée, usage personnel ou faux positif). **Les qualifications sont en mémoire de process** : à persister en base avant le pilote.
 - [ ] Jeu d'évaluation : abus historiques connus + abus synthétiques injectés ; mesure rappel/précision.
 
 ### 2.6 Justificatifs
-- [ ] Stockage WORM, upload UI + adresse email par dossier.
+- [ ] Stockage WORM, upload UI + adresse email par dossier. **Upload et stockage en base faits le 2026-10-24 (AXE-425)** : table `justificatifs`, par tenant et dossier, empreinte, 8 Mo max, RLS. Pas encore WORM, pas d'adresse e-mail par dossier.
 - [ ] Cascade extraction : PDF natif → Factur-X → OCR → Vision LLM, confiance par champ.
 - [ ] Matching justificatif↔transaction scoré + file de matching manuel + orphelins.
 - [ ] Golden tests OCR (corpus 200 documents annotés).
 
-### 2.7 Accès chauffeur en libre-service (mobile) — cadré dans doc 19, pas encore codé
+### 2.7 Accès chauffeur en libre-service (mobile) — cadré dans doc 19, codé pour l'essentiel
+
+> **Au 2026-11-05** : l'espace chauffeur existe (Activité, À traiter, Exercice,
+> Mon résultat, Compte, cloche) et a été repris après la revue UX AXE-563.
+> Le texte ci-dessous date de septembre ; les items ouverts restent valables.
 
 Contredit le modèle initial : doc 11 §3.3 disait que la page de signature
 est « seul écran vu par le chauffeur/gérant » (zéro compte, lien + OTP) ;
@@ -522,8 +463,8 @@ zéro fuite au test de pseudonymisation.
 ## Phase 3 — Production comptable complète
 
 - [ ] Checklist de clôture automatisée (doc 06 §5) : CCA/FNP assistées, cadrage TVA, dotations, réintégrations fiscales (plafonds VP, LOA), IS.
-- [ ] **Liasse pivot** case-par-case alignée dictionnaire TDFC, formulaires sélectionnés par le statut du dossier : 2065 + 2050/2033 (IS) et 2031 + annexes (option IR) + contrôles de cohérence inter-cases. **Avancé le 2026-09-23 (doc 17 §15)** : 2065 + 2033-A à G complets pour l'IS au régime simplifié, cases indexées par le code officiel, sans relecture d'expert-comptable (décision démo). **2031 + 2031-bis faits le 2026-09-26** pour la colonne à l'IR (EURL, SARL de famille, option 239 bis AB), 2033 jointe, pas d'IS ni de 2065 ; la colonne `societe_ir` de la matrice passe opérationnelle, et l'écran Exercice propose la 2065 ou la 2031 et masque le dépôt au greffe selon la matrice. **EI au réel opérationnelle le 2026-09-26** : 2031 + 2033, apport et prélèvements au compte de l'exploitant (108, capital individuel en 2033-A ligne 120), ni associés (2031-bis cadre E) ni composition du capital (2033-F), pas de dépôt au greffe ; dossier de référence `tests/closing/test_reference_ei_reel.py`. Restent : 2050-2059 (réel normal), alignement sur le dictionnaire TDFC, contrôles inter-cases formalisés.
-- [ ] Renderers : FEC final (CI « Test Compta Demat »), PDF liasse fidèle CERFA, balance/GL/journaux exports, CA3 pré-remplie (CA12 en lecture d'historique seulement, doc 02 §7bis). **Avancé le 2026-09-23** : FEC conforme au texte de l'A.47 A-1 (pas encore passé dans Test Compta Demat), PDF 2065 + 2033 sur les formulaires officiels 2026, grand livre et balance en PDF.
+- [ ] **Liasse pivot** case-par-case alignée dictionnaire TDFC, formulaires sélectionnés par le statut du dossier : 2065 + 2050/2033 (IS) et 2031 + annexes (option IR) + contrôles de cohérence inter-cases. **Avancé le 2026-09-23 (doc 17 §15)** : 2065 + 2033-A à G complets pour l'IS au régime simplifié, cases indexées par le code officiel, sans relecture d'expert-comptable (décision démo). **2031 + 2031-bis faits le 2026-09-26** pour la colonne à l'IR (EURL, SARL de famille, option 239 bis AB), 2033 jointe, pas d'IS ni de 2065 ; la colonne `societe_ir` de la matrice passe opérationnelle, et l'écran Exercice propose la 2065 ou la 2031 et masque le dépôt au greffe selon la matrice. **EI au réel opérationnelle le 2026-09-26** : 2031 + 2033, apport et prélèvements au compte de l'exploitant (108, capital individuel en 2033-A ligne 120), ni associés (2031-bis cadre E) ni composition du capital (2033-F), pas de dépôt au greffe ; dossier de référence `tests/closing/test_reference_ei_reel.py`. **Réel normal et contrôles faits les 14-15/10 (AXE-438)** : contrôles inter-cases avant livraison, 2050/2051, 2052/2053 et totaux 2054, 2055, 2056, 2058-A, 2058-B repris des chiffres de la 2033, sans PDF ni lignes de détail. Restent (AXE-484) : lignes de détail du 2054, 2057, 2058-C, 2059, PDF CERFA du réel normal.
+- [ ] Renderers : FEC final (CI « Test Compta Demat »), PDF liasse fidèle CERFA, balance/GL/journaux exports, CA3 pré-remplie (CA12 en lecture d'historique seulement, doc 02 §7bis). **Avancé le 2026-09-23** : FEC conforme au texte de l'A.47 A-1 (pas encore passé dans Test Compta Demat), PDF 2065 + 2033 sur les formulaires officiels 2026, grand livre et balance en PDF. **Le 2026-10-14** : CA3 calculée dans le pivot, validateur FEC A.47 A-1 (ce n'est pas Test Compta Demat). Le FEC reste un fichier texte (AXE-422). Cases à zéro laissées vides sauf dans le FEC (AXE-557).
 - [ ] Dossier de dépôt comptes annuels (Guichet Unique INPI) — génération, dépôt manuel documenté.
 - [ ] Dossiers de référence supplémentaires (EURL avec LOA, EURL option IR clôturée, dossier traversant la **fin d'option IR** : exercice N en IR → N+1 en IS) en golden tests — un par colonne opérationnelle de la matrice doc 06 §7.
 - [ ] Circuit de validation/relecture interne (statuts, verrous, doc 02 §2.3 — l'humain valide, c'est journalisé).

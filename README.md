@@ -11,8 +11,11 @@ compta), statut juridique et régime fiscal configurés **par dossier** (EURL ic
 SASU là, micro demain), et des « packs métier » par secteur dont le VTC n'est que
 le premier.
 
-**Où lire l'état du projet :** un seul endroit, le
-[doc 12](docs/12-roadmap-todo.md) (fait, en cours, jalons). Le plan de la
+**Où lire l'état du projet :** dans le repo, un seul endroit, le
+[doc 12](docs/12-roadmap-todo.md) (fait, en cours, prévu ; à jour au
+2026-11-05). Le suivi au jour le jour est dans Linear, projet
+[Axel Compta — V1 prod](https://linear.app/axel-project/project/axel-compta-v1-prod-api-ingestion-fiabilite-899778ce7b41),
+cible le 31/12/2026. Le plan de la
 démo est le [doc 17](docs/17-plan-demo-backend.md), la carte du code le
 [doc 18](docs/18-organisation-code.md). L'historique daté (journaux de
 sprint, notes de session) est dans [docs/archive](docs/archive/) et ne se
@@ -77,7 +80,9 @@ met plus à jour.
 
 1. **Auditer les 10 ans de données** — en particulier vérifier que le lien
    « libellé bancaire → imputation comptable » existe (doc 07 §2.1). C'est le
-   risque n° 1 du projet.
+   risque n° 1 du projet. Le lien est vérifié (2026-09-02) ; la relecture des
+   500 lignes qui donne la vraie mesure ML en est à 7/500 au 2026-11-05
+   (AXE-423).
 2. ~~Collecter la liste exacte statut par chauffeur~~ **Annulé le 2026-09-26** :
    tous les formats seront codés (doc 12, J2).
 

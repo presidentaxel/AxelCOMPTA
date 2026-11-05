@@ -2,7 +2,7 @@
 
 > Carte du code : où vit chaque module et quelles dépendances il a le droit
 > d'avoir. L'état d'avancement n'est pas ici, il est dans le
-> [doc 12](12-roadmap-todo.md). Dernière mise à jour : 2026-09-26.
+> [doc 12](12-roadmap-todo.md). Dernière mise à jour : 2026-11-05.
 
 Ce doc fait le lien entre l'arborescence réelle du repo (`backend/`,
 `frontend/`) et le découpage en modules défini en [doc 03 §3](03-architecture.md#3--découpage-en-modules-monolithe-modulaire).
@@ -28,14 +28,16 @@ AxeLCompta/
 │   ├── packs/         # pack VTC réduit (V1 : taxonomie complète)
 │   ├── ingestion/
 │   │   └── providers/ # DataProvider ; démo sur fixtures, synchro Digifactory codée
-│   ├── documents/     # V1 (OCR) ; les justificatifs photo de la démo sont dans demo_justificatifs.py
+│   ├── documents/     # justificatifs en base, par tenant et dossier (AXE-425) ; OCR en V1
 │   ├── categorize/    # règles + ML (garde de sens, abstention) + propositions apprises des décisions, pas de LLM
-│   ├── anomaly/       # V1 seulement
+│   ├── anomaly/       # profils par dossier, détecteurs V1 (AXE-437) ; qualifications encore en mémoire
 │   ├── ledger/        # moteur pur, Postgres, écritures validées immuables
 │   ├── closing/       # clôture fiscale : TVA, IS (si la colonne est à l'IS), liasse 2033
 │   ├── filings/       # CERFA 2065, 2031 et 2033 officiels, FEC légal, PDF (V1 : EDI/INPI)
 │   ├── workflow/      # décisions humaines, signatures démo, journal d'audit, notifications internes
-│   ├── api/           # V1 ; la démo passe par demo_api.py (Supabase Auth, gardé en V1 : ADR-003)
+│   ├── api/           # point d'entrée api.app (+ /sante, /metrics) ; les routes vivent encore dans demo_api.py
+│   ├── pseudonymize/  # seule porte vers un LLM : prompt pseudonymisé, LLMProvider (aucun fournisseur branché)
+│   ├── jobs/          # file de jobs Postgres (ADR-002), posée, pas encore utilisée par le cron
 │   └── ml/            # V1 ; le modèle (v2) s'entraîne dans _AUDIT_DONNEES/entrainer_modele.py
 ├── frontend/          # Next.js : écrans gestionnaire (web) et chauffeur (mobile), auth Supabase
 └── _AUDIT_DONNEES/    # audit du dataset historique, source pour packs/ et categorize/
@@ -68,6 +70,8 @@ graph TD
     workflow --> categorize
     workflow --> ingestion
     workflow --> ledger
+    pseudonymize["pseudonymize"] --> core
+    jobs["jobs"] --> core
     ml["ml"] -. artefact chargé, jamais importé .-> categorize
     api["api"] -. façades publiques seulement .-> tenants
     api -. façades publiques seulement .-> categorize
@@ -113,7 +117,16 @@ paquet : `demo_api.py` (l'API), `synchro_digifactory.py`, `notifier.py`,
 `taches.py` (les tâches planifiées, lancées par
 `scripts/taches_planifiees.sh` depuis un cron), `exercices.py` (le
 passage d'un dossier à l'exercice suivant) et `affectations.py`
-(l'affectation du résultat décidée par le chauffeur). `demo_digifactory.py`
+(l'affectation du résultat décidée par le chauffeur), et depuis le
+2026-11-04 `agregats_portefeuille.py` (`--recalculer` remplit la table
+`agregats_dossier` de la page Entreprises, `--verifier` la compare au
+calcul complet).
+
+`api/app.py` est le point d'entrée HTTP depuis le 2026-10-25
+(`uvicorn axelcompta.api.app:app`). Il sert l'app construite par
+`demo_api.py` : l'arête `api.app -> demo_api` est la seule exception
+d'import-linter (`pyproject.toml`), à retirer quand chaque route passera
+par la façade de son module (AXE-428). `demo_digifactory.py`
 porte le mapping contact Digifactory → dossier de démo, appelé par
 `scripts/ajouter_chauffeurs_digifactory.py`.
 
