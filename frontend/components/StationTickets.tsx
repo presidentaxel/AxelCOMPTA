@@ -2,73 +2,35 @@
 
 import { useRef, useState } from "react";
 
-import { QuestionCategorisation } from "@/components/QuestionCategorisation";
 import { ApiError } from "@/lib/api";
 import { joindreJustificatifChauffeur } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
-import { libelleCategorie } from "@/lib/libelles-chauffeur";
+import {
+  TICKETS_PAR_PAGE,
+  categorieDe,
+  categorieIncertaine,
+  ticketPrioritaire,
+} from "@/lib/tickets";
 import type { TransactionVue } from "@/lib/types";
 
 const JOUR = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
 const ANNEAU =
   "outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]";
 
-/** Le libellé bancaire suffit : le ticket ne sert pas à classer. */
-const CATEGORIES_CLAIRES = new Set([
-  "carburant",
-  "peage_stationnement",
-  "entretien_reparation_vehicule",
-  "assurance_vehicule",
-  "telecommunications",
-  "recettes_plateformes",
-  "amendes_infractions",
-  "honoraires_comptable_juridique",
-  "charges_sociales_impots",
-  "loyers_locations",
-  "virement_interne",
-  "compte_courant_associe",
-  "remuneration_dirigeant",
-  "frais_bancaires",
-  "abonnements_logiciels",
-  "fournitures_administratives",
-  "subventions",
-  "salaires_personnel",
-  "usage_personnel",
-]);
-
-/** Le ticket est ce qui permet de savoir ce qui a été acheté. */
-function categorieIncertaine(categorie: string): boolean {
-  return (
-    categorie === "usage_personnel_suspect" ||
-    categorie === "non_categorise_a_verifier" ||
-    categorie.startsWith("a_verifier")
-  );
-}
-
-/** Priorité : la pièce sert à lire l'achat et à classer l'écriture.
- * Une dépense déjà claire (carburant, péage, téléphone…) n'est pas demandée. */
-export function ticketPrioritaire(depense: TransactionVue): boolean {
-  if (depense.montant_cts >= 0 || depense.a_justificatif) return false;
-  const categorie = categorieDe(depense);
-  if (categorie !== null && categorieIncertaine(categorie)) return true;
-  if (depense.statut !== "à trancher") return false;
-  return categorie === null || !CATEGORIES_CLAIRES.has(categorie);
-}
+export { ticketPrioritaire };
 
 /** Le ticket se pose sur la dépense qui ne se classe pas sans lui. */
 export function StationTickets({
   dossierId,
   depenses,
   onJointe,
-  onTranche,
 }: {
   dossierId: string;
   depenses: TransactionVue[];
   onJointe: (transaction: TransactionVue) => void;
-  onTranche: (transaction: TransactionVue, libelle: string) => void;
 }) {
   const [ouvert, setOuvert] = useState(false);
-  const [index, setIndex] = useState(0);
+  const [plafond, setPlafond] = useState(TICKETS_PAR_PAGE);
   const prioritaires = depenses
     .filter(ticketPrioritaire)
     .sort(
@@ -79,50 +41,41 @@ export function StationTickets({
     );
 
   if (prioritaires.length === 0) return null;
-  const place = Math.min(index, prioritaires.length - 1);
-  const courant = prioritaires[place];
-  if (!courant) return null;
+  const visibles = ouvert ? prioritaires.slice(0, plafond) : [];
 
   return (
     <section className="mt-6 border-b border-hairline pb-4">
-      <button
-        type="button"
-        aria-expanded={ouvert}
-        onClick={() => setOuvert((actuel) => !actuel)}
-        className={`flex min-h-11 w-full items-center justify-between text-left ${ANNEAU}`}
-      >
-        <span>
-          <span className="block text-base font-semibold text-ink">Tickets · {prioritaires.length}</span>
-          <span className="mt-0.5 block text-sm text-subtle">{phrase(prioritaires.length)}</span>
-        </span>
-        <span className="text-sm font-medium text-primary">{ouvert ? "Replier" : "Voir"}</span>
-      </button>
-      {ouvert && (
-        <div className="mt-3">
-          <p className="text-sm font-medium text-ink">
-            {place + 1} sur {prioritaires.length}
-          </p>
-          <LigneTicket dossierId={dossierId} depense={courant} onJointe={onJointe} />
-          {courant.statut === "à trancher" && (
-            <div className="mt-3">
-              <QuestionCategorisation
-                dossierId={dossierId}
-                ecritureId={courant.ecriture_id}
-                montantCts={courant.montant_cts}
-                proposition={
-                  courant.proposition
-                    ? { code: courant.proposition, libelle: libelleCategorie(courant.proposition) }
-                    : null
-                }
-                origine={courant.origine_proposition}
-                onResolu={(transaction, libelle) => {
-                  onTranche(transaction, libelle);
-                  setIndex(place);
-                }}
-              />
-            </div>
-          )}
-        </div>
+      <h2>
+        <button
+          type="button"
+          aria-expanded={ouvert}
+          onClick={() => setOuvert((valeur) => !valeur)}
+          className={`flex min-h-11 w-full items-center text-left text-base font-semibold text-ink ${ANNEAU}`}
+        >
+          {ouvert ? "Replier les tickets" : `Tickets · ${prioritaires.length}`}
+        </button>
+      </h2>
+      <p className="mt-1 text-sm text-subtle">{phrase(prioritaires.length)}</p>
+      {visibles.length > 0 && (
+        <ul className="mt-2">
+          {visibles.map((depense) => (
+            <LigneTicket
+              key={depense.ecriture_id}
+              dossierId={dossierId}
+              depense={depense}
+              onJointe={onJointe}
+            />
+          ))}
+        </ul>
+      )}
+      {ouvert && prioritaires.length > plafond && (
+        <button
+          type="button"
+          onClick={() => setPlafond((valeur) => valeur + TICKETS_PAR_PAGE)}
+          className={`mt-2 min-h-11 rounded-md px-1 text-sm font-medium text-primary ${ANNEAU}`}
+        >
+          Voir la suite
+        </button>
       )}
     </section>
   );
@@ -196,11 +149,7 @@ function LigneTicket({
       >
         {envoi ? "Envoi…" : `Ajouter le ticket de ${nom}`}
       </button>
-      {erreur && (
-        <p role="alert" className="mt-1 text-sm text-danger">
-          {erreur}
-        </p>
-      )}
+      {erreur && <p className="mt-1 text-xs text-danger">{erreur}</p>}
     </li>
   );
 }
@@ -208,11 +157,6 @@ function LigneTicket({
 function nomDepense(libelle: string): string {
   const trouve = libelle.match(/^(.*)\s+\(([a-z0-9_]+)\)$/);
   return (trouve?.[1] ?? libelle).trim();
-}
-
-function categorieDe(depense: TransactionVue): string | null {
-  const trouve = depense.libelle.match(/\(([a-z0-9_]+)\)$/);
-  return trouve?.[1] ?? depense.proposition;
 }
 
 function pourquoi(depense: TransactionVue): string {
