@@ -862,6 +862,29 @@ def _avec_categories(
 _ORIGINE_PAR_ETAGE = {Etage.REGLE: "regle", Etage.ML: "modele", Etage.BANQUE: "banque"}
 
 
+def _transactions_a_relire(
+    dossier: Dossier,
+    a_trancher: list[TransactionVue],
+    requetes: list[tuple[str, int]],
+    banques: dict[str, str],
+) -> list[NormalizedTransaction]:
+    """Les opérations à trancher, rejouées dans le pipeline. Le sous-compte
+    512x (AXE-832) permet d'y reconnaître les virements internes (AXE-826)."""
+    return [
+        NormalizedTransaction(
+            id=TransactionId(vue.ecriture_id),
+            dossier_id=dossier.id,
+            date=date.fromisoformat(vue.date),
+            montant_cts=vue.montant_cts,
+            libelle=libelle,
+            source_provider="lecture",
+            raw_payload={},
+            compte_bancaire=banques.get(vue.ecriture_id),
+        )
+        for vue, (libelle, _) in zip(a_trancher, requetes, strict=True)
+    ]
+
+
 def _avec_propositions(
     dossier: Dossier,
     vues: list[TransactionVue],
@@ -886,21 +909,7 @@ def _avec_propositions(
     apprises = propositions_apprises(tranchees, requetes)
     actuelles = (
         pipeline.categoriser_lot(
-            dossier.id,
-            [
-                NormalizedTransaction(
-                    id=TransactionId(vue.ecriture_id),
-                    dossier_id=dossier.id,
-                    date=date.fromisoformat(vue.date),
-                    montant_cts=vue.montant_cts,
-                    libelle=libelle,
-                    source_provider="lecture",
-                    raw_payload={},
-                    # Sous-compte 512x (AXE-832) : apparie les virements internes.
-                    compte_bancaire=(banques or {}).get(vue.ecriture_id),
-                )
-                for vue, (libelle, _) in zip(a_trancher, requetes, strict=True)
-            ],
+            dossier.id, _transactions_a_relire(dossier, a_trancher, requetes, banques or {})
         )
         if pipeline is not None
         else [None] * len(a_trancher)

@@ -21,6 +21,17 @@ inchangé à cet endroit :
 dupliqués, ni réencodés — `packs/` sera la version *packagée et validée
 par un expert-comptable* de ces artefacts pour la V1.
 
+## Fichiers du pack VTC (`_AUDIT_DONNEES/packs_vtc/`)
+
+- `regles_regex.csv` : 21 règles au 2026-11-05 (AXE-826 : recharge électrique,
+  parkings dont aéroports, autoroutes, rémunération, frais de rejet,
+  prévoyance). **Chaque règle a un exemple** dans
+  `tests/packs/test_regles_vtc.py` : une règle ajoutée sans exemple fait
+  échouer la CI (doc 05 §2.2).
+- `categories_bridge.csv` : catégorie Bridge (`category_id` Digifactory) →
+  catégorie du pack. « Supermarchés » (273) n'y est pas : Bridge y range TOTAL.
+- `mapping_pcg_categorie.csv` : catégorie → compte.
+
 ## Statuts
 
 - **Démo (doc 17 §4bis, semaine 2, fait)** : `charger_regles()` (12 règles),

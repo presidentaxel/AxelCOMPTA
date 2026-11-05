@@ -56,6 +56,6 @@ def test_chaque_operation_ne_sert_qu_une_fois_au_plus_proche_puis_meme_libelle()
         _tx("e2", 5_000, 3, "fiscal", "autre"),
     ]
     paires = apparier_virements_internes(transactions)
-    assert paires["e1"] == "s1"
-    assert paires["e2"] == "s2"
+    assert paires[TransactionId("e1")] == "s1"
+    assert paires[TransactionId("e2")] == "s2"
     assert "s_veille" not in paires

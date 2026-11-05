@@ -232,9 +232,16 @@ def test_deux_jambes_d_un_virement_interne_vont_au_580_avant_toute_regle() -> No
         for p in pipeline.categoriser_lot(DossierId("d1"), [sortie, entree, plein])
     }
 
-    assert resultat["s"].categorie == resultat["e"].categorie == "virement_interne"
-    assert resultat["s"].etage is Etage.REGLE and resultat["s"].confiance == 0.95
-    assert resultat["p"].categorie == "carburant"
+    assert (
+        resultat[TransactionId("s")].categorie
+        == resultat[TransactionId("e")].categorie
+        == "virement_interne"
+    )
+    assert (
+        resultat[TransactionId("s")].etage is Etage.REGLE
+        and resultat[TransactionId("s")].confiance == 0.95
+    )
+    assert resultat[TransactionId("p")].categorie == "carburant"
 
 
 def test_une_regle_de_paiement_ne_s_applique_pas_a_un_virement() -> None:
