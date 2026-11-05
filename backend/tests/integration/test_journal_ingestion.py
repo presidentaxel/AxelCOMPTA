@@ -138,8 +138,12 @@ def test_notifications_persistees_avec_les_ecritures_signalees(
     assert (derniere.id, derniere.ecriture_ids) == ("n2", (EcritureId("e3"),))
     assert [n.id for n in depot.lister(DossierId("d-notif"), limite=5)] == ["n2", "n1"]
 
-    assert depot.marquer_lues(DossierId("d-notif"), datetime(2026, 9, 24, 9, 0)) == 2
+    assert depot.marquer_lue(DossierId("d-notif"), "n2", datetime(2026, 9, 24, 8, 0)) is True
+    assert depot.marquer_lue(DossierId("d-notif"), "absente", datetime(2026, 9, 24, 8, 0)) is False
+    assert depot.marquer_lue(DossierId("d-notif"), "n2", datetime(2026, 9, 24, 8, 30)) is True
+    assert depot.marquer_lues(DossierId("d-notif"), datetime(2026, 9, 24, 9, 0)) == 1
     assert depot.marquer_lues(DossierId("d-notif"), datetime(2026, 9, 25, 9, 0)) == 0
-    assert {n.lue_le for n in depot.lister(DossierId("d-notif"), limite=5)} == {
-        datetime(2026, 9, 24, 9, 0)
+    assert {n.id: n.lue_le for n in depot.lister(DossierId("d-notif"), limite=5)} == {
+        "n2": datetime(2026, 9, 24, 8, 0),
+        "n1": datetime(2026, 9, 24, 9, 0),
     }
