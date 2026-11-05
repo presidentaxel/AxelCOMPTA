@@ -180,7 +180,7 @@ from axelcompta.workflow.revue import (
     appliquer_decisions,
     resoudre_ecriture_a_trancher,
 )
-from axelcompta.workflow.signature import SignatureRepository
+from axelcompta.workflow.signature import DocumentSigne, SignatureRepository
 from axelcompta.workflow.signature_demo import SignatureDemoProvider
 from axelcompta.workflow.signature_postgres import PostgresSignatureRepository
 
@@ -575,6 +575,28 @@ def _exiger_depot_greffe(dossier: Dossier) -> None:
             status_code=409,
             detail=f"{_colonne(dossier).libelle} : pas de dépôt des comptes au greffe.",
         )
+
+
+def _message_operations_restantes(reste: int) -> str:
+    nom = "opération" if reste == 1 else "opérations"
+    return f"Il reste {reste} {nom} à traiter."
+
+
+def _exiger_operations_tranchees(dossier: Dossier, ledger: InMemoryLedgerService) -> None:
+    """La liasse fiscale et la signature du greffe figent le résultat.
+    Une opération encore au compte d'attente le changerait — même garde
+    que la clôture (`preparer_passage`). Les pièces de travail (FEC,
+    grand livre, balance) restent téléchargeables."""
+    ecritures = ledger.grand_livre(dossier.id)
+    exclues = annulees(ecritures)
+    reste = sum(
+        1
+        for ecriture in ecritures
+        if ecriture.id not in exclues
+        and any(ligne.compte == COMPTE_ATTENTE for ligne in ecriture.lignes)
+    )
+    if reste:
+        raise HTTPException(status_code=409, detail=_message_operations_restantes(reste))
 
 
 def _ecritures_avec_cloture(
@@ -2460,6 +2482,7 @@ def _enregistrer_routes_cloture(app: FastAPI) -> None:
     def telecharger_liasse_fiscale(
         dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
     ) -> Response:
+        _exiger_operations_tranchees(dossier, ledger)
         pdf = PdfLiasseFiscaleRenderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
         )
@@ -2567,6 +2590,7 @@ def _enregistrer_routes_greffe_inpi(app: FastAPI) -> None:
     ) -> SignatureGreffeVue:
         identite = _verifier_acces_dossier(dossier.id, identite)
         _exiger_depot_greffe(dossier)
+        _exiger_operations_tranchees(dossier, ledger)
         pdf_non_signe = _document_greffe_inpi(
             dossier, ledger, _provisions_saisies(dossier, provisions)
         )
@@ -2765,6 +2789,26 @@ def _enregistrer_routes_provisions(app: FastAPI) -> None:
         return _vue_provisions(saisies)
 
 
+def _prouver_cloture(
+    dossier: Dossier, signatures: SignatureRepository, signataire: UserId, quand: datetime
+) -> None:
+    """La validation du chauffeur est la preuve `cloture`. La frise et
+    `cloture_faite` ne lisent que sa présence, pas le PDF."""
+    if signatures.dernier(dossier.id, TYPE_DOCUMENT_CLOTURE) is not None:
+        return
+    signatures.enregistrer(
+        dossier.id,
+        TYPE_DOCUMENT_CLOTURE,
+        DocumentSigne(
+            contenu_pdf=b"%PDF-1.4\n",
+            signataire=signataire,
+            signe_le=quand,
+            provider="demo",
+            qualifie=False,
+        ),
+    )
+
+
 def _passage_cloture(
     dossier: Dossier,
     ledger: LedgerService,
@@ -2817,6 +2861,7 @@ def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
         dossiers: DossiersDep,
         exercices: ExercicesDep,
         provisions: ProvisionsDep,
+        signatures: SignaturesInpiDep,
         identite: IdentiteDep,
     ) -> ClotureExerciceVue:
         identite = _verifier_acces_dossier(dossier.id, identite)
@@ -2828,6 +2873,7 @@ def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
         passage = _passage_cloture(dossier, ledger, decisions, avenants, provisions)
         maintenant = datetime.now(UTC).replace(tzinfo=None)
         executer_passage(passage, ledger, dossiers, exercices, maintenant, identite.user_id, texte)
+        _prouver_cloture(dossier, signatures, identite.user_id, datetime.now(UTC))
         return ClotureExerciceVue(
             possible=False,
             raison="Exercice clos.",
