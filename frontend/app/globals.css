@@ -18,7 +18,7 @@
   --color-ink: #0f172a;
   --color-body: #1e293b;
   --color-subtle: #475569;
-  --color-muted: #94a3b8;
+  --color-muted: #5e6c84;
   --color-faint: #cbd5e1;
   --color-on-dark: #f8fafc;
   --color-on-dark-mute: rgba(248, 250, 252, 0.65);
@@ -37,36 +37,36 @@
   --color-hairline: #f1f5f9;
 
   /* Sémantiques générales */
-  --color-success: #16a34a;
+  --color-success: #15803d;
   --color-success-subtle: #f0fdf4;
   --color-success-border: #86efac;
-  --color-warning: #d97706;
+  --color-warning: #b45309;
   --color-warning-subtle: #fffbeb;
   --color-warning-border: #fcd34d;
-  --color-danger: #dc2626;
+  --color-danger: #d42626;
   --color-danger-subtle: #fef2f2;
   --color-danger-border: #fca5a5;
-  --color-info: #0284c7;
+  --color-info: #0369a1;
   --color-info-subtle: #f0f9ff;
   --color-info-border: #7dd3fc;
 
   /* Sémantiques comptables (doc DESIGN.md — usage strict, ne pas détourner) */
-  --color-amount-positive: #16a34a;
-  --color-amount-negative: #dc2626;
+  --color-amount-positive: #15803d;
+  --color-amount-negative: #d42626;
   --color-amount-neutral: #0f172a;
-  --color-validated: #16a34a;
+  --color-validated: #15803d;
   --color-validated-subtle: #f0fdf4;
-  --color-pending: #d97706;
+  --color-pending: #b45309;
   --color-pending-subtle: #fffbeb;
-  --color-auto-rule: #0284c7;
+  --color-auto-rule: #0369a1;
   --color-auto-rule-subtle: #f0f9ff;
   --color-auto-ml: #7c3aed;
   --color-auto-ml-subtle: #f5f3ff;
   --color-auto-llm: #9333ea;
   --color-auto-llm-subtle: #faf5ff;
-  --color-alert-anomaly: #dc2626;
+  --color-alert-anomaly: #d42626;
   --color-alert-anomaly-subtle: #fef2f2;
-  --color-missing: #94a3b8;
+  --color-missing: #5e6c84;
   --color-closed: #475569;
   --color-closed-subtle: #f8fafc;
 
@@ -143,8 +143,8 @@ body {
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
   /* Pas de `--color-muted: var(--muted)` : il écrasait le gris `muted` du
-     design (#94a3b8) par le fond `surface-soft` (#f1f5f9), et les
-     placeholders devenaient blancs sur blanc. */
+     design par le fond `surface-soft` (#f1f5f9), et les placeholders
+     devenaient blancs sur blanc. */
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
@@ -186,15 +186,15 @@ body {
   --muted-foreground: #475569; /* subtle */
   --accent: #eff6ff; /* primary-subtle */
   --accent-foreground: #1d4ed8; /* primary-deep */
-  --destructive: #dc2626; /* danger */
+  --destructive: #d42626; /* danger */
   --border: #e2e8f0; /* border */
   --input: #e2e8f0; /* border (text-input) */
   --ring: #2563eb; /* border-focus */
   --chart-1: #2563eb;
   --chart-2: #7c3aed;
   --chart-3: #9333ea;
-  --chart-4: #0284c7;
-  --chart-5: #16a34a;
+  --chart-4: #0369a1;
+  --chart-5: #15803d;
   --radius: 0.5rem; /* rounded.md, 8px */
   --sidebar: #0f172a; /* surface-dark */
   --sidebar-foreground: #f8fafc; /* on-dark */
@@ -240,4 +240,70 @@ body {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+}
+
+/* Habillage chauffeur. Hors couche Tailwind : ces règles l'emportent sur
+   h-7 / h-9 / text-xs / text-sm. La coque est calée sur le visual viewport
+   (voir layout chauffeur) pour que la barre du bas reste au bord visible,
+   clavier ouvert compris. */
+html:has(.chauffeur),
+html:has(.chauffeur) body {
+  height: var(--vvh, 100dvh);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chauffeur {
+  position: fixed;
+  top: var(--vv-offset, 0px);
+  right: 0;
+  left: 0;
+  display: flex;
+  height: var(--vvh, 100dvh);
+  flex-direction: column;
+  overflow: hidden;
+}
+
+html[data-clavier] .barre-chauffeur {
+  display: none;
+}
+
+.chauffeur-main {
+  scroll-padding-block: 1rem;
+}
+
+.chauffeur-main.sans-barre {
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+}
+
+.fond-feuille {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom), var(--clavier-inset, 0px));
+}
+
+.feuille-chauffeur {
+  max-height: min(
+    85dvh,
+    calc(
+      var(--vvh, 100dvh) - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
+        var(--clavier-inset, 0px) - 1.5rem
+    )
+  );
+}
+
+.chauffeur button,
+.chauffeur [data-slot="button"] {
+  min-height: 44px;
+}
+
+.chauffeur input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]),
+.chauffeur select,
+.chauffeur textarea {
+  min-height: 44px;
+  font-size: 1rem;
+}
+
+.chauffeur label:has(> input[type="checkbox"]),
+.chauffeur label:has(> input[type="radio"]) {
+  min-height: 44px;
 }

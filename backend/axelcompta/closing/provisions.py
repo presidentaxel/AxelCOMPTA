@@ -30,14 +30,14 @@ def prefixe_provisions(dossier_id: DossierId, annee: int) -> str:
 
 def valider_provision(provision: ProvisionCloture) -> None:
     if provision.nature not in ("cca", "fnp"):
-        raise ProvisionInvalide(f"nature inconnue : {provision.nature}")
+        raise ProvisionInvalide("Cette estimation n'a pas une nature reconnue.")
     if provision.centimes <= 0:
-        raise ProvisionInvalide("le montant d'une provision se saisit en centimes positifs")
+        raise ProvisionInvalide("Indiquez un montant supérieur à zéro.")
     compte = provision.compte_charge
     if not compte.isdigit() or not compte.startswith("6") or compte.startswith("69"):
-        raise ProvisionInvalide(f"compte de charge attendu (classe 6, hors impôt) : {compte}")
+        raise ProvisionInvalide("Cette charge ne peut pas être prise dans la clôture.")
     if not provision.libelle.strip():
-        raise ProvisionInvalide("une provision saisie porte un libellé")
+        raise ProvisionInvalide("Indiquez de quoi il s'agit.")
 
 
 def ecritures_provisions(

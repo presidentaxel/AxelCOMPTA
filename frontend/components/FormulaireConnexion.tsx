@@ -136,19 +136,19 @@ export function FormulaireConnexion({
       </form>
       <div className="mt-4 flex flex-col gap-2 text-sm">
         {mode !== "lien" && (
-          <button type="button" className="text-left text-primary hover:underline" onClick={() => basculer("lien")}>
+          <button type="button" className="inline-flex min-h-11 items-center text-left text-primary hover:underline" onClick={() => basculer("lien")}>
             Recevoir un lien de connexion
           </button>
         )}
         {mode !== "oubli" && (
-          <button type="button" className="text-left text-primary hover:underline" onClick={() => basculer("oubli")}>
+          <button type="button" className="inline-flex min-h-11 items-center text-left text-primary hover:underline" onClick={() => basculer("oubli")}>
             Mot de passe oublié
           </button>
         )}
         {mode !== "mot_de_passe" && (
           <button
             type="button"
-            className="text-left text-primary hover:underline"
+            className="inline-flex min-h-11 items-center text-left text-primary hover:underline"
             onClick={() => basculer("mot_de_passe")}
           >
             Se connecter avec un mot de passe

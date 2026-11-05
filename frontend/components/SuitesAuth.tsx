@@ -1,6 +1,7 @@
 import Link from "next/link";
 
-const LIEN = "text-left text-sm text-primary hover:underline";
+const LIEN =
+  "inline-flex min-h-11 items-center text-left text-sm text-primary hover:underline";
 
 /** Suite proposée quand un lien d'authentification ne peut plus servir. */
 export function SuitesAuth({ invitation = false }: { invitation?: boolean }) {

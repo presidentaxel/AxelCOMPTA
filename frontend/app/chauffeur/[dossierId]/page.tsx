@@ -7,6 +7,7 @@ import { Suspense, use, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmationGroupee } from "@/components/ConfirmationGroupee";
 import { QuestionCategorisation } from "@/components/QuestionCategorisation";
+import { ResultatACeJour } from "@/components/ResultatACeJour";
 import { StationTickets, ticketPrioritaire } from "@/components/StationTickets";
 import { useDossierChauffeur, useOperationsChauffeur } from "@/app/chauffeur/use-dossier";
 import { ApiError } from "@/lib/api";
@@ -20,6 +21,7 @@ import {
 } from "@/lib/activite-url";
 import { joindreJustificatifChauffeur } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
+import { libelleCategorie, phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import type { DossierResume, TransactionVue } from "@/lib/types";
 import { Squelette, SqueletteLignes } from "@/components/Squelette";
 
@@ -142,7 +144,7 @@ function Entete({
         <Squelette className="h-8 w-48" />
         <Squelette className="mt-2 h-4 w-40" />
         <Squelette className="mt-6 h-8 w-32" />
-        <Squelette className="mt-2 h-4 w-36" />
+        <Squelette className="mt-2 h-4 w-56" />
       </div>
     );
   }
@@ -153,14 +155,9 @@ function Entete({
       <p className="mt-1 text-sm text-subtle">
         {fiche.forme_juridique} · {fiche.regime_libelle}
       </p>
-      <p
-        className={`mt-6 text-[28px] font-bold tabular-nums tracking-tight ${
-          fiche.resultat_cts < 0 ? "text-amount-negative" : "text-amount-positive"
-        }`}
-      >
-        {formatMontant(fiche.resultat_cts)}
-      </p>
-      <p className="text-sm text-subtle">Résultat de l&apos;exercice</p>
+      <div className="mt-6">
+        <ResultatACeJour dossier={fiche} />
+      </div>
       <ConnexionBancaire
         peutConnecter={fiche.peut_connecter_sa_banque}
         aDesTransactions={aDesTransactions}
@@ -183,7 +180,7 @@ function Onglet({
       type="button"
       aria-pressed={actif}
       onClick={onClick}
-      className={`h-9 rounded-full px-4 text-sm font-medium ${ANNEAU} ${
+      className={`inline-flex h-11 items-center rounded-full px-4 text-sm font-medium ${ANNEAU} ${
         actif ? "bg-ink text-canvas" : "text-subtle"
       }`}
     >
@@ -254,7 +251,7 @@ function Arriere({
                   ecritureId={transaction.ecriture_id}
                   proposition={confirmableIci ? proposition : null}
                   origine={transaction.origine_proposition}
-                  confiance={transaction.confiance_proposition}
+                  montantCts={transaction.montant_cts}
                   sansProposition={proposition === null}
                   raccourci={confirmableIci && transaction.ecriture_id === premiereConfirmable}
                   onResolu={onTranche}
@@ -405,7 +402,11 @@ function AjouterTicketSortie({
     try {
       onJointe(await joindreJustificatifChauffeur(dossierId, transaction.ecriture_id, fichier));
     } catch (exception) {
-      setErreur(exception instanceof ApiError ? exception.message : "Échec de l'envoi de la photo.");
+      setErreur(
+        phrasePourChauffeur(
+          exception instanceof ApiError ? exception.message : "Échec de l'envoi de la photo.",
+        ),
+      );
     } finally {
       setEnvoi(false);
     }
@@ -428,7 +429,7 @@ function AjouterTicketSortie({
         type="button"
         disabled={envoi}
         onClick={() => inputRef.current?.click()}
-        className={`mt-1 rounded-md px-1 py-1 text-sm font-medium text-primary disabled:opacity-50 ${ANNEAU}`}
+        className={`mt-1 inline-flex min-h-11 items-center rounded-md px-1 text-sm font-medium text-primary disabled:opacity-50 ${ANNEAU}`}
       >
         {envoi ? "Envoi…" : "Ajouter un ticket"}
       </button>
@@ -482,33 +483,6 @@ function ConnexionBancaire({
     return <p className="mt-6 text-sm text-subtle">Vos transactions arrivent bientôt.</p>;
   }
   return null;
-}
-
-const DETAILS: Record<string, string> = {
-  usage_personnel_suspect: "À confirmer",
-  usage_personnel: "Dépense personnelle",
-  carburant: "Carburant",
-  peage_stationnement: "Péage",
-  repas_et_receptions: "Repas",
-  assurance_vehicule: "Assurance",
-  telecommunications: "Téléphone",
-  entretien_reparation_vehicule: "Entretien",
-  charges_sociales_impots: "Charges",
-  honoraires_comptable_juridique: "Honoraires",
-  recettes_plateformes: "Courses",
-  remuneration_dirigeant: "Ma rémunération",
-  compte_courant_associe: "Compte courant d'associé",
-  virement_interne: "Virement entre mes comptes",
-  salaires_personnel: "Salaire d'un salarié",
-  frais_bancaires: "Frais bancaires",
-  abonnements_logiciels: "Abonnement",
-  fournitures_administratives: "Fournitures",
-  amendes_infractions: "Amende",
-  subventions: "Aide publique",
-};
-
-function libelleCategorie(code: string): string {
-  return DETAILS[code] ?? code.replaceAll("_", " ");
 }
 
 /** Une proposition se confirme en un geste, sauf quand la réponse est déjà

@@ -100,13 +100,13 @@ def alerte_option_ir(dossier: Dossier) -> str | None:
     passage_is = dossier.option_ir_debut + DUREE_OPTION_IR
     if rang == DUREE_OPTION_IR:
         return (
-            f"Dernier exercice couvert par l'option pour l'IR : "
-            f"la société passe à l'IS pour l'exercice {passage_is}."
+            "Dernier exercice couvert par l'option pour l'impôt sur le revenu : "
+            f"la société passe à l'impôt sur les sociétés pour l'exercice {passage_is}."
         )
     if rang == DUREE_OPTION_IR - 1:
         return (
-            f"Avant-dernier exercice couvert par l'option pour l'IR : "
-            f"la société passera à l'IS pour l'exercice {passage_is}."
+            "Avant-dernier exercice couvert par l'option pour l'impôt sur le revenu : "
+            f"la société passera à l'impôt sur les sociétés pour l'exercice {passage_is}."
         )
     return None
 

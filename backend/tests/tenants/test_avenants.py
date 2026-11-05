@@ -54,7 +54,7 @@ def test_alerte_seulement_aux_deux_derniers_exercices() -> None:
     derniere = alerte_option_ir(_dossier_option_ir(2026))
     assert avant_derniere is not None and "Avant-dernier" in avant_derniere
     assert derniere is not None and "Dernier exercice" in derniere
-    assert "l'IS pour l'exercice 2027" in derniere
+    assert "l'impôt sur les sociétés pour l'exercice 2027" in derniere
 
 
 def test_la_bascule_ne_se_programme_qu_au_dernier_exercice() -> None:

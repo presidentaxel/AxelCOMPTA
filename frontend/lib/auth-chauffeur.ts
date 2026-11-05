@@ -415,11 +415,15 @@ export async function listerNotificationsChauffeur(dossierId: string): Promise<N
   return fetchAvecAuthChauffeur<NotificationVue[]>(`/dossiers/${dossierId}/notifications`);
 }
 
-/** Ouvrir la cloche vaut lecture : tout ce qui n'était pas lu le devient. */
-export async function marquerNotificationsLuesChauffeur(dossierId: string): Promise<void> {
-  const reponse = await appelChauffeur(`/dossiers/${dossierId}/notifications/lues`, {
-    method: "POST",
-  });
+/** Une notification devient lue quand le chauffeur l'ouvre, pas toute la cloche. */
+export async function marquerNotificationLueChauffeur(
+  dossierId: string,
+  notificationId: string,
+): Promise<void> {
+  const reponse = await appelChauffeur(
+    `/dossiers/${dossierId}/notifications/${encodeURIComponent(notificationId)}/lue`,
+    { method: "POST" },
+  );
   if (!reponse.ok) {
     throw new ApiError(`HTTP ${reponse.status}`, reponse.status);
   }
