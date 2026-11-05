@@ -13,8 +13,12 @@ vérifiée par import-linter en CI, doc 03 §3).
   `axelcompta.demo_api`, le composition root, et ajoute `GET /sante`.
   Les corps de routes restent là-bas jusqu'à l'extraction de chaque
   façade (`module/service.py`). Rien de métier n'est copié ici.
-- **V1 (doc 12, phase 1.1 + 3)** : auth/MFA, permissions par rôle,
-  isolation multi-tenant appliquée au niveau des routes.
+- **Au 2026-11-05** : `GET /metrics` (Prometheus, AXE-426). Rôles
+  lecture, membre, admin appliqués par route et dans l'interface (AXE-701).
+- **V1 (doc 12, phase 1.1 + 3)** : MFA demandée à la connexion et journal
+  des connexions et exports (AXE-812), rôle `expert_comptable` (AXE-800),
+  routes de démo absentes en production (AXE-810), isolation multi-tenant
+  appliquée au niveau des routes.
 
 ## Doc de référence
 

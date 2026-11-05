@@ -1,5 +1,13 @@
 # 07 — ML : données, entraînement, évaluation, MLOps
 
+> **État au 2026-11-05** (ajouté ; le reste du doc décrit la cible) : modèle
+> v2 (TF-IDF + régression logistique, 78,9 % d'exactitude en validation
+> croisée par dossier, calibré), entraîné dans
+> `_AUDIT_DONNEES/entrainer_modele.py` ; le réentraînement sur les décisions
+> existe (`--decisions`). Pas de registry ni de monitoring de dérive. La
+> relecture des 500 lignes qui donne le jeu de test gelé en est à 7/500
+> (AXE-423) ; la mesure des objectifs V1 en dépend (AXE-816).
+
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-12
 
 ## 1. Philosophie

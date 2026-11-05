@@ -1,6 +1,6 @@
 # 19 — Parcours utilisateur : gestionnaire et chauffeur
 
-> Statut : brouillon à valider — Dernière mise à jour : 2026-09-11.
+> Statut : brouillon à valider — Dernière mise à jour : 2026-11-05 (exception expert-comptable, §2.4).
 > Né d'une discussion Louis / Claude Code le 2026-09-06 : décision de
 > cadrer et documenter l'accès chauffeur en libre-service **avant** tout
 > code, conformément à ce que prévoyait déjà [doc 12 §2.7](12-roadmap-todo.md).
@@ -142,6 +142,14 @@ RGPD/monopole d'expertise comptable (doc 02 §2, doc 02 §10). Tant que ce
 n'est pas confirmé par un juriste : **le gestionnaire ne voit rien de
 dossier-spécifique au-delà des agrégats de §2.1** — pas d'option cachée
 activée par défaut en attendant.
+
+**Exception, décidée le 2026-11-05 : l'expert-comptable de l'entreprise.**
+Une entreprise qui gère sa flotte avec un expert-comptable peut lui donner
+le rôle `expert_comptable`. Lui seul voit le détail des dossiers couverts
+par sa lettre de mission et peut y imputer, après avoir accepté un
+engagement de responsabilité ; chaque changement porte son nom et son
+motif, et le chauffeur les voit (doc 02 §2.3, AXE-800). Le logiciel ne
+décide pas à sa place. Un gestionnaire sans ce rôle garde la vue agrégée.
 
 ## 3. Modèle de compte et onboarding
 

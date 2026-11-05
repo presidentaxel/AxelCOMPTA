@@ -1,7 +1,7 @@
 # ADR-002 — File de jobs : PostgreSQL SKIP LOCKED vs Redis/RQ
 
 **Date :** 2026-06-16
-**Statut :** en attente — décision à prendre au premier besoin réel de file de jobs
+**Statut :** accepté le 2026-10-25 — option A (PostgreSQL `SKIP LOCKED`), posée dans `backend/axelcompta/jobs/` (AXE-442, migration `b6d1e9a43c20`). Pas encore utilisée : le cron `axelcompta.taches` reste le mécanisme réel. Premier usage prévu : l'envoi des rappels (AXE-808).
 
 ## Contexte
 

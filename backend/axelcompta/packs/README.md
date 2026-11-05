@@ -41,6 +41,10 @@ par un expert-comptable* de ces artefacts pour la V1.
   couverture du pack (12 règles, doc 12 §2.1 en prévoit 100-200 pour la V1),
   pas quelque chose que `re.IGNORECASE` peut résoudre. Corrigé au
   chargement, pas dans le CSV source (toujours un brouillon d'audit).
+- **Au 2026-11-05** : toujours les 12 règles de l'audit
+  (`_AUDIT_DONNEES/packs_vtc/regles_regex.csv`), plus les règles génériques
+  de `categorize/`. Mesure sur le premier flux réel : AXE-732. Relecture
+  de la taxonomie par un expert-comptable : AXE-815.
 - **V1 (doc 12, phase 1.1 + 0.2)** : taxonomie complète et mapping
   compte-par-catégorie validés avec le comptable du client (aujourd'hui un
   brouillon d'audit, premier compte listé pris arbitrairement).

@@ -59,6 +59,11 @@ Aucun de ces PDF n'est une télédéclaration : le dépôt légal est EDI/EFI
   ajoute la fidélité visuelle au vrai formulaire pour la case résultat.
   `fec.py`/`export_comptable.py` ajoutent le détail (journal, grand livre,
   balance) qui manquait derrière les chiffres de la liasse.
+- **2026-10-14/25** : le FEC passe un validateur A.47 A-1 (ce n'est pas
+  Test Compta Demat) et reste un fichier texte, affiché « FEC » (AXE-422,
+  AXE-558). Une case à zéro reste vide sur les formulaires et les exports,
+  le FEC garde `0,00` (AXE-557). La liasse et la signature greffe sont
+  refusées (409) tant qu'une opération est au compte d'attente (AXE-687).
 - **V1 (doc 12, phase 3)** : conformité complète sur toute la liasse
   (2050-2059G/2033A-G, pas seulement le récapitulatif 2065), testée via
   « Test Compta Demat » (spike FEC, doc 12 §0.3), EDI-TDFC (doc 02 —

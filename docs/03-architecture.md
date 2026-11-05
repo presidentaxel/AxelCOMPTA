@@ -1,5 +1,18 @@
 # 03 — Architecture technique
 
+> **État au 2026-11-05** (ajouté ; le reste du doc décrit la cible) :
+> - Modules ajoutés au découpage : `pseudonymize/` (seule porte vers un LLM)
+>   et `jobs/` (file Postgres, ADR-002). Carte à jour dans le
+>   [doc 18](18-organisation-code.md).
+> - Point d'entrée HTTP : `axelcompta.api.app`. Les routes vivent encore
+>   dans `demo_api.py` (migration vers les façades : AXE-428).
+> - Rôles en place : lecture, membre, admin (et `retire` pour un membre
+>   retiré). À venir : `expert_comptable` (AXE-800). La MFA TOTP est codée
+>   mais pas demandée à la connexion (AXE-812).
+> - Une seule base Supabase sert aujourd'hui à la démo et aux dossiers
+>   réels : séparation prévue (AXE-810), hébergement de production à
+>   trancher (AXE-811).
+
 > Statut : brouillon à valider — Dernière mise à jour : 2026-09-24
 
 ## 1. Principes directeurs

@@ -1,5 +1,16 @@
 # 10 — Sécurité, RGPD et protection des données
 
+> **État au 2026-11-05** (ajouté ; le reste du doc décrit la cible) :
+> - Fait : RLS par dossier sur les tables, pseudonymisation obligatoire
+>   avant tout LLM avec tests de fuite (AXE-436), journal d'audit
+>   append-only des décisions et signatures, Sentry seulement si un DSN est
+>   posé.
+> - Pas fait : MFA demandée à la connexion et journal des connexions et
+>   exports (AXE-812), sauvegardes avec restauration testée et hébergement
+>   de production (AXE-811), séparation démo/production (AXE-810), DPA et
+>   CGU (AXE-813), offboarding (export et purge d'un tenant, doc 14 :
+>   aucun ticket).
+
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-12
 > Le volet juridique RGPD est traité en doc 02 §8 ; ici, l'implémentation.
 

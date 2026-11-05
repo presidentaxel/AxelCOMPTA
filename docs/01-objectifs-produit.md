@@ -1,5 +1,17 @@
 # 01 — Objectifs produit et vision
 
+> **État au 2026-11-05** (ajouté ; le reste du doc décrit la cible d'origine) :
+> - Le chauffeur a sa propre interface depuis septembre (doc 19) : il tranche
+>   ses opérations, photographie ses tickets, clôture et valide. Le
+>   non-objectif « pas d'interface pour les chauffeurs » (§3) et la ligne C10
+>   (« les gérants ne voient jamais la plateforme ») sont caducs.
+> - Le gestionnaire ne voit que des agrégats. Seul l'expert-comptable de
+>   l'entreprise, dans le mode expert, voit le détail et impute, en prenant
+>   la responsabilité de chaque changement (doc 02 §2.3, AXE-800).
+> - C3 : les photos sont stockées, pas lues (pas d'OCR). C4 : règles et
+>   modèle, aucun LLM branché. C8 : dépôt manuel. Les KPIs du §6 ne sont pas
+>   encore mesurés (AXE-816). Le détail est dans le [doc 12](12-roadmap-todo.md).
+
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-12
 
 ## 1. Vision
