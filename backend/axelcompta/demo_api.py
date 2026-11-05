@@ -133,6 +133,7 @@ from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ledger.banque import (
     comptes_hors_banque,
     est_reclassement_bancaire,
+    ligne_banque,
     montant_bancaire,
 )
 from axelcompta.ledger.contrepassation import annulees, contrepasser
@@ -140,7 +141,11 @@ from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.ledger.models import Ecriture, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
-from axelcompta.packs.vtc_demo import charger_compte_par_categorie, charger_regles
+from axelcompta.packs.vtc_demo import (
+    charger_categories_banque,
+    charger_compte_par_categorie,
+    charger_regles,
+)
 from axelcompta.tenants.affectations import AffectationRepository
 from axelcompta.tenants.affectations_postgres import PostgresAffectationRepository
 from axelcompta.tenants.agregats import AgregatsRepository, AgregatStocke, LigneAgregat
@@ -829,7 +834,12 @@ def _transactions_dossier(
 ) -> list[TransactionVue]:
     """Extrait de la route (doc 08 §2 : longueur de fonction)."""
     vues = _avec_categories(_vues_dossier(dossier, ledger, justificatifs), decisions)
-    return _avec_propositions(dossier, vues, decisions, pipeline)
+    banques = {
+        str(e.id): ligne.compte
+        for e in ledger.grand_livre(dossier.id)
+        if (ligne := ligne_banque(e)) is not None
+    }
+    return _avec_propositions(dossier, vues, decisions, pipeline, banques)
 
 
 def _avec_categories(
@@ -849,7 +859,7 @@ def _avec_categories(
     ]
 
 
-_ORIGINE_PAR_ETAGE = {Etage.REGLE: "regle", Etage.ML: "modele"}
+_ORIGINE_PAR_ETAGE = {Etage.REGLE: "regle", Etage.ML: "modele", Etage.BANQUE: "banque"}
 
 
 def _avec_propositions(
@@ -857,6 +867,7 @@ def _avec_propositions(
     vues: list[TransactionVue],
     decisions: tuple[DecisionHumaine, ...],
     pipeline: RulesAndMlPipeline | None,
+    banques: dict[str, str] | None = None,
 ) -> list[TransactionVue]:
     """Une proposition par opération à trancher : d'abord une opération
     semblable que l'indiv a déjà tranchée (dernière décision de chaque
@@ -885,6 +896,8 @@ def _avec_propositions(
                     libelle=libelle,
                     source_provider="lecture",
                     raw_payload={},
+                    # Sous-compte 512x (AXE-832) : apparie les virements internes.
+                    compte_bancaire=(banques or {}).get(vue.ecriture_id),
                 )
                 for vue, (libelle, _) in zip(a_trancher, requetes, strict=True)
             ],
@@ -1079,6 +1092,7 @@ def get_pipeline() -> RulesAndMlPipeline:
             regles=charger_regles(),
             modele=modele,
             calibration=charger_calibration() if modele is not None else None,
+            categories_banque=charger_categories_banque(),
         )
     return _PIPELINE
 

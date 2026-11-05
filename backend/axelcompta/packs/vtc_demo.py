@@ -19,6 +19,7 @@ from axelcompta.core.pcg import nature_depuis_compte as nature_depuis_compte
 RACINE_PACKS_VTC = Path(__file__).resolve().parents[3] / "_AUDIT_DONNEES" / "packs_vtc"
 CHEMIN_REGLES_PAR_DEFAUT = RACINE_PACKS_VTC / "regles_regex.csv"
 CHEMIN_MAPPING_PAR_DEFAUT = RACINE_PACKS_VTC / "mapping_pcg_categorie.csv"
+CHEMIN_CATEGORIES_BANQUE_PAR_DEFAUT = RACINE_PACKS_VTC / "categories_bridge.csv"
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,3 +88,16 @@ def charger_compte_par_categorie(chemin: Path | None = None) -> dict[str, str]:
             comptes.setdefault(ligne["categorie"], ligne["prefixe_compte_pcg_normalise"])
     comptes.update(CORRECTIONS_COMPTE_PAR_CATEGORIE)
     return comptes
+
+
+def charger_categories_banque(chemin: Path | None = None) -> dict[str, str]:
+    """`{category_id Bridge: catégorie du pack}` (AXE-826). Une catégorie de
+    la banque absente de la table ne propose rien. Indice seulement : le
+    pipeline n'impute jamais sur cette seule base."""
+    chemin = chemin or CHEMIN_CATEGORIES_BANQUE_PAR_DEFAUT
+    with chemin.open(newline="", encoding="utf-8") as fichier:
+        return {
+            ligne["category_id"].strip(): ligne["categorie"].strip()
+            for ligne in csv.DictReader(fichier)
+            if ligne["category_id"].strip() and ligne["categorie"].strip()
+        }

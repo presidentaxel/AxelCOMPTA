@@ -50,7 +50,11 @@ from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ingestion.providers.digifactory import DigifactoryHttpClient, DigifactoryProvider
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
-from axelcompta.packs.vtc_demo import charger_compte_par_categorie, charger_regles
+from axelcompta.packs.vtc_demo import (
+    charger_categories_banque,
+    charger_compte_par_categorie,
+    charger_regles,
+)
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.workflow.propositions import PropositionRepository
@@ -172,6 +176,7 @@ def synchroniser_portefeuille(
         regles=charger_regles(),
         modele=modele,
         calibration=charger_calibration() if modele is not None else None,
+        categories_banque=charger_categories_banque(),
     )
 
     async def lancer() -> list[ResultatDossier]:

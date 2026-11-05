@@ -145,6 +145,12 @@ def _traiter_transactions(
     comptes_bancaires: CompteBancaireRepository | None,
 ) -> _Compteurs:
     compteurs = _Compteurs()
+    # Catégorisées ensemble : les deux jambes d'un virement interne ne se
+    # reconnaissent que côte à côte (AXE-826).
+    nouvelles = [
+        t for t in lot.transactions if _id_ecriture(dossier, source_nom, t.id) not in comptabilisees
+    ]
+    par_transaction = {p.transaction_id: p for p in pipeline.categoriser_lot(dossier.id, nouvelles)}
     for transaction in lot.transactions:
         ecriture_id = _id_ecriture(dossier, source_nom, transaction.id)
         existante = comptabilisees.get(ecriture_id)
@@ -167,7 +173,7 @@ def _traiter_transactions(
                     transaction.raw_payload,
                 )
             continue
-        proposition = pipeline.categoriser(dossier.id, transaction)
+        proposition = par_transaction[transaction.id]
         compte = choisir_compte(proposition, comptes)
         banque = (
             COMPTE_BANQUE

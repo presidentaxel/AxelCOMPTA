@@ -15,6 +15,9 @@ class Etage(Enum):
 
     REGLE = auto()
     ML = auto()
+    # Catégorie donnée par la banque (Bridge) : un indice, qui propose sans
+    # jamais imputer seul (AXE-826).
+    BANQUE = auto()
     LLM = auto()
     REVUE_HUMAINE = auto()
 

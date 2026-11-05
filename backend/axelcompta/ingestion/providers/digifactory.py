@@ -144,7 +144,17 @@ def _normaliser(tx: dict[str, Any], dossier_id: DossierId) -> NormalizedTransact
         source_provider="digifactory",
         raw_payload=tx,
         compte_bancaire=_identifiant_compte(tx.get("account_id")),
+        type_operation=_type_operation(tx.get("operation_type")),
+        categorie_banque=_identifiant_compte(tx.get("category_id")),
     )
+
+
+def _type_operation(valeur: object) -> str | None:
+    """`operation_type` Digifactory ; « unknown » ne dit rien, donc `None`."""
+    if not isinstance(valeur, str):
+        return None
+    texte = valeur.strip().lower()
+    return None if texte in ("", "unknown") else texte
 
 
 def _identifiant_compte(valeur: object) -> str | None:
