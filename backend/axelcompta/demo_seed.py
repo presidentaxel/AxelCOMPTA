@@ -1,28 +1,22 @@
-"""Amorçage du dossier de review UX (Sophie) et, pour les tests, des trois
-dossiers chauffeur type (doc 17 §4).
+"""Les trois dossiers chauffeur type (Karim, Sophie, Yanis), **pour les tests
+seulement** (doc 17).
 
 **Depuis le 2026-11-05, la base Supabase est la base réelle du portefeuille
-Serenity.** La commande ne pose plus que `DOSSIER_REVUE_UX`, le seul dossier
-fictif gardé pour les reviews UX ; Karim et Yanis n'existent plus que dans
-les tests (`amorcer_demo` sans filtre).
+Serenity et ne contient plus aucun dossier ni compte de démo.** Ce module
+n'a plus de commande : `amorcer_demo` et `poser_jalons_demo` servent aux
+tests (jeux en mémoire, et base locale des tests d'intégration).
 
 Composition root comme `demo_api.py` (doc 18). Avant le 2026-09-21, l'API
 recalculait tout ça à chaque requête depuis `chauffeurs_demo.py` ; depuis,
 elle lit Postgres, et ce module y écrit **une fois** ce que le pipeline
 calculait à la volée. Ce sera aussi le point d'entrée des vrais dossiers du
 pilote : mêmes tables, autre source de données (Digifactory, doc 16).
-
-Usage, depuis backend/ (DATABASE_URL défini, migrations appliquées) :
-
-    alembic upgrade head
-    python -m axelcompta.demo_seed
 """
 
 from __future__ import annotations
 
 import dataclasses
 import io
-import sys
 from datetime import UTC, datetime
 
 from reportlab.lib.pagesizes import A4
@@ -30,29 +24,21 @@ from reportlab.pdfgen import canvas
 
 from axelcompta.closing.bilan_simplifie import ClotureSimplifieeService
 from axelcompta.closing.models import ParametresCloture
-from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, UserId
 from axelcompta.demo_chauffeurs_type import construire_ledger, fin_exercice
 from axelcompta.demo_identites import IDENTITES_DEMO
 from axelcompta.demo_jalons import JALONS_EXERCICE
 from axelcompta.filings.inpi_depot import PdfDepotInpiRenderer
 from axelcompta.ingestion.providers.chauffeurs_demo import PROFILS_DEMO, ProfilChauffeurType
-from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
 from axelcompta.tenants.models import Dossier, Tenant
-from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.repository import DossierRepository
 from axelcompta.workflow.propositions import PropositionRepository
-from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
 from axelcompta.workflow.signature import DocumentSigne, SignatureRepository
-from axelcompta.workflow.signature_postgres import PostgresSignatureRepository
 
 # Identifiant historique du portefeuille, gardé tel quel en base : c'est
 # aujourd'hui celui de Serenity (nom affiché « Serenity »).
 TENANT_DEMO = TenantId("TENANT_DEMO")
-# Le seul dossier fictif gardé en base, pour les reviews UX (décision du
-# 2026-11-05). Compte : demo-sophie@axelcompta.fr.
-DOSSIER_REVUE_UX = DossierId("DEMO_sophie")
 _SIGNATAIRE_JALON = UserId("seed-demo")
 
 # Préfixe de preuves de l'exercice 2025. Karim s'arrête à la clôture,
@@ -207,27 +193,3 @@ def poser_jalons_demo(
             )
             poses.append(f"{dossier.id}:{type_document}")
     return poses
-
-
-def main() -> int:
-    engine = engine_depuis_env()
-    dossiers = PostgresDossierRepository(engine)
-    ledger = PostgresLedgerService(engine)
-    profils = tuple(p for p in PROFILS_DEMO if p.dossier_id == DOSSIER_REVUE_UX)
-    ecrits = amorcer_demo(dossiers, ledger, PostgresPropositionRepository(engine), profils)
-    jalons = poser_jalons_demo(
-        dossiers, ledger, PostgresSignatureRepository(engine), frozenset({DOSSIER_REVUE_UX})
-    )
-    if ecrits:
-        print(f"Amorçage terminé : {', '.join(ecrits)}")
-    else:
-        print("Ledger déjà amorcé.")
-    if jalons:
-        print(f"Jalons 2025 posés : {', '.join(jalons)}")
-    else:
-        print("Jalons 2025 déjà en place.")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

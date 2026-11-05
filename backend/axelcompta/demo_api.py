@@ -21,8 +21,8 @@ censée avoir besoin d'infra pour tourner.
 (`tenants/`), ledger (`PostgresLedgerService`), propositions d'origine du
 pipeline (`workflow/propositions*`). Rien n'est recalculé à la volée. Les
 décisions humaines restent une couche append-only réappliquée par-dessus le
-ledger persisté (`_ledger_avec_decisions`). `python -m axelcompta.demo_seed`
-amorce la base avec les 3 profils de démo ; le portefeuille visible d'un
+ledger persisté (`_ledger_avec_decisions`). Les dossiers viennent de
+Digifactory (`scripts/ajouter_chauffeurs_digifactory.py`) ; le portefeuille visible d'un
 gestionnaire est celui de son `tenant_id` (jeton), pas une constante.
 
 Usage : `uvicorn axelcompta.api.app:app --reload --port 8000` depuis
@@ -1023,7 +1023,7 @@ def get_decisions() -> DecisionRepository:
 
 def get_dossiers() -> DossierRepository:
     """Dépendance FastAPI — dossiers et tenants (`tenants/`), peuplés par
-    `python -m axelcompta.demo_seed` (voir backend/README.md)."""
+    l'import Digifactory (voir docs/17-plan-demo-backend.md)."""
     return PostgresDossierRepository(_engine())
 
 

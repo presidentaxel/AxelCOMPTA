@@ -16,7 +16,7 @@ le premier.
 2026-11-05). Le suivi au jour le jour est dans Linear, projet
 [Axel Compta — V1 prod](https://linear.app/axel-project/project/axel-compta-v1-prod-api-ingestion-fiabilite-899778ce7b41),
 cible le 31/12/2026. Le passage en
-mode réel et le dossier de review UX sont dans le [doc 17](docs/17-plan-demo-backend.md), la carte du code le
+mode réel est dans le [doc 17](docs/17-plan-demo-backend.md), la carte du code le
 [doc 18](docs/18-organisation-code.md). L'historique daté (journaux de
 sprint, notes de session) est dans [docs/archive](docs/archive/) et ne se
 met plus à jour.
@@ -42,7 +42,7 @@ met plus à jour.
 | [14 — Onboarding / Offboarding](docs/14-onboarding-offboarding.md) | Cycle de vie d'un tenant : collecte des données, import en masse, connexion providers, reprise historique, export et purge | Avant le pilote client (phase 4) et à la signature de tout nouveau client |
 | [15 — Observabilité](docs/15-observabilite.md) | Métriques métier (KPIs taux catégorisation, coût LLM, balance, FEC), métriques techniques (mémoire ML, file de jobs, Bridge/Rollee), logs structurés JSON, alerting, dashboards Grafana | Avant le premier déploiement staging |
 | [16 — Intégration Digifactory](docs/16-integration-digifactory.md) | Connecteur Digifactory (agrégateur Bridge), schéma fixtures, statut du blocage token (401) | Avant tout code d'ingestion bancaire |
-| [17 — Mode réel et review UX](docs/17-plan-demo-backend.md) | Passage en mode réel (05/11), données retirées, dossier de review UX (Sophie), import des chauffeurs Digifactory | Avant de lancer l'app ou de toucher aux données |
+| [17 — Mode réel](docs/17-plan-demo-backend.md) | Passage en mode réel (05/11), données de démo retirées, import des chauffeurs Digifactory | Avant de lancer l'app ou de toucher aux données |
 | [18 — Organisation du code](docs/18-organisation-code.md) | Carte de l'arborescence `backend/`/`frontend/` vers les modules du doc 03, graphe de dépendances | Avant de toucher au code, pour situer un module |
 | [19 — Parcours utilisateur](docs/19-parcours-utilisateur.md) | Compte chauffeur (mobile) relié à sa propre banque, onboarding et visibilité gestionnaire, deux modes de connexion bancaire par dossier, mono-compte | Avant tout code front — complète doc 11 et doc 14 |
 | [20 — Dépôt des comptes annuels (INPI)](docs/20-integration-inpi-depot-comptes.md) | Schéma de l'API de dépôt Guichet Unique, pièces jointes, signature qualifiée RGS obligatoire (recoupe ADR-004) | Avant tout code de génération du dossier greffe/INPI |

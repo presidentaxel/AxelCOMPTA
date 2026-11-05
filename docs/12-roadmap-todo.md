@@ -123,7 +123,8 @@ toute autre vente.
 Serenity a ses premiers chauffeurs sur Digifactory (13 contacts, dont 7
 nouveaux). La base Supabase devient la base réelle du portefeuille ; le
 menu Démo et les faux comptes sont retirés ; Karim, Yanis et
-`demo@axelcompta.fr` sont supprimés ; Sophie reste pour les reviews UX.
+`demo@axelcompta.fr` sont supprimés, puis Sophie : plus aucune donnée ni
+compte de démo en base.
 Détail : [doc 17](17-plan-demo-backend.md). Le lien avec Rollee devient
 nécessaire pour les recettes des vrais chauffeurs. Tickets ouverts le même
 jour, dans l'ordre :
@@ -208,7 +209,8 @@ que Linear ne couvrait pas. Tickets créés dans P-AXE-28 :
 - AXE-809 : création des dossiers en masse avec rapport de validation.
 - AXE-810 : isoler la production. Le menu Démo est retiré le 05/11 et la
   base devient la production ; restent les routes `demo_api`, `/metrics`
-  et le dossier de review UX.
+  et les tags d'entreprises pour exclure les sociétés qui ne sont pas des
+  chauffeurs.
 - AXE-811 : hébergement de production (ADR-003) et restauration
   chronométrée.
 - AXE-812 : MFA demandée à la connexion, journal des connexions et exports.

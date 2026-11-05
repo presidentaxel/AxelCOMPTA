@@ -5,7 +5,7 @@
 
 > **État au 2026-11-05** : le projet Supabase `AxelCompta` (eu-west-1)
 > devient la base de production du portefeuille Serenity (doc 17) ; le
-> menu Démo est retiré et seul un dossier fictif de review UX y reste.
+> menu Démo et toutes les données de démo sont retirés.
 > Isolation stricte de la production : AXE-810. Décision de
 > production (région, sauvegardes, CLOUD Act pour l'auth) et restauration
 > chronométrée : AXE-811.

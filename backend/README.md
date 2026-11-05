@@ -261,14 +261,14 @@ par le service (crontab de l'utilisateur ou timer systemd avec
 
 Comptes Supabase : `scripts/creer_compte_gestionnaire.py` (gestionnaire),
 `scripts/migrer_liens_vers_app_metadata.py` (comptes chauffeur créés avant
-le 2026-09-21) et `scripts/creer_comptes_demo_chauffeurs.py` (les 3 comptes
+le 2026-09-21) et, jusqu'au 2026-11-05, `scripts/creer_comptes_demo_chauffeurs.py` (supprimé ; les 3 comptes
 chauffeur de démo Karim/Sophie/Yanis, `app_metadata.env: "demo"` pour les
 distinguer de vrais comptes pilote plus tard).
 
 **Depuis le 2026-11-05 (mode réel)** : la base est celle du portefeuille
 Serenity. Karim, Yanis, `demo@axelcompta.fr` et les comptes `demo-digi-*`
-ont été supprimés ; seul `demo-sophie@axelcompta.fr` reste, pour les
-reviews UX. Le paragraphe suivant est l'historique.
+puis Sophie ont été supprimés : plus aucun dossier ni compte de démo en
+base. Le paragraphe suivant est l'historique.
 
 **Comptes de démo créés pour de vrai (2026-09-22)**, persistants — pas des
 comptes de test supprimés après vérification comme jusqu'ici : deux comptes

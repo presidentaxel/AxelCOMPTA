@@ -1,4 +1,4 @@
-# 17 — Mode réel et dossier de review UX
+# 17 — Mode réel
 
 > Dernière mise à jour : 2026-11-05. Remplace le plan de démo, archivé tel
 > quel dans [archive/17-plan-demo-2026-11.md](archive/17-plan-demo-2026-11.md)
@@ -30,33 +30,22 @@ Faites sur décision de Louis du 2026-11-05 :
 
 | Quoi | Sort |
 |---|---|
-| Dossiers `DEMO_karim` et `DEMO_yanis` | Supprimés définitivement, avec leurs écritures, décisions, preuves et lignes du journal d'audit, et leurs comptes `demo-karim@` et `demo-yanis@` |
+| Dossiers `DEMO_karim`, `DEMO_yanis`, puis `DEMO_sophie` | Supprimés définitivement, avec leurs écritures, décisions, preuves, justificatifs et lignes du journal d'audit, et leurs comptes `demo-*@axelcompta.fr` |
 | Compte gestionnaire `demo@axelcompta.fr` | Supprimé. Serenity est invité avec sa vraie adresse depuis l'écran Équipe |
 | Comptes `demo-digi-*@axelcompta.fr` (6) | Supprimés. Les dossiers `DIGI_*` et leurs opérations restent |
-| `DEMO_sophie` et `demo-sophie@axelcompta.fr` | **Gardés** : dossier de review UX (§3) |
 
-Admins du portefeuille : Louis et Arthur.
+**Il n'y a plus aucun dossier ni compte de démo en base.** Comptes restants :
+Louis et Arthur, admins du portefeuille.
 
-## 3. Le dossier de review UX : Sophie
+## 3. Tests et reviews UX
 
-Un seul dossier fictif reste en base, pour tester l'interface sans toucher
-aux données d'un vrai chauffeur.
+Karim, Sophie et Yanis ne vivent plus que dans les **tests** (jeux en
+mémoire, et base locale des tests d'intégration via `amorcer_demo`).
+`python -m axelcompta.demo_seed` et `scripts/creer_comptes_demo_chauffeurs.py`
+n'existent plus : rien ne peut recréer un dossier fictif en base.
 
-- Compte : `demo-sophie@axelcompta.fr`, mot de passe dans
-  [frontend/README.md](../frontend/README.md).
-- Profil : EURL à l'IS, TVA, Uber et Bolt, une dépense ambiguë (Zara) à
-  trancher, exercice 2025 avec une frise avancée jusqu'au greffe.
-- Il apparaît dans la liste Entreprises de Serenity. Ne pas l'inviter, ne
-  pas le compter dans les chiffres du pilote.
-- Il n'y a plus de remise à neuf. Une décision se corrige ou s'annule
-  depuis l'écran (Mouvements, « Annuler »). Si le dossier doit repartir de
-  zéro, c'est une opération manuelle sur la base, à décider au cas par cas.
-- Recréer le dossier sur une base vide : `python -m axelcompta.demo_seed`
-  (il ne pose plus que Sophie), puis
-  `python scripts/creer_comptes_demo_chauffeurs.py`.
-
-Karim et Yanis restent dans les **tests** (jeux en mémoire et tests
-d'intégration sur une base locale), jamais dans la base Supabase.
+Pour voir l'espace chauffeur sur de vraies données pendant la période de
+test : un compte réservé à Louis qui choisit le dossier (AXE-822).
 
 ## 4. Importer les vrais chauffeurs
 
@@ -90,5 +79,5 @@ Le CORS n'accepte que `http://localhost:3000` ; `DATABASE_URL_WEB` doit
 | Risque | Parade |
 |---|---|
 | Les données de vrais chauffeurs vivent dans la même base que le développement | Plus de chemin applicatif qui lève les verrous ; migrations appliquées seulement après revue. Sauvegardes et restauration testée : AXE-811. Isolation stricte de la production : AXE-810 |
-| Le dossier de Sophie pollue les chiffres de Serenity | Le nommer et l'exclure à la main des bilans du pilote ; un drapeau « dossier de test » est à prévoir si cela gêne |
+| Des sociétés du compte Digifactory ne sont pas des chauffeurs (Serenity Groupe, Serenity Investissement, Bolt) | Import sur liste explicite (§4) ; tags d'entreprises pour les exclure des traitements (ticket du 05/11) |
 | Le mode expert n'a pas encore sa garde juridique | Ne pas l'ouvrir à Serenity avant AXE-800 (doc 02 §2.3) |

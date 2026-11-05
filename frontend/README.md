@@ -36,12 +36,11 @@ bloc B) : `.env.local` a aussi besoin de `NEXT_PUBLIC_SUPABASE_URL` et
 anon est faite pour être publique). Sans ça, le dashboard gestionnaire
 fonctionne normalement — seule la partie chauffeur en a besoin.
 
-**Depuis le 2026-11-05, la base est celle du portefeuille réel (Serenity).**
-Un seul dossier fictif y reste, pour les reviews UX : Sophie,
-`demo-sophie@axelcompta.fr`, mot de passe `DemoChauffeur2026!` (compte
-synthétique). Karim et Yanis n'existent plus que dans les tests. Les vrais
-chauffeurs se connectent avec leur adresse, après invitation par le
-gestionnaire.
+**Depuis le 2026-11-05, la base est celle du portefeuille réel (Serenity)
+et ne contient plus aucun compte de démo.** Karim, Sophie et Yanis
+n'existent plus que dans les tests. Les vrais chauffeurs se connectent avec
+leur adresse, après invitation par le gestionnaire. Pour voir l'espace
+chauffeur d'un dossier pendant la période de test : AXE-822.
 
 ## Les trois écrans clés (V1, doc 11 §3)
 
