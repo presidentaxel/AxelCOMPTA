@@ -94,11 +94,16 @@ haute confiance, il reste à trancher, parce que son compte dépend du statut.
 
 ## Statuts
 
-- **Démo (doc 17 §3, semaine 2, fait)** : étages 1 et 2 seulement (règles +
-  ML existant, aucun réentraînement). **Pas de LLM d'arbitrage** — pas de
-  stage 3 du tout, pas même un stub. Pas de revue humaine / UI de validation
-  (la transformation en écriture passe par `workflow/auto_accept.py`, qui
-  accepte tout sans revue — doc 17 §3).
+- **Au 2026-11-05** : étages 1 et 2 (règles, modèle v2 calibré avec
+  abstention) et propositions apprises des décisions (`appris.py`). La
+  revue humaine existe : « À traiter » côté chauffeur (une carte à la fois,
+  « Annuler », correction depuis Mouvements) et mode expert côté
+  gestionnaire. Le pipeline garde son résultat par (libellé, montant),
+  borné à 50 000 entrées, en mémoire de l'instance (AXE-565).
+- **Étage 3 (LLM)** : la porte existe dans `pseudonymize/` (prompt
+  pseudonymisé obligatoire, LLM interrogé seulement sous le seuil ML,
+  jamais d'imputation par le LLM seul), mais aucun fournisseur n'est
+  branché et `categorize` ne l'appelle pas encore.
 - **V1 (doc 12, phase 2)** : pipeline complet à 4 étages, boucle de feedback
   continue (doc 07 §5).
 
