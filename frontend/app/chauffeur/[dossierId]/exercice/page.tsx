@@ -115,7 +115,7 @@ export default function ExerciceChauffeurPage({
 }
 
 const LIEN =
-  "mt-8 block rounded-md border border-border bg-canvas p-3 text-sm text-ink";
+  "mt-8 block min-h-11 rounded-md border border-border bg-canvas p-3 text-sm text-ink outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]";
 
 /** L'affectation se décide sur son écran. Une fois décidée, « Mes dividendes »
  * reste accessible tant que le versement existe — y compris après la

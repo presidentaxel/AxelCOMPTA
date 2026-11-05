@@ -71,19 +71,19 @@ export function DividendesSection({ dossierId }: { dossierId: string }) {
         </p>
       ) : (
         <div className="mt-4 space-y-3 text-sm">
-          <label className="flex items-center gap-3">
+          <label className="flex min-h-11 flex-col gap-2">
             <span className="text-subtle">Date du versement</span>
             <Input
               type="date"
-              className="h-8 w-40"
+              className="h-11 text-base"
               value={verseLe}
               onChange={(evenement) => setVerseLe(evenement.target.value)}
             />
           </label>
-          <label className="flex gap-3 text-ink">
+          <label className="flex min-h-11 items-start gap-3 text-ink">
             <input
               type="checkbox"
-              className="mt-1"
+              className="mt-0.5 size-6 shrink-0"
               checked={dispense}
               onChange={(evenement) => setDispense(evenement.target.checked)}
             />
@@ -93,7 +93,7 @@ export function DividendesSection({ dossierId }: { dossierId: string }) {
               sociaux restent dus.
             </span>
           </label>
-          <Button disabled={enCours} onClick={declarer}>
+          <Button className="h-11" disabled={enCours} onClick={declarer}>
             {enCours ? "Déclaration…" : "J'ai versé mes dividendes"}
           </Button>
           {erreur && <p className="text-sm text-danger">{erreur}</p>}

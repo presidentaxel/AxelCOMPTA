@@ -89,7 +89,7 @@ export default function AccepterInvitationPage() {
         <p className="text-sm text-danger">{erreur}</p>
         <p className="mt-2 text-sm text-subtle">
           Redemandez une invitation à votre gestionnaire, ou{" "}
-          <Link href="/chauffeur/login" className="text-primary hover:underline">
+          <Link href="/chauffeur/login" className="inline-flex min-h-11 items-center text-primary hover:underline">
             connectez-vous
           </Link>{" "}
           si vous avez déjà un mot de passe.

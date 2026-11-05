@@ -86,12 +86,18 @@ export function PaieSection({ dossierId }: { dossierId: string }) {
           ))}
         </ul>
       )}
-      <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-        <Input type="month" value={mois} onChange={(evenement) => setMois(evenement.target.value)} />
+      <div className="mt-3 grid grid-cols-1 gap-2">
+        <Input
+          type="month"
+          className="h-11 text-base"
+          value={mois}
+          onChange={(evenement) => setMois(evenement.target.value)}
+        />
         {CHAMPS.map(([cle, libelle]) => (
           <Input
             key={cle}
             inputMode="decimal"
+            className="h-11 text-base"
             placeholder={`${libelle} (€)`}
             value={montants[cle] ?? ""}
             onChange={(evenement) =>
@@ -100,7 +106,7 @@ export function PaieSection({ dossierId }: { dossierId: string }) {
           />
         ))}
       </div>
-      <Button className="mt-3" disabled={enCours || !mois || !montants.brut} onClick={enregistrer}>
+      <Button className="mt-3 h-11" disabled={enCours || !mois || !montants.brut} onClick={enregistrer}>
         {enCours ? "Enregistrement…" : "Enregistrer le bulletin"}
       </Button>
       {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}

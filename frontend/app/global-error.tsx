@@ -12,7 +12,7 @@ export default function GlobalError({
 }) {
   return (
     <html lang="fr">
-      <body className="flex min-h-screen items-center justify-center bg-canvas-app text-ink">
+      <body className="flex min-h-dvh items-center justify-center bg-canvas-app text-ink">
         <div className="text-center">
           <p className="mb-3 text-sm text-subtle">Une erreur inattendue est survenue.</p>
           <button

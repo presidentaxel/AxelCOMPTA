@@ -153,9 +153,8 @@ export function QuestionCategorisation({
                 key={categorie}
                 type="button"
                 variant="secondary"
-                size="sm"
                 disabled={enCours}
-                className="max-w-full whitespace-normal!"
+                className="h-auto min-h-11 max-w-full whitespace-normal! px-3 py-2"
                 onClick={() => repondre(categorie)}
               >
                 {libelle}
@@ -176,14 +175,13 @@ export function QuestionCategorisation({
               placeholder="à quoi correspond-elle ?"
               autoFocus
               disabled={enCours}
-              className="h-7 min-w-0 flex-1 text-xs"
+              className="h-11 min-w-0 flex-1 text-base"
             />
             <Button
               type="submit"
               variant="secondary"
-              size="sm"
               disabled={enCours || !autreCategorie.trim()}
-              className="shrink-0"
+              className="h-11 shrink-0"
             >
               Envoyer
             </Button>
@@ -199,7 +197,7 @@ export function QuestionCategorisation({
  * ou le modèle et sa confiance. */
 function Touche({ children }: { children: string }) {
   return (
-    <kbd className="rounded-xs border border-border-strong bg-canvas-app px-1.5 py-px text-[11px] font-medium text-subtle shadow-[0_1px_0_var(--color-border-strong)]">
+    <kbd className="rounded-xs border border-border-strong bg-canvas-app px-1.5 py-px text-xs font-medium text-subtle shadow-[0_1px_0_var(--color-border-strong)]">
       {children}
     </kbd>
   );

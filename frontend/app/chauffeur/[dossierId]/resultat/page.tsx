@@ -45,7 +45,10 @@ export default function ResultatChauffeurPage({
   }, [dossierId]);
 
   const retour = (
-    <Link href={`/chauffeur/${dossierId}/exercice`} className="text-sm text-subtle underline">
+    <Link
+      href={`/chauffeur/${dossierId}/exercice`}
+      className="inline-flex min-h-11 items-center text-sm text-subtle underline"
+    >
       Retour à l&apos;exercice
     </Link>
   );
@@ -148,10 +151,10 @@ export default function ResultatChauffeurPage({
           <li key={avertissement}>{avertissement}</li>
         ))}
       </ul>
-      <label className="mt-4 flex gap-3 text-sm text-ink">
+      <label className="mt-4 flex min-h-11 gap-3 text-base text-ink">
         <input
           type="checkbox"
-          className="mt-1"
+          className="mt-0.5 size-6 shrink-0"
           checked={confirme}
           onChange={(evenement) => setConfirme(evenement.target.checked)}
         />
@@ -160,7 +163,7 @@ export default function ResultatChauffeurPage({
           scénarios ; le choix est le mien.
         </span>
       </label>
-      <Button className="mt-3" disabled={!pret || enCours} onClick={decider}>
+      <Button className="mt-3 h-11" disabled={!pret || enCours} onClick={decider}>
         {enCours ? "Enregistrement…" : "Enregistrer ma décision"}
       </Button>
       {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}
@@ -198,13 +201,14 @@ function ChampMontantLibre({
   onMontant: (valeur: string) => void;
 }) {
   return (
-    <li className={`rounded-md border bg-canvas p-3 ${choisi ? "border-ink" : "border-border"}`}>
-      <div className="flex items-center gap-3 text-sm">
+    <li className={`rounded-md border bg-canvas p-3 text-base ${choisi ? "border-ink" : "border-border"}`}>
+      <div className="flex min-h-11 items-center gap-3 text-sm">
         <input
           id="scenario-libre"
           type="radio"
           name="scenario"
           value="libre"
+          className="size-6 shrink-0"
           checked={choisi}
           onChange={onChoisir}
         />
@@ -262,11 +266,12 @@ function CarteScenario({
           choisi ? "border-ink bg-canvas" : "border-border bg-canvas"
         }`}
       >
-        <span className="flex items-center gap-3">
+        <span className="flex min-h-11 items-center gap-3">
           <input
             type="radio"
             name="scenario"
             value={scenario.cle}
+            className="size-6 shrink-0"
             checked={choisi}
             onChange={onChoisir}
           />
