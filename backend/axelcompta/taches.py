@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from axelcompta.core.db import engine_depuis_env
+from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.notifier import notifier_depuis_base
 from axelcompta.synchro_digifactory import ResultatDossier, synchroniser_portefeuille
 from axelcompta.tenants.avenants import programmer_bascules
@@ -35,12 +36,17 @@ from axelcompta.tenants.avenants_postgres import PostgresAvenantRegimeRepository
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.repository import DossierRepository
+from axelcompta.tenants.tags import SANS_TAGS, EtatTags, etat_du_portefeuille, exclus, retenus
+from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.workflow.notifications import ResultatNotification
 
-Synchroniser = Callable[[tuple[Dossier, ...]], list[ResultatDossier]]
+# Reçoit aussi les dossiers à synchroniser sans classement automatique.
+Synchroniser = Callable[[tuple[Dossier, ...], frozenset[DossierId]], list[ResultatDossier]]
 Notifier = Callable[[tuple[Dossier, ...]], list[ResultatNotification]]
 # Renvoie le nombre d'avenants de régime enregistrés.
 ProgrammerBascules = Callable[[tuple[Dossier, ...]], int]
+# Tags et exclusions d'un portefeuille (AXE-829).
+Perimetre = Callable[[TenantId], EtatTags]
 
 
 @dataclass
@@ -54,42 +60,73 @@ def lancer_taches(
     synchroniser: Synchroniser | None,
     notifier: Notifier,
     programmer_bascules: ProgrammerBascules | None = None,
+    perimetre: Perimetre | None = None,
 ) -> BilanTaches:
     """`synchroniser` à None saute la synchro (`--sans-synchro`). Un
-    portefeuille sans aucun contact Digifactory n'appelle pas Digifactory."""
+    portefeuille sans aucun contact Digifactory n'appelle pas Digifactory.
+    Un dossier qu'un tag exclut de la synchro, du classement ou des rappels
+    saute l'étape correspondante (`perimetre`, AXE-829)."""
     bilan = BilanTaches()
     for tenant in depot.lister_tenants():
         dossiers = depot.lister_par_tenant(tenant.id)
         if not dossiers:
             continue
-        if synchroniser is not None and any(d.contact_nr for d in dossiers):
-            try:
-                resultats = synchroniser(dossiers)
-            except Exception as exc:  # noqa: BLE001 — la notification passe quand même
-                bilan.echec = True
-                bilan.lignes.append(f"{tenant.id} synchro : échec ({type(exc).__name__}: {exc})")
-            else:
-                erreurs = [r for r in resultats if r.erreur]
-                bilan.echec |= bool(erreurs)
-                bilan.lignes.append(
-                    f"{tenant.id} synchro : {len(resultats) - len(erreurs)} ok, "
-                    f"{len(erreurs)} en échec"
-                )
+        etat = perimetre(tenant.id) if perimetre is not None else SANS_TAGS
+        if synchroniser is not None:
+            _synchroniser(bilan, tenant.id, dossiers, etat, synchroniser)
         if programmer_bascules is not None:
-            try:
-                nb = programmer_bascules(dossiers)
-            except Exception as exc:  # noqa: BLE001 — une étape n'arrête pas les autres
-                bilan.echec = True
-                bilan.lignes.append(f"{tenant.id} bascules : échec ({type(exc).__name__})")
-            else:
-                if nb:
-                    bilan.lignes.append(f"{tenant.id} bascules de régime : {nb} enregistrées")
-        notifs = notifier(dossiers)
-        creees = sum(1 for r in notifs if r.statut == "creee")
-        echecs = sum(1 for r in notifs if r.statut == "echec")
-        bilan.echec |= echecs > 0
-        bilan.lignes.append(f"{tenant.id} notifications : {creees} créées, {echecs} en échec")
+            _programmer_bascules(bilan, tenant.id, dossiers, programmer_bascules)
+        _notifier(bilan, tenant.id, retenus(dossiers, etat, "rappels"), notifier)
     return bilan
+
+
+def _synchroniser(
+    bilan: BilanTaches,
+    tenant_id: TenantId,
+    dossiers: tuple[Dossier, ...],
+    etat: EtatTags,
+    synchroniser: Synchroniser,
+) -> None:
+    a_synchroniser = retenus(dossiers, etat, "synchro")
+    if not any(d.contact_nr for d in a_synchroniser):
+        return
+    try:
+        resultats = synchroniser(a_synchroniser, exclus(dossiers, etat, "categorisation"))
+    except Exception as exc:  # noqa: BLE001 — la notification passe quand même
+        bilan.echec = True
+        bilan.lignes.append(f"{tenant_id} synchro : échec ({type(exc).__name__}: {exc})")
+        return
+    erreurs = [r for r in resultats if r.erreur]
+    bilan.echec |= bool(erreurs)
+    bilan.lignes.append(
+        f"{tenant_id} synchro : {len(resultats) - len(erreurs)} ok, {len(erreurs)} en échec"
+    )
+
+
+def _programmer_bascules(
+    bilan: BilanTaches,
+    tenant_id: TenantId,
+    dossiers: tuple[Dossier, ...],
+    programmer_bascules: ProgrammerBascules,
+) -> None:
+    try:
+        nb = programmer_bascules(dossiers)
+    except Exception as exc:  # noqa: BLE001 — une étape n'arrête pas les autres
+        bilan.echec = True
+        bilan.lignes.append(f"{tenant_id} bascules : échec ({type(exc).__name__})")
+        return
+    if nb:
+        bilan.lignes.append(f"{tenant_id} bascules de régime : {nb} enregistrées")
+
+
+def _notifier(
+    bilan: BilanTaches, tenant_id: TenantId, dossiers: tuple[Dossier, ...], notifier: Notifier
+) -> None:
+    notifs = notifier(dossiers)
+    creees = sum(1 for r in notifs if r.statut == "creee")
+    echecs = sum(1 for r in notifs if r.statut == "echec")
+    bilan.echec |= echecs > 0
+    bilan.lignes.append(f"{tenant_id} notifications : {creees} créées, {echecs} en échec")
 
 
 def main() -> int:
@@ -101,7 +138,7 @@ def main() -> int:
     engine = engine_depuis_env()
     bilan = lancer_taches(
         PostgresDossierRepository(engine),
-        None if args.sans_synchro else (lambda d: synchroniser_portefeuille(engine, d)),
+        None if args.sans_synchro else (lambda d, s: synchroniser_portefeuille(engine, d, s)),
         lambda d: notifier_depuis_base(engine, d),
         lambda d: len(
             programmer_bascules(
@@ -110,6 +147,7 @@ def main() -> int:
                 datetime.now(UTC).replace(tzinfo=None),
             )
         ),
+        lambda tenant_id: etat_du_portefeuille(PostgresTagsRepository(engine), tenant_id),
     )
     print(f"[{debut.isoformat(timespec='seconds')}] tâches planifiées")
     for ligne in bilan.lignes:

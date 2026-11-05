@@ -14,6 +14,8 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
+    Identity,
     Integer,
     String,
     Table,
@@ -178,4 +180,44 @@ agregats_dossier = Table(
     Column("exercice_fin", Date, nullable=True),
     Column("alerte_tva", Text, nullable=True),
     Column("calcule_le", DateTime(timezone=True), nullable=True),
+)
+
+# Tags d'un portefeuille (AXE-829). Les tags proposés y sont créés au besoin.
+tags = Table(
+    "tags",
+    metadata,
+    Column("tenant_id", String, ForeignKey("tenants.id"), primary_key=True),
+    Column("nom", String, primary_key=True),
+    Column("description", String, nullable=False),
+    Column("cree_le", DateTime(timezone=True), nullable=False),
+)
+
+# Pose et retrait de tags, append-only : l'état d'un tag sur un dossier est
+# le dernier événement. L'historique est la trace (qui, quoi, quand).
+evenements_tags = Table(
+    "evenements_tags",
+    metadata,
+    Column("id", String, primary_key=True),
+    # Ordre d'insertion : à date égale, le dernier inséré fait foi.
+    Column("rang", BigInteger, Identity(), nullable=False),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("tag", String, nullable=False),
+    Column("pose", Boolean, nullable=False),  # True : posé ; False : retiré
+    Column("par", String, nullable=False),
+    Column("le", DateTime(timezone=True), nullable=False),
+    ForeignKeyConstraint(["tenant_id", "tag"], ["tags.tenant_id", "tags.nom"]),
+)
+
+# Réglages d'exclusion, append-only : le dernier par traitement fait foi.
+reglages_exclusion = Table(
+    "reglages_exclusion",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("rang", BigInteger, Identity(), nullable=False),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False, index=True),
+    Column("traitement", String, nullable=False),
+    Column("tags", JSON, nullable=False),
+    Column("par", String, nullable=False),
+    Column("le", DateTime(timezone=True), nullable=False),
 )

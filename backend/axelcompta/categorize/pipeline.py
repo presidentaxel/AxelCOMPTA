@@ -13,7 +13,9 @@ from collections.abc import Sequence
 from axelcompta.core.ids import DossierId
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 
-from .models import ProposedEntry
+from .models import Etage, ProposedEntry
+
+CATEGORIE_NON_CLASSEE = "non_classee"
 
 
 class CategorizationPipeline(ABC):
@@ -32,3 +34,21 @@ class CategorizationPipeline(ABC):
         implémentation qui regarde les opérations ensemble (virements
         internes, AXE-826) le surcharge."""
         return [self.categoriser(dossier_id, transaction) for transaction in transactions]
+
+
+class SansClassement(CategorizationPipeline):
+    """Aucun étage : chaque opération part en attente (471) pour un regard
+    humain. Pour un dossier exclu du classement automatique (AXE-829)."""
+
+    def categoriser(
+        self,
+        dossier_id: DossierId,
+        transaction: NormalizedTransaction,
+    ) -> ProposedEntry:
+        return ProposedEntry(
+            dossier_id=dossier_id,
+            transaction_id=transaction.id,
+            categorie=CATEGORIE_NON_CLASSEE,
+            etage=Etage.REVUE_HUMAINE,
+            confiance=0.0,
+        )

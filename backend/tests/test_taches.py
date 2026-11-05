@@ -12,6 +12,7 @@ from axelcompta.synchro_digifactory import ResultatDossier
 from axelcompta.taches import lancer_taches
 from axelcompta.tenants.memory import InMemoryDossierRepository
 from axelcompta.tenants.models import Dossier, Tenant
+from axelcompta.tenants.tags import EXCLUSIONS_PAR_DEFAUT, TAG_SOCIETE_DU_GESTIONNAIRE, EtatTags
 from axelcompta.workflow.notifications import ResultatNotification
 
 
@@ -43,8 +44,11 @@ class _Appels:
     def __init__(self) -> None:
         self.synchro: list[tuple[str, ...]] = []
 
-    def synchroniser(self, dossiers: tuple[Dossier, ...]) -> list[ResultatDossier]:
+    def synchroniser(
+        self, dossiers: tuple[Dossier, ...], sans_classement: frozenset[DossierId]
+    ) -> list[ResultatDossier]:
         self.synchro.append(tuple(d.id for d in dossiers))
+        self.sans_classement = sans_classement
         return [ResultatDossier(d.id) for d in dossiers]
 
 
@@ -64,7 +68,9 @@ def test_un_portefeuille_sans_contact_digifactory_nest_pas_synchronise() -> None
 
 
 def test_une_synchro_qui_plante_nempeche_pas_les_notifications() -> None:
-    def planter(dossiers: tuple[Dossier, ...]) -> list[ResultatDossier]:
+    def planter(
+        dossiers: tuple[Dossier, ...], sans_classement: frozenset[DossierId]
+    ) -> list[ResultatDossier]:
         raise ConnectionError("digifactory")
 
     bilan = lancer_taches(_depot(("b1", "B", "12")), planter, _notifier_tout)
@@ -85,7 +91,7 @@ def test_un_dossier_en_echec_rend_le_passage_en_echec(
 ) -> None:
     bilan = lancer_taches(
         _depot(("b1", "B", "12")),
-        lambda _d: [resultat_synchro],
+        lambda _d, _s: [resultat_synchro],
         lambda d: [ResultatNotification(x.id, statut_notif) for x in d],
     )
 
@@ -123,3 +129,29 @@ def test_une_bascule_en_echec_n_empeche_pas_les_notifications() -> None:
 
     assert bilan.echec
     assert bilan.lignes[-1] == "A notifications : 1 créées, 0 en échec"
+
+
+def test_les_tags_excluent_de_la_synchro_du_classement_et_des_rappels() -> None:
+    """AXE-829 : `b1` est une société du gestionnaire (exclue de tout), `b2`
+    un chauffeur qu'on ne veut pas classer automatiquement."""
+    appels = _Appels()
+    notifies: list[str] = []
+    depot = _depot(("b1", "B", "12"), ("b2", "B", "13"), ("b3", "B", "14"))
+    exclusions = dict(EXCLUSIONS_PAR_DEFAUT, categorisation=frozenset({"sans_auto"}))
+    etat = EtatTags(
+        {
+            DossierId("b1"): frozenset({TAG_SOCIETE_DU_GESTIONNAIRE}),
+            DossierId("b2"): frozenset({"sans_auto"}),
+        },
+        exclusions,
+    )
+
+    def notifier(dossiers: tuple[Dossier, ...]) -> list[ResultatNotification]:
+        notifies.extend(d.id for d in dossiers)
+        return _notifier_tout(dossiers)
+
+    lancer_taches(depot, appels.synchroniser, notifier, perimetre=lambda _t: etat)
+
+    assert appels.synchro == [("b2", "b3")]
+    assert appels.sans_classement == frozenset({"b2"})
+    assert notifies == ["b2", "b3"]

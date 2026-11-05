@@ -65,6 +65,7 @@ from axelcompta.demo_api import (
     get_registre_anomalies,
     get_role_membre,
     get_signatures_inpi,
+    get_tags,
 )
 from axelcompta.demo_chauffeurs_type import construire_ledger
 from axelcompta.demo_comptes import Invitation
@@ -85,6 +86,7 @@ from axelcompta.tenants.exercices import InMemoryExerciceRepository
 from axelcompta.tenants.memory import InMemoryDossierRepository
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.provisions_cloture import InMemoryProvisionsClotureRepository
+from axelcompta.tenants.tags_memoire import TagsMemoire
 from axelcompta.workflow.decisions import DecisionHumaine
 from axelcompta.workflow.decisions_memory import InMemoryDecisionRepository
 from axelcompta.workflow.notifications import (
@@ -214,6 +216,8 @@ def _client_et_stubs(
     app.dependency_overrides[get_provisions_cloture] = lambda: provisions_stub
     agregats_stub = InMemoryAgregatsRepository()
     app.dependency_overrides[get_agregats] = lambda: agregats_stub
+    tags_stub = TagsMemoire()
+    app.dependency_overrides[get_tags] = lambda: tags_stub
     # `droits_membre` est en Postgres : le rôle est fixé ici.
     app.dependency_overrides[get_role_membre] = lambda: role
     app.dependency_overrides[get_consentements] = lambda: _ConsentementsStub()
