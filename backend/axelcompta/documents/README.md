@@ -16,10 +16,16 @@ bancaires.
 
 ## Statuts
 
-- **Démo (doc 17 §3)** : **non prévu.** Explicitement exclu du scope démo —
-  les transactions sont traitées sans matching de pièce.
-- **V1 (doc 12, phase 0.3 puis 1-2)** : spike OCR (30 tickets réels, Tesseract
-  vs PaddleOCR vs Vision LLM) avant tout développement en profondeur.
+- **Fait le 2026-10-24 (AXE-425, PR #51)** : stockage des photos de
+  justificatifs. Une photo est rangée par tenant et dossier (`fichier.py`),
+  avec empreinte et 8 Mo max ; un identifiant qui sortirait du dossier est
+  refusé. Les lignes vont dans la table `justificatifs` (`postgres.py`,
+  `orm.py`) sous le rôle web, avec RLS. `memoire.py` sert aux tests. Le
+  chauffeur attache une photo à une seule dépense, choisie avant l'envoi
+  (AXE-483).
+- **Pas fait** : lecture de la photo (OCR), Factur-X, matching automatique,
+  stockage WORM. Le spike OCR (30 tickets réels, Tesseract vs PaddleOCR vs
+  Vision LLM) reste le préalable.
 
 ## Doc de référence
 
