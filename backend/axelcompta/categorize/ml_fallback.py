@@ -19,10 +19,12 @@ au modèle comme une dépense.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import os
 from bisect import bisect_right
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -38,6 +40,37 @@ CHEMIN_MODELE_PAR_DEFAUT = (
 class ModeleMlIndisponible(DomaineError):
     """Le modèle .joblib n'est pas présent sur ce poste (gitignoré) — erreur
     attendue, pas un bug (doc 08 §5)."""
+
+
+class ModeleMlCorrompu(ModeleMlIndisponible):
+    """Le fichier ne correspond pas à son empreinte `.sha256` (AXE-825)."""
+
+
+# AXE-825 : sans modèle, la synchro s'arrête. Ce repli n'est permis qu'en
+# développement et en test, et seulement s'il est demandé.
+VARIABLE_SANS_MODELE = "AXELCOMPTA_SANS_MODELE"
+
+
+def repli_sans_modele_permis(environ: Mapping[str, str] | None = None) -> bool:
+    valeurs = os.environ if environ is None else environ
+    return valeurs.get(VARIABLE_SANS_MODELE, "").strip() == "1"
+
+
+def chemin_empreinte(chemin: Path) -> Path:
+    """`tfidf_logreg_v2.joblib.sha256`, écrit à l'entraînement."""
+    return chemin.with_name(chemin.name + ".sha256")
+
+
+def verifier_empreinte(chemin: Path) -> None:
+    """Compare le fichier à son empreinte, si elle existe. Une empreinte
+    absente n'est pas une erreur : les modèles d'avant AXE-825 n'en ont pas."""
+    empreinte = chemin_empreinte(chemin)
+    if not empreinte.is_file():
+        return
+    attendue = empreinte.read_text(encoding="utf-8").split()[0].strip().lower()
+    reelle = hashlib.sha256(chemin.read_bytes()).hexdigest()
+    if reelle != attendue:
+        raise ModeleMlCorrompu(f"{chemin} : empreinte {reelle[:12]}…, attendue {attendue[:12]}…")
 
 
 class ModeleSklearn(Protocol):
@@ -105,6 +138,7 @@ def charger_modele(chemin: Path | None = None) -> ModeleSklearn:
     chemin = chemin or CHEMIN_MODELE_PAR_DEFAUT
     if not chemin.is_file():
         raise ModeleMlIndisponible(str(chemin))
+    verifier_empreinte(chemin)
     import joblib  # import différé : coûteux, inutile si le modèle est absent
 
     modele: ModeleSklearn = joblib.load(chemin)

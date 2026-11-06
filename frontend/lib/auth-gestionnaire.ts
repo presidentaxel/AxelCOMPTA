@@ -26,6 +26,7 @@ import {
 } from "./auth-chauffeur";
 import type {
   AlerteAnomalie,
+  EtatCategorisation,
   DossierAgregat,
   EvenementAnomalie,
   FileExpert,
@@ -388,6 +389,14 @@ export async function inviterMembre(email: string, role: RoleMembre): Promise<Me
     throw new ApiError(corps.detail ?? `HTTP ${reponse.status}`, reponse.status);
   }
   return (await reponse.json()) as MembrePortefeuille;
+}
+
+/** AXE-825 : le modèle de catégorisation est-il chargé côté serveur ?
+ * `null` si l'état n'a pas pu être lu (on n'affiche alors rien). */
+export async function lireCategorisation(): Promise<EtatCategorisation | null> {
+  const reponse = await requeteGestionnaire("/portefeuille/categorisation");
+  if (!reponse.ok) return null;
+  return (await reponse.json()) as EtatCategorisation;
 }
 
 export async function lireNomPortefeuille(): Promise<string> {

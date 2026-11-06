@@ -316,3 +316,9 @@ export type OperationsClassees = {
   compteurs: { auto: number; chauffeur: number; expert: number; justes: number; fausses: number };
   categories: string[];
 };
+
+/** AXE-825 : sans modèle, la synchro s'arrête et la catégorisation est dégradée. */
+export type EtatCategorisation = {
+  modele_charge: boolean;
+  raison: string | null;
+};
