@@ -75,6 +75,7 @@ from axelcompta.demo_api import (
 from axelcompta.demo_chauffeurs_type import construire_ledger
 from axelcompta.demo_comptes import Invitation
 from axelcompta.demo_comptes_memory import InMemoryCompteRepository
+from axelcompta.demo_identites import IDENTITE_SOPHIE
 from axelcompta.demo_justificatifs import InMemoryJustificatifRepository
 from axelcompta.ingestion.comptes_bancaires import CompteBancaireMemoire
 from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion
@@ -1578,6 +1579,8 @@ def test_la_2031_est_servie_a_l_ir_et_refusee_a_l_is() -> None:
             nom="EURL IR",
             tva_recettes_regime="assujetti_taux_reduit",
             exercice_debut=date(2025, 1, 1),
+            # Une société sans siège, capital ni associés n'a pas de liasse (AXE-730).
+            identite=IDENTITE_SOPHIE,
         )
     )
 
