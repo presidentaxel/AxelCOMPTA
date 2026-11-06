@@ -26,6 +26,7 @@ import {
 } from "./messages-auth";
 import { appelAuthentifie, erreurApi, lireCorps } from "./session";
 import type {
+  CompteBancaireVue,
   AffectationVue,
   BulletinVue,
   DividendesVue,
@@ -432,6 +433,13 @@ export async function joindreJustificatifChauffeur(
     throw erreurApi(corps, reponse);
   }
   return corps as TransactionVue;
+}
+
+/** AXE-832 : les comptes bancaires du dossier et leurs deux soldes. */
+export async function listerComptesBancairesChauffeur(
+  dossierId: string,
+): Promise<CompteBancaireVue[]> {
+  return fetchAvecAuthChauffeur<CompteBancaireVue[]>(`/dossiers/${dossierId}/comptes-bancaires`);
 }
 
 /** Notifications internes du chauffeur, les plus récentes d'abord. */

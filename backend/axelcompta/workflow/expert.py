@@ -13,6 +13,7 @@ from collections.abc import Set as AbstractSet
 
 from axelcompta.core.errors import DomaineError
 from axelcompta.core.ids import EcritureId
+from axelcompta.core.pcg import est_compte_banque
 from axelcompta.ledger.contrepassation import contrepasser, origine
 from axelcompta.ledger.models import Ecriture, Journal
 
@@ -24,7 +25,7 @@ class ImputationRefusee(DomaineError):
 
 
 def _a_reclasser(compte: str) -> bool:
-    return compte != "512" and not compte.startswith("445")
+    return not est_compte_banque(compte) and not compte.startswith("445")
 
 
 def preparer_imputation(

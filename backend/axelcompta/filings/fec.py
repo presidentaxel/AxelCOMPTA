@@ -27,6 +27,7 @@ Compta Demat » (outil DGFiP, Windows uniquement), que ce dépôt ne lance pas.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from datetime import date
 
 from axelcompta.core.errors import DomaineError
@@ -187,7 +188,12 @@ def _montant(centimes: int) -> str:
     return f"{centimes // 100},{centimes % 100:02d}"
 
 
-def _ligne_fec(ecriture: Ecriture, numero: int, ligne: LigneEcriture) -> tuple[str, ...]:
+def _ligne_fec(
+    ecriture: Ecriture,
+    numero: int,
+    ligne: LigneEcriture,
+    libelles_comptes: Mapping[str, str],
+) -> tuple[str, ...]:
     date_str = ecriture.date.strftime("%Y%m%d")
     # AXE-557 : Debit et Credit sont des zones obligatoires (A.47 A-1).
     # Une ligne d'écriture à sens unique n'est pas une case de formulaire
@@ -201,7 +207,7 @@ def _ligne_fec(ecriture: Ecriture, numero: int, ligne: LigneEcriture) -> tuple[s
         str(numero),
         date_str,
         ligne.compte,
-        libelle_compte(ligne.compte),
+        _zone(libelles_comptes.get(ligne.compte) or libelle_compte(ligne.compte)),
         "",  # CompAuxNum — pas de compte auxiliaire modélisé (facultatif)
         "",  # CompAuxLib
         _zone(ecriture.reference_piece or ecriture.id),
@@ -276,16 +282,24 @@ def valider_fec(contenu: str) -> None:
     _controler_corps(enregistrements[1:])
 
 
-def exporter_fec(ecritures: tuple[Ecriture, ...]) -> str:
+def exporter_fec(
+    ecritures: tuple[Ecriture, ...], libelles_comptes: Mapping[str, str] | None = None
+) -> str:
     """Écritures triées par date (les à-nouveaux d'abord le même jour), puis
     numérotées 1, 2, 3... dans cet ordre : la séquence continue et
-    chronologique qu'exige le BOI, quelle que soit la numérotation interne."""
+    chronologique qu'exige le BOI, quelle que soit la numérotation interne.
+
+    `libelles_comptes` : libellé propre au dossier d'un compte précis, qui
+    remplace celui du plan comptable (AXE-832 : « Banque — Compte PRO » pour
+    5121). Un libellé vide garde celui du plan."""
+    libelles = libelles_comptes or {}
     ordre_journal = {Journal.AN: 0}
     triees = sorted(ecritures, key=lambda e: (e.date, ordre_journal.get(e.journal, 1), e.id))
     lignes_texte = [SEPARATEUR_ZONE.join(COLONNES_FEC)]
     for numero, ecriture in enumerate(triees, start=1):
         lignes_texte += [
-            SEPARATEUR_ZONE.join(_ligne_fec(ecriture, numero, ligne)) for ligne in ecriture.lignes
+            SEPARATEUR_ZONE.join(_ligne_fec(ecriture, numero, ligne, libelles))
+            for ligne in ecriture.lignes
         ]
     contenu = SEPARATEUR_ENREGISTREMENT.join(lignes_texte) + SEPARATEUR_ENREGISTREMENT
     valider_fec(contenu)

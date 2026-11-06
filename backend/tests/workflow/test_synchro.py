@@ -16,6 +16,7 @@ import pytest
 from axelcompta.categorize.models import Etage, ProposedEntry
 from axelcompta.categorize.rules_and_ml import RulesAndMlPipeline
 from axelcompta.core.ids import DossierId, TenantId, TransactionId
+from axelcompta.ingestion.comptes_bancaires import CompteBancaireMemoire
 from axelcompta.ingestion.journal import InMemoryJournalIngestion
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ingestion.providers.digifactory import (
@@ -23,6 +24,7 @@ from axelcompta.ingestion.providers.digifactory import (
     DigifactoryHttpClient,
     DigifactoryProvider,
 )
+from axelcompta.ledger.invariants import verifier_equilibre
 from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.packs.vtc_demo import charger_compte_par_categorie, charger_regles
 from axelcompta.tenants.models import Dossier
@@ -345,3 +347,130 @@ def test_un_repas_reconnu_par_regle_n_est_jamais_impute_seul() -> None:
     proposition = pipeline.categoriser(DossierId("d"), transaction)
     assert proposition.categorie == "repas_et_receptions"
     assert choisir_compte(proposition, charger_compte_par_categorie()) == "471"
+
+
+def _synchroniser_avec_comptes(
+    env: Env, comptes_bancaires: CompteBancaireMemoire
+) -> RapportSynchro:
+    return asyncio.run(
+        synchroniser_dossier(
+            DOSSIER,
+            DigifactoryProvider(payload=env.payload),
+            "digifactory",
+            env.journal,
+            env.ledger,
+            env.propositions,
+            RulesAndMlPipeline(regles=charger_regles(), modele=None),
+            charger_compte_par_categorie(),
+            comptes_bancaires,
+        )
+    )
+
+
+def _banques(env: Env) -> dict[str, str]:
+    """Ligne de banque de chaque écriture, par id de transaction."""
+    return {
+        e.id.rsplit("-", 1)[-1]: next(
+            ligne.compte for ligne in e.lignes if ligne.compte.startswith("512")
+        )
+        for e in env.ledger.grand_livre(DOSSIER.id)
+    }
+
+
+def test_chaque_compte_bancaire_a_son_sous_compte_512() -> None:
+    """AXE-832 : MK DRIVING a 5 comptes ; chacun son 512x, pas un 512 commun."""
+    env = Env(
+        {
+            "acc": [
+                _tx(
+                    "t1",
+                    "CARTE TOTAL STATION",
+                    -60.0,
+                    "2026-03-01",
+                    "2026-03-01 10:00:00",
+                    account_id="pro",
+                ),
+                _tx(
+                    "t2",
+                    "VIR RECU UBER BV",
+                    848.0,
+                    "2026-03-02",
+                    "2026-03-02 10:00:00",
+                    account_id="fiscal",
+                ),
+                _tx(
+                    "t3",
+                    "PAIEMENT MYSTERE XYZ",
+                    -12.5,
+                    "2026-03-03",
+                    "2026-03-03 10:00:00",
+                    account_id="pro",
+                ),
+                _tx("t4", "SANS COMPTE", -1.0, "2026-03-04", "2026-03-04 10:00:00"),
+            ]
+        }
+    )
+    comptes = CompteBancaireMemoire()
+
+    _synchroniser_avec_comptes(env, comptes)
+
+    assert _banques(env) == {"t1": "5121", "t2": "5122", "t3": "5121", "t4": "512"}
+    assert {c.identifiant: c.compte_comptable for c in comptes.lister(DOSSIER.id)} == {
+        "pro": "5121",
+        "fiscal": "5122",
+    }
+    for ecriture in env.ledger.grand_livre(DOSSIER.id):
+        verifier_equilibre(ecriture)
+
+
+def test_une_resynchro_sur_un_sous_compte_reste_idempotente() -> None:
+    """La signature d'une écriture se lit aussi sur un 512x : rien de
+    « modifié » à la deuxième lecture."""
+    env = Env(
+        {
+            "acc": [
+                _tx(
+                    "t1",
+                    "CARTE TOTAL STATION",
+                    -60.0,
+                    "2026-03-01",
+                    "2026-03-01 10:00:00",
+                    account_id="pro",
+                )
+            ]
+        }
+    )
+    comptes = CompteBancaireMemoire()
+    _synchroniser_avec_comptes(env, comptes)
+    env.payload = {"acc": [_modifiee() | {"amount": -60.0, "account_id": "pro"}]}
+
+    rapport = _synchroniser_avec_comptes(env, comptes)
+
+    assert (rapport.nouvelles, rapport.deja_connues, rapport.modifiees_signalees) == (0, 1, 0)
+
+
+def test_un_montant_modifie_sur_un_sous_compte_est_contre_passe() -> None:
+    env = Env(
+        {
+            "acc": [
+                _tx(
+                    "t1",
+                    "CARTE TOTAL STATION",
+                    -60.0,
+                    "2026-03-01",
+                    "2026-03-01 10:00:00",
+                    account_id="pro",
+                )
+            ]
+        }
+    )
+    comptes = CompteBancaireMemoire()
+    _synchroniser_avec_comptes(env, comptes)
+    env.payload = {"acc": [_modifiee() | {"account_id": "pro"}]}
+
+    rapport = _synchroniser_avec_comptes(env, comptes)
+
+    assert rapport.modifiees_signalees == 1
+    inverses = [e for e in env.ledger.grand_livre(DOSSIER.id) if e.id.endswith(":contrepassation")]
+    assert len(inverses) == 1
+    assert any(ligne.compte == "5121" for ligne in inverses[0].lignes)

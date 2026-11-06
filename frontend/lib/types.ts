@@ -254,3 +254,15 @@ export type BulletinVue = {
   brut_cts: number;
   net_a_payer_cts: number;
 };
+
+/** AXE-832 : un compte bancaire du dossier, son sous-compte 512x et ses
+ * deux soldes. `solde_banque_cts` est celui du dernier relevé Digifactory ;
+ * `null` si le compte n'a jamais été relevé (et l'écart aussi). */
+export type CompteBancaireVue = {
+  compte: string;
+  nom: string | null;
+  solde_comptable_cts: number;
+  solde_banque_cts: number | null;
+  releve_le: string | null;
+  ecart_cts: number | null;
+};
