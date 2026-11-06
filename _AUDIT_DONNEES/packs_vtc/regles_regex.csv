@@ -1,4 +1,5 @@
 regex,categorie,confiance,source
+(?i)\bretrait\b|\bdab\b|\bgab\b|withdrawal,retrait_especes,haute,"ajoutée le 2026-11-06 (AXE-844) : retraits au distributeur, à préciser par le chauffeur (activité ou personnel)"
 (?i)\btotal\b|\besso\b|\bbp\b|\bshell\b|\bavia\b|carburant|gazole|\bgo\b\W*\d,carburant,haute,libellés réels échantillon carburant
 cofiroute|sanef|\basf\b|vinci|effia|aprr|sapn|parkeo|horodat|parking,peage_stationnement,haute,libellés réels échantillon péage
 norauto|midas|feu vert|speedy|euro.?repar|contr[oô]le tech|entret,entretien_reparation_vehicule,haute,libellés réels échantillon entretien
