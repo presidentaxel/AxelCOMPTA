@@ -28,7 +28,7 @@ from axelcompta.categorize.ml_fallback import (
     charger_calibration,
     charger_modele,
 )
-from axelcompta.categorize.pipeline import CategorizationPipeline
+from axelcompta.categorize.pipeline import CategorizationPipeline, SansClassement
 from axelcompta.categorize.rules_and_ml import RulesAndMlPipeline
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
@@ -57,6 +57,8 @@ from axelcompta.packs.vtc_demo import (
 )
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
+from axelcompta.tenants.tags import etat_du_portefeuille, exclus, retenus
+from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.workflow.propositions import PropositionRepository
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
 from axelcompta.workflow.synchro import RapportSynchro, SourceTransactions, synchroniser_dossier
@@ -89,12 +91,16 @@ async def synchroniser_dossiers(
     pipeline: CategorizationPipeline,
     comptes: dict[str, str],
     comptes_bancaires: CompteBancaireRepository | None = None,
+    sans_classement: frozenset[DossierId] = frozenset(),
 ) -> list[ResultatDossier]:
+    """`sans_classement` : dossiers dont les opérations entrent sans
+    classement automatique (tag exclu du traitement, AXE-829)."""
     resultats: list[ResultatDossier] = []
     for dossier in dossiers:
         if dossier.contact_nr is None:
             resultats.append(ResultatDossier(dossier.id, ignore="pas de contact Digifactory"))
             continue
+        etages = SansClassement() if dossier.id in sans_classement else pipeline
         try:
             rapport = await synchroniser_dossier(
                 dossier,
@@ -103,7 +109,7 @@ async def synchroniser_dossiers(
                 journal,
                 ledger,
                 propositions,
-                pipeline,
+                etages,
                 comptes,
                 comptes_bancaires,
             )
@@ -163,7 +169,9 @@ async def _relever_consentements(
 
 
 def synchroniser_portefeuille(
-    engine: Engine, dossiers: tuple[Dossier, ...]
+    engine: Engine,
+    dossiers: tuple[Dossier, ...],
+    sans_classement: frozenset[DossierId] = frozenset(),
 ) -> list[ResultatDossier]:
     """Synchro + relevé des consentements, pour un lot de dossiers. Point
     d'entrée partagé par la ligne de commande et les tâches planifiées
@@ -196,6 +204,7 @@ def synchroniser_portefeuille(
                 pipeline,
                 charger_compte_par_categorie(),
                 comptes_bancaires,
+                sans_classement,
             )
             return await _relever_consentements(
                 client,
@@ -225,10 +234,17 @@ def main() -> int:
             print(f"Dossier inconnu : {args.dossier}", file=sys.stderr)
             return 1
         dossiers: tuple[Dossier, ...] = (dossier,)
+        sans_classement: frozenset[DossierId] = frozenset()
     else:
-        dossiers = depot.lister_par_tenant(TenantId(args.tenant))
+        # Un dossier demandé nommément passe toujours ; un portefeuille suit
+        # ses tags (AXE-829).
+        tenant_id = TenantId(args.tenant)
+        etat = etat_du_portefeuille(PostgresTagsRepository(engine), tenant_id)
+        tous = depot.lister_par_tenant(tenant_id)
+        dossiers = retenus(tous, etat, "synchro")
+        sans_classement = exclus(tous, etat, "categorisation")
 
-    resultats = synchroniser_portefeuille(engine, dossiers)
+    resultats = synchroniser_portefeuille(engine, dossiers, sans_classement)
     for resultat in resultats:
         _afficher(resultat)
     return 1 if any(r.erreur for r in resultats) else 0

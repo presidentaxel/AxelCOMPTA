@@ -46,6 +46,7 @@ from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.statuts import RegimeImposition
+from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.workflow.decisions import DecisionHumaine
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
 from axelcompta.workflow.notifications import NotificationEnvoyee
@@ -491,3 +492,24 @@ def test_un_compte_bancaire_reste_dans_son_dossier(
         assert web.lister(DossierId("karim")) == ()
     with contexte_identite(dossier_id=None, tenant_id="tenant-b"):
         assert web.lister(DossierId("karim")) == ()
+
+
+def test_les_tags_restent_dans_leur_portefeuille(
+    engine: Engine, engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """Migration `e5b9d3f72a48` (AXE-829) : le portefeuille A tague ses
+    dossiers, ne voit pas les tags de B, et ne peut pas taguer un dossier de
+    B. Les événements ne se modifient pas."""
+    le = datetime(2026, 11, 5, tzinfo=UTC)
+    web = PostgresTagsRepository(engine_web)
+    with contexte_identite(dossier_id=None, tenant_id="tenant-a"):
+        web.poser(TenantId("tenant-a"), DossierId("karim"), "chauffeur", UserId("louis"), le)
+        assert web.tags_des_dossiers(TenantId("tenant-a")) == {
+            DossierId("karim"): frozenset({"chauffeur"})
+        }
+        with pytest.raises((ProgrammingError, DBAPIError)):
+            web.poser(TenantId("tenant-a"), DossierId("yanis"), "chauffeur", UserId("louis"), le)
+    with contexte_identite(dossier_id=None, tenant_id="tenant-b"):
+        assert web.tags_des_dossiers(TenantId("tenant-a")) == {}
+    with engine.begin() as connexion, pytest.raises(DBAPIError):
+        connexion.execute(text("UPDATE evenements_tags SET pose = false"))

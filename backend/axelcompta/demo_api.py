@@ -174,6 +174,16 @@ from axelcompta.tenants.statuts import (
     charger_matrice,
     configuration_de,
 )
+from axelcompta.tenants.tags import (
+    TRAITEMENTS,
+    EtatTags,
+    Tag,
+    TagInvalide,
+    TagsRepository,
+    etat_du_portefeuille,
+    nom_de_tag,
+)
+from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.workflow.decisions import (
     CATEGORIE_ANNULATION,
     DecisionHumaine,
@@ -328,6 +338,10 @@ class DossierAgregat(BaseModel):
     # régime, pas un détail comptable (doc 19 §2.4).
     alerte_regime: str | None = None
     alerte_tva: str | None = None
+    # AXE-829 : tags du dossier ; `exclu_compteurs` le sort des compteurs et
+    # filtres d'Entreprises (il reste listé, grisé).
+    tags: list[str] = []
+    exclu_compteurs: bool = False
     # Configuration proposée sans certitude (AXE-834) : « forme_juridique »,
     # « exercice ». Une information de configuration, pas un détail comptable.
     a_confirmer: list[str] = []
@@ -427,6 +441,8 @@ class AnnulationImputationEntree(BaseModel):
 class FileExpertVue(BaseModel):
     sujets: list[SujetExpertVue]
     comptes: list[CompteChoix]
+    # AXE-829 : tags des dossiers présents dans la file, pour le filtre.
+    tags_par_dossier: dict[str, list[str]] = {}
 
 
 class ImputationEntree(BaseModel):
@@ -1285,6 +1301,15 @@ def get_agregats() -> AgregatsRepository:
 AgregatsDep = Annotated[AgregatsRepository, Depends(get_agregats)]
 
 
+def get_tags() -> TagsRepository:
+    """Tags du portefeuille (AXE-829). Postgres, rôle web, RLS par
+    portefeuille ; `TagsMemoire` dans les tests."""
+    return PostgresTagsRepository(_engine())
+
+
+TagsDep = Annotated[TagsRepository, Depends(get_tags)]
+
+
 def _trancher(
     dossier: Dossier,
     ecriture_id: str,
@@ -1653,6 +1678,7 @@ def _enregistrer_routes_dossiers(app: FastAPI) -> None:
         signatures: SignaturesInpiDep,
         provisions: ProvisionsDep,
         agregats: AgregatsDep,
+        tags: TagsDep,
         identite: IdentiteDep,
     ) -> list[DossierAgregat]:
         """Vue gestionnaire (doc 19 §2.1) : agrégats des dossiers **de son
@@ -1661,7 +1687,7 @@ def _enregistrer_routes_dossiers(app: FastAPI) -> None:
         triggers) : ouvrir la liste ne reparcourt pas le grand livre de
         chaque dossier."""
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
-        return _agregats_portefeuille(
+        vues = _agregats_portefeuille(
             dossiers.lister_par_tenant(tenant_id),
             base,
             decisions,
@@ -1670,6 +1696,7 @@ def _enregistrer_routes_dossiers(app: FastAPI) -> None:
             provisions,
             agregats,
         )
+        return _avec_tags(vues, etat_du_portefeuille(tags, tenant_id))
 
     @app.get("/dossiers/{dossier_id}", response_model=DossierResume)
     def obtenir_dossier(
@@ -2069,6 +2096,140 @@ def _enregistrer_routes_portefeuille(app: FastAPI) -> None:
             raise HTTPException(status_code=404, detail="Dossier retiré introuvable.")
         dossiers.restaurer(dossier.id)
         return {"dossier_id": dossier.id}
+
+
+class TagVue(BaseModel):
+    nom: str
+    description: str
+
+
+class ReglageTagsVue(BaseModel):
+    """Tags du portefeuille et, par traitement, ceux qui en excluent."""
+
+    tags: list[TagVue]
+    traitements: dict[str, str]
+    exclusions: dict[str, list[str]]
+
+
+class NouveauTag(BaseModel):
+    nom: str
+    description: str = ""
+
+
+class PoseDeTags(BaseModel):
+    """Pose ou retrait en lot depuis la liste Entreprises."""
+
+    dossier_ids: list[str]
+    pose: bool = True
+
+
+class ReglageExclusion(BaseModel):
+    tags: list[str]
+
+
+def _avec_tags(vues: list[DossierAgregat], etat: EtatTags) -> list[DossierAgregat]:
+    """AXE-829 : tags de chaque dossier et sortie des compteurs."""
+    return [
+        vue.model_copy(
+            update={
+                "tags": sorted(etat.tags_de(DossierId(vue.dossier_id))),
+                "exclu_compteurs": etat.exclu(DossierId(vue.dossier_id), "compteurs"),
+            }
+        )
+        for vue in vues
+    ]
+
+
+def _reglage_tags_vue(depot: TagsRepository, tenant_id: TenantId) -> ReglageTagsVue:
+    return ReglageTagsVue(
+        tags=[TagVue(nom=t.nom, description=t.description) for t in depot.lister_tags(tenant_id)],
+        traitements=dict(TRAITEMENTS),
+        exclusions={k: sorted(v) for k, v in depot.exclusions(tenant_id).items()},
+    )
+
+
+def _gestionnaire_qui_ecrit(
+    identite: IdentiteAuthentifiee | None, role: str
+) -> tuple[TenantId, IdentiteAuthentifiee]:
+    """Rôle admin ou membre, jamais lecture (AXE-701)."""
+    tenant_id, identite_ok = _verifier_acces_gestionnaire(identite)
+    _exiger_ecriture(role, "Le rôle lecture ne pose pas de tags.")
+    return tenant_id, identite_ok
+
+
+def _dossiers_du_portefeuille(
+    dossiers: DossierRepository, tenant_id: TenantId, ids: Sequence[str]
+) -> list[DossierId]:
+    trouves = []
+    for brut in ids:
+        dossier = dossiers.obtenir(DossierId(brut))
+        if dossier is None or dossier.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Dossier introuvable.")
+        trouves.append(dossier.id)
+    return trouves
+
+
+def _en_400(erreur: TagInvalide) -> HTTPException:
+    return HTTPException(status_code=400, detail=str(erreur))
+
+
+def _enregistrer_routes_tags(app: FastAPI) -> None:
+    @app.get("/tags", response_model=ReglageTagsVue)
+    def lire_tags(tags: TagsDep, identite: IdentiteDep) -> ReglageTagsVue:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _reglage_tags_vue(tags, tenant_id)
+
+    @app.post("/tags", response_model=ReglageTagsVue)
+    def creer_tag(
+        corps: NouveauTag, tags: TagsDep, role: RoleMembreDep, identite: IdentiteDep
+    ) -> ReglageTagsVue:
+        tenant_id, _identite = _gestionnaire_qui_ecrit(identite, role)
+        try:
+            tags.creer_tag(Tag(tenant_id, nom_de_tag(corps.nom), corps.description.strip()))
+        except TagInvalide as erreur:
+            raise _en_400(erreur) from erreur
+        return _reglage_tags_vue(tags, tenant_id)
+
+    @app.post("/tags/{tag}/dossiers", status_code=204)
+    def poser_tags(
+        tag: str,
+        corps: PoseDeTags,
+        dossiers: DossiersDep,
+        tags: TagsDep,
+        role: RoleMembreDep,
+        identite: IdentiteDep,
+    ) -> None:
+        """Pose (ou retire, `pose: false`) un tag sur un ou plusieurs
+        dossiers. Chaque geste est un événement daté et signé."""
+        tenant_id, identite_ok = _gestionnaire_qui_ecrit(identite, role)
+        maintenant = datetime.now(UTC)
+        for dossier_id in _dossiers_du_portefeuille(dossiers, tenant_id, corps.dossier_ids):
+            geste = tags.poser if corps.pose else tags.retirer
+            try:
+                geste(tenant_id, dossier_id, tag, identite_ok.user_id, maintenant)
+            except TagInvalide as erreur:
+                raise _en_400(erreur) from erreur
+
+    @app.put("/tags/exclusions/{traitement}", response_model=ReglageTagsVue)
+    def regler_exclusion(
+        traitement: str,
+        corps: ReglageExclusion,
+        tags: TagsDep,
+        role: RoleMembreDep,
+        identite: IdentiteDep,
+    ) -> ReglageTagsVue:
+        tenant_id, identite_ok = _gestionnaire_qui_ecrit(identite, role)
+        try:
+            tags.regler_exclusion(
+                tenant_id,
+                traitement,
+                frozenset(corps.tags),
+                identite_ok.user_id,
+                datetime.now(UTC),
+            )
+        except TagInvalide as erreur:
+            raise _en_400(erreur) from erreur
+        return _reglage_tags_vue(tags, tenant_id)
 
 
 _URGENCE = {"expire": 0, "a_renouveler": 1, "jamais_connecte": 3, "actif": 4}
@@ -3677,6 +3838,7 @@ def _sujets_expert(
     decisions: DecisionRepository,
     justificatifs: JustificatifRepository,
     registre: RegistreInstructions,
+    avec_anomalies: bool = True,
 ) -> list[SujetExpertVue]:
     ledger = _ledger_avec_decisions(dossier, base, decisions)
     exclues = annulees(ledger.grand_livre(dossier.id))
@@ -3686,7 +3848,10 @@ def _sujets_expert(
         if EcritureId(vue.ecriture_id) not in exclues
         if (sujet := _sujet_depuis_vue(dossier, vue)) is not None
     ]
-    sujets.extend(_sujets_anomalies(dossier, ledger, decisions, justificatifs, registre, exclues))
+    if avec_anomalies:
+        sujets.extend(
+            _sujets_anomalies(dossier, ledger, decisions, justificatifs, registre, exclues)
+        )
     return sujets
 
 
@@ -3783,15 +3948,36 @@ def _enregistrer_routes_expert(app: FastAPI) -> None:
         decisions: DecisionsDep,
         justificatifs: JustificatifsDep,
         registre: RegistreAnomaliesDep,
+        tags: TagsDep,
         identite: IdentiteDep,
     ) -> FileExpertVue:
         """File de l'expert-comptable : sujets chauffeur et gestionnaire,
-        tous dossiers du portefeuille. Le portefeuille agrégé ne change pas."""
+        tous dossiers du portefeuille, sauf ceux qu'un tag exclut du mode
+        expert ou des anomalies (AXE-829)."""
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        etat = etat_du_portefeuille(tags, tenant_id)
         sujets: list[SujetExpertVue] = []
         for dossier in dossiers.lister_par_tenant(tenant_id):
-            sujets.extend(_sujets_expert(dossier, base, decisions, justificatifs, registre))
-        return FileExpertVue(sujets=sujets, comptes=_comptes_expert())
+            if etat.exclu(dossier.id, "expert"):
+                continue
+            sujets.extend(
+                _sujets_expert(
+                    dossier,
+                    base,
+                    decisions,
+                    justificatifs,
+                    registre,
+                    avec_anomalies=not etat.exclu(dossier.id, "anomalies"),
+                )
+            )
+        presents = {sujet.dossier_id for sujet in sujets}
+        return FileExpertVue(
+            sujets=sujets,
+            comptes=_comptes_expert(),
+            tags_par_dossier={
+                str(d): sorted(t) for d, t in etat.par_dossier.items() if str(d) in presents and t
+            },
+        )
 
     app.post("/expert/imputations", response_model=ImputationVue)(imputer_ecriture)
     app.post("/expert/imputations/annuler", status_code=204)(annuler_imputation)
@@ -3811,6 +3997,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_annulation(app)
     _enregistrer_routes_anomalies(app)
     _enregistrer_routes_expert(app)
+    _enregistrer_routes_tags(app)
     _enregistrer_routes_revue(app)
     _enregistrer_routes_portefeuille(app)
     _enregistrer_routes_connexions(app)

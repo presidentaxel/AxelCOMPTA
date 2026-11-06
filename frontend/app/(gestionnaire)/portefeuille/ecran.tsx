@@ -15,6 +15,7 @@ import {
   listerDossiers,
   listerDossiersRetires,
   listerRegles,
+  lireTags,
   restaurerDossier,
   retirerDossier,
   type RegleRappel,
@@ -34,9 +35,16 @@ import {
   rangEtape,
 } from "@/lib/filtres-portefeuille";
 import { formatDate, formatMontant } from "@/lib/format";
-import type { DossierAgregat } from "@/lib/types";
+import { gardeTag, libelleTag, SANS_TAG, TOUS_LES_TAGS, totauxPortefeuille } from "@/lib/tags";
+import type { DossierAgregat, ReglageTags } from "@/lib/types";
 import { useDroitGestionnaire } from "@/lib/use-droit";
 import { Squelette } from "@/components/Squelette";
+import {
+  PastillesTags,
+  PoseEnLot,
+  ReglageExclusions,
+  TagsDuDossier,
+} from "@/components/TagsEntreprises";
 
 type FiltreCompte = "tous" | "sans_compte" | "invite" | "ouvert";
 type FiltreResultat = "tous" | "negatif" | "positif";
@@ -56,6 +64,9 @@ export function EcranEntreprises() {
   const forme = params.get("forme") ?? "toutes";
   const tva = params.get("tva") ?? "toutes";
   const etape = params.get("etape") ?? "toutes";
+  const tag = params.get("tag") ?? TOUS_LES_TAGS;
+  const [reglageTags, setReglageTags] = useState<ReglageTags | null>(null);
+  const [coches, setCoches] = useState<string[]>([]);
   const tri = lireTri(params.get("tri"));
   const page = Math.max(1, Number(params.get("page")) || 1);
   const selection = params.get("ouvert");
@@ -84,6 +95,7 @@ export function EcranEntreprises() {
     if (memo) setDossiers(memo);
     charger();
     listerRegles().then(setRegles).catch(() => setRegles([]));
+    lireTags().then(setReglageTags).catch(() => setReglageTags(null));
     listerDossiersRetires().then(setRetires).catch(() => setRetires([]));
   }, [charger]);
 
@@ -128,6 +140,7 @@ export function EcranEntreprises() {
       if (forme !== "toutes" && dossier.forme_juridique !== forme) return false;
       if (tva !== "toutes" && dossier.tva_recettes_regime !== tva) return false;
       if (etape !== "toutes" && !gardeEtape(dossier, etape)) return false;
+      if (!gardeTag({ tags: dossier.tags ?? [] }, tag)) return false;
       if (!aiguille) return true;
       return `${dossier.nom} ${dossier.plateformes.join(" ")}`.toLowerCase().includes(aiguille);
     });
@@ -141,7 +154,7 @@ export function EcranEntreprises() {
       }
       return a.nom.localeCompare(b.nom, "fr");
     });
-  }, [compte, dossiers, etape, forme, recherche, resultat, tri, tva]);
+  }, [compte, dossiers, etape, forme, recherche, resultat, tag, tri, tva]);
 
   const pages = Math.max(1, Math.ceil(visibles.length / PAR_PAGE));
   const pageCourante = Math.min(page, pages);
@@ -153,15 +166,17 @@ export function EcranEntreprises() {
     forme !== "toutes" ||
     tva !== "toutes" ||
     etape !== "toutes" ||
+    tag !== TOUS_LES_TAGS ||
     tri !== "nom";
 
+  // Les entreprises qu'un tag sort des compteurs restent listées, grisées.
   const totaux = useMemo(
-    () => ({
-      nombre: visibles.length,
-      sansCompte: visibles.filter((dossier) => dossier.statut_invitation === null).length,
-      resultat: visibles.reduce((somme, dossier) => somme + dossier.resultat_cts, 0),
-    }),
+    () => totauxPortefeuille(visibles.map((d) => ({ ...d, exclu_compteurs: d.exclu_compteurs ?? false }))),
     [visibles],
+  );
+  const comptees = useMemo(
+    () => (dossiers ?? []).filter((dossier) => !dossier.exclu_compteurs).length,
+    [dossiers],
   );
 
   const choisi = dossiers?.find((dossier) => dossier.dossier_id === selection) ?? null;
@@ -207,11 +222,21 @@ export function EcranEntreprises() {
           </ul>
         </section>
       )}
+      {reglageTags && (
+        <ReglageExclusions
+          reglage={reglageTags}
+          ecriture={droit.ecriture}
+          onModifie={(reglage) => {
+            setReglageTags(reglage);
+            charger();
+          }}
+        />
+      )}
       {dossiers ? (
         <dl className="mt-8 flex flex-wrap gap-x-12 gap-y-4">
           <Total
             libelle="Entreprises"
-            valeur={dossiers.length === visibles.length ? String(totaux.nombre) : `${visibles.length} sur ${dossiers.length}`}
+            valeur={totaux.nombre === comptees ? String(totaux.nombre) : `${totaux.nombre} sur ${comptees}`}
           />
           <Total libelle="Sans compte" valeur={String(totaux.sansCompte)} />
           <Total libelle="Résultat" valeur={formatMontant(totaux.resultat)} montant={totaux.resultat} />
@@ -271,6 +296,18 @@ export function EcranEntreprises() {
           }))}
           onChoisir={(valeur) => ecrire({ etape: valeur })}
         />
+        {reglageTags && (
+          <Filtre
+            libelle="Tag"
+            valeur={tag}
+            options={[
+              { id: TOUS_LES_TAGS, libelle: "Tous" },
+              { id: SANS_TAG, libelle: "Sans tag" },
+              ...reglageTags.tags.map((option) => ({ id: option.nom, libelle: libelleTag(option.nom) })),
+            ]}
+            onChoisir={(valeur) => ecrire({ tag: valeur })}
+          />
+        )}
         <Filtre
           libelle="Tri"
           valeur={tri}
@@ -283,7 +320,7 @@ export function EcranEntreprises() {
         />
         {filtresActifs && (
           <Button type="button" variant="ghost" size="sm" onClick={() => ecrire({
-            q: null, compte: null, resultat: null, forme: null, tva: null, etape: null, tri: null,
+            q: null, compte: null, resultat: null, forme: null, tva: null, etape: null, tag: null, tri: null,
           })}>
             Réinitialiser
           </Button>
@@ -306,11 +343,39 @@ export function EcranEntreprises() {
         </div>
       )}
 
+      {droit.ecriture && (
+        <PoseEnLot
+          coches={coches}
+          reglage={reglageTags}
+          onFait={() => {
+            setCoches([]);
+            charger();
+          }}
+        />
+      )}
       <ul className="mt-4">
         {tranche.map((dossier) => {
           const bloque = etapeBloquante(dossier.etape_courante, dossier.statut_invitation === "actif");
           return (
-          <li key={dossier.dossier_id} className="border-b border-hairline">
+          <li
+            key={dossier.dossier_id}
+            className={`flex items-start gap-2 border-b border-hairline ${dossier.exclu_compteurs ? "opacity-60" : ""}`}
+          >
+            {droit.ecriture && reglageTags && (
+              <input
+                type="checkbox"
+                className="mt-4 ml-1"
+                aria-label={`Cocher ${dossier.nom}`}
+                checked={coches.includes(dossier.dossier_id)}
+                onChange={(evenement) =>
+                  setCoches((avant) =>
+                    evenement.target.checked
+                      ? [...avant, dossier.dossier_id]
+                      : avant.filter((id) => id !== dossier.dossier_id),
+                  )
+                }
+              />
+            )}
             <button
               type="button"
               aria-current={selection === dossier.dossier_id ? "true" : undefined}
@@ -330,6 +395,7 @@ export function EcranEntreprises() {
                   <span className="truncate text-base font-semibold text-ink">{dossier.nom}</span>
                   <span className="shrink-0 text-sm text-subtle">{libelleCompte(dossier.statut_invitation)}</span>
                   <span className="shrink-0 text-sm font-medium text-ink">{bloque}</span>
+                  <PastillesTags tags={dossier.tags ?? []} />
                 </span>
                 <span className="mt-2 block space-y-1">
                   <Frise
@@ -429,6 +495,13 @@ export function EcranEntreprises() {
           >
             Anomalies
           </Link>
+          <TagsDuDossier
+            dossierId={choisi.dossier_id}
+            tags={choisi.tags ?? []}
+            reglage={reglageTags}
+            ecriture={droit.ecriture}
+            onModifie={charger}
+          />
           <dl className="mt-6 space-y-4 text-sm">
             <Ligne libelle="Résultat" valeur={formatMontant(choisi.resultat_cts)} />
             <Ligne libelle="CA HT" valeur={formatMontant(choisi.ca_ht_cts)} />

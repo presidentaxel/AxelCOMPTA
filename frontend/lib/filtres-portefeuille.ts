@@ -1,4 +1,4 @@
-import type { DossierAgregat } from "@/lib/types";
+import type { DossierAgregat } from "./types";
 
 /** Même ordre que la frise du portefeuille. */
 export const ETAPES_FRISE = [

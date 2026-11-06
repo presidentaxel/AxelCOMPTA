@@ -29,7 +29,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import httpx
@@ -49,6 +49,8 @@ from axelcompta.synchro_digifactory import synchroniser_portefeuille
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.sirene import FicheSirene, configurer_depuis_sirene, fiche_depuis_reponse
+from axelcompta.tenants.tags import POSE_PAR_IMPORT, TAG_CHAUFFEUR, a_taguer_chauffeur
+from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 
 
 async def _contacts_bruts() -> dict[str, dict[str, object]]:
@@ -160,16 +162,27 @@ def _synchroniser(dossiers: tuple[Dossier, ...]) -> int:
 def main() -> int:
     arguments = _arguments()
     load_dotenv(Path(__file__).resolve().parents[2] / ".env")
-    depot = PostgresDossierRepository(engine_depuis_env())
+    engine = engine_depuis_env()
+    depot = PostgresDossierRepository(engine)
     if arguments.sirene:
         _aligner_sirene(depot)
+        _taguer_chauffeurs(depot, PostgresTagsRepository(engine))
         return 0
     contacts = asyncio.run(_contacts_bruts())
     if arguments.lister:
         _lister(depot, contacts)
         return 0
     dossiers = _importer(depot, contacts, arguments.contacts)
+    _taguer_chauffeurs(depot, PostgresTagsRepository(engine))
     return 0 if arguments.sans_synchro else _synchroniser(dossiers)
+
+
+def _taguer_chauffeurs(depot: PostgresDossierRepository, tags: PostgresTagsRepository) -> None:
+    """Tag `chauffeur` d'après le NAF (AXE-829). Les autres tags
+    (`societe_du_gestionnaire`, `hors_perimetre`) se posent à la main."""
+    for dossier_id in a_taguer_chauffeur(depot.lister_par_tenant(TENANT_DEMO)):
+        tags.poser(TENANT_DEMO, dossier_id, TAG_CHAUFFEUR, POSE_PAR_IMPORT, datetime.now(UTC))
+        print(f"{dossier_id} : tag chauffeur", flush=True)
 
 
 def _poser(depot: PostgresDossierRepository, contact: dict[str, object]) -> Dossier | None:

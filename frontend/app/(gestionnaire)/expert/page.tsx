@@ -14,6 +14,15 @@ import {
 } from "@/lib/auth-gestionnaire";
 import { remplacerSujetsDuDossier } from "@/lib/file-expert";
 import { formatMontant } from "@/lib/format";
+import {
+  ecrireFiltreTag,
+  gardeTag,
+  libelleTag,
+  lireFiltreTag,
+  SANS_TAG,
+  tagsPresents,
+  TOUS_LES_TAGS,
+} from "@/lib/tags";
 import type { FileExpert, ImputationFaite, SujetExpert } from "@/lib/types";
 
 const PAGE = 50;
@@ -47,7 +56,13 @@ export default function ModeExpertPage() {
   } | null>(null);
   const [entreprise, setEntreprise] = useState("toutes");
   const [nature, setNature] = useState("toutes");
+  const [tag, setTag] = useState(TOUS_LES_TAGS);
   const [visible, setVisible] = useState(PAGE);
+
+  useEffect(() => {
+    // Filtre de tag partageable par l'URL (AXE-829), lu une fois à l'arrivée.
+    setTag(lireFiltreTag(window.location.search));
+  }, []);
 
   const retenirSuggestions = useCallback((sujets: SujetExpert[]) => {
     setCompte((actuel) => {
@@ -89,9 +104,11 @@ export default function ModeExpertPage() {
     return (file?.sujets ?? []).filter((sujet) => {
       if (entreprise !== "toutes" && sujet.dossier_id !== entreprise) return false;
       if (nature !== "toutes" && sujet.nature !== nature) return false;
-      return true;
+      const tags = file?.tags_par_dossier?.[sujet.dossier_id] ?? [];
+      return gardeTag({ tags }, tag);
     });
-  }, [entreprise, file, nature]);
+  }, [entreprise, file, nature, tag]);
+  const tagsDeLaFile = useMemo(() => tagsPresents(file?.tags_par_dossier ?? {}), [file]);
 
   const page = filtres.slice(0, visible);
 
@@ -151,10 +168,16 @@ export default function ModeExpertPage() {
     }
   }
 
-  function changerFiltre(suivant: "entreprise" | "nature", valeur: string) {
+  function changerFiltre(suivant: "entreprise" | "nature" | "tag", valeur: string) {
     setVisible(PAGE);
     if (suivant === "entreprise") setEntreprise(valeur);
-    else setNature(valeur);
+    else if (suivant === "nature") setNature(valeur);
+    else {
+      setTag(valeur);
+      router.replace(ecrireFiltreTag(window.location.pathname, window.location.search, valeur), {
+        scroll: false,
+      });
+    }
   }
 
   return (
@@ -247,6 +270,24 @@ export default function ModeExpertPage() {
                 ))}
               </select>
             </label>
+            {tagsDeLaFile.length > 0 && (
+              <label className="text-sm text-subtle">
+                Tag
+                <select
+                  value={tag}
+                  onChange={(evenement) => changerFiltre("tag", evenement.target.value)}
+                  className="ml-2 h-9 rounded-md border border-border bg-canvas px-3 text-sm text-ink"
+                >
+                  <option value={TOUS_LES_TAGS}>Tous</option>
+                  <option value={SANS_TAG}>Sans tag</option>
+                  {tagsDeLaFile.map((nom) => (
+                    <option key={nom} value={nom}>
+                      {libelleTag(nom)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <p className="text-sm text-subtle">
               {page.length} sur {filtres.length}
               {filtres.length !== file.sujets.length ? ` (${file.sujets.length} au total)` : ""}

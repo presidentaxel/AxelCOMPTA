@@ -190,3 +190,24 @@ def test_le_releve_garde_le_nom_et_le_solde_de_chaque_compte_bancaire() -> None:
     assert par_id["67078853"].solde_banque_cts == 73_349
     assert par_id["67078894"].solde_banque_cts == 110
     assert comptes.lister(b.id) == ()
+
+
+def test_un_dossier_exclu_du_classement_garde_ses_operations_en_attente() -> None:
+    """AXE-829 : l'opération entre au grand livre, mais en 471, sans règle."""
+    autre = dataclasses.replace(BASE, id=DossierId("d"), contact_nr="4")
+    resultats = asyncio.run(
+        synchroniser_dossiers(
+            (BASE, autre),
+            DigifactoryProvider(payload=PAYLOAD),
+            InMemoryJournalIngestion(),
+            InMemoryLedgerService(),
+            InMemoryPropositionRepository(),
+            RulesAndMlPipeline(regles=charger_regles(), modele=None),
+            charger_compte_par_categorie(),
+            sans_classement=frozenset({DossierId("d")}),
+        )
+    )
+    rapports = {r.dossier_id: r.rapport for r in resultats}
+    classe, en_attente = rapports[DossierId("a")], rapports[DossierId("d")]
+    assert classe is not None and classe.a_trancher == 0
+    assert en_attente is not None and (en_attente.nouvelles, en_attente.a_trancher) == (1, 1)

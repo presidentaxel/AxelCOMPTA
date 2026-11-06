@@ -86,6 +86,18 @@ export type DossierAgregat = {
   alerte_tva: string | null;
   /** AXE-834 : configuration proposée sans certitude, à confirmer par le dirigeant. */
   a_confirmer: string[];
+  /** AXE-829 : tags du dossier ; exclu des compteurs, il reste listé, grisé. */
+  tags: string[];
+  exclu_compteurs: boolean;
+};
+
+export type TagPortefeuille = { nom: string; description: string };
+
+/** Tags du portefeuille et, par traitement, ceux qui en excluent un dossier. */
+export type ReglageTags = {
+  tags: TagPortefeuille[];
+  traitements: Record<string, string>;
+  exclusions: Record<string, string[]>;
 };
 
 export type AlerteAnomalie = {
@@ -130,6 +142,8 @@ export type ImputationFaite = {
 export type FileExpert = {
   sujets: SujetExpert[];
   comptes: { compte: string; libelle: string }[];
+  /** AXE-829 : tags des dossiers de la file. */
+  tags_par_dossier?: Record<string, string[]>;
 };
 
 // doc 17 §9 Semaine 4 + AXE-417/418 : exports de clôture (PDF + CSV),
