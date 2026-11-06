@@ -316,3 +316,26 @@ export type OperationsClassees = {
   compteurs: { auto: number; chauffeur: number; expert: number; justes: number; fausses: number };
   categories: string[];
 };
+
+/** AXE-845 : suivi de la dernière demande de synchro du portefeuille. */
+export type Synchronisation = {
+  statut: "en_attente" | "en_cours" | "fait" | "echec";
+  resultat: string | null;
+  erreur: string | null;
+  demandee_le: string | null;
+  terminee_le: string | null;
+};
+
+/** AXE-845 : un contact Digifactory sans dossier, préparé depuis Sirene. */
+export type NouveauChauffeur = {
+  contact_nr: string;
+  nom: string;
+  siren: string | null;
+  forme: string | null;
+  exercice_debut: string | null;
+  code_naf: string | null;
+  avertissements: string[];
+  cessee: boolean;
+  decision: "ajouter" | "ignorer" | null;
+};
+

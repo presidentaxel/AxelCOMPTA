@@ -30,8 +30,10 @@ import type {
   EvenementAnomalie,
   FileExpert,
   ImputationFaite,
+  NouveauChauffeur,
   OperationsClassees,
   ReglageTags,
+  Synchronisation,
 } from "./types";
 
 const CLE_SESSION = "axelcompta_session_gestionnaire";
@@ -728,3 +730,46 @@ export async function noterVerdict(
     throw new ApiError(corps?.detail ?? "Le verdict n'a pas été enregistré.", reponse.status);
   }
 }
+
+// --- Synchronisation et nouveaux chauffeurs Digifactory (AXE-845) ---
+
+async function lireJson<T>(reponse: Response, message: string): Promise<T> {
+  if (!reponse.ok) {
+    const corps = (await reponse.json().catch(() => null)) as { detail?: string } | null;
+    throw new ApiError(corps?.detail ?? message, reponse.status);
+  }
+  return (await reponse.json()) as T;
+}
+
+export async function lireSynchronisation(): Promise<Synchronisation | null> {
+  return lireJson(await requeteGestionnaire("/portefeuille/synchronisation"), "Suivi indisponible.");
+}
+
+export async function lancerSynchronisation(): Promise<Synchronisation> {
+  return lireJson(
+    await requeteGestionnaire("/portefeuille/synchroniser", { method: "POST" }),
+    "La synchronisation n'a pas pu être lancée.",
+  );
+}
+
+export async function listerNouveauxChauffeurs(): Promise<NouveauChauffeur[]> {
+  return lireJson(
+    await requeteGestionnaire("/portefeuille/nouveaux-chauffeurs"),
+    "Impossible de lire les nouveaux chauffeurs.",
+  );
+}
+
+export async function deciderNouveauxChauffeurs(
+  contactNrs: string[],
+  decision: "ajouter" | "ignorer" | "reprendre",
+): Promise<NouveauChauffeur[]> {
+  return lireJson(
+    await requeteGestionnaire("/portefeuille/nouveaux-chauffeurs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contact_nrs: contactNrs, decision }),
+    }),
+    "La décision n'a pas été enregistrée.",
+  );
+}
+

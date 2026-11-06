@@ -356,3 +356,13 @@ Détail complet de la correspondance arbre ↔ docs : [docs/18-organisation-code
 Le travail d'audit dans [`_AUDIT_DONNEES/`](../_AUDIT_DONNEES/README.md) n'est
 pas dupliqué ici : `packs/` et `categorize/` s'y réfèrent directement (pack
 VTC, modèle TF-IDF entraîné, CSV FEC labellisé). Voir [doc 17 §4bis](../docs/archive/17-plan-demo-journal-2026-09.md#4bis-ce-quon-réutilise-déjà-accélérateurs-issus-de-laudit).
+
+## Worker de la file de jobs (AXE-845)
+
+Le bouton « Synchroniser » d'Entreprises et « Ajouter » sur un nouveau
+chauffeur déposent une demande ; `scripts/worker_planifie.sh` (chaque minute,
+sous `flock`) l'exécute avec le rôle propriétaire : création des dossiers
+acceptés, détection des contacts Digifactory sans dossier, synchro, caches.
+
+    * * * * * /chemin/vers/AxeLCompta/backend/scripts/worker_planifie.sh
+
