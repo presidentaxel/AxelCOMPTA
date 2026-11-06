@@ -1,7 +1,7 @@
 """activité NAF et éléments de configuration à confirmer
 
 Revision ID: d4a8c2e61f37
-Revises: b7e1c4a92f30
+Revises: c3f7a2e81d45
 
 AXE-834. `code_naf` : activité principale Sirene. `a_confirmer` : éléments
 proposés sans certitude (forme SAS/SASU ou SARL/EURL, premier exercice tiré
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "d4a8c2e61f37"
-down_revision: str | Sequence[str] | None = "b7e1c4a92f30"
+down_revision: str | Sequence[str] | None = "c3f7a2e81d45"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
