@@ -22,6 +22,8 @@ class MouvementSurveille:
     categorie: str
     justificatif_id: str | None = None
     nature_ticket: str | None = None
+    # Carte, virement, prélèvement, retrait (AXE-836) ; None si inconnu.
+    moyen_paiement: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,3 +40,4 @@ class Alerte:
     libelle_mouvement: str
     montant_centimes: int
     date: date
+    moyen_paiement: str | None = None

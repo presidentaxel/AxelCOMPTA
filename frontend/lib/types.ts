@@ -117,6 +117,8 @@ export type AlerteAnomalie = {
   libelle_mouvement: string;
   montant_centimes: number;
   date: string;
+  /** AXE-836 : carte, virement, prélèvement, retrait (code de la banque). */
+  moyen_paiement?: string | null;
 };
 
 export type SujetExpert = {

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import date
 
+from axelcompta.anomaly.detecteurs import libelle_generique
 from axelcompta.anomaly.models import MouvementSurveille
 from axelcompta.anomaly.service import analyser
 from axelcompta.core.ids import DossierId, EcritureId
@@ -95,10 +97,71 @@ def test_le_meme_justificatif_sur_deux_depenses() -> None:
     assert ("c", "doublon_piece") not in codes
 
 
-def test_deux_pleins_le_meme_jour() -> None:
-    matin = _mouvement("matin", categorie="carburant", jour=3)
-    soir = _mouvement("soir", categorie="carburant", jour=3)
-    lendemain = _mouvement("demain", categorie="carburant", jour=4)
-    codes = _codes((matin, soir, lendemain))
-    assert {("matin", "double_plein"), ("soir", "double_plein")} <= codes
-    assert ("demain", "double_plein") not in codes
+def test_deux_pleins_un_seul_jour_ne_sont_pas_signales() -> None:
+    """AXE-836 : pour un chauffeur, deux pleins un jour donné n'ont rien
+    d'anormal ; c'est la répétition qui l'est."""
+    matin = _mouvement("matin", jour=3)
+    soir = _mouvement("soir", jour=3)
+    assert not {code for _, code in _codes((matin, soir))} & {"double_plein"}
+
+
+def test_deux_pleins_le_meme_jour_trois_jours_du_mois_sont_signales() -> None:
+    mouvements = tuple(
+        _mouvement(f"{moment}{jour}", jour=jour) for jour in (3, 10, 17) for moment in ("m", "s")
+    ) + (_mouvement("seul", jour=4),)
+    codes = _codes(mouvements)
+    assert {("m3", "double_plein"), ("s17", "double_plein")} <= codes
+    assert ("seul", "double_plein") not in codes
+    detail = next(a.detail for a in analyser(mouvements) if a.code == "double_plein")
+    assert detail == "Deux pleins le même jour, 3 jours ce mois-ci."
+
+
+def test_le_double_plein_ignore_les_petits_montants() -> None:
+    """Un café à 1,50 € le même jour qu'un plein n'en fait pas deux."""
+    mouvements = tuple(
+        m
+        for jour in (3, 10, 17)
+        for m in (
+            _mouvement(f"p{jour}", jour=jour),
+            _mouvement(f"c{jour}", montant=-150, jour=jour),
+        )
+    )
+    codes = {a.code for a in analyser(mouvements, plancher_carburant_cts=500)}
+    assert "double_plein" not in codes
+
+
+def test_un_petit_montant_carburant_est_signale() -> None:
+    alertes = analyser(
+        (_mouvement("cafe", montant=-150), _mouvement("plein", montant=-6_000)),
+        plancher_carburant_cts=500,
+    )
+    assert [(a.ecriture_id, a.detail) for a in alertes if a.code == "carburant_petit_montant"] == [
+        ("cafe", "Montant trop faible pour un plein.")
+    ]
+    assert not [
+        a
+        for a in analyser((_mouvement("cafe", montant=-150),))
+        if a.code == "carburant_petit_montant"
+    ]
+
+
+def test_un_libelle_sans_enseigne_est_signale_surtout_par_virement() -> None:
+    generique = MouvementSurveille(
+        dossier_id=DossierId("d1"),
+        ecriture_id=EcritureId("g"),
+        date=date(2026, 9, 1),
+        libelle="Paiement carburant",
+        montant_centimes=-100,
+        categorie="carburant",
+        moyen_paiement="transfer",
+    )
+    marque = dataclasses.replace(
+        generique, ecriture_id=EcritureId("t"), libelle="CB TOTAL ACCESS A6"
+    )
+    alertes = [a for a in analyser((generique, marque)) if a.code == "carburant_libelle_generique"]
+    assert [(a.ecriture_id, a.moyen_paiement) for a in alertes] == [("g", "transfer")]
+    assert "vérifier le destinataire" in alertes[0].detail
+    assert libelle_generique("GAZOLE") and not libelle_generique("ESSO EXPRESS")
+    # Tel qu'écrit par la synchro : la catégorie entre parenthèses ne compte pas.
+    assert libelle_generique("Paiement carburant (carburant)")
+    assert not libelle_generique("CB TOTAL ACCESS A6 (carburant)")

@@ -192,7 +192,10 @@ def _traiter_transactions(
             construire_ecriture_categorisee(transaction, proposition, compte, 0, banque),
             id=ecriture_id,
         )
-        propositions.enregistrer(ecriture_id, proposition)
+        propositions.enregistrer(
+            ecriture_id,
+            dataclasses.replace(proposition, moyen_paiement=transaction.type_operation),
+        )
         ledger.enregistrer(ecriture)
         compteurs.nouvelles += 1
         compteurs.a_trancher += compte == COMPTE_ATTENTE
