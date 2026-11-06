@@ -6,8 +6,13 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any, cast
 
+import pytest
+from sqlalchemy.engine import Engine
+
+from axelcompta.categorize import ml_fallback, modele_requis
 from axelcompta.categorize.rules_and_ml import RulesAndMlPipeline
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.ingestion.comptes_bancaires import CompteBancaireMemoire
@@ -21,6 +26,7 @@ from axelcompta.synchro_digifactory import (
     ResultatDossier,
     _relever_consentements,
     synchroniser_dossiers,
+    synchroniser_portefeuille,
 )
 from axelcompta.tenants.models import Dossier
 from axelcompta.workflow.propositions import InMemoryPropositionRepository
@@ -211,3 +217,18 @@ def test_un_dossier_exclu_du_classement_garde_ses_operations_en_attente() -> Non
     classe, en_attente = rapports[DossierId("a")], rapports[DossierId("d")]
     assert classe is not None and classe.a_trancher == 0
     assert en_attente is not None and (en_attente.nouvelles, en_attente.a_trancher) == (1, 1)
+
+
+def test_sans_modele_le_portefeuille_n_est_pas_synchronise(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """AXE-825 : chaque dossier en erreur, rien n'est lu chez Digifactory."""
+    monkeypatch.setattr(modele_requis, "CHEMIN_MODELE_PAR_DEFAUT", tmp_path / "absent.joblib")
+    monkeypatch.setattr(ml_fallback, "CHEMIN_MODELE_PAR_DEFAUT", tmp_path / "absent.joblib")
+    monkeypatch.delenv("AXELCOMPTA_SANS_MODELE", raising=False)
+
+    resultats = synchroniser_portefeuille(cast(Engine, None), (BASE,))
+
+    assert [(r.dossier_id, r.erreur) for r in resultats] == [
+        (BASE.id, "Modèle de catégorisation absent : synchro arrêtée.")
+    ]

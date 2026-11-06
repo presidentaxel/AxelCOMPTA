@@ -23,11 +23,8 @@ from typing import Any, Protocol
 
 from sqlalchemy.engine import Engine
 
-from axelcompta.categorize.ml_fallback import (
-    ModeleMlIndisponible,
-    charger_calibration,
-    charger_modele,
-)
+from axelcompta.categorize.ml_fallback import charger_calibration
+from axelcompta.categorize.modele_requis import SynchroSansModele, modele_pour_synchro
 from axelcompta.categorize.pipeline import CategorizationPipeline, SansClassement
 from axelcompta.categorize.rules_and_ml import RulesAndMlPipeline
 from axelcompta.core.db import engine_depuis_env
@@ -177,9 +174,10 @@ def synchroniser_portefeuille(
     d'entrée partagé par la ligne de commande et les tâches planifiées
     (`axelcompta.taches`)."""
     try:
-        modele = charger_modele()
-    except ModeleMlIndisponible:
-        modele = None
+        modele = modele_pour_synchro()
+    except SynchroSansModele as refus:
+        # AXE-825 : aucun dossier rempli de 471 en silence.
+        return [ResultatDossier(d.id, erreur=str(refus)) for d in dossiers]
     pipeline = RulesAndMlPipeline(
         regles=charger_regles(),
         modele=modele,

@@ -1,9 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
-import { obtenirSessionGestionnaire } from "@/lib/auth-gestionnaire";
+import { lireCategorisation, obtenirSessionGestionnaire } from "@/lib/auth-gestionnaire";
+import type { EtatCategorisation } from "@/lib/types";
 
 const PREVUES = [
   {
@@ -33,11 +34,24 @@ const PREVUES = [
  * connecter sa banque. Les autres intégrations sont annoncées, pas branchées. */
 export default function IntegrationsPage() {
   const router = useRouter();
+  const [categorisation, setCategorisation] = useState<EtatCategorisation | null>(null);
 
   useEffect(() => {
     if (obtenirSessionGestionnaire() === null) {
       router.replace("/connexion");
+      return;
     }
+    let actif = true;
+    lireCategorisation()
+      .then((etat) => {
+        if (actif) setCategorisation(etat);
+      })
+      .catch(() => {
+        // L'état n'a pas pu être lu : on n'affiche rien plutôt qu'un faux « en ordre ».
+      });
+    return () => {
+      actif = false;
+    };
   }, [router]);
 
   return (
@@ -58,6 +72,24 @@ export default function IntegrationsPage() {
           </span>
           <span className="shrink-0 text-xs text-subtle">Branché</span>
         </li>
+        {categorisation && (
+          <li className="flex items-start justify-between gap-6 border-b border-hairline py-4">
+            <span>
+              <span className="block text-sm font-medium text-ink">Catégorisation automatique</span>
+              <span className="mt-1 block text-sm text-subtle">
+                {categorisation.modele_charge
+                  ? "Le modèle est chargé : il propose une catégorie quand aucune règle ne s'applique."
+                  : (categorisation.raison ??
+                    "Le modèle n'est pas chargé. La synchronisation est arrêtée.")}
+              </span>
+            </span>
+            <span
+              className={`shrink-0 text-xs ${categorisation.modele_charge ? "text-subtle" : "font-medium text-danger"}`}
+            >
+              {categorisation.modele_charge ? "Branché" : "Dégradée"}
+            </span>
+          </li>
+        )}
         {PREVUES.map((integration) => (
           <li
             key={integration.nom}
