@@ -202,7 +202,10 @@ def _client_et_stubs(
     app.dependency_overrides[get_justificatifs] = lambda: justificatifs_stub
     comptes_bancaires_stub = CompteBancaireMemoire()
     app.dependency_overrides[get_comptes_bancaires] = lambda: comptes_bancaires_stub
-    app.dependency_overrides[get_registre_anomalies] = lambda: RegistreInstructions()
+    # Une seule instance par client, comme la base : une qualification reste
+    # visible aux requêtes suivantes.
+    registre_stub = RegistreInstructions()
+    app.dependency_overrides[get_registre_anomalies] = lambda: registre_stub
     app.dependency_overrides[get_signatures_inpi] = lambda: signatures_stub
     notifications_stub = InMemoryNotificationRepository()
     app.dependency_overrides[get_notifications] = lambda: notifications_stub
