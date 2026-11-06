@@ -59,15 +59,15 @@ def resoudre_ecriture_a_trancher(
     statuts et non du pack (`ConfigurationDossier.comptes_categories_statut`,
     doc 06 §3.6, §7) : usage personnel (455, 108, ou signalé sans écriture)
     et rémunération du dirigeant (641, 644, 108, ou à préciser)."""
-    compte_cible = _compte_cible(categorie_choisie, comptes_statut, comptes_par_categorie)
+    cible = compte_cible(categorie_choisie, comptes_statut, comptes_par_categorie)
     lignes = tuple(
-        dataclasses.replace(ligne, compte=compte_cible) if ligne.compte == COMPTE_ATTENTE else ligne
+        dataclasses.replace(ligne, compte=cible) if ligne.compte == COMPTE_ATTENTE else ligne
         for ligne in ecriture.lignes
     )
     return dataclasses.replace(ecriture, lignes=lignes)
 
 
-def _compte_cible(
+def compte_cible(
     categorie_choisie: str,
     comptes_statut: dict[str, str | None],
     comptes_par_categorie: dict[str, str],

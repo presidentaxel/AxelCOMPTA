@@ -217,10 +217,15 @@ from axelcompta.workflow.notifications import (
 from axelcompta.workflow.notifications_postgres import PostgresNotificationRepository
 from axelcompta.workflow.propositions import PropositionRepository
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
+from axelcompta.workflow.reclassement import (
+    annuler_reclassements,
+    grand_livre_comptable,
+    grand_livre_tranche,
+    reclasser,
+)
 from axelcompta.workflow.relances_consentement import mode_effectif
 from axelcompta.workflow.revue import (
     CategorieInconnueError,
-    appliquer_decisions,
     resoudre_ecriture_a_trancher,
 )
 from axelcompta.workflow.signature import DocumentSigne, SignatureRepository
@@ -533,15 +538,30 @@ class SignatureGreffeVue(BaseModel):
 def _ledger_avec_decisions(
     dossier: Dossier, base: LedgerService, decisions: DecisionRepository
 ) -> InMemoryLedgerService:
-    """Le ledger persisté, avec les décisions humaines ré-appliquées par-dessus
-    (doc 17 §9 bloc A/C). Les écritures d'origine ne sont jamais modifiées en
-    base (append-only, doc 06 §1) : une décision est une couche séparée."""
+    """Le grand livre vu par les écrans et la clôture (AXE-420) : les
+    reclassements écrits par les décisions, repliés dans leur opération
+    (`reclassement.grand_livre_tranche`)."""
     resultat = InMemoryLedgerService()
-    for ecriture in appliquer_decisions(
-        base.grand_livre(dossier.id),
-        decisions.lister_decisions(dossier.id),
-        configuration_de(dossier).comptes_categories_statut(),
-        charger_compte_par_categorie(),
+    for ecriture in grand_livre_tranche(
+        base.grand_livre(dossier.id), decisions.lister_decisions(dossier.id), _comptes(dossier)
+    ):
+        resultat.enregistrer(ecriture)
+    return resultat
+
+
+def _comptes(dossier: Dossier) -> tuple[dict[str, str | None], dict[str, str]]:
+    """(comptes de statut du dossier, comptes du pack) pour traduire une décision."""
+    return configuration_de(dossier).comptes_categories_statut(), charger_compte_par_categorie()
+
+
+def _ledger_comptable(
+    dossier: Dossier, base: LedgerService, decisions: DecisionRepository
+) -> InMemoryLedgerService:
+    """Le grand livre tel qu'en base, reclassements compris : FEC, grand
+    livre et balance téléchargés (AXE-420). Mêmes soldes que la vue des écrans."""
+    resultat = InMemoryLedgerService()
+    for ecriture in grand_livre_comptable(
+        base.grand_livre(dossier.id), decisions.lister_decisions(dossier.id), _comptes(dossier)
     ):
         resultat.enregistrer(ecriture)
     return resultat
@@ -1240,6 +1260,15 @@ def get_ledger_du_dossier(
 LedgerDossierDep = Annotated[InMemoryLedgerService, Depends(get_ledger_du_dossier)]
 
 
+def get_ledger_comptable(
+    dossier: DossierDep, base: LedgerBaseDep, decisions: DecisionsDep
+) -> InMemoryLedgerService:
+    return _ledger_comptable(dossier, base, decisions)
+
+
+LedgerComptableDep = Annotated[InMemoryLedgerService, Depends(get_ledger_comptable)]
+
+
 def get_justificatifs() -> JustificatifRepository:
     """Postgres, rôle web, policies RLS. Les tests surchargent avec
     `InMemoryJustificatifRepository`."""
@@ -1392,6 +1421,7 @@ def _trancher(
     if not any(ligne.compte == COMPTE_ATTENTE for ligne in ecriture.lignes):
         raise HTTPException(status_code=409, detail="Cette opération n'est pas à classer.")
     _enregistrer_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
+    _ecrire_reclassements(dossier, base, [(ecriture.id, categorie)])
     return _ecriture_decidee(dossier, base, decisions, ecriture_id)
 
 
@@ -1420,6 +1450,7 @@ def _corriger(
             detail="Cette opération ne se corrige pas par une nouvelle catégorie.",
         )
     _enregistrer_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
+    _ecrire_reclassements(dossier, base, [(ecriture.id, categorie)])
     return _ecriture_decidee(dossier, base, decisions, ecriture_id)
 
 
@@ -1460,6 +1491,27 @@ def _enregistrer_decision(
             decide_le=maintenant,
         )
     )
+
+
+def _ecrire_reclassements(
+    dossier: Dossier, base: LedgerService, tranchees: Sequence[tuple[EcritureId, str]]
+) -> None:
+    """AXE-420 : chaque décision écrit son OD de reclassement, juste après
+    avoir été enregistrée. Rien n'est écrit si le montant est déjà sur le
+    bon compte. Une décision dont l'écriture échouerait reste appliquée par
+    la couche de reprise (`grand_livre_tranche`) tant que l'opération n'a
+    aucun reclassement."""
+    ecritures = list(base.grand_livre(dossier.id))
+    par_id = {e.id: e for e in ecritures}
+    periodes = base.periodes_closes(dossier.id)
+    for ecriture_id, categorie in tranchees:
+        source = par_id.get(ecriture_id)
+        if source is None:
+            continue
+        reclassement = reclasser(source, categorie, ecritures, _comptes(dossier), periodes)
+        if reclassement is not None:
+            base.enregistrer(reclassement)
+            ecritures.append(reclassement)
 
 
 def _ecriture_decidee(
@@ -1508,6 +1560,7 @@ def _decision_suivante(
             decide_le=datetime.now(UTC),
         )
     )
+    _ecrire_reclassements(dossier, base, [(EcritureId(ecriture_id), categorie)])
     ledger = _ledger_avec_decisions(dossier, base, decisions)
     ecritures_vues = ledger.grand_livre(dossier.id)
     ecriture_vue = next(e for e in ecritures_vues if e.id == ecriture_id)
@@ -1584,6 +1637,7 @@ def _trancher_groupe(
             )
         )
     decisions.enregistrer_decisions(a_ecrire)
+    _ecrire_reclassements(dossier, base, [(d.ecriture_id, d.categorie) for d in a_ecrire])
     ledger_a_jour = _ledger_avec_decisions(dossier, base, decisions)
     voulues = {decision.ecriture_id for decision in a_ecrire}
     return [e for e in ledger_a_jour.grand_livre(dossier.id) if e.id in voulues]
@@ -2971,7 +3025,7 @@ def _enregistrer_routes_cloture(app: FastAPI) -> None:
     @app.get("/dossiers/{dossier_id}/fec.txt")
     def telecharger_fec(
         dossier: DossierDep,
-        ledger: LedgerDossierDep,
+        ledger: LedgerComptableDep,
         provisions: ProvisionsDep,
         comptes: ComptesBancairesDep,
     ) -> Response:
@@ -3052,7 +3106,7 @@ def _enregistrer_routes_comptes_bancaires(app: FastAPI) -> None:
 def _enregistrer_routes_exports(app: FastAPI) -> None:
     @app.get("/dossiers/{dossier_id}/grand-livre.csv")
     def telecharger_grand_livre(
-        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+        dossier: DossierDep, ledger: LedgerComptableDep, provisions: ProvisionsDep
     ) -> Response:
         ecritures = _ecritures_avec_cloture(
             dossier, ledger, _provisions_saisies(dossier, provisions)
@@ -3063,7 +3117,7 @@ def _enregistrer_routes_exports(app: FastAPI) -> None:
 
     @app.get("/dossiers/{dossier_id}/grand-livre.pdf")
     def telecharger_grand_livre_pdf(
-        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+        dossier: DossierDep, ledger: LedgerComptableDep, provisions: ProvisionsDep
     ) -> Response:
         ecritures = _ecritures_avec_cloture(
             dossier, ledger, _provisions_saisies(dossier, provisions)
@@ -3073,7 +3127,7 @@ def _enregistrer_routes_exports(app: FastAPI) -> None:
 
     @app.get("/dossiers/{dossier_id}/balance.csv")
     def telecharger_balance(
-        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+        dossier: DossierDep, ledger: LedgerComptableDep, provisions: ProvisionsDep
     ) -> Response:
         ecritures = _ecritures_avec_cloture(
             dossier, ledger, _provisions_saisies(dossier, provisions)
@@ -3082,7 +3136,7 @@ def _enregistrer_routes_exports(app: FastAPI) -> None:
 
     @app.get("/dossiers/{dossier_id}/balance.pdf")
     def telecharger_balance_pdf(
-        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+        dossier: DossierDep, ledger: LedgerComptableDep, provisions: ProvisionsDep
     ) -> Response:
         ecritures = _ecritures_avec_cloture(
             dossier, ledger, _provisions_saisies(dossier, provisions)
@@ -4095,6 +4149,11 @@ def imputer_ecriture(
     except ImputationRefusee as erreur:
         raise HTTPException(status_code=400, detail=str(erreur)) from erreur
     base.enregistrer(inverse)
+    # AXE-420 : la décision du chauffeur ne doit pas rester chargée en plus.
+    for annulation in annuler_reclassements(
+        ecriture.id, list(connus.values()), base.periodes_closes(dossier.id)
+    ):
+        base.enregistrer(annulation)
     base.enregistrer(nouvelle)
     sujets = _sujets_expert(dossier, base, decisions, justificatifs, registre)
     return ImputationVue(
