@@ -3995,7 +3995,7 @@ def _enregistrer_routes_expert(app: FastAPI) -> None:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="AxeLCompta — démo produit (API)", version="0.0.1")
+    app = FastAPI(title="AxeLCompta — API", version="0.0.1")
     from axelcompta.api.observabilite import brancher
 
     brancher(app)
