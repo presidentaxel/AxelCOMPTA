@@ -37,6 +37,12 @@ reste.
 - `orm.py` / `repository.py` — `PostgresLedgerService` : implémentation
   réelle contre Postgres (SQLAlchemy Core). `orm.py` définit les tables,
   séparé de `models.py` pour garder le domaine pur (doc 08 §2.1).
+- `periodes.py` (AXE-806, doc 06 I4) — aucune écriture datée dans un
+  exercice clos : `PeriodeClose` (API : 409), `date_de_report()` (premier
+  jour de l'exercice ouvert). `LedgerService.periodes_closes()` lit
+  `exercices_clos` ; le trigger `ecritures_hors_periode_close` (migration
+  `f1a6c3e9d257`) refuse aussi en base. Une opération bancaire tardive
+  datée dans un exercice clos part en quarantaine (`periode_close`).
 - `contrepassation.py` — `contrepasser()` (**fait, 2026-09-24**, doc 06 I2) :
   pure, sans I/O. Inverse les sens, garde les montants, journal `OD`.
 

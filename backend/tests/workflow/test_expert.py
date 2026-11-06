@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 from datetime import date
 
 import pytest
@@ -49,3 +50,15 @@ def test_un_compte_banque_ou_deja_tenu_est_refuse() -> None:
         preparer_imputation(origine, "512", {origine.id})
     with pytest.raises(ImputationRefusee):
         preparer_imputation(origine, "471", {origine.id})
+
+
+def test_une_imputation_sur_un_exercice_clos_est_une_od_au_premier_jour_ouvert() -> None:
+    """AXE-806 : l'écriture de 2025 ne bouge pas ; la correction est en 2026."""
+    origine = dataclasses.replace(_attente(), date=date(2025, 11, 4))
+    clos = ((date(2025, 1, 1), date(2025, 12, 31)),)
+
+    inverse, nouvelle = preparer_imputation(origine, "606", {origine.id}, clos)
+
+    assert inverse.date == nouvelle.date == date(2026, 1, 1)
+    assert nouvelle.journal is Journal.OD
+    assert nouvelle.reference_piece == inverse.reference_piece == str(origine.id)
