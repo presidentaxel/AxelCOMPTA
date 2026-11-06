@@ -316,3 +316,16 @@ export type OperationsClassees = {
   compteurs: { auto: number; chauffeur: number; expert: number; justes: number; fausses: number };
   categories: string[];
 };
+
+/** AXE-730 : ce que le dirigeant confirme, et ce qui reste à saisir. */
+export type ConfigurationDossier = {
+  forme_juridique: string;
+  formes_proposees: string[];
+  regime_imposition: string;
+  regime_tva: string;
+  exercice_debut: string;
+  exercice_fin: string;
+  a_confirmer: string[];
+  identite_manquante: string[];
+  raison_blocage: string | null;
+};

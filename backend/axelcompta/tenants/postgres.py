@@ -4,15 +4,16 @@ qui fait de l'I/O)."""
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 
-from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.core.ids import DossierId, TenantId, UserId
 from axelcompta.core.rls import appliquer_rls
+from axelcompta.workflow.audit import ACTE_CONFIGURATION, noter
 
 from .identite_json import identite_depuis_json, identite_vers_json
 from .models import Dossier, Tenant, verifier_mode_relance
@@ -118,6 +119,20 @@ class PostgresDossierRepository(DossierRepository):
                     a_confirmer=list(dossier.a_confirmer),
                 )
             )
+
+    def confirmer_configuration(self, dossier: Dossier, par: UserId, le: datetime) -> None:
+        configuration_de(dossier)
+        with self._engine.begin() as connexion:
+            appliquer_rls(connexion)
+            connexion.execute(
+                update(dossiers)
+                .where(dossiers.c.id == dossier.id)
+                .values(forme_juridique=dossier.forme_juridique, a_confirmer=[])
+            )
+            reference = (
+                f"{dossier.forme_juridique}/{dossier.regime_imposition}/{dossier.regime_tva}"
+            )
+            noter(connexion, dossier.id, ACTE_CONFIGURATION, reference, par, le)
 
     def ouvrir_exercice(self, dossier: Dossier) -> None:
         configuration_de(dossier)

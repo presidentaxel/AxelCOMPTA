@@ -26,6 +26,7 @@ import {
 } from "./messages-auth";
 import { appelAuthentifie, erreurApi, lireCorps } from "./session";
 import type {
+  ConfigurationDossier,
   CompteBancaireVue,
   AffectationVue,
   BulletinVue,
@@ -588,4 +589,15 @@ export function saisirBulletinChauffeur(
   },
 ): Promise<BulletinVue> {
   return envoyerChauffeur(`/dossiers/${dossierId}/bulletins`, bulletin);
+}
+
+/** AXE-730 : le dirigeant confirme sa configuration, en choisissant la forme
+ * quand Sirene ne la tranche pas. */
+export function confirmerConfigurationChauffeur(
+  dossierId: string,
+  formeJuridique: string,
+): Promise<ConfigurationDossier> {
+  return envoyerChauffeur(`/dossiers/${dossierId}/configuration/confirmer`, {
+    forme_juridique: formeJuridique,
+  });
 }

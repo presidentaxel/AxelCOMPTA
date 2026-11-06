@@ -161,6 +161,13 @@ from axelcompta.tenants.avenants import (
     alerte_option_ir,
 )
 from axelcompta.tenants.avenants_postgres import PostgresAvenantRegimeRepository
+from axelcompta.tenants.confirmation import (
+    ConfirmationRefusee,
+    confirmer,
+    formes_proposees,
+    identite_manquante,
+    raison_ambiguite,
+)
 from axelcompta.tenants.exercices import ExerciceRepository
 from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
 from axelcompta.tenants.franchise_tva import MillesimeInconnu, suivre_franchise
@@ -647,6 +654,14 @@ def _exiger_depot_greffe(dossier: Dossier) -> None:
 def _message_operations_restantes(reste: int) -> str:
     nom = "opération" if reste == 1 else "opérations"
     return f"Il reste {reste} {nom} à traiter."
+
+
+def _exiger_dossier_clair(dossier: Dossier) -> None:
+    """AXE-730 : pas de liasse tant que la forme ou l'identité de la société
+    est incertaine. Même règle que la clôture (`preparer_passage`)."""
+    raison = raison_ambiguite(dossier)
+    if raison is not None:
+        raise HTTPException(status_code=409, detail=raison)
 
 
 def _exiger_operations_tranchees(dossier: Dossier, ledger: InMemoryLedgerService) -> None:
@@ -2921,6 +2936,7 @@ def _enregistrer_routes_declarations(app: FastAPI) -> None:
                     "l'impôt sur les sociétés."
                 ),
             )
+        _exiger_dossier_clair(dossier)
         pdf = PdfCerfa2065Renderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
         )
@@ -2938,6 +2954,7 @@ def _enregistrer_routes_declarations(app: FastAPI) -> None:
                     "l'impôt sur le revenu."
                 ),
             )
+        _exiger_dossier_clair(dossier)
         pdf = PdfCerfa2031Renderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
         )
@@ -2963,6 +2980,7 @@ def _enregistrer_routes_cloture(app: FastAPI) -> None:
         dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
     ) -> Response:
         _exiger_operations_tranchees(dossier, ledger)
+        _exiger_dossier_clair(dossier)
         pdf = PdfLiasseFiscaleRenderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
         )
@@ -3241,6 +3259,64 @@ class ClotureExerciceVue(BaseModel):
 
 class ValidationClotureEntree(BaseModel):
     attestation: str
+
+
+class ConfigurationDossierVue(BaseModel):
+    """Ce que le dirigeant confirme (AXE-730), et ce qui reste à saisir."""
+
+    forme_juridique: str
+    formes_proposees: list[str]  # deux quand Sirene ne tranche pas
+    regime_imposition: str
+    regime_tva: str
+    exercice_debut: str
+    exercice_fin: str
+    a_confirmer: list[str]
+    identite_manquante: list[str]  # siege, capital, associes
+    raison_blocage: str | None  # ce qui bloque la clôture et la liasse
+
+
+class ConfirmationConfigurationEntree(BaseModel):
+    forme_juridique: str | None = None
+
+
+def _vue_configuration(dossier: Dossier) -> ConfigurationDossierVue:
+    return ConfigurationDossierVue(
+        forme_juridique=dossier.forme_juridique,
+        formes_proposees=list(formes_proposees(dossier)),
+        regime_imposition=dossier.regime_imposition,
+        regime_tva=dossier.regime_tva,
+        exercice_debut=dossier.exercice_debut.isoformat(),
+        exercice_fin=dossier.fin_exercice().isoformat(),
+        a_confirmer=list(dossier.a_confirmer),
+        identite_manquante=list(identite_manquante(dossier)),
+        raison_blocage=raison_ambiguite(dossier),
+    )
+
+
+def _enregistrer_routes_configuration(app: FastAPI) -> None:
+    """Le dirigeant voit sa configuration et la confirme (AXE-730). Le
+    gestionnaire voit « à confirmer » dans son portefeuille."""
+
+    @app.get("/dossiers/{dossier_id}/configuration", response_model=ConfigurationDossierVue)
+    def lire_configuration(dossier: DossierDep) -> ConfigurationDossierVue:
+        return _vue_configuration(dossier)
+
+    @app.post(
+        "/dossiers/{dossier_id}/configuration/confirmer", response_model=ConfigurationDossierVue
+    )
+    def confirmer_configuration(
+        corps: ConfirmationConfigurationEntree,
+        dossier: DossierDep,
+        dossiers: DossiersDep,
+        identite: IdentiteDep,
+    ) -> ConfigurationDossierVue:
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        try:
+            confirme = confirmer(dossier, corps.forme_juridique)
+        except ConfirmationRefusee as erreur:
+            raise HTTPException(status_code=422, detail=str(erreur)) from erreur
+        dossiers.confirmer_configuration(confirme, identite.user_id, datetime.now(UTC))
+        return _vue_configuration(confirme)
 
 
 def _signataire(dossier: Dossier, identite: IdentiteAuthentifiee) -> str:
@@ -4508,6 +4584,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_greffe_inpi(app)
     _enregistrer_routes_notifications(app)
     _enregistrer_routes_cloture_exercice(app)
+    _enregistrer_routes_configuration(app)
     _enregistrer_routes_affectation(app)
     _enregistrer_routes_dividendes_paie(app)
     _enregistrer_routes_paie(app)
