@@ -40,6 +40,8 @@
     "lib/synchronisation.ts",
     "lib/synchronisation.test.ts",
     "lib/moyens-paiement.ts",
-    "lib/moyens-paiement.test.ts"
+    "lib/moyens-paiement.test.ts",
+    "lib/retrait-especes.ts",
+    "lib/retrait-especes.test.ts"
   ]
 }
