@@ -59,7 +59,7 @@ class PostgresLedgerService(LedgerService):
         with self._engine.connect() as connexion:
             appliquer_rls(connexion)
             entetes = _lire_entetes(connexion, dossier_id)
-            lignes_par_ecriture = _lire_lignes(connexion, tuple(entetes))
+            lignes_par_ecriture = _lire_lignes(connexion, dossier_id)
         return tuple(
             dataclasses.replace(entete, lignes=tuple(lignes_par_ecriture.get(eid, ())))
             for eid, entete in entetes.items()
@@ -109,17 +109,18 @@ def _lire_entetes(connexion: Connection, dossier_id: DossierId) -> dict[str, Ecr
     }
 
 
-def _lire_lignes(
-    connexion: Connection, ids_ecritures: tuple[str, ...]
-) -> dict[str, list[LigneEcriture]]:
-    if not ids_ecritures:
-        return {}
+def _lire_lignes(connexion: Connection, dossier_id: DossierId) -> dict[str, list[LigneEcriture]]:
+    """Les lignes du dossier par jointure (index `ecritures(dossier_id)` et
+    `lignes_ecriture(ecriture_id)`), plutôt qu'une liste `IN` de tous les
+    identifiants du dossier (AXE-824)."""
     resultat = connexion.execute(
-        select(lignes_ecriture).where(lignes_ecriture.c.ecriture_id.in_(ids_ecritures))
+        select(lignes_ecriture)
+        .join(ecritures, ecritures.c.id == lignes_ecriture.c.ecriture_id)
+        .where(ecritures.c.dossier_id == dossier_id)
     )
-    par_ecriture: dict[str, list[LigneEcriture]] = {eid: [] for eid in ids_ecritures}
+    par_ecriture: dict[str, list[LigneEcriture]] = {}
     for row in resultat:
-        par_ecriture[row.ecriture_id].append(
+        par_ecriture.setdefault(row.ecriture_id, []).append(
             LigneEcriture(
                 compte=row.compte,
                 sens=Sens[row.sens],

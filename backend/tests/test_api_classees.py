@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from axelcompta.core.ids import DossierId
+from axelcompta.demo_api import get_cache_classees
+from axelcompta.workflow.classees_cache import VERSION_CLASSEES
+from axelcompta.workflow.file_expert_cache import SujetsGardes
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client,
     _client_et_stubs,
@@ -62,3 +66,53 @@ def test_la_lecture_ne_note_pas_et_un_autre_portefeuille_est_introuvable() -> No
     assert lecture.post("/expert/classees/verdict", json=entree, headers=EN_TETE).status_code == 403
     autre = _en_tete_gestionnaire(tenant_id="AUTRE_TENANT")
     assert _client().post("/expert/classees/verdict", json=entree, headers=autre).status_code == 404
+
+
+class _CacheCompte:
+    """Garde les opérations et compte les recalculs."""
+
+    def __init__(self) -> None:
+        self._gardes: dict[DossierId, SujetsGardes] = {}
+        self.ecritures = 0
+
+    def lire(self, dossier_ids: list[DossierId]) -> dict[DossierId, SujetsGardes]:
+        return {
+            dossier_id: self._gardes[dossier_id]
+            for dossier_id in dossier_ids
+            if dossier_id in self._gardes
+        }
+
+    def enregistrer(
+        self, dossier_id: DossierId, version_source: int, sujets: list[dict[str, object]]
+    ) -> None:
+        self.ecritures += 1
+        self._gardes[dossier_id] = SujetsGardes(version_source, VERSION_CLASSEES, sujets)
+
+
+def test_changer_de_filtre_ne_recalcule_pas_et_le_verdict_est_relu() -> None:
+    """AXE-824 : un filtre relit le cache. Un verdict, qui n'écrit pas,
+    apparaît quand même au prochain affichage."""
+    client = _client()
+    cache = _CacheCompte()
+    client.app.dependency_overrides[get_cache_classees] = lambda: cache  # type: ignore[attr-defined]
+    premiere = client.get("/expert/classees", headers=EN_TETE).json()["operations"][0]
+    ecrits = cache.ecritures
+    assert ecrits > 0
+
+    client.get("/expert/classees", params={"statut": "chauffeur"}, headers=EN_TETE)
+    assert cache.ecritures == ecrits
+
+    reponse = client.post(
+        "/expert/classees/verdict",
+        json={
+            "dossier_id": premiere["dossier_id"],
+            "ecriture_id": premiere["ecriture_id"],
+            "verdict": "faux",
+        },
+        headers=EN_TETE,
+    )
+    assert reponse.status_code == 204
+    relu = client.get("/expert/classees", headers=EN_TETE).json()
+    assert cache.ecritures == ecrits
+    trouve = next(o for o in relu["operations"] if o["ecriture_id"] == premiere["ecriture_id"])
+    assert trouve["verdict"] == "faux"

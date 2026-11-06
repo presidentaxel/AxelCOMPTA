@@ -26,6 +26,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Identity,
+    Integer,
     LargeBinary,
     String,
     Table,
@@ -37,7 +38,7 @@ decisions_humaines = Table(
     "decisions_humaines",
     metadata,
     Column("id", String, primary_key=True),
-    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
     Column("ecriture_id", String, ForeignKey("ecritures.id"), nullable=False),
     Column("categorie", String, nullable=False),
     Column("etage_origine", String, nullable=False),
@@ -71,7 +72,7 @@ propositions_categorisation = Table(
     # proposition AVANT l'écriture (une proposition orpheline est sans effet,
     # une écriture à trancher sans proposition casserait la file de revue).
     Column("ecriture_id", String, primary_key=True),
-    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
     Column("categorie", String, nullable=False),
     Column("etage", String, nullable=False),
     Column("confiance", Float, nullable=False),
@@ -133,4 +134,39 @@ verdicts_classement = Table(
     Column("verdict", String, nullable=False),
     Column("par", String, nullable=False),
     Column("le", DateTime(timezone=True), nullable=False),
+)
+
+# Sujets de la file expert gardés par dossier (AXE-824). Valables tant que
+# `version_source` égale `agregats_dossier.version` du dossier.
+file_expert_dossier = Table(
+    "file_expert_dossier",
+    metadata,
+    Column(
+        "dossier_id",
+        String,
+        ForeignKey("dossiers.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("version_source", Integer, nullable=False),
+    Column("version_calcul", Integer, nullable=False),
+    Column("sujets", JSON, nullable=False),
+    Column("calcule_le", DateTime(timezone=True), nullable=False),
+)
+
+# Opérations déjà classées gardées par dossier (AXE-824). Même version que
+# `agregats_dossier`. Le verdict « juste » / « faux » n'y est pas : il change
+# sans écriture et se pose à la lecture.
+classees_dossier = Table(
+    "classees_dossier",
+    metadata,
+    Column(
+        "dossier_id",
+        String,
+        ForeignKey("dossiers.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("version_source", Integer, nullable=False),
+    Column("version_calcul", Integer, nullable=False),
+    Column("operations", JSON, nullable=False),
+    Column("calcule_le", DateTime(timezone=True), nullable=False),
 )

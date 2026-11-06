@@ -50,6 +50,8 @@ from axelcompta.demo_api import (
     get_affectations,
     get_agregats,
     get_avenants,
+    get_cache_classees,
+    get_cache_file_expert,
     get_comptes,
     get_comptes_bancaires,
     get_consentements,
@@ -90,6 +92,7 @@ from axelcompta.tenants.provisions_cloture import InMemoryProvisionsClotureRepos
 from axelcompta.tenants.tags_memoire import TagsMemoire
 from axelcompta.workflow.decisions import DecisionHumaine
 from axelcompta.workflow.decisions_memory import InMemoryDecisionRepository
+from axelcompta.workflow.file_expert_cache import SansCache
 from axelcompta.workflow.notifications import (
     InMemoryNotificationRepository,
     NotificationEnvoyee,
@@ -171,6 +174,13 @@ def _jwks_factice(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+def _sans_caches(app: FastAPI) -> None:
+    """Le ledger en mémoire ne monte aucune version : rien ne doit être gardé."""
+    vide = SansCache()
+    app.dependency_overrides[get_cache_file_expert] = lambda: vide
+    app.dependency_overrides[get_cache_classees] = lambda: vide
+
+
 def _client_et_stubs(
     role: str = "admin",
 ) -> tuple[
@@ -225,6 +235,7 @@ def _client_et_stubs(
     app.dependency_overrides[get_tags] = lambda: tags_stub
     verdicts_stub = VerdictsMemoire()
     app.dependency_overrides[get_verdicts] = lambda: verdicts_stub
+    _sans_caches(app)
     # `droits_membre` est en Postgres : le rôle est fixé ici.
     app.dependency_overrides[get_role_membre] = lambda: role
     app.dependency_overrides[get_consentements] = lambda: _ConsentementsStub()

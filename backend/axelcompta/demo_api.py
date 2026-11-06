@@ -39,7 +39,7 @@ from collections.abc import Sequence
 from collections.abc import Set as AbstractSet
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Any, Literal, Protocol
+from typing import Annotated, Any, Literal, Protocol, cast
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -195,6 +195,7 @@ from axelcompta.workflow.classees import (
     trier,
 )
 from axelcompta.workflow.classees import classer as classer_operations
+from axelcompta.workflow.classees_cache import VERSION_CLASSEES
 from axelcompta.workflow.decisions import (
     CATEGORIE_ANNULATION,
     DecisionHumaine,
@@ -203,6 +204,11 @@ from axelcompta.workflow.decisions import (
 )
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
 from axelcompta.workflow.expert import ImputationRefusee, preparer_imputation
+from axelcompta.workflow.file_expert_cache import CacheFileExpert, SujetsGardes
+from axelcompta.workflow.file_expert_cache_postgres import (
+    PostgresCacheFileExpert,
+    cache_operations_classees,
+)
 from axelcompta.workflow.notifications import (
     NotificationRepository,
     ecritures_a_trancher,
@@ -1337,6 +1343,24 @@ def get_tags() -> TagsRepository:
 TagsDep = Annotated[TagsRepository, Depends(get_tags)]
 
 
+def get_cache_file_expert() -> CacheFileExpert:
+    """Sujets de la file expert gardés par dossier (AXE-824) ; `SansCache`
+    dans les tests en mémoire, où rien ne monte les versions."""
+    return PostgresCacheFileExpert(_engine())
+
+
+CacheFileExpertDep = Annotated[CacheFileExpert, Depends(get_cache_file_expert)]
+
+
+def get_cache_classees() -> CacheFileExpert:
+    """Opérations déjà classées gardées par dossier (AXE-824). `SansCache`
+    dans les tests en mémoire, où rien ne monte les versions."""
+    return cache_operations_classees(_engine())
+
+
+CacheClasseesDep = Annotated[CacheFileExpert, Depends(get_cache_classees)]
+
+
 def _trancher(
     dossier: Dossier,
     ecriture_id: str,
@@ -1661,6 +1685,42 @@ def _agregat_du_dossier(
         dossier.tenant_id, dossier.id, valeur, None if ligne is None else ligne.version
     )
     return valeur
+
+
+def _cache_perime(ligne: LigneAgregat | None, garde: SujetsGardes | None) -> bool:
+    """Agrégat jamais calculé ou périmé, ou sujets gardés d'une autre version."""
+    if ligne is None or ligne.valeur is None:
+        return True
+    return garde is None or not garde.valables(ligne.version)
+
+
+def prechauffer_caches(engine: Engine, dossiers: Sequence[Dossier]) -> int:
+    """Après la synchro (tâches planifiées, AXE-824) : recalcule les agrégats,
+    les sujets de la file expert et les opérations classées des dossiers qui
+    ont changé, pour que le premier affichage du matin lise des valeurs
+    gardées. Retourne le nombre de dossiers recalculés pour la file."""
+    base = PostgresLedgerService(engine)
+    decisions = PostgresDecisionRepository(engine)
+    provisions = PostgresProvisionsClotureRepository(engine)
+    agregats = PostgresAgregatsRepository(engine)
+    cache = PostgresCacheFileExpert(engine)
+    ids = [dossier.id for dossier in dossiers]
+    lignes = agregats.lire(ids)
+    gardes = cache.lire(ids)
+    a_refaire = [d for d in dossiers if _cache_perime(lignes.get(d.id), gardes.get(d.id))]
+    for dossier in a_refaire:
+        _agregat_du_dossier(dossier, lignes.get(dossier.id), base, decisions, provisions, agregats)
+    sources = (base, decisions, PostgresJustificatifRepository(engine))
+    _sujets_du_portefeuille(a_refaire, sources, agregats, cache)
+    _operations_gardees(
+        dossiers,
+        base,
+        decisions,
+        PostgresPropositionRepository(engine),
+        agregats,
+        cache_operations_classees(engine),
+    )
+    return len(a_refaire)
 
 
 def _agregats_portefeuille(
@@ -3858,38 +3918,23 @@ def _sujets_anomalies(
     ledger: InMemoryLedgerService,
     decisions: DecisionRepository,
     justificatifs: JustificatifRepository,
-    registre: InstructionsRepository,
+    registre: InstructionsRepository | None,
     exclues: frozenset[EcritureId],
 ) -> list[SujetExpertVue]:
+    """`registre` à None : toutes les alertes, qualifiées ou non (ce que garde
+    le cache de la file, AXE-824 ; l'état se filtre à la lecture)."""
     sujets: list[SujetExpertVue] = []
     alertes = _alertes_du_ledger(dossier, ledger, decisions, justificatifs)
-    etats = registre.etats(dossier.id)
+    etats = {} if registre is None else registre.etats(dossier.id)
     ecritures = {e.id: e for e in ledger.grand_livre(dossier.id)}
     for alerte in alertes.values():
         if alerte.ecriture_id in exclues:
             continue
-        etat = etats.get(alerte.id, "ouverte")
-        if etat == "usage_personnel":
-            proposition = _reclassement_personnel(
-                dossier, alerte, ecritures.get(alerte.ecriture_id)
-            )
-            if proposition is not None:
-                sujets.append(proposition)
-            continue
-        if etat not in ("ouverte", "en_instruction"):
-            continue
-        sujets.append(
-            _sujet(
-                dossier,
-                f"anomalie:{alerte.id}",
-                "gestionnaire",
-                "anomalie",
-                alerte.libelle_ui,
-                alerte.detail,
-                alerte.montant_centimes,
-                str(alerte.ecriture_id),
-            )
+        sujet = _sujet_selon_etat(
+            dossier, alerte, etats.get(alerte.id, "ouverte"), ecritures.get(alerte.ecriture_id)
         )
+        if sujet is not None:
+            sujets.append(sujet)
     return sujets
 
 
@@ -3925,12 +3970,60 @@ def _reclassement_personnel(
     )
 
 
+def _sujet_selon_etat(
+    dossier: Dossier, alerte: Alerte, etat: str, ecriture: Ecriture | None
+) -> SujetExpertVue | None:
+    if etat == "usage_personnel":
+        return _reclassement_personnel(dossier, alerte, ecriture)
+    if etat not in ("ouverte", "en_instruction"):
+        return None
+    return _sujet(
+        dossier,
+        f"{PREFIXE_ANOMALIE}{alerte.id}",
+        "gestionnaire",
+        "anomalie",
+        alerte.libelle_ui,
+        alerte.detail,
+        alerte.montant_centimes,
+        str(alerte.ecriture_id),
+    )
+
+
+PREFIXE_ANOMALIE = "anomalie:"
+
+
+def _sujets_du_portefeuille(
+    portefeuille: Sequence[Dossier],
+    sources: tuple[LedgerService, DecisionRepository, JustificatifRepository],
+    agregats: AgregatsRepository,
+    cache: CacheFileExpert,
+) -> list[SujetExpertVue]:
+    """Sujets gardés quand la version du dossier n'a pas bougé, recalculés
+    sinon (AXE-824). La version est lue **avant** le calcul : une écriture
+    arrivée pendant le calcul la fait monter, le prochain affichage refait."""
+    base, decisions, justificatifs = sources
+    ids = [dossier.id for dossier in portefeuille]
+    versions = {d: ligne.version for d, ligne in agregats.lire(ids).items()}
+    gardes = cache.lire(ids)
+    sujets: list[SujetExpertVue] = []
+    for dossier in portefeuille:
+        version = versions.get(dossier.id, 0)
+        garde = gardes.get(dossier.id)
+        if garde is not None and garde.valables(version):
+            sujets.extend(SujetExpertVue.model_validate(s) for s in garde.sujets)
+            continue
+        calcules = _sujets_expert(dossier, base, decisions, justificatifs, None)
+        cache.enregistrer(dossier.id, version, [s.model_dump() for s in calcules])
+        sujets.extend(calcules)
+    return sujets
+
+
 def _sujets_expert(
     dossier: Dossier,
     base: LedgerService,
     decisions: DecisionRepository,
     justificatifs: JustificatifRepository,
-    registre: InstructionsRepository,
+    registre: InstructionsRepository | None,
     avec_anomalies: bool = True,
 ) -> list[SujetExpertVue]:
     ledger = _ledger_avec_decisions(dossier, base, decisions)
@@ -4042,6 +4135,59 @@ async def _periode_close_en_409(_requete: Request, erreur: Exception) -> JSONRes
     return JSONResponse(status_code=409, content={"detail": str(erreur)})
 
 
+def _sujets_qualifies(
+    sujets: list[SujetExpertVue],
+    portefeuille: Sequence[Dossier],
+    etat: EtatTags,
+    registre: InstructionsRepository,
+    sources: tuple[LedgerService, DecisionRepository, JustificatifRepository],
+) -> list[SujetExpertVue]:
+    """Le cache garde toutes les alertes. Tags d'anomalies et qualifications
+    s'appliquent à la lecture (AXE-814, AXE-829)."""
+    par_dossier = {dossier.id: dossier for dossier in portefeuille}
+    concernes = {DossierId(sujet.dossier_id) for sujet in sujets if sujet.nature == "anomalie"}
+    etats = {dossier_id: registre.etats(dossier_id) for dossier_id in concernes}
+    a_refaire = {
+        dossier_id
+        for dossier_id, courant in etats.items()
+        if "usage_personnel" in courant.values() and not etat.exclu(dossier_id, "anomalies")
+    }
+    gardes = [sujet for sujet in sujets if _sujet_visible(sujet, etat, etats, a_refaire)]
+    for dossier_id in a_refaire:
+        gardes.extend(_anomalies_fraiches(par_dossier[dossier_id], registre, sources))
+    return gardes
+
+
+def _sujet_visible(
+    sujet: SujetExpertVue,
+    etat: EtatTags,
+    etats: dict[DossierId, dict[str, str]],
+    a_refaire: set[DossierId],
+) -> bool:
+    if sujet.nature != "anomalie":
+        return True
+    dossier_id = DossierId(sujet.dossier_id)
+    if etat.exclu(dossier_id, "anomalies") or dossier_id in a_refaire:
+        return False
+    if not sujet.id.startswith(PREFIXE_ANOMALIE):
+        return True
+    courant = etats[dossier_id].get(sujet.id.removeprefix(PREFIXE_ANOMALIE), "ouverte")
+    return courant in ("ouverte", "en_instruction")
+
+
+def _anomalies_fraiches(
+    dossier: Dossier,
+    registre: InstructionsRepository,
+    sources: tuple[LedgerService, DecisionRepository, JustificatifRepository],
+) -> list[SujetExpertVue]:
+    """Reconstruit les anomalies d'un dossier qualifié en usage personnel :
+    le cache ne contient pas la proposition de reclassement."""
+    base, decisions, justificatifs = sources
+    ledger = _ledger_avec_decisions(dossier, base, decisions)
+    exclues = annulees(ledger.grand_livre(dossier.id))
+    return _sujets_anomalies(dossier, ledger, decisions, justificatifs, registre, exclues)
+
+
 def _enregistrer_routes_expert(app: FastAPI) -> None:
     @app.get("/expert/file", response_model=FileExpertVue)
     def lire_file_expert(
@@ -4051,27 +4197,26 @@ def _enregistrer_routes_expert(app: FastAPI) -> None:
         justificatifs: JustificatifsDep,
         registre: RegistreAnomaliesDep,
         tags: TagsDep,
+        agregats: AgregatsDep,
+        cache: CacheFileExpertDep,
         identite: IdentiteDep,
     ) -> FileExpertVue:
-        """File de l'expert-comptable : sujets chauffeur et gestionnaire,
-        tous dossiers du portefeuille, sauf ceux qu'un tag exclut du mode
-        expert ou des anomalies (AXE-829)."""
+        """File de l'expert-comptable. Seuls les dossiers changés sont
+        recalculés (AXE-824). Un tag peut exclure un dossier du mode expert
+        ou de ses anomalies (AXE-829)."""
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
         etat = etat_du_portefeuille(tags, tenant_id)
-        sujets: list[SujetExpertVue] = []
-        for dossier in dossiers.lister_par_tenant(tenant_id):
-            if etat.exclu(dossier.id, "expert"):
-                continue
-            sujets.extend(
-                _sujets_expert(
-                    dossier,
-                    base,
-                    decisions,
-                    justificatifs,
-                    registre,
-                    avec_anomalies=not etat.exclu(dossier.id, "anomalies"),
-                )
-            )
+        portefeuille = tuple(
+            d for d in dossiers.lister_par_tenant(tenant_id) if not etat.exclu(d.id, "expert")
+        )
+        sources = (base, decisions, justificatifs)
+        sujets = _sujets_qualifies(
+            _sujets_du_portefeuille(portefeuille, sources, agregats, cache),
+            portefeuille,
+            etat,
+            registre,
+            sources,
+        )
         presents = {sujet.dossier_id for sujet in sujets}
         return FileExpertVue(
             sujets=sujets,
@@ -4134,10 +4279,10 @@ def _operations_du_dossier(
     base: LedgerService,
     decisions: DecisionRepository,
     propositions: PropositionRepository,
-    verdicts: VerdictsRepository,
 ) -> list[OperationClassee]:
     """Une lecture par source et par dossier : grand livre, décisions,
-    propositions, verdicts. Aucune proposition recalculée."""
+    propositions. Aucune proposition recalculée. Le verdict n'est pas ici :
+    il se pose à la lecture, sans périmer ce calcul."""
     ledger = _ledger_avec_decisions(dossier, base, decisions)
     en_vigueur: dict[EcritureId, str] = {}
     for decision in decisions.lister_decisions(dossier.id):
@@ -4149,7 +4294,7 @@ def _operations_du_dossier(
         ledger.grand_livre(dossier.id),
         propositions.lister(dossier.id),
         en_vigueur,
-        verdicts.derniers(dossier.id),
+        {},
     )
 
 
@@ -4182,6 +4327,82 @@ def _page_classees(
     return gardees[debut : debut + PAR_PAGE_CLASSEES], len(gardees), pages
 
 
+def _operations_gardees(
+    portefeuille: Sequence[Dossier],
+    base: LedgerService,
+    decisions: DecisionRepository,
+    propositions: PropositionRepository,
+    agregats: AgregatsRepository,
+    cache: CacheFileExpert,
+) -> list[OperationClassee]:
+    """Gardées tant que la version du dossier n'a pas bougé (AXE-824).
+    La version est lue avant le calcul : une écriture arrivée pendant le
+    calcul la fait monter, le prochain affichage refait."""
+    ids = [dossier.id for dossier in portefeuille]
+    versions = {dossier_id: ligne.version for dossier_id, ligne in agregats.lire(ids).items()}
+    gardes = cache.lire(ids)
+    operations: list[OperationClassee] = []
+    for dossier in portefeuille:
+        version = versions.get(dossier.id, 0)
+        garde = gardes.get(dossier.id)
+        if garde is not None and garde.valables(version, VERSION_CLASSEES):
+            operations.extend(_operation_depuis_json(ligne) for ligne in garde.sujets)
+            continue
+        calcules = _operations_du_dossier(dossier, base, decisions, propositions)
+        cache.enregistrer(
+            dossier.id, version, [_operation_json(operation) for operation in calcules]
+        )
+        operations.extend(calcules)
+    return operations
+
+
+def _poser_verdicts(
+    operations: list[OperationClassee],
+    verdicts: VerdictsRepository,
+    dossier_ids: Sequence[DossierId],
+) -> list[OperationClassee]:
+    """Le verdict change sans écriture : une lecture, pas un recalcul."""
+    par_dossier = verdicts.derniers_de(dossier_ids)
+    return [
+        dataclasses.replace(
+            operation,
+            verdict=par_dossier.get(operation.dossier_id, {}).get(operation.ecriture_id),
+        )
+        for operation in operations
+    ]
+
+
+def _operation_json(operation: OperationClassee) -> dict[str, Any]:
+    return {
+        "dossier_id": str(operation.dossier_id),
+        "ecriture_id": str(operation.ecriture_id),
+        "date": operation.date.isoformat(),
+        "libelle": operation.libelle,
+        "montant_cts": operation.montant_cts,
+        "compte": operation.compte,
+        "categorie": operation.categorie,
+        "origine": operation.origine,
+        "confiance": operation.confiance,
+        "statut": operation.statut,
+    }
+
+
+def _operation_depuis_json(ligne: dict[str, Any]) -> OperationClassee:
+    confiance = ligne["confiance"]
+    return OperationClassee(
+        dossier_id=DossierId(str(ligne["dossier_id"])),
+        ecriture_id=EcritureId(str(ligne["ecriture_id"])),
+        date=date.fromisoformat(str(ligne["date"])),
+        libelle=str(ligne["libelle"]),
+        montant_cts=int(ligne["montant_cts"]),
+        compte=str(ligne["compte"]),
+        categorie=None if ligne["categorie"] is None else str(ligne["categorie"]),
+        origine=str(ligne["origine"]),
+        confiance=None if confiance is None else float(confiance),
+        statut=cast(Statut, str(ligne["statut"])),
+    )
+
+
 def _enregistrer_routes_classees(app: FastAPI) -> None:
     @app.get("/expert/classees", response_model=OperationsClasseesVue)
     def lire_classees(  # noqa: PLR0913 — un paramètre par filtre de l'URL
@@ -4190,6 +4411,8 @@ def _enregistrer_routes_classees(app: FastAPI) -> None:
         decisions: DecisionsDep,
         propositions: PropositionsDep,
         verdicts: VerdictsDep,
+        agregats: AgregatsDep,
+        cache: CacheClasseesDep,
         identite: IdentiteDep,
         statut: Statut | None = None,
         origine: str | None = None,
@@ -4201,17 +4424,19 @@ def _enregistrer_routes_classees(app: FastAPI) -> None:
         page: int = 1,
     ) -> OperationsClasseesVue:
         """Opérations déjà classées du portefeuille (AXE-823), filtrées et
-        paginées côté serveur. Les compteurs portent sur tout le portefeuille."""
+        paginées côté serveur. Seuls les dossiers dont la version a bougé
+        sont recalculés (AXE-824). Les compteurs portent sur tout le
+        portefeuille. Les verdicts sont relus à chaque affichage."""
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
         portefeuille = [
             d for d in dossiers.lister_par_tenant(tenant_id) if dossier in (None, str(d.id))
         ]
         noms = {d.id: d.nom for d in portefeuille}
-        operations = [
-            o
-            for d in portefeuille
-            for o in _operations_du_dossier(d, base, decisions, propositions, verdicts)
-        ]
+        operations = _poser_verdicts(
+            _operations_gardees(portefeuille, base, decisions, propositions, agregats, cache),
+            verdicts,
+            [d.id for d in portefeuille],
+        )
         filtres = Filtres(statut, origine, categorie, tranche, sens)
         tranche_page, total, pages = _page_classees(operations, filtres, tri, page)
         compteurs = compter(operations)

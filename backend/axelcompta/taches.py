@@ -29,6 +29,7 @@ from datetime import UTC, datetime
 
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.demo_api import prechauffer_caches
 from axelcompta.notifier import notifier_depuis_base
 from axelcompta.synchro_digifactory import ResultatDossier, synchroniser_portefeuille
 from axelcompta.tenants.avenants import programmer_bascules
@@ -47,6 +48,8 @@ Notifier = Callable[[tuple[Dossier, ...]], list[ResultatNotification]]
 ProgrammerBascules = Callable[[tuple[Dossier, ...]], int]
 # Tags et exclusions d'un portefeuille (AXE-829).
 Perimetre = Callable[[TenantId], EtatTags]
+# Renvoie le nombre de dossiers recalculés (agrégats, file expert).
+Prechauffer = Callable[[tuple[Dossier, ...]], int]
 
 
 @dataclass
@@ -61,6 +64,7 @@ def lancer_taches(
     notifier: Notifier,
     programmer_bascules: ProgrammerBascules | None = None,
     perimetre: Perimetre | None = None,
+    prechauffer: Prechauffer | None = None,
 ) -> BilanTaches:
     """`synchroniser` à None saute la synchro (`--sans-synchro`). Un
     portefeuille sans aucun contact Digifactory n'appelle pas Digifactory.
@@ -76,6 +80,8 @@ def lancer_taches(
             _synchroniser(bilan, tenant.id, dossiers, etat, synchroniser)
         if programmer_bascules is not None:
             _programmer_bascules(bilan, tenant.id, dossiers, programmer_bascules)
+        if prechauffer is not None:
+            _prechauffer(bilan, tenant.id, dossiers, prechauffer)
         _notifier(bilan, tenant.id, retenus(dossiers, etat, "rappels"), notifier)
     return bilan
 
@@ -129,6 +135,20 @@ def _notifier(
     bilan.lignes.append(f"{tenant_id} notifications : {creees} créées, {echecs} en échec")
 
 
+def _prechauffer(
+    bilan: BilanTaches, tenant_id: TenantId, dossiers: tuple[Dossier, ...], prechauffer: Prechauffer
+) -> None:
+    """Après la synchro : le premier affichage du matin lit des valeurs
+    gardées (AXE-824). Un échec ne bloque rien : l'affichage recalculera."""
+    try:
+        nombre = prechauffer(dossiers)
+    except Exception as exc:  # noqa: BLE001 — une étape n'arrête pas les autres
+        bilan.lignes.append(f"{tenant_id} caches : échec ({type(exc).__name__})")
+        return
+    if nombre:
+        bilan.lignes.append(f"{tenant_id} caches : {nombre} dossiers recalculés")
+
+
 def main() -> int:
     parseur = argparse.ArgumentParser(description=__doc__)
     parseur.add_argument("--sans-synchro", action="store_true")
@@ -148,6 +168,7 @@ def main() -> int:
             )
         ),
         lambda tenant_id: etat_du_portefeuille(PostgresTagsRepository(engine), tenant_id),
+        lambda d: prechauffer_caches(engine, d),
     )
     print(f"[{debut.isoformat(timespec='seconds')}] tâches planifiées")
     for ligne in bilan.lignes:

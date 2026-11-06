@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 
 from sqlalchemy import select
@@ -21,14 +22,27 @@ class PostgresVerdicts:
         self._engine = engine
 
     def derniers(self, dossier_id: DossierId) -> dict[EcritureId, Verdict]:
+        return self.derniers_de([dossier_id]).get(dossier_id, {})
+
+    def derniers_de(
+        self, dossier_ids: Sequence[DossierId]
+    ) -> dict[DossierId, dict[EcritureId, Verdict]]:
+        """Une requête pour le portefeuille : changer de filtre ne relit pas
+        un dossier après l'autre (AXE-824). Le dernier rang fait foi."""
+        if not dossier_ids:
+            return {}
         with self._engine.connect() as connexion:
             appliquer_rls(connexion)
             lignes = connexion.execute(
-                select(table.c.ecriture_id, table.c.verdict)
-                .where(table.c.dossier_id == dossier_id)
+                select(table.c.dossier_id, table.c.ecriture_id, table.c.verdict)
+                .where(table.c.dossier_id.in_(list(dossier_ids)))
                 .order_by(table.c.rang)
             ).all()
-        return {EcritureId(e): verifier_verdict(v) for e, v in lignes}
+        resultat: dict[DossierId, dict[EcritureId, Verdict]] = {}
+        for dossier_id, ecriture_id, verdict in lignes:
+            notes = resultat.setdefault(DossierId(dossier_id), {})
+            notes[EcritureId(ecriture_id)] = verifier_verdict(verdict)
+        return resultat
 
     def noter(
         self,
