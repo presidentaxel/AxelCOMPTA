@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Iterable, Sequence
+from datetime import date
 
 from axelcompta.core.ids import EcritureId
 from axelcompta.ledger.contrepassation import contrepasser, id_contrepassation, origine
@@ -151,10 +152,12 @@ def annuler_reclassements(
     source_id: EcritureId,
     ecritures: Sequence[Ecriture],
     periodes_closes: Sequence[Periode] = (),
+    debut_ouvert: date | None = None,
 ) -> list[Ecriture]:
     """Les contre-passations des reclassements encore en vigueur de S, à
-    écrire avec celle de S : sinon le compte final resterait chargé."""
-    return [contrepasser(r, periodes_closes) for r in _actifs(source_id, ecritures)]
+    écrire avec celle de S : sinon le compte final resterait chargé.
+    `debut_ouvert` date ces OD comme la contre-passation de S (AXE-838)."""
+    return [contrepasser(r, periodes_closes, debut_ouvert) for r in _actifs(source_id, ecritures)]
 
 
 def projeter(ecritures: Sequence[Ecriture]) -> tuple[Ecriture, ...]:

@@ -102,17 +102,22 @@ def _signature(ecriture: Ecriture) -> tuple[int, object]:
 
 
 def _annuler(
-    ledger: LedgerService, comptabilisees: dict[EcritureId, Ecriture], existante: Ecriture
+    ledger: LedgerService,
+    comptabilisees: dict[EcritureId, Ecriture],
+    existante: Ecriture,
+    dossier: Dossier,
 ) -> None:
     """Pose l'écriture inverse une seule fois. L'originale reste en place."""
     periodes = ledger.periodes_closes(existante.dossier_id)
-    inverse = contrepasser(existante, periodes)
+    inverse = contrepasser(existante, periodes, dossier.exercice_debut)
     if inverse.id in comptabilisees:
         return
     ledger.enregistrer(inverse)
     comptabilisees[inverse.id] = inverse
     # AXE-420 : les reclassements des décisions sur cette opération aussi.
-    for annulation in annuler_reclassements(existante.id, list(comptabilisees.values()), periodes):
+    for annulation in annuler_reclassements(
+        existante.id, list(comptabilisees.values()), periodes, dossier.exercice_debut
+    ):
         ledger.enregistrer(annulation)
         comptabilisees[annulation.id] = annulation
 
@@ -246,7 +251,7 @@ def _relever_existante(
         compteurs.connues += 1
         return
     compteurs.modifiees += 1
-    _annuler(ledger, comptabilisees, existante)
+    _annuler(ledger, comptabilisees, existante, dossier)
     journal.mettre_en_quarantaine(
         dossier.id,
         source_nom,
@@ -270,7 +275,7 @@ def _signaler_supprimees(
         if existante is None:
             continue
         signalees += 1
-        _annuler(ledger, comptabilisees, existante)
+        _annuler(ledger, comptabilisees, existante, dossier)
         journal.mettre_en_quarantaine(
             dossier.id,
             source_nom,
