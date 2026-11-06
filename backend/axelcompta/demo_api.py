@@ -127,7 +127,13 @@ from axelcompta.filings.inpi_depot import GuideGreffe, PdfDepotInpiRenderer, gui
 from axelcompta.filings.liasse_fiscale import PdfLiasseFiscaleRenderer
 from axelcompta.filings.liasse_simplifiee import PdfLiasseSimplifieeRenderer
 from axelcompta.filings.pdf_export_comptable import rendre_balance_pdf, rendre_grand_livre_pdf
-from axelcompta.ingestion.comptes_bancaires import CompteBancaire, CompteBancaireRepository
+from axelcompta.ingestion.comptes_bancaires import (
+    CompteBancaire,
+    CompteBancaireRepository,
+    CompteDejaComptabilise,
+    CompteInconnu,
+    verifier_ecartable,
+)
 from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
 from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion, classer
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
@@ -400,6 +406,12 @@ class CompteBancaireVue(BaseModel):
     solde_banque_cts: int | None
     releve_le: str | None
     ecart_cts: int | None
+    # AXE-729 : True comptabilisé, False écarté (personnel), None à décider.
+    retenu: bool | None = True
+
+
+class DecisionCompteEntree(BaseModel):
+    retenu: bool
 
 
 class TransactionVue(BaseModel):
@@ -3007,7 +3019,9 @@ def _vue_compte_bancaire(compte: CompteBancaire, solde_comptable: int) -> Compte
         solde_comptable_cts=solde_comptable,
         solde_banque_cts=banque,
         releve_le=compte.solde_releve_le.isoformat() if compte.solde_releve_le else None,
-        ecart_cts=None if banque is None else solde_comptable - banque,
+        # Un compte non retenu n'est pas comptabilisé : pas d'écart à montrer.
+        ecart_cts=None if banque is None or compte.retenu is not True else solde_comptable - banque,
+        retenu=compte.retenu,
     )
 
 
@@ -3047,6 +3061,43 @@ def _enregistrer_routes_comptes_bancaires(app: FastAPI) -> None:
         côte. Réservé au chauffeur du dossier (doc 19 : le gestionnaire ne
         voit pas de solde)."""
         return vues_comptes_bancaires(comptes.lister(dossier.id), ledger.grand_livre(dossier.id))
+
+    @app.post(
+        "/dossiers/{dossier_id}/comptes-bancaires/{compte}/decision",
+        response_model=list[CompteBancaireVue],
+    )
+    def decider_compte_bancaire(
+        compte: str,
+        corps: DecisionCompteEntree,
+        dossier: DossierDep,
+        ledger: LedgerDossierDep,
+        comptes: ComptesBancairesDep,
+        identite: IdentiteDep,
+    ) -> list[CompteBancaireVue]:
+        """AXE-729 : le dirigeant retient un compte (pro) ou l'écarte
+        (personnel). Retenu après coup, son passé arrive à la synchro
+        suivante. Un compte qui a déjà des écritures ne s'écarte pas."""
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        ecritures = ledger.grand_livre(dossier.id)
+        try:
+            if not corps.retenu:
+                verifier_ecartable(_ecritures_sur_le_compte(ecritures, compte))
+            comptes.decider(dossier.id, compte, corps.retenu, identite.user_id, datetime.now(UTC))
+        except CompteInconnu as erreur:
+            raise HTTPException(status_code=404, detail=str(erreur)) from erreur
+        except CompteDejaComptabilise as erreur:
+            raise HTTPException(status_code=409, detail=str(erreur)) from erreur
+        return vues_comptes_bancaires(comptes.lister(dossier.id), ecritures)
+
+
+def _ecritures_sur_le_compte(ecritures: tuple[Ecriture, ...], compte: str) -> int:
+    """Écritures en vigueur (non contre-passées) qui mouvementent ce sous-compte."""
+    exclues = annulees(ecritures)
+    return sum(
+        1
+        for ecriture in ecritures
+        if ecriture.id not in exclues and any(ligne.compte == compte for ligne in ecriture.lignes)
+    )
 
 
 def _enregistrer_routes_exports(app: FastAPI) -> None:

@@ -10,14 +10,16 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
 from axelcompta.categorize.rules_and_ml import RulesAndMlPipeline
-from axelcompta.core.ids import DossierId, EcritureId
+from axelcompta.core.ids import DossierId, EcritureId, UserId
 from axelcompta.core.money import Money
 from axelcompta.ingestion.comptes_bancaires import (
     CompteBancaire,
+    CompteInconnu,
     CompteReleve,
     compte_de,
     relever_comptes,
@@ -29,6 +31,7 @@ from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.packs.vtc_demo import charger_compte_par_categorie, charger_regles
 from axelcompta.tenants.postgres import PostgresDossierRepository
+from axelcompta.workflow.orm import journal_audit
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
 from axelcompta.workflow.synchro import synchroniser_dossier
 from axelcompta.workflow.ventilation_bancaire import ventilation_du_dossier
@@ -132,6 +135,9 @@ def test_synchro_puis_ventilation_sur_postgres(
     ledger = PostgresLedgerService(engine)
     journal = PostgresJournalIngestion(engine)
     comptes = PostgresCompteBancaireRepository(engine)
+    # Deux comptes pro, déjà retenus par le dirigeant (AXE-729).
+    for identifiant, numero in (("pro", "5121"), ("fiscal", "5122")):
+        comptes.ajouter(CompteBancaire(dossier.id, identifiant, numero, retenu=True))
     payload = {"acc": [_tx("t1", -60.0, "pro"), _tx("t2", 848.0, "fiscal")]}
     # Une écriture plus ancienne, posée au 512 avant AXE-832.
     journal.archiver(dossier.id, "digifactory", "t0", None, {"id": "t0", "account_id": "pro"})
@@ -167,3 +173,35 @@ def test_synchro_puis_ventilation_sur_postgres(
         )
         == []
     )
+
+
+def test_decider_ecrit_le_choix_et_le_trace(
+    engine: Engine, creer_dossier: Callable[[str], None], id_unique: str
+) -> None:
+    """AXE-729 : retenu, « à relire » si retenu après coup, acte au journal d'audit."""
+    creer_dossier(id_unique)
+    dossier_id = DossierId(id_unique)
+    comptes = PostgresCompteBancaireRepository(engine)
+    releves = [CompteReleve("pro", "Compte PRO", 100), CompteReleve("perso", "Livret", 50)]
+    relever_comptes(comptes, dossier_id, releves, LE)
+    assert [c.retenu for c in comptes.lister(dossier_id)] == [None, None]
+
+    comptes.decider(dossier_id, "5121", True, UserId("dirigeant"), LE)
+    comptes.decider(dossier_id, "5122", False, UserId("dirigeant"), LE)
+
+    pro, perso = comptes.lister(dossier_id)
+    assert (pro.retenu, pro.a_relire, perso.retenu, perso.a_relire) == (True, True, False, False)
+    comptes.relu(dossier_id)
+    assert not comptes.lister(dossier_id)[0].a_relire
+    with engine.connect() as connexion:
+        actes = connexion.execute(
+            select(journal_audit.c.type_acte, journal_audit.c.reference)
+            .where(journal_audit.c.dossier_id == dossier_id)
+            .order_by(journal_audit.c.reference)
+        ).all()
+    assert [tuple(a) for a in actes] == [
+        ("compte_bancaire_retenu", "5121"),
+        ("compte_bancaire_ecarte", "5122"),
+    ]
+    with pytest.raises(CompteInconnu):
+        comptes.decider(dossier_id, "5129", True, UserId("dirigeant"), LE)

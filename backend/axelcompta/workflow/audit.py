@@ -19,6 +19,9 @@ from .orm import journal_audit
 ACTE_CONNEXION = "connexion"
 ACTE_EXPORT = "export"
 ACTE_CONSULTATION = "consultation"
+# Compte bancaire retenu (pro) ou écarté (personnel) par le dirigeant (AXE-729).
+ACTE_COMPTE_RETENU = "compte_bancaire_retenu"
+ACTE_COMPTE_ECARTE = "compte_bancaire_ecarte"
 
 
 def noter(

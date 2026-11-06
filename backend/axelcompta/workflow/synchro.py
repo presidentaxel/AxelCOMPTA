@@ -26,7 +26,11 @@ from axelcompta.categorize.models import Etage, ProposedEntry
 from axelcompta.categorize.pipeline import CategorizationPipeline
 from axelcompta.core.ids import EcritureId
 from axelcompta.core.pcg import COMPTE_BANQUE
-from axelcompta.ingestion.comptes_bancaires import CompteBancaireRepository, compte_de
+from axelcompta.ingestion.comptes_bancaires import (
+    CompteBancaireRepository,
+    compte_de,
+    comptes_ecartes,
+)
 from axelcompta.ingestion.journal import JournalIngestion
 from axelcompta.ingestion.providers.base import LotTransactions, NormalizedTransaction
 from axelcompta.ledger.banque import montant_bancaire
@@ -76,6 +80,9 @@ class RapportSynchro:
     # Opérations datées dans un exercice clos, arrivées après la clôture :
     # en quarantaine, jamais au grand livre (I4, AXE-806).
     periode_close: int = 0
+    # Opérations d'un compte écarté ou à décider (AXE-729) : ni écriture ni
+    # question, gardées dans l'archive brute.
+    compte_non_retenu: int = 0
 
 
 def choisir_compte(proposition: ProposedEntry, comptes: dict[str, str]) -> str:
@@ -137,6 +144,7 @@ class _Compteurs:
     nouvelles: int = 0
     a_trancher: int = 0
     connues: int = 0
+    non_retenues: int = 0
     modifiees: int = 0
     supprimees: int = 0
     periode_close: int = 0
@@ -156,8 +164,11 @@ def _traiter_transactions(
 ) -> _Compteurs:
     compteurs = _Compteurs()
     periodes = ledger.periodes_closes(dossier.id)
+    hors_retenus = _hors_comptes_retenus(
+        dossier, source_nom, lot, comptabilisees, comptes_bancaires
+    )
     par_transaction = _propositions_des_ouvertes(
-        dossier, source_nom, lot, comptabilisees, periodes, pipeline
+        dossier, source_nom, lot, comptabilisees, periodes, pipeline, hors_retenus
     )
     for transaction in lot.transactions:
         ecriture_id = _id_ecriture(dossier, source_nom, transaction.id)
@@ -175,6 +186,9 @@ def _traiter_transactions(
                 compteurs,
             )
             continue
+        if transaction.id in hors_retenus:
+            compteurs.non_retenues += 1
+            continue
         if periode_close_de(transaction.date, periodes) is not None:
             compteurs.periode_close += 1
             journal.mettre_en_quarantaine(
@@ -183,11 +197,7 @@ def _traiter_transactions(
             continue
         proposition = par_transaction[transaction.id]
         compte = choisir_compte(proposition, comptes)
-        banque = (
-            COMPTE_BANQUE
-            if comptes_bancaires is None
-            else compte_de(comptes_bancaires, dossier.id, transaction.compte_bancaire)
-        )
+        banque = _banque(dossier, transaction, comptes_bancaires)
         ecriture = dataclasses.replace(
             construire_ecriture_categorisee(transaction, proposition, compte, 0, banque),
             id=ecriture_id,
@@ -199,6 +209,39 @@ def _traiter_transactions(
     return compteurs
 
 
+def _banque(
+    dossier: Dossier,
+    transaction: NormalizedTransaction,
+    comptes_bancaires: CompteBancaireRepository | None,
+) -> str:
+    if comptes_bancaires is None:
+        return COMPTE_BANQUE
+    return compte_de(comptes_bancaires, dossier.id, transaction.compte_bancaire)
+
+
+def _hors_comptes_retenus(
+    dossier: Dossier,
+    source_nom: str,
+    lot: LotTransactions,
+    comptabilisees: dict[EcritureId, Ecriture],
+    comptes_bancaires: CompteBancaireRepository | None,
+) -> frozenset[str]:
+    """AXE-729 : nouvelles opérations d'un compte écarté ou à décider. Un
+    compte vu pour la première fois est enregistré ici, avant le tri."""
+    if comptes_bancaires is None:
+        return frozenset()
+    nouvelles = [
+        t
+        for t in lot.transactions
+        if t.compte_bancaire is not None
+        and _id_ecriture(dossier, source_nom, t.id) not in comptabilisees
+    ]
+    for identifiant in dict.fromkeys(t.compte_bancaire for t in nouvelles):
+        compte_de(comptes_bancaires, dossier.id, identifiant)
+    ecartes = comptes_ecartes(comptes_bancaires, dossier.id)
+    return frozenset(t.id for t in nouvelles if t.compte_bancaire in ecartes)
+
+
 def _propositions_des_ouvertes(
     dossier: Dossier,
     source_nom: str,
@@ -206,6 +249,7 @@ def _propositions_des_ouvertes(
     comptabilisees: dict[EcritureId, Ecriture],
     periodes: tuple[Periode, ...],
     pipeline: CategorizationPipeline,
+    hors_retenus: frozenset[str] = frozenset(),
 ) -> dict[str, ProposedEntry]:
     """Catégorisées ensemble : les deux jambes d'un virement interne ne se
     reconnaissent que côte à côte (AXE-826). Une opération datée dans un
@@ -215,6 +259,7 @@ def _propositions_des_ouvertes(
         for t in lot.transactions
         if _id_ecriture(dossier, source_nom, t.id) not in comptabilisees
         and periode_close_de(t.date, periodes) is None
+        and t.id not in hors_retenus
     ]
     return {p.transaction_id: p for p in pipeline.categoriser_lot(dossier.id, nouvelles)}
 
@@ -287,7 +332,12 @@ async def synchroniser_dossier(
 ) -> RapportSynchro:
     """`comptes_bancaires` : registre des sous-comptes 512x (AXE-832). Sans
     lui, toute opération va au 512, comme avant."""
-    lot = await source.lire_lot(dossier, journal.curseur(dossier.id, source_nom))
+    # Un compte retenu après coup : on relit tout pour importer son passé.
+    a_relire = comptes_bancaires is not None and any(
+        c.a_relire for c in comptes_bancaires.lister(dossier.id)
+    )
+    curseur = None if a_relire else journal.curseur(dossier.id, source_nom)
+    lot = await source.lire_lot(dossier, curseur)
     _archiver_lot(dossier, source_nom, journal, lot)
     comptabilisees = {e.id: e for e in ledger.grand_livre(dossier.id)}
     compteurs = _traiter_transactions(
@@ -303,6 +353,8 @@ async def synchroniser_dossier(
         comptes_bancaires,
     )
     supprimees = _signaler_supprimees(dossier, source_nom, lot, comptabilisees, journal, ledger)
+    if a_relire and comptes_bancaires is not None:
+        comptes_bancaires.relu(dossier.id)
     # Curseur en dernier : une interruption plus haut se rattrape au prochain passage.
     if lot.curseur is not None:
         journal.avancer_curseur(dossier.id, source_nom, lot.curseur)
@@ -315,6 +367,7 @@ async def synchroniser_dossier(
         rejets=len(lot.rejets),
         curseur=lot.curseur,
         periode_close=compteurs.periode_close,
+        compte_non_retenu=compteurs.non_retenues,
     )
 
 
