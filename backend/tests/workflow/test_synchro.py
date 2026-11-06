@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 from copy import deepcopy
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 import httpx
@@ -15,8 +15,13 @@ import pytest
 
 from axelcompta.categorize.models import Etage, ProposedEntry
 from axelcompta.categorize.rules_and_ml import RulesAndMlPipeline
-from axelcompta.core.ids import DossierId, TenantId, TransactionId
-from axelcompta.ingestion.comptes_bancaires import CompteBancaireMemoire
+from axelcompta.core.ids import DossierId, TenantId, TransactionId, UserId
+from axelcompta.ingestion.comptes_bancaires import (
+    CompteBancaire,
+    CompteBancaireMemoire,
+    CompteReleve,
+    relever_comptes,
+)
 from axelcompta.ingestion.journal import InMemoryJournalIngestion
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ingestion.providers.digifactory import (
@@ -375,6 +380,14 @@ def _synchroniser_avec_comptes(
     )
 
 
+def _comptes_retenus(*identifiants: str) -> CompteBancaireMemoire:
+    """Comptes déjà retenus par le dirigeant, dans l'ordre : 5121, 5122…"""
+    comptes = CompteBancaireMemoire()
+    for rang, identifiant in enumerate(identifiants, start=1):
+        comptes.ajouter(CompteBancaire(DOSSIER.id, identifiant, f"512{rang}", retenu=True))
+    return comptes
+
+
 def _banques(env: Env) -> dict[str, str]:
     """Ligne de banque de chaque écriture, par id de transaction."""
     return {
@@ -418,7 +431,7 @@ def test_chaque_compte_bancaire_a_son_sous_compte_512() -> None:
             ]
         }
     )
-    comptes = CompteBancaireMemoire()
+    comptes = _comptes_retenus("pro", "fiscal")
 
     _synchroniser_avec_comptes(env, comptes)
 
@@ -513,7 +526,7 @@ def test_un_virement_entre_deux_enveloppes_va_au_580_sans_question() -> None:
         }
     )
 
-    rapport = _synchroniser_avec_comptes(env, CompteBancaireMemoire())
+    rapport = _synchroniser_avec_comptes(env, _comptes_retenus("pro", "social"))
 
     assert (rapport.nouvelles, rapport.a_trancher) == (2, 0)
     assert env.comptes("s") == {"580", "5121"}
@@ -599,3 +612,99 @@ def test_la_contre_passation_va_au_debut_de_l_exercice_ouvert_du_dossier() -> No
         e for e in env.ledger.grand_livre(DOSSIER.id) if e.id.endswith(":contrepassation")
     ]
     assert inverse.date == date(2026, 3, 1)
+
+
+def _pro_et_perso() -> Env:
+    return Env(
+        {
+            "acc": [
+                _tx(
+                    "t1",
+                    "CARTE TOTAL STATION",
+                    -60.0,
+                    "2026-03-01",
+                    "2026-03-01 10:00:00",
+                    account_id="pro",
+                ),
+                _tx(
+                    "t2",
+                    "CARREFOUR MARKET",
+                    -85.0,
+                    "2026-03-02",
+                    "2026-03-02 10:00:00",
+                    account_id="perso",
+                ),
+            ]
+        }
+    )
+
+
+def test_un_compte_personnel_ne_produit_ni_ecriture_ni_question() -> None:
+    """Critère AXE-729 : un compte pro et un compte perso, seul le pro compte."""
+    env = _pro_et_perso()
+    comptes = _comptes_retenus("pro")
+    comptes.ajouter(CompteBancaire(DOSSIER.id, "perso", "5122", retenu=False))
+
+    rapport = _synchroniser_avec_comptes(env, comptes)
+
+    assert set(_banques(env)) == {"t1"}
+    assert (rapport.nouvelles, rapport.compte_non_retenu) == (1, 1)
+    assert {e.rsplit("-", 1)[-1] for e in env.propositions.lister(DOSSIER.id)} == {"t1"}
+
+
+def test_un_compte_apparu_apres_coup_attend_la_decision() -> None:
+    env = _pro_et_perso()
+    comptes = _comptes_retenus("pro")
+
+    rapport = _synchroniser_avec_comptes(env, comptes)
+
+    (perso,) = [c for c in comptes.lister(DOSSIER.id) if c.identifiant == "perso"]
+    assert perso.retenu is None
+    assert rapport.compte_non_retenu == 1
+
+
+def test_le_premier_compte_d_un_dossier_est_retenu_d_office() -> None:
+    env = Env(
+        {
+            "acc": [
+                _tx(
+                    "t1",
+                    "CARTE TOTAL",
+                    -60.0,
+                    "2026-03-01",
+                    "2026-03-01 10:00:00",
+                    account_id="pro",
+                )
+            ]
+        }
+    )
+    comptes = CompteBancaireMemoire()
+
+    _synchroniser_avec_comptes(env, comptes)
+
+    assert [c.retenu for c in comptes.lister(DOSSIER.id)] == [True]
+    assert set(_banques(env)) == {"t1"}
+
+
+def test_un_premier_releve_a_plusieurs_comptes_n_en_retient_aucun() -> None:
+    comptes = CompteBancaireMemoire()
+    releves = (CompteReleve("pro", "Compte pro", 100), CompteReleve("perso", "Livret", 50))
+
+    relever_comptes(comptes, DOSSIER.id, releves, datetime(2026, 3, 1, tzinfo=UTC))
+
+    assert [c.retenu for c in comptes.lister(DOSSIER.id)] == [None, None]
+
+
+def test_retenir_un_compte_apres_coup_importe_son_passe() -> None:
+    env = _pro_et_perso()
+    comptes = _comptes_retenus("pro")
+    comptes.ajouter(CompteBancaire(DOSSIER.id, "perso", "5122", retenu=False))
+    _synchroniser_avec_comptes(env, comptes)
+    assert set(_banques(env)) == {"t1"}
+
+    comptes.decider(DOSSIER.id, "5122", True, UserId("dirigeant"), datetime(2026, 3, 5, tzinfo=UTC))
+    rapport = _synchroniser_avec_comptes(env, comptes)
+
+    assert _banques(env) == {"t1": "5121", "t2": "5122"}
+    assert (rapport.nouvelles, rapport.deja_connues) == (1, 1)
+    assert not any(c.a_relire for c in comptes.lister(DOSSIER.id))

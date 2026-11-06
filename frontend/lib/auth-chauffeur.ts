@@ -443,6 +443,15 @@ export async function listerComptesBancairesChauffeur(
   return fetchAvecAuthChauffeur<CompteBancaireVue[]>(`/dossiers/${dossierId}/comptes-bancaires`);
 }
 
+/** AXE-729 : comptabiliser ce compte (pro) ou l'écarter (personnel). */
+export function deciderCompteBancaireChauffeur(
+  dossierId: string,
+  compte: string,
+  retenu: boolean,
+): Promise<CompteBancaireVue[]> {
+  return envoyerChauffeur(`/dossiers/${dossierId}/comptes-bancaires/${compte}/decision`, { retenu });
+}
+
 /** Notifications internes du chauffeur, les plus récentes d'abord. */
 export async function listerNotificationsChauffeur(dossierId: string): Promise<NotificationVue[]> {
   return fetchAvecAuthChauffeur<NotificationVue[]>(`/dossiers/${dossierId}/notifications`);

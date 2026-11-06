@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from axelcompta.core.ids import DossierId, EcritureId
+from fastapi.testclient import TestClient
+from httpx import Response
+
+from axelcompta.core.ids import DossierId, EcritureId, UserId
 from axelcompta.core.money import Money
 from axelcompta.demo_api import (
     get_comptes_bancaires,
@@ -51,7 +54,7 @@ def _ecriture(id_: str, banque: str, montant: int) -> Ecriture:
 
 def test_la_vue_met_les_deux_soldes_cote_a_cote() -> None:
     comptes = (
-        CompteBancaire(KARIM, "pro", "5121", "Compte PRO", 4_000, LE),
+        CompteBancaire(KARIM, "pro", "5121", "Compte PRO", 4_000, LE, retenu=True),
         CompteBancaire(KARIM, "fiscal", "5122", None),
     )
     ecritures = (
@@ -106,3 +109,70 @@ def test_le_gestionnaire_ne_voit_pas_les_soldes() -> None:
     assert client.get(url, headers=_en_tete_gestionnaire()).status_code == 403
     assert client.get(url, headers=_en_tete("DEMO_sophie")).status_code == 403
     assert client.get(url).status_code == 401
+
+
+def _client_pro_et_perso() -> tuple[TestClient, CompteBancaireMemoire]:
+    """Karim : compte pro (retenu, une écriture) et livret perso (à décider)."""
+    client = _client_et_stubs()[0]
+    overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
+    comptes: CompteBancaireMemoire = overrides[get_comptes_bancaires]()
+    releves = [CompteReleve("pro", "Compte PRO", 2_500), CompteReleve("perso", "Livret", 90_000)]
+    relever_comptes(comptes, KARIM, releves, LE)
+    comptes.decider(KARIM, "5121", True, UserId("karim"), LE)
+    overrides[get_ledger]().enregistrer(_ecriture("DEMO_karim:ventile", "5121", 2_500))
+    return client, comptes
+
+
+def _decider(client: TestClient, compte: str, retenu: bool) -> Response:
+    reponse: Response = client.post(
+        f"/dossiers/DEMO_karim/comptes-bancaires/{compte}/decision",
+        json={"retenu": retenu},
+        headers=_en_tete("DEMO_karim"),
+    )
+    return reponse
+
+
+def test_un_compte_a_decider_n_affiche_pas_d_ecart() -> None:
+    client, _ = _client_pro_et_perso()
+    vues = client.get(
+        "/dossiers/DEMO_karim/comptes-bancaires", headers=_en_tete("DEMO_karim")
+    ).json()
+    livret = next(v for v in vues if v["compte"] == "5122")
+    assert (livret["retenu"], livret["ecart_cts"]) == (None, None)
+
+
+def test_le_dirigeant_ecarte_son_livret_et_c_est_trace() -> None:
+    client, comptes = _client_pro_et_perso()
+    reponse = _decider(client, "5122", False)
+    assert reponse.status_code == 200
+    assert next(v for v in reponse.json() if v["compte"] == "5122")["retenu"] is False
+    assert [(d[1], d[2]) for d in comptes.decisions] == [("5121", True), ("5122", False)]
+
+
+def test_retenir_apres_coup_demande_une_relecture() -> None:
+    client, comptes = _client_pro_et_perso()
+    assert _decider(client, "5122", True).status_code == 200
+    livret = next(c for c in comptes.lister(KARIM) if c.compte_comptable == "5122")
+    assert (livret.retenu, livret.a_relire) == (True, True)
+
+
+def test_un_compte_deja_comptabilise_ne_s_ecarte_pas() -> None:
+    client, _ = _client_pro_et_perso()
+    reponse = _decider(client, "5121", False)
+    assert reponse.status_code == 409
+    assert "déjà dans la comptabilité" in reponse.json()["detail"]
+
+
+def test_un_compte_inconnu_repond_404() -> None:
+    client, _ = _client_pro_et_perso()
+    assert _decider(client, "5129", True).status_code == 404
+
+
+def test_seul_le_dirigeant_decide() -> None:
+    client, _ = _client_pro_et_perso()
+    reponse = client.post(
+        "/dossiers/DEMO_karim/comptes-bancaires/5122/decision",
+        json={"retenu": True},
+        headers=_en_tete_gestionnaire(),
+    )
+    assert reponse.status_code == 403

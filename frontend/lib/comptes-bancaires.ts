@@ -7,7 +7,17 @@ export type CompteAffiche = {
   solde_comptable_cts: number;
   solde_banque_cts: number | null;
   ecart_cts: number | null;
+  retenu?: boolean | null;
 };
+
+export type ChoixCompte = "retenu" | "ecarte" | "a_decider";
+
+/** AXE-729. Un compte sans réponse de l'API (ancienne version) est retenu. */
+export function choixCompte(compte: CompteAffiche): ChoixCompte {
+  if (compte.retenu === false) return "ecarte";
+  if (compte.retenu === null) return "a_decider";
+  return "retenu";
+}
 
 export type Rapprochement =
   | { etat: "a_jour" }
@@ -28,6 +38,8 @@ export function titreCompte(compte: CompteAffiche): string {
 /** Comparaison du solde comptable avec le solde de la banque. */
 export function rapprochement(compte: CompteAffiche): Rapprochement {
   if (estNonVentile(compte)) return { etat: "non_ventile" };
+  // Pas comptabilisé : rien à rapprocher.
+  if (choixCompte(compte) !== "retenu") return { etat: "jamais_releve" };
   if (compte.solde_banque_cts === null || compte.ecart_cts === null) {
     return { etat: "jamais_releve" };
   }

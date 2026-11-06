@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { rapprochement, titreCompte, type CompteAffiche } from "./comptes-bancaires";
+import { choixCompte, rapprochement, titreCompte, type CompteAffiche } from "./comptes-bancaires";
 
 const base: CompteAffiche = {
   compte: "5121",
@@ -33,4 +33,18 @@ test("un compte jamais relevé n'a pas d'écart", () => {
 
 test("le 512 non ventilé n'est pas rapproché", () => {
   assert.deepEqual(rapprochement({ ...base, compte: "512" }), { etat: "non_ventile" });
+});
+
+test("choix d'un compte : retenu, écarté ou à décider (AXE-729)", () => {
+  const base: CompteAffiche = {
+    compte: "5122",
+    nom: "Livret",
+    solde_comptable_cts: 0,
+    solde_banque_cts: 90_000,
+    ecart_cts: null,
+  };
+  assert.equal(choixCompte(base), "retenu");
+  assert.equal(choixCompte({ ...base, retenu: null }), "a_decider");
+  assert.equal(choixCompte({ ...base, retenu: false }), "ecarte");
+  assert.deepEqual(rapprochement({ ...base, retenu: null }), { etat: "jamais_releve" });
 });
