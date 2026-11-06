@@ -32,6 +32,8 @@
     "lib/tags.test.ts",
     "lib/filtres-portefeuille.ts",
     "lib/filtres-portefeuille.test.ts",
+    "lib/classees.ts",
+    "lib/classees.test.ts",
     "lib/types.ts"
   ]
 }

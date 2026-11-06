@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 from sqlalchemy.engine import Engine
@@ -15,11 +15,12 @@ from sqlalchemy.exc import IntegrityError
 
 from axelcompta.categorize.models import Etage, ProposedEntry
 from axelcompta.core.db import metadata
-from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId
+from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, UserId
 from axelcompta.demo_identites import IDENTITE_KARIM
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
+from axelcompta.workflow.verdicts_postgres import PostgresVerdicts
 
 pytestmark = pytest.mark.integration
 
@@ -166,3 +167,40 @@ def test_la_reconfiguration_sirene_est_relue_a_l_identique(engine: Engine, id_un
     repo.reconfigurer_depuis_sirene(reconfigure)
 
     assert repo.obtenir(dossier.id) == reconfigure
+
+
+def test_les_propositions_d_un_dossier_se_lisent_en_une_fois(
+    engine: Engine, creer_dossier: Callable[[str], None]
+) -> None:
+    """AXE-823 : la vue « déjà classées » lit toutes les propositions d'un coup."""
+    creer_dossier("d1")
+    repo = PostgresPropositionRepository(engine)
+    for numero, confiance in ((1, 0.97), (2, 0.5)):
+        repo.enregistrer(
+            EcritureId(f"d1:e{numero}"),
+            ProposedEntry(
+                dossier_id=DossierId("d1"),
+                transaction_id=TransactionId(f"tx{numero}"),
+                categorie="carburant",
+                etage=Etage.REGLE,
+                confiance=confiance,
+            ),
+        )
+
+    toutes = repo.lister(DossierId("d1"))
+
+    assert {e: p.confiance for e, p in toutes.items()} == {"d1:e1": 0.97, "d1:e2": 0.5}
+    assert repo.lister(DossierId("d2")) == {}
+
+
+def test_le_dernier_verdict_d_une_ecriture_fait_foi(
+    engine: Engine, creer_dossier: Callable[[str], None]
+) -> None:
+    creer_dossier("d1")
+    depot = PostgresVerdicts(engine)
+    le = datetime(2026, 11, 5, tzinfo=UTC)
+    depot.noter(DossierId("d1"), EcritureId("d1:e1"), "juste", UserId("louis"), le)
+    depot.noter(DossierId("d1"), EcritureId("d1:e1"), "faux", UserId("louis"), le)
+    depot.noter(DossierId("d1"), EcritureId("d1:e2"), "juste", UserId("louis"), le)
+
+    assert PostgresVerdicts(engine).derniers(DossierId("d1")) == {"d1:e1": "faux", "d1:e2": "juste"}

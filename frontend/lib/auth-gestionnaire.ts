@@ -30,6 +30,7 @@ import type {
   EvenementAnomalie,
   FileExpert,
   ImputationFaite,
+  OperationsClassees,
   ReglageTags,
 } from "./types";
 
@@ -699,4 +700,31 @@ export async function reglerExclusion(traitement: string, tags: string[]): Promi
     body: JSON.stringify({ tags }),
   });
   return lireReglageTags(reponse, "Le réglage n'a pas été enregistré.");
+}
+
+// --- Opérations déjà classées (AXE-823) ---
+
+export async function lireClassees(params: URLSearchParams): Promise<OperationsClassees> {
+  const reponse = await requeteGestionnaire(`/expert/classees?${params.toString()}`);
+  if (reponse.status === 401) throw new ErreurAuthGestionnaire();
+  if (!reponse.ok) {
+    throw new ApiError("Impossible de charger les opérations classées.", reponse.status);
+  }
+  return (await reponse.json()) as OperationsClassees;
+}
+
+export async function noterVerdict(
+  dossierId: string,
+  ecritureId: string,
+  verdict: "juste" | "faux",
+): Promise<void> {
+  const reponse = await requeteGestionnaire("/expert/classees/verdict", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dossier_id: dossierId, ecriture_id: ecritureId, verdict }),
+  });
+  if (!reponse.ok) {
+    const corps = (await reponse.json().catch(() => null)) as { detail?: string } | null;
+    throw new ApiError(corps?.detail ?? "Le verdict n'a pas été enregistré.", reponse.status);
+  }
 }

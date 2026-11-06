@@ -66,6 +66,7 @@ from axelcompta.demo_api import (
     get_role_membre,
     get_signatures_inpi,
     get_tags,
+    get_verdicts,
 )
 from axelcompta.demo_chauffeurs_type import construire_ledger
 from axelcompta.demo_comptes import Invitation
@@ -98,6 +99,7 @@ from axelcompta.workflow.notifications import (
 from axelcompta.workflow.propositions import InMemoryPropositionRepository
 from axelcompta.workflow.signature import DocumentSigne
 from axelcompta.workflow.signature_memory import InMemorySignatureRepository
+from axelcompta.workflow.verdicts import VerdictsMemoire
 
 # ES256 (JWT Signing Keys), pas HS256 : ce qu'émet le vrai projet Supabase
 # (découvert 2026-09-08, voir le commentaire de module de demo_auth.py).
@@ -221,6 +223,8 @@ def _client_et_stubs(
     app.dependency_overrides[get_agregats] = lambda: agregats_stub
     tags_stub = TagsMemoire()
     app.dependency_overrides[get_tags] = lambda: tags_stub
+    verdicts_stub = VerdictsMemoire()
+    app.dependency_overrides[get_verdicts] = lambda: verdicts_stub
     # `droits_membre` est en Postgres : le rôle est fixé ici.
     app.dependency_overrides[get_role_membre] = lambda: role
     app.dependency_overrides[get_consentements] = lambda: _ConsentementsStub()

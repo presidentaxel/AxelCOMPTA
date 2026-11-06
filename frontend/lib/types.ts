@@ -290,3 +290,29 @@ export type CompteBancaireVue = {
   releve_le: string | null;
   ecart_cts: number | null;
 };
+
+/** AXE-823 : une opération déjà classée, et par qui ou quoi. */
+export type OperationClassee = {
+  dossier_id: string;
+  dossier_nom: string;
+  ecriture_id: string;
+  date: string;
+  libelle: string;
+  montant_cts: number;
+  compte: string;
+  categorie: string | null;
+  origine: string;
+  confiance: number | null;
+  statut: string;
+  sens: string;
+  verdict: "juste" | "faux" | null;
+};
+
+export type OperationsClassees = {
+  operations: OperationClassee[];
+  total: number;
+  page: number;
+  pages: number;
+  compteurs: { auto: number; chauffeur: number; expert: number; justes: number; fausses: number };
+  categories: string[];
+};

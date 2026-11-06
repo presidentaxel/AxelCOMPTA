@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { OperationsClassees } from "@/components/OperationsClassees";
 import { Squelette } from "@/components/Squelette";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +13,13 @@ import {
   imputerExpert,
   lireFileExpert,
 } from "@/lib/auth-gestionnaire";
+import {
+  type EtatClassees,
+  lireEtat,
+  STATUTS,
+  versRecherche,
+  VUE_A_TRAITER,
+} from "@/lib/classees";
 import { remplacerSujetsDuDossier } from "@/lib/file-expert";
 import { formatMontant } from "@/lib/format";
 import {
@@ -24,6 +32,7 @@ import {
   TOUS_LES_TAGS,
 } from "@/lib/tags";
 import type { FileExpert, ImputationFaite, SujetExpert } from "@/lib/types";
+import { useDroitGestionnaire } from "@/lib/use-droit";
 
 const PAGE = 50;
 
@@ -58,6 +67,19 @@ export default function ModeExpertPage() {
   const [nature, setNature] = useState("toutes");
   const [tag, setTag] = useState(TOUS_LES_TAGS);
   const [visible, setVisible] = useState(PAGE);
+  // AXE-823 : « À traiter » (la file) ou une vue des opérations déjà classées.
+  const [vue, setVue] = useState<EtatClassees>(() => lireEtat(""));
+  const droit = useDroitGestionnaire();
+
+  useEffect(() => {
+    // L'état des filtres vient de l'URL, lue une fois à l'arrivée.
+    setVue(lireEtat(window.location.search));
+  }, []);
+
+  function changerVue(suivant: EtatClassees) {
+    setVue(suivant);
+    router.replace(`${window.location.pathname}${versRecherche(suivant)}`, { scroll: false });
+  }
 
   useEffect(() => {
     // Filtre de tag partageable par l'URL (AXE-829), lu une fois à l'arrivée.
@@ -237,7 +259,29 @@ export default function ModeExpertPage() {
           <Squelette className="h-16 w-full" />
         </div>
       )}
-      {file && (
+      <label className="mt-6 block text-sm text-subtle">
+        Statut
+        <select
+          value={vue.vue}
+          onChange={(evenement) => changerVue({ ...vue, vue: evenement.target.value, page: "1" })}
+          className="ml-2 h-9 rounded-md border border-border bg-canvas px-3 text-sm text-ink"
+        >
+          {Object.entries(STATUTS).map(([id, libelle]) => (
+            <option key={id} value={id}>
+              {libelle}
+            </option>
+          ))}
+        </select>
+      </label>
+      {vue.vue !== VUE_A_TRAITER && (
+        <OperationsClassees
+          etat={vue}
+          comptes={file?.comptes ?? []}
+          ecriture={droit.ecriture}
+          onChanger={changerVue}
+        />
+      )}
+      {vue.vue === VUE_A_TRAITER && file && (
         <>
           <div className="mt-6 flex flex-wrap items-center gap-2">
             <label className="text-sm text-subtle">
