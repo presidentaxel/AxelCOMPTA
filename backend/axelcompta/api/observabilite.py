@@ -1,15 +1,19 @@
 """Sentry et métriques HTTP, branchés sur l'application qui sert le front.
 
 Sentry ne démarre que si `SENTRY_DSN` est posé. Sans DSN, rien n'est envoyé.
+
+`/metrics` n'est pas public (AXE-810) : sans `METRICS_TOKEN`, la route
+répond 404 ; avec, elle exige `Authorization: Bearer <jeton>` (401 sinon).
 """
 
 from __future__ import annotations
 
+import hmac
 import os
 import time
 from collections.abc import Awaitable, Callable
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import PlainTextResponse
 
 from axelcompta.core.metriques import METRIQUES
@@ -48,5 +52,17 @@ def brancher(app: FastAPI) -> None:
         return reponse
 
     @app.get("/metrics", response_class=PlainTextResponse)
-    def metrics() -> str:
+    def metrics(requete: Request) -> str:
+        verifier_jeton_metriques(requete.headers.get("authorization"))
         return METRIQUES.texte()
+
+
+def verifier_jeton_metriques(en_tete: str | None, attendu: str | None = None) -> None:
+    """404 sans jeton configuré (la route n'existe pas pour l'extérieur),
+    401 si le jeton présenté n'est pas le bon. Comparaison en temps constant."""
+    jeton = os.environ.get("METRICS_TOKEN") if attendu is None else attendu
+    if not jeton:
+        raise HTTPException(status_code=404)
+    presente = (en_tete or "").removeprefix("Bearer ").strip()
+    if not hmac.compare_digest(presente.encode(), jeton.encode()):
+        raise HTTPException(status_code=401, detail="Jeton de métriques requis.")

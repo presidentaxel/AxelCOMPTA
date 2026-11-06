@@ -513,3 +513,20 @@ def test_les_tags_restent_dans_leur_portefeuille(
         assert web.tags_des_dossiers(TenantId("tenant-a")) == {}
     with engine.begin() as connexion, pytest.raises(DBAPIError):
         connexion.execute(text("UPDATE evenements_tags SET pose = false"))
+
+
+@pytest.mark.parametrize(
+    "requete",
+    [
+        "ALTER TABLE ecritures DISABLE TRIGGER ALL",
+        "ALTER TABLE ecritures DISABLE TRIGGER ecritures_immuables",
+        "ALTER TABLE lignes_ecriture DISABLE TRIGGER ALL",
+        "SET session_replication_role = replica",
+        "DROP TRIGGER ecritures_immuables ON ecritures",
+    ],
+)
+def test_le_role_web_ne_peut_pas_lever_les_verrous(engine_web: Engine, requete: str) -> None:
+    """AXE-810 : aucun chemin applicatif ne peut suspendre l'immuabilité (I2).
+    Seul le propriétaire des tables le peut, et l'API ne s'y connecte pas."""
+    with engine_web.connect() as connexion, pytest.raises((ProgrammingError, DBAPIError)):
+        connexion.execute(text(requete))
