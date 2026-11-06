@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from axelcompta.core.ids import DossierId
+from axelcompta.demo_api import get_cache_classees
 from axelcompta.workflow.classees_cache import VERSION_CLASSEES
 from axelcompta.workflow.file_expert_cache import SujetsGardes
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
@@ -11,7 +12,6 @@ from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _en_tete_gestionnaire,
     _jwks_factice,
     _ledger_calcule_une_seule_fois,
-    get_cache_classees,
 )
 
 EN_TETE = _en_tete_gestionnaire()
