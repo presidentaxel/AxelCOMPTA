@@ -133,6 +133,8 @@ from axelcompta.ingestion.journal import EntreeQuarantaine, JournalIngestion
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ingestion.providers.digifactory import normaliser_payload
+from axelcompta.jobs.file import TYPE_SYNCHRO, DemandesDeJobs, Job
+from axelcompta.jobs.postgres import FilePostgres
 from axelcompta.ledger.banque import (
     comptes_hors_banque,
     est_reclassement_bancaire,
@@ -161,6 +163,8 @@ from axelcompta.tenants.avenants import (
     alerte_option_ir,
 )
 from axelcompta.tenants.avenants_postgres import PostgresAvenantRegimeRepository
+from axelcompta.tenants.contacts_proposes import ContactsProposesRepository
+from axelcompta.tenants.contacts_proposes_postgres import PostgresContactsProposes
 from axelcompta.tenants.exercices import ExerciceRepository
 from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
 from axelcompta.tenants.franchise_tva import MillesimeInconnu, suivre_franchise
@@ -4620,6 +4624,136 @@ def _enregistrer_routes_quarantaine(app: FastAPI) -> None:
         return _entree_vue(dossier, entree, resolution)
 
 
+def get_contacts_proposes() -> ContactsProposesRepository:
+    return PostgresContactsProposes(_engine())
+
+
+ContactsProposesDep = Annotated[ContactsProposesRepository, Depends(get_contacts_proposes)]
+
+
+def get_demandes_jobs() -> DemandesDeJobs:
+    """Le gestionnaire dépose et suit ses demandes ; le worker les exécute."""
+    return FilePostgres(_engine())
+
+
+DemandesJobsDep = Annotated[DemandesDeJobs, Depends(get_demandes_jobs)]
+
+
+class NouveauChauffeurVue(BaseModel):
+    contact_nr: str
+    nom: str
+    siren: str | None
+    forme: str | None
+    exercice_debut: str | None
+    code_naf: str | None
+    avertissements: list[str]
+    cessee: bool
+    decision: str | None  # None : à valider ; "ajouter" : création en attente
+
+
+class DecisionContactsEntree(BaseModel):
+    contact_nrs: list[str]
+    decision: Literal["ajouter", "ignorer", "reprendre"]
+
+
+class SynchronisationVue(BaseModel):
+    statut: str  # en_attente | en_cours | fait | echec
+    resultat: str | None
+    erreur: str | None
+    demandee_le: str | None
+    terminee_le: str | None
+
+
+def _synchronisation_vue(job: Job | None) -> SynchronisationVue | None:
+    if job is None:
+        return None
+    return SynchronisationVue(
+        statut=job.statut,
+        resultat=job.resultat,
+        erreur=job.derniere_erreur if job.statut == "echec" else None,
+        demandee_le=job.cree_le.isoformat() if job.cree_le else None,
+        terminee_le=job.termine_le.isoformat() if job.termine_le else None,
+    )
+
+
+def _nouveaux_chauffeurs(
+    tenant_id: TenantId, contacts: ContactsProposesRepository
+) -> list[NouveauChauffeurVue]:
+    decisions = contacts.decisions(tenant_id)
+    return [
+        NouveauChauffeurVue(
+            contact_nr=p.contact_nr,
+            nom=p.nom,
+            siren=p.siren,
+            forme=p.forme,
+            exercice_debut=p.exercice_debut.isoformat() if p.exercice_debut else None,
+            code_naf=p.code_naf,
+            avertissements=list(p.avertissements),
+            cessee=p.cessee,
+            decision=None
+            if decisions.get(p.contact_nr) == "reprendre"
+            else decisions.get(p.contact_nr),
+        )
+        for p in contacts.propositions(tenant_id)
+    ]
+
+
+def _enregistrer_routes_synchronisation(app: FastAPI) -> None:
+    @app.get("/portefeuille/nouveaux-chauffeurs", response_model=list[NouveauChauffeurVue])
+    def lister_nouveaux_chauffeurs(
+        contacts: ContactsProposesDep, identite: IdentiteDep
+    ) -> list[NouveauChauffeurVue]:
+        """Contacts Digifactory sans dossier, préparés depuis Sirene (AXE-845)."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _nouveaux_chauffeurs(tenant_id, contacts)
+
+    @app.post("/portefeuille/nouveaux-chauffeurs", response_model=list[NouveauChauffeurVue])
+    def decider_nouveaux_chauffeurs(
+        corps: DecisionContactsEntree,
+        contacts: ContactsProposesDep,
+        demandes: DemandesJobsDep,
+        role: RoleMembreDep,
+        identite: IdentiteDep,
+    ) -> list[NouveauChauffeurVue]:
+        """« Ajouter » : le dossier est créé par la synchro qui suit (demandée
+        ici). « Ignorer » le retire de la liste ; « reprendre » l'y remet."""
+        tenant_id, identite_ok = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, "La lecture n'ajoute pas de chauffeur.")
+        proposes = {p.contact_nr for p in contacts.propositions(tenant_id)}
+        inconnus = set(corps.contact_nrs) - proposes
+        if inconnus:
+            raise HTTPException(status_code=404, detail="Contact inconnu.")
+        maintenant = datetime.now(UTC)
+        for numero in corps.contact_nrs:
+            contacts.decider(
+                tenant_id,
+                numero,
+                corps.decision,
+                identite_ok.email or identite_ok.user_id,
+                maintenant,
+            )
+        if corps.decision == "ajouter":
+            demandes.demander(tenant_id, TYPE_SYNCHRO)
+        return _nouveaux_chauffeurs(tenant_id, contacts)
+
+    @app.post("/portefeuille/synchroniser", response_model=SynchronisationVue)
+    def synchroniser(
+        demandes: DemandesJobsDep, role: RoleMembreDep, identite: IdentiteDep
+    ) -> SynchronisationVue | None:
+        """Lance la synchro tout de suite. Pendant qu'une synchro est en
+        attente ou en cours, rend celle-ci sans en lancer une seconde."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, "La lecture ne lance pas de synchronisation.")
+        return _synchronisation_vue(demandes.demander(tenant_id, TYPE_SYNCHRO))
+
+    @app.get("/portefeuille/synchronisation", response_model=SynchronisationVue | None)
+    def lire_synchronisation(
+        demandes: DemandesJobsDep, identite: IdentiteDep
+    ) -> SynchronisationVue | None:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _synchronisation_vue(demandes.dernier(tenant_id, TYPE_SYNCHRO))
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="AxeLCompta — API", version="0.0.1")
     from axelcompta.api.observabilite import brancher
@@ -4637,6 +4771,7 @@ def create_app() -> FastAPI:
     _enregistrer_route_historique_anomalie(app)
     _enregistrer_routes_expert(app)
     _enregistrer_routes_quarantaine(app)
+    _enregistrer_routes_synchronisation(app)
     _enregistrer_routes_tags(app)
     _enregistrer_routes_revue(app)
     _enregistrer_routes_portefeuille(app)
