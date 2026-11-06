@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date
+import dataclasses
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -8,10 +9,13 @@ from axelcompta.core.ids import DossierId, EcritureId
 from axelcompta.core.money import Money
 from axelcompta.filings.fec import (
     COLONNES_FEC,
+    SEPARATEUR_ENREGISTREMENT,
+    SEPARATEUR_ZONE,
     FecInvalide,
     exporter_fec,
     libelle_compte,
     nom_fichier_fec,
+    ordre_fec,
     valider_fec,
 )
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
@@ -160,3 +164,30 @@ def test_refuse_une_ecriture_desequilibree() -> None:
     fec = exporter_fec((_ecriture_uber(),))
     with pytest.raises(FecInvalide, match="déséquilibrée"):
         valider_fec(fec.replace("848,00", "1,00", 1))
+
+
+def test_les_numeros_gardes_en_base_font_l_ordre_du_fec() -> None:
+    """AXE-807 : une écriture antidatée validée plus tard garde son numéro et
+    vient après ; les écritures calculées (clôture) suivent, numérotées à la
+    suite."""
+    ancienne = dataclasses.replace(
+        _ecriture("a", 5), numero=1, valide_le=datetime(2026, 3, 5, 9, tzinfo=UTC)
+    )
+    antidatee = dataclasses.replace(
+        _ecriture("b", 2), numero=2, valide_le=datetime(2026, 3, 9, 9, tzinfo=UTC)
+    )
+    cloture = _ecriture("c", 28)
+
+    ordre = ordre_fec((cloture, antidatee, ancienne))
+
+    assert [(n, e.id) for n, e in ordre] == [(1, "a"), (2, "b"), (3, "c")]
+    lignes = exporter_fec((cloture, antidatee, ancienne)).split(SEPARATEUR_ENREGISTREMENT)
+    # ValidDate : la date de validation, pas celle de l'écriture.
+    assert lignes[3].split(SEPARATEUR_ZONE)[15] == "20260309"
+
+
+def test_un_trou_dans_les_numeros_gardes_est_refuse() -> None:
+    premiere = dataclasses.replace(_ecriture("a", 5), numero=1)
+    troisieme = dataclasses.replace(_ecriture("b", 6), numero=3)
+    with pytest.raises(FecInvalide, match="séquence continue"):
+        exporter_fec((premiere, troisieme))
