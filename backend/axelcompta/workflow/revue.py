@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 
+from axelcompta.core.errors import DomaineError
 from axelcompta.ledger.contrepassation import origine
 from axelcompta.ledger.models import Ecriture
 
@@ -39,7 +40,7 @@ _SANS_COMPTE = {
 }
 
 
-class CategorieInconnueError(ValueError):
+class CategorieInconnueError(DomaineError, ValueError):
     """La catégorie choisie n'a ni compte dans le pack ni traitement spécial
     connu — pas de repli silencieux (doc 08 §2.7)."""
 

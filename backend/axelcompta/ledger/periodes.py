@@ -16,13 +16,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import date, timedelta
 
-from axelcompta.core.errors import DomaineError
+from axelcompta.core.errors import Conflit
 
 # (début, fin) inclus, d'un exercice clos.
 Periode = tuple[date, date]
 
 
-class PeriodeClose(DomaineError):
+class PeriodeClose(Conflit):
     """Écriture datée dans un exercice déjà clos."""
 
     def __init__(self, jour: date, periode: Periode) -> None:
