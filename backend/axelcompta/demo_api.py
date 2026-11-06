@@ -39,7 +39,7 @@ from collections.abc import Sequence
 from collections.abc import Set as AbstractSet
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Any, Literal, Protocol
+from typing import Annotated, Any, Literal, Protocol, cast
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -195,6 +195,7 @@ from axelcompta.workflow.classees import (
     trier,
 )
 from axelcompta.workflow.classees import classer as classer_operations
+from axelcompta.workflow.classees_cache import VERSION_CLASSEES
 from axelcompta.workflow.decisions import (
     CATEGORIE_ANNULATION,
     DecisionHumaine,
@@ -204,7 +205,10 @@ from axelcompta.workflow.decisions import (
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
 from axelcompta.workflow.expert import ImputationRefusee, preparer_imputation
 from axelcompta.workflow.file_expert_cache import CacheFileExpert, SujetsGardes
-from axelcompta.workflow.file_expert_cache_postgres import PostgresCacheFileExpert
+from axelcompta.workflow.file_expert_cache_postgres import (
+    PostgresCacheFileExpert,
+    cache_operations_classees,
+)
 from axelcompta.workflow.notifications import (
     NotificationRepository,
     ecritures_a_trancher,
@@ -1348,6 +1352,15 @@ def get_cache_file_expert() -> CacheFileExpert:
 CacheFileExpertDep = Annotated[CacheFileExpert, Depends(get_cache_file_expert)]
 
 
+def get_cache_classees() -> CacheFileExpert:
+    """Opérations déjà classées gardées par dossier (AXE-824). `SansCache`
+    dans les tests en mémoire, où rien ne monte les versions."""
+    return cache_operations_classees(_engine())
+
+
+CacheClasseesDep = Annotated[CacheFileExpert, Depends(get_cache_classees)]
+
+
 def _trancher(
     dossier: Dossier,
     ecriture_id: str,
@@ -1682,10 +1695,10 @@ def _cache_perime(ligne: LigneAgregat | None, garde: SujetsGardes | None) -> boo
 
 
 def prechauffer_caches(engine: Engine, dossiers: Sequence[Dossier]) -> int:
-    """Après la synchro (tâches planifiées, AXE-824) : recalcule les agrégats
-    et les sujets de la file expert des dossiers qui ont changé, pour que le
-    premier affichage du matin lise des valeurs gardées. Retourne le nombre
-    de dossiers recalculés."""
+    """Après la synchro (tâches planifiées, AXE-824) : recalcule les agrégats,
+    les sujets de la file expert et les opérations classées des dossiers qui
+    ont changé, pour que le premier affichage du matin lise des valeurs
+    gardées. Retourne le nombre de dossiers recalculés pour la file."""
     base = PostgresLedgerService(engine)
     decisions = PostgresDecisionRepository(engine)
     provisions = PostgresProvisionsClotureRepository(engine)
@@ -1699,6 +1712,14 @@ def prechauffer_caches(engine: Engine, dossiers: Sequence[Dossier]) -> int:
         _agregat_du_dossier(dossier, lignes.get(dossier.id), base, decisions, provisions, agregats)
     sources = (base, decisions, PostgresJustificatifRepository(engine))
     _sujets_du_portefeuille(a_refaire, sources, agregats, cache)
+    _operations_gardees(
+        dossiers,
+        base,
+        decisions,
+        PostgresPropositionRepository(engine),
+        agregats,
+        cache_operations_classees(engine),
+    )
     return len(a_refaire)
 
 
@@ -4258,10 +4279,10 @@ def _operations_du_dossier(
     base: LedgerService,
     decisions: DecisionRepository,
     propositions: PropositionRepository,
-    verdicts: VerdictsRepository,
 ) -> list[OperationClassee]:
     """Une lecture par source et par dossier : grand livre, décisions,
-    propositions, verdicts. Aucune proposition recalculée."""
+    propositions. Aucune proposition recalculée. Le verdict n'est pas ici :
+    il se pose à la lecture, sans périmer ce calcul."""
     ledger = _ledger_avec_decisions(dossier, base, decisions)
     en_vigueur: dict[EcritureId, str] = {}
     for decision in decisions.lister_decisions(dossier.id):
@@ -4273,7 +4294,7 @@ def _operations_du_dossier(
         ledger.grand_livre(dossier.id),
         propositions.lister(dossier.id),
         en_vigueur,
-        verdicts.derniers(dossier.id),
+        {},
     )
 
 
@@ -4306,6 +4327,82 @@ def _page_classees(
     return gardees[debut : debut + PAR_PAGE_CLASSEES], len(gardees), pages
 
 
+def _operations_gardees(
+    portefeuille: Sequence[Dossier],
+    base: LedgerService,
+    decisions: DecisionRepository,
+    propositions: PropositionRepository,
+    agregats: AgregatsRepository,
+    cache: CacheFileExpert,
+) -> list[OperationClassee]:
+    """Gardées tant que la version du dossier n'a pas bougé (AXE-824).
+    La version est lue avant le calcul : une écriture arrivée pendant le
+    calcul la fait monter, le prochain affichage refait."""
+    ids = [dossier.id for dossier in portefeuille]
+    versions = {dossier_id: ligne.version for dossier_id, ligne in agregats.lire(ids).items()}
+    gardes = cache.lire(ids)
+    operations: list[OperationClassee] = []
+    for dossier in portefeuille:
+        version = versions.get(dossier.id, 0)
+        garde = gardes.get(dossier.id)
+        if garde is not None and garde.valables(version, VERSION_CLASSEES):
+            operations.extend(_operation_depuis_json(ligne) for ligne in garde.sujets)
+            continue
+        calcules = _operations_du_dossier(dossier, base, decisions, propositions)
+        cache.enregistrer(
+            dossier.id, version, [_operation_json(operation) for operation in calcules]
+        )
+        operations.extend(calcules)
+    return operations
+
+
+def _poser_verdicts(
+    operations: list[OperationClassee],
+    verdicts: VerdictsRepository,
+    dossier_ids: Sequence[DossierId],
+) -> list[OperationClassee]:
+    """Le verdict change sans écriture : une lecture, pas un recalcul."""
+    par_dossier = verdicts.derniers_de(dossier_ids)
+    return [
+        dataclasses.replace(
+            operation,
+            verdict=par_dossier.get(operation.dossier_id, {}).get(operation.ecriture_id),
+        )
+        for operation in operations
+    ]
+
+
+def _operation_json(operation: OperationClassee) -> dict[str, Any]:
+    return {
+        "dossier_id": str(operation.dossier_id),
+        "ecriture_id": str(operation.ecriture_id),
+        "date": operation.date.isoformat(),
+        "libelle": operation.libelle,
+        "montant_cts": operation.montant_cts,
+        "compte": operation.compte,
+        "categorie": operation.categorie,
+        "origine": operation.origine,
+        "confiance": operation.confiance,
+        "statut": operation.statut,
+    }
+
+
+def _operation_depuis_json(ligne: dict[str, Any]) -> OperationClassee:
+    confiance = ligne["confiance"]
+    return OperationClassee(
+        dossier_id=DossierId(str(ligne["dossier_id"])),
+        ecriture_id=EcritureId(str(ligne["ecriture_id"])),
+        date=date.fromisoformat(str(ligne["date"])),
+        libelle=str(ligne["libelle"]),
+        montant_cts=int(ligne["montant_cts"]),
+        compte=str(ligne["compte"]),
+        categorie=None if ligne["categorie"] is None else str(ligne["categorie"]),
+        origine=str(ligne["origine"]),
+        confiance=None if confiance is None else float(confiance),
+        statut=cast(Statut, str(ligne["statut"])),
+    )
+
+
 def _enregistrer_routes_classees(app: FastAPI) -> None:
     @app.get("/expert/classees", response_model=OperationsClasseesVue)
     def lire_classees(  # noqa: PLR0913 — un paramètre par filtre de l'URL
@@ -4314,6 +4411,8 @@ def _enregistrer_routes_classees(app: FastAPI) -> None:
         decisions: DecisionsDep,
         propositions: PropositionsDep,
         verdicts: VerdictsDep,
+        agregats: AgregatsDep,
+        cache: CacheClasseesDep,
         identite: IdentiteDep,
         statut: Statut | None = None,
         origine: str | None = None,
@@ -4325,17 +4424,19 @@ def _enregistrer_routes_classees(app: FastAPI) -> None:
         page: int = 1,
     ) -> OperationsClasseesVue:
         """Opérations déjà classées du portefeuille (AXE-823), filtrées et
-        paginées côté serveur. Les compteurs portent sur tout le portefeuille."""
+        paginées côté serveur. Seuls les dossiers dont la version a bougé
+        sont recalculés (AXE-824). Les compteurs portent sur tout le
+        portefeuille. Les verdicts sont relus à chaque affichage."""
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
         portefeuille = [
             d for d in dossiers.lister_par_tenant(tenant_id) if dossier in (None, str(d.id))
         ]
         noms = {d.id: d.nom for d in portefeuille}
-        operations = [
-            o
-            for d in portefeuille
-            for o in _operations_du_dossier(d, base, decisions, propositions, verdicts)
-        ]
+        operations = _poser_verdicts(
+            _operations_gardees(portefeuille, base, decisions, propositions, agregats, cache),
+            verdicts,
+            [d.id for d in portefeuille],
+        )
         filtres = Filtres(statut, origine, categorie, tranche, sens)
         tranche_page, total, pages = _page_classees(operations, filtres, tri, page)
         compteurs = compter(operations)

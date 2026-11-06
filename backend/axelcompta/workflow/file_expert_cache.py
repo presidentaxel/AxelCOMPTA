@@ -29,8 +29,8 @@ class SujetsGardes:
     version_calcul: int
     sujets: list[dict[str, Any]]
 
-    def valables(self, version_source: int) -> bool:
-        return self.version_source == version_source and self.version_calcul == VERSION_FILE
+    def valables(self, version_source: int, version_calcul: int = VERSION_FILE) -> bool:
+        return self.version_source == version_source and self.version_calcul == version_calcul
 
 
 class CacheFileExpert(Protocol):

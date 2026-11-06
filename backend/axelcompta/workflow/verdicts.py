@@ -4,6 +4,7 @@ l'historique sert à mesurer la précision (AXE-816)."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
 
@@ -30,6 +31,10 @@ def verifier_verdict(verdict: str) -> Verdict:
 class VerdictsRepository(Protocol):
     def derniers(self, dossier_id: DossierId) -> dict[EcritureId, Verdict]: ...
 
+    def derniers_de(
+        self, dossier_ids: Sequence[DossierId]
+    ) -> dict[DossierId, dict[EcritureId, Verdict]]: ...
+
     def noter(
         self,
         dossier_id: DossierId,
@@ -45,7 +50,17 @@ class VerdictsMemoire:
         self._notes: list[tuple[DossierId, EcritureId, Verdict]] = []
 
     def derniers(self, dossier_id: DossierId) -> dict[EcritureId, Verdict]:
-        return {e: v for d, e, v in self._notes if d == dossier_id}
+        return self.derniers_de([dossier_id]).get(dossier_id, {})
+
+    def derniers_de(
+        self, dossier_ids: Sequence[DossierId]
+    ) -> dict[DossierId, dict[EcritureId, Verdict]]:
+        voulus = set(dossier_ids)
+        resultat: dict[DossierId, dict[EcritureId, Verdict]] = {}
+        for dossier_id, ecriture_id, verdict in self._notes:
+            if dossier_id in voulus:
+                resultat.setdefault(dossier_id, {})[ecriture_id] = verdict
+        return resultat
 
     def noter(
         self,

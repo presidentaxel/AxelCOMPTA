@@ -152,3 +152,21 @@ file_expert_dossier = Table(
     Column("sujets", JSON, nullable=False),
     Column("calcule_le", DateTime(timezone=True), nullable=False),
 )
+
+# Opérations déjà classées gardées par dossier (AXE-824). Même version que
+# `agregats_dossier`. Le verdict « juste » / « faux » n'y est pas : il change
+# sans écriture et se pose à la lecture.
+classees_dossier = Table(
+    "classees_dossier",
+    metadata,
+    Column(
+        "dossier_id",
+        String,
+        ForeignKey("dossiers.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("version_source", Integer, nullable=False),
+    Column("version_calcul", Integer, nullable=False),
+    Column("operations", JSON, nullable=False),
+    Column("calcule_le", DateTime(timezone=True), nullable=False),
+)
