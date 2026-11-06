@@ -53,6 +53,12 @@ class InMemoryDossierRepository(DossierRepository):
         configuration_de(nouveau)
         self._dossiers[dossier_id] = nouveau
 
+    def reconfigurer_depuis_sirene(self, dossier: Dossier) -> None:
+        if dossier.id not in self._dossiers:
+            raise ValueError(f"dossier inconnu : {dossier.id}")
+        configuration_de(dossier)
+        self._dossiers[dossier.id] = dossier
+
     def ouvrir_exercice(self, dossier: Dossier) -> None:
         if dossier.id not in self._dossiers:
             raise ValueError(f"dossier inconnu : {dossier.id}")

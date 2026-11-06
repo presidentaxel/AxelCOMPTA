@@ -144,3 +144,25 @@ def test_proposition_dun_dossier_inexistant_est_refusee_par_la_base(engine: Engi
 
     with pytest.raises(IntegrityError):
         PostgresPropositionRepository(engine).enregistrer(EcritureId("x:1"), proposition)
+
+
+def test_la_reconfiguration_sirene_est_relue_a_l_identique(engine: Engine, id_unique: str) -> None:
+    """AXE-834 : forme, premier exercice, activité et éléments à confirmer."""
+    metadata.create_all(engine)
+    repo = PostgresDossierRepository(engine)
+    repo.enregistrer_tenant(Tenant(id=TenantId(id_unique), nom="T"))
+    dossier = _dossier(id_unique, id_unique)
+    repo.enregistrer(dossier)
+    assert repo.obtenir(dossier.id) == dossier  # a_confirmer vide, NAF absent par défaut
+
+    reconfigure = dataclasses.replace(
+        dossier,
+        forme_juridique="SAS",
+        exercice_debut=date(2025, 3, 13),
+        exercice_fin=date(2025, 12, 31),
+        code_naf="49.32Z",
+        a_confirmer=("exercice", "forme_juridique"),
+    )
+    repo.reconfigurer_depuis_sirene(reconfigure)
+
+    assert repo.obtenir(dossier.id) == reconfigure

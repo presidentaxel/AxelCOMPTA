@@ -57,6 +57,8 @@ dossiers = Table(
     Column("pack_metier", String, nullable=False, server_default="vtc"),
     Column("option_ir_debut", Integer, nullable=True),
     Column("relance_consentement", String, nullable=True),
+    Column("code_naf", String, nullable=True),
+    Column("a_confirmer", JSON, nullable=False, server_default="[]"),
 )
 
 # Exercices clos, append-only (verrou en base, migration `b8e3f5a1c762`).
