@@ -220,12 +220,16 @@ class RulesAndMlPipeline(CategorizationPipeline):
             ):
                 continue
             if regle.motif.search(transaction.libelle):
+                # Sous le plancher de la règle : proposée, jamais imputée seule.
+                niveau = (
+                    "basse" if regle.sous_le_plancher(transaction.montant_cts) else regle.confiance
+                )
                 return ProposedEntry(
                     dossier_id=dossier_id,
                     transaction_id=transaction.id,
                     categorie=regle.categorie,
                     etage=Etage.REGLE,
-                    confiance=CONFIANCE_PAR_NIVEAU.get(regle.confiance, 0.5),
+                    confiance=CONFIANCE_PAR_NIVEAU.get(niveau, 0.5),
                 )
         return None
 
