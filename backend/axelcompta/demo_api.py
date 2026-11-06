@@ -76,7 +76,11 @@ from axelcompta.categorize.ml_fallback import (
     charger_modele,
 )
 from axelcompta.categorize.models import Etage
-from axelcompta.categorize.rules_and_ml import CATEGORIE_PAR_DEFAUT, RulesAndMlPipeline
+from axelcompta.categorize.rules_and_ml import (
+    CATEGORIE_PAR_DEFAUT,
+    CATEGORIE_RETRAIT_ESPECES,
+    RulesAndMlPipeline,
+)
 from axelcompta.closing.affectation import (
     MillesimeDividendesInconnu,
     disponible,
@@ -197,6 +201,7 @@ from axelcompta.workflow.classees import (
 from axelcompta.workflow.classees import classer as classer_operations
 from axelcompta.workflow.classees_cache import VERSION_CLASSEES
 from axelcompta.workflow.decisions import (
+    CATEGORIE_A_PRECISER,
     CATEGORIE_ANNULATION,
     DecisionHumaine,
     DecisionRepository,
@@ -219,6 +224,7 @@ from axelcompta.workflow.propositions import PropositionRepository
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
 from axelcompta.workflow.relances_consentement import mode_effectif
 from axelcompta.workflow.revue import (
+    CATEGORIE_USAGE_PERSONNEL,
     CategorieInconnueError,
     appliquer_decisions,
     resoudre_ecriture_a_trancher,
@@ -3845,6 +3851,9 @@ def _ticket_necessaire(vue: TransactionVue) -> bool:
     categorie = _categorie_du_libelle(vue.libelle)
     if categorie is None:
         return False
+    if categorie == CATEGORIE_RETRAIT_ESPECES:
+        # AXE-844 : des espèces dépensées pour l'activité demandent leur ticket.
+        return vue.categorie not in (None, CATEGORIE_USAGE_PERSONNEL)
     return categorie in _CATEGORIES_TICKET or categorie.startswith("a_verifier")
 
 
@@ -3884,6 +3893,19 @@ def _comptes_expert() -> list[CompteChoix]:
 
 
 def _sujet_depuis_vue(dossier: Dossier, vue: TransactionVue) -> SujetExpertVue | None:
+    if vue.statut == "à trancher" and vue.categorie == CATEGORIE_A_PRECISER:
+        return _sujet(
+            dossier,
+            f"trancher:{vue.ecriture_id}",
+            "gestionnaire",
+            "a_trancher",
+            vue.libelle,
+            "Retrait d'espèces : le chauffeur ne sait plus à quoi il a servi.",
+            vue.montant_cts,
+            vue.ecriture_id,
+            _compte_chiffre(vue.compte),
+            None,
+        )
     if vue.statut == "à trancher":
         return _sujet(
             dossier,
@@ -4030,7 +4052,9 @@ def _sujets_expert(
     exclues = annulees(ledger.grand_livre(dossier.id))
     sujets = [
         sujet
-        for vue in _vues_dossier(dossier, ledger, justificatifs)
+        for vue in _avec_categories(
+            _vues_dossier(dossier, ledger, justificatifs), decisions.lister_decisions(dossier.id)
+        )
         if EcritureId(vue.ecriture_id) not in exclues
         if (sujet := _sujet_depuis_vue(dossier, vue)) is not None
     ]

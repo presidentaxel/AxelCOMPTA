@@ -19,6 +19,7 @@ import { useDossierChauffeur, useOperationsChauffeur } from "@/app/chauffeur/use
 import { ConfirmationGroupee } from "@/components/ConfirmationGroupee";
 import { Etat } from "@/components/Etat";
 import { QuestionCategorisation } from "@/components/QuestionCategorisation";
+import { QuestionRetrait } from "@/components/QuestionRetrait";
 import { ResultatACeJour } from "@/components/ResultatACeJour";
 import { Squelette, SqueletteLignes } from "@/components/Squelette";
 import { StationTickets } from "@/components/StationTickets";
@@ -40,6 +41,7 @@ import {
 } from "@/lib/auth-chauffeur";
 import { formatMontant } from "@/lib/format";
 import { libelleCategorie, phrasePourChauffeur } from "@/lib/langage-chauffeur";
+import { estRetrait } from "@/lib/retrait-especes";
 import { ticketPrioritaire } from "@/lib/tickets";
 import type { DossierResume, TransactionVue } from "@/lib/types";
 
@@ -475,16 +477,24 @@ function Arriere({
             <AjouterTicketSortie dossierId={dossierId} transaction={courante} onJointe={onChange} />
           )}
           <div className="mt-3">
-            <QuestionCategorisation
-              key={courante.ecriture_id}
-              proposition={confirmableIci ? proposition : null}
-              origine={courante.origine_proposition}
-              montantCts={courante.montant_cts}
-              sansProposition={proposition === null}
-              raccourci={confirmableIci}
-              erreur={erreur}
-              onReponse={(categorie, libelle) => onChoisir(courante, categorie, libelle)}
-            />
+            {estRetrait(courante.proposition) ? (
+              <QuestionRetrait
+                key={courante.ecriture_id}
+                erreur={erreur}
+                onReponse={(categorie, libelle) => onChoisir(courante, categorie, libelle)}
+              />
+            ) : (
+              <QuestionCategorisation
+                key={courante.ecriture_id}
+                proposition={confirmableIci ? proposition : null}
+                origine={courante.origine_proposition}
+                montantCts={courante.montant_cts}
+                sansProposition={proposition === null}
+                raccourci={confirmableIci}
+                erreur={erreur}
+                onReponse={(categorie, libelle) => onChoisir(courante, categorie, libelle)}
+              />
+            )}
           </div>
           {groupe && (
             <ConfirmationGroupee

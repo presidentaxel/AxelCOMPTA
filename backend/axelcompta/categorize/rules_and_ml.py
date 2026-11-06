@@ -30,6 +30,10 @@ from .pipeline import CategorizationPipeline
 from .virements_internes import CATEGORIE_VIREMENT_INTERNE, apparier_virements_internes
 
 CONFIANCE_PAR_NIVEAU = {"haute": 0.95, "moyenne": 0.75, "basse": 0.5}
+# Retrait au distributeur (AXE-844) : la catégorie n'a pas de compte, il
+# reste à trancher et le chauffeur répond à une question dédiée.
+CATEGORIE_RETRAIT_ESPECES = "retrait_especes"
+TYPE_RETRAIT = "withdrawal"
 CATEGORIE_PAR_DEFAUT = "non_categorise_a_verifier"
 
 # Sous ce seuil, le modèle ne propose rien : l'indiv voit « pas de proposition
@@ -208,6 +212,15 @@ class RulesAndMlPipeline(CategorizationPipeline):
     def _via_regles(
         self, dossier_id: DossierId, transaction: NormalizedTransaction
     ) -> ProposedEntry | None:
+        if transaction.type_operation == TYPE_RETRAIT and transaction.montant_cts < 0:
+            # AXE-844 : la banque dit « retrait », quel que soit le libellé.
+            return ProposedEntry(
+                dossier_id=dossier_id,
+                transaction_id=transaction.id,
+                categorie=CATEGORIE_RETRAIT_ESPECES,
+                etage=Etage.REGLE,
+                confiance=CONFIANCE_PAR_NIVEAU["haute"],
+            )
         for regle in self.regles:
             # Même garde que l'étage ML : « uber » dans un paiement sortant
             # n'est pas une recette. La règle suivante, puis le modèle, prennent

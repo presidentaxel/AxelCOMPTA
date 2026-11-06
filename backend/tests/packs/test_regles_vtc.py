@@ -17,6 +17,8 @@ from axelcompta.packs.vtc_demo import (
 
 # (libellé, catégorie attendue de la première règle qui matche)
 EXEMPLES: tuple[tuple[str, str], ...] = (
+    ("RETRAIT DAB 12/03 PARIS 11", "retrait_especes"),
+    ("Retrait GAB", "retrait_especes"),
     ("TOTAL", "carburant"),
     ("CB TOTAL ACCESS A6", "carburant"),
     ("SANEF AUTOROUTE SENLIS", "peage_stationnement"),

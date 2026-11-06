@@ -12,7 +12,7 @@ import dataclasses
 from axelcompta.ledger.contrepassation import origine
 from axelcompta.ledger.models import Ecriture
 
-from .decisions import CATEGORIE_ANNULATION, DecisionHumaine
+from .decisions import CATEGORIE_A_PRECISER, CATEGORIE_ANNULATION, DecisionHumaine
 
 COMPTE_ATTENTE = "471"
 CATEGORIE_USAGE_PERSONNEL = "usage_personnel"
@@ -72,6 +72,8 @@ def _compte_cible(
     comptes_statut: dict[str, str | None],
     comptes_par_categorie: dict[str, str],
 ) -> str:
+    if categorie_choisie == CATEGORIE_A_PRECISER:
+        return COMPTE_ATTENTE
     if categorie_choisie in comptes_statut:
         compte_statut = comptes_statut[categorie_choisie]
         if compte_statut is None:
