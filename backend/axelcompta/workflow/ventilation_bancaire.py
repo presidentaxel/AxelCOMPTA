@@ -95,6 +95,9 @@ def ventilation_du_dossier(
         if not ecriture.id.startswith(prefixe):
             return None
         identifiant = par_transaction.get(ecriture.id.removeprefix(prefixe))
-        return None if identifiant is None else compte_de(comptes, dossier_id, identifiant)
+        if identifiant is None:
+            return None
+        # L'écriture existe déjà : son compte est comptabilisé (AXE-729).
+        return compte_de(comptes, dossier_id, identifiant, deja_comptabilise=True)
 
     return ventiler(ecritures, sous_compte_de)

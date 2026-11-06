@@ -91,6 +91,9 @@ comptes_bancaires = Table(
     Column("solde_banque_cts", BigInteger, nullable=True),
     Column("solde_releve_le", DateTime(timezone=True), nullable=True),
     Column("cree_le", DateTime(timezone=True), nullable=False),
+    # AXE-729 : NULL à décider, TRUE comptabilisé, FALSE écarté.
+    Column("retenu", Boolean, nullable=True),
+    Column("a_relire", Boolean, nullable=False, server_default="false"),
     PrimaryKeyConstraint("dossier_id", "identifiant", name="comptes_bancaires_clef"),
     UniqueConstraint("dossier_id", "compte_comptable", name="comptes_bancaires_compte_unique"),
     CheckConstraint("compte_comptable LIKE '512_%'", name="comptes_bancaires_sous_compte"),

@@ -289,6 +289,8 @@ export type CompteBancaireVue = {
   solde_banque_cts: number | null;
   releve_le: string | null;
   ecart_cts: number | null;
+  /** AXE-729 : true comptabilisé, false écarté (personnel), null à décider. */
+  retenu?: boolean | null;
 };
 
 /** AXE-823 : une opération déjà classée, et par qui ou quoi. */

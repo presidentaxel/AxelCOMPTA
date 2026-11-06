@@ -31,7 +31,7 @@ from axelcompta.core.ids import DossierId, EcritureId, TenantId, UserId
 from axelcompta.core.money import Money
 from axelcompta.core.rls import appliquer_rls, contexte_identite
 from axelcompta.documents.postgres import PostgresJustificatifRepository
-from axelcompta.ingestion.comptes_bancaires import CompteBancaire
+from axelcompta.ingestion.comptes_bancaires import CompteBancaire, CompteInconnu
 from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
 from axelcompta.ingestion.consentement import ReleveSante, SanteConnexion, StatutConsentement
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
@@ -530,3 +530,27 @@ def test_le_role_web_ne_peut_pas_lever_les_verrous(engine_web: Engine, requete: 
     Seul le propriétaire des tables le peut, et l'API ne s'y connecte pas."""
     with engine_web.connect() as connexion, pytest.raises((ProgrammingError, DBAPIError)):
         connexion.execute(text(requete))
+
+
+def test_le_dirigeant_ne_change_que_le_choix_de_ses_comptes(
+    engine: Engine, engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """AXE-729 (migration `f6c1a8e3b927`) : le rôle web retient ou écarte un
+    compte de son dossier, jamais celui d'un autre, et ne touche ni au nom
+    ni au solde."""
+    depot_admin = PostgresCompteBancaireRepository(engine)
+    for dossier_id in ("sophie", "karim"):
+        depot_admin.ajouter(CompteBancaire(DossierId(dossier_id), "perso", "5121"))
+    depot_web = PostgresCompteBancaireRepository(engine_web)
+    le = datetime(2026, 11, 6, 10, 0, tzinfo=UTC)
+    with contexte_identite(dossier_id="sophie", tenant_id=None):
+        depot_web.decider(DossierId("sophie"), "5121", False, UserId("sophie"), le)
+        with pytest.raises(CompteInconnu):
+            depot_web.decider(DossierId("karim"), "5121", False, UserId("sophie"), le)
+        with engine_web.begin() as connexion:
+            appliquer_rls(connexion)
+            with pytest.raises((ProgrammingError, DBAPIError)):
+                connexion.execute(text("UPDATE comptes_bancaires SET nom = 'autre'"))
+
+    assert depot_admin.lister(DossierId("sophie"))[0].retenu is False
+    assert depot_admin.lister(DossierId("karim"))[0].retenu is None
