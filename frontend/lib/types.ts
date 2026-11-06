@@ -177,7 +177,7 @@ export type TransactionVue = {
   // une opération semblable déjà classée par le chauffeur (« appris »), sinon
   // les règles (« regle ») ou le modèle (« modele »). null : pas de proposition.
   proposition: string | null;
-  origine_proposition: "appris" | "regle" | "modele" | null;
+  origine_proposition: "appris" | "regle" | "modele" | "banque" | null;
   confiance_proposition: number | null;
   // Décision humaine en vigueur, quand il y en a une. Absente des réponses
   // antérieures à AXE-686 : le client la traite comme nulle.

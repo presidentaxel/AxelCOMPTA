@@ -16,5 +16,6 @@ def test_proposed_entry_porte_letage_qui_la_produit() -> None:
     assert 0.0 <= proposition.confiance <= 1.0
 
 
-def test_les_4_etages_du_pipeline_existent() -> None:
-    assert {e.name for e in Etage} == {"REGLE", "ML", "LLM", "REVUE_HUMAINE"}
+def test_les_etages_du_pipeline_existent() -> None:
+    """Les 4 étages du doc 05, plus l'indice de la banque (AXE-826)."""
+    assert {e.name for e in Etage} == {"REGLE", "ML", "BANQUE", "LLM", "REVUE_HUMAINE"}

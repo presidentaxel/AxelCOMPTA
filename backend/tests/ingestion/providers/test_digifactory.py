@@ -295,3 +295,26 @@ def test_le_compte_bancaire_vient_du_champ_account_id() -> None:
     assert par_id["a"].compte_bancaire == "67078894"
     assert par_id["b"].compte_bancaire is None
     assert par_id["c"].compte_bancaire is None
+
+
+def test_le_type_et_la_categorie_de_la_banque_suivent_la_transaction() -> None:
+    """AXE-826 : `operation_type` et `category_id` deviennent des signaux ;
+    « unknown » ne dit rien."""
+    ligne = {
+        "date": "2026-06-01",
+        "updated_at": "2026-06-01T00:00:00",
+        "deleted": False,
+        "future": False,
+        "provider_description": "Tesla Inc.",
+    }
+    payload = {
+        "c": [
+            {**ligne, "id": "a", "amount": -13.0, "operation_type": "card", "category_id": 87},
+            {**ligne, "id": "b", "amount": -13.0, "operation_type": "unknown"},
+            {**ligne, "id": "c", "amount": -13.0, "operation_type": " Transfer "},
+        ]
+    }
+    par_id = {str(t.id): t for t in parser_transactions(payload, DOSSIER, DEPUIS, JUSQUA)}
+    assert (par_id["a"].type_operation, par_id["a"].categorie_banque) == ("card", "87")
+    assert (par_id["b"].type_operation, par_id["b"].categorie_banque) == (None, None)
+    assert par_id["c"].type_operation == "transfer"

@@ -15,7 +15,7 @@ from axelcompta.categorize.rules_and_ml import (
 )
 from axelcompta.core.ids import DossierId, TransactionId
 from axelcompta.ingestion.providers.base import NormalizedTransaction
-from axelcompta.packs.vtc_demo import RegleCategorisation
+from axelcompta.packs.vtc_demo import RegleCategorisation, charger_regles
 
 REGLES_TEST = (RegleCategorisation(re.compile(r"total|esso", re.IGNORECASE), "carburant", "haute"),)
 
@@ -200,3 +200,92 @@ def test_la_memoire_est_bornee(monkeypatch: pytest.MonkeyPatch) -> None:
     assert modele.lignes == 4
     pipeline.categoriser_lot(DossierId("d1"), [_transaction("SANEF A12")])  # encore là
     assert modele.lignes == 4
+
+
+def _tx(
+    id_: str,
+    libelle: str,
+    montant_cts: int,
+    *,
+    compte: str | None = None,
+    type_operation: str | None = None,
+    categorie_banque: str | None = None,
+) -> NormalizedTransaction:
+    return dataclasses.replace(
+        _transaction(libelle, montant_cts),
+        id=TransactionId(id_),
+        compte_bancaire=compte,
+        type_operation=type_operation,
+        categorie_banque=categorie_banque,
+    )
+
+
+def test_deux_jambes_d_un_virement_interne_vont_au_580_avant_toute_regle() -> None:
+    """AXE-826 : « carburant » sur un virement entre enveloppes n'est pas un plein."""
+    pipeline = RulesAndMlPipeline(regles=charger_regles())
+    sortie = _tx("s", "carburant", -1_500, compte="pro")
+    entree = _tx("e", "carburant", 1_500, compte="carburant")
+    plein = _tx("p", "TOTAL", -1_500, compte="pro")
+
+    resultat = {
+        p.transaction_id: p
+        for p in pipeline.categoriser_lot(DossierId("d1"), [sortie, entree, plein])
+    }
+
+    assert (
+        resultat[TransactionId("s")].categorie
+        == resultat[TransactionId("e")].categorie
+        == "virement_interne"
+    )
+    assert (
+        resultat[TransactionId("s")].etage is Etage.REGLE
+        and resultat[TransactionId("s")].confiance == 0.95
+    )
+    assert resultat[TransactionId("p")].categorie == "carburant"
+
+
+def test_une_regle_de_paiement_ne_s_applique_pas_a_un_virement() -> None:
+    pipeline = RulesAndMlPipeline(regles=charger_regles())
+    virement = _tx("v", "cotisation URSSAF", -2_100, type_operation="transfer")
+    prelevement = _tx("p", "PRLV URSSAF", -2_100, type_operation="direct_debit")
+
+    resultat = pipeline.categoriser_lot(DossierId("d1"), [virement, prelevement])
+
+    assert resultat[0].categorie == CATEGORIE_PAR_DEFAUT
+    assert resultat[1].categorie == "charges_sociales_impots"
+
+
+def test_la_categorie_de_la_banque_propose_quand_le_modele_s_abstient() -> None:
+    pipeline = RulesAndMlPipeline(
+        regles=REGLES_TEST,
+        categories_banque={"251": "peage_stationnement", "230": "recettes_plateformes"},
+    )
+    parking = _tx("a", "LIBELLE OBSCUR", -700, categorie_banque="251")
+    mauvais_sens = _tx("b", "AUTRE OBSCUR", -700, categorie_banque="230")
+    inconnue = _tx("c", "ENCORE OBSCUR", -700, categorie_banque="999")
+
+    resultat = pipeline.categoriser_lot(DossierId("d1"), [parking, mauvais_sens, inconnue])
+
+    assert (resultat[0].categorie, resultat[0].etage) == ("peage_stationnement", Etage.BANQUE)
+    assert resultat[0].confiance == 0.5
+    assert resultat[1].categorie == CATEGORIE_PAR_DEFAUT  # recette sur une sortie : refusée
+    assert resultat[2].categorie == CATEGORIE_PAR_DEFAUT
+
+
+def test_une_regle_l_emporte_sur_la_categorie_de_la_banque() -> None:
+    pipeline = RulesAndMlPipeline(
+        regles=REGLES_TEST, categories_banque={"273": "repas_et_receptions"}
+    )
+    proposition = pipeline.categoriser(
+        DossierId("d1"), _tx("a", "TOTAL", -6_000, categorie_banque="273")
+    )
+    assert (proposition.categorie, proposition.etage) == ("carburant", Etage.REGLE)
+
+
+def test_la_memoire_distingue_type_d_operation_et_categorie_de_banque() -> None:
+    """Même libellé, même montant, signaux différents : deux résultats."""
+    pipeline = RulesAndMlPipeline(regles=charger_regles(), categories_banque={"87": "carburant"})
+    carte = _tx("a", "carburant", -1_500, type_operation="card")
+    virement = _tx("b", "carburant", -1_500, type_operation="transfer")
+    assert pipeline.categoriser(DossierId("d1"), carte).categorie == "carburant"
+    assert pipeline.categoriser(DossierId("d1"), virement).categorie == CATEGORIE_PAR_DEFAUT

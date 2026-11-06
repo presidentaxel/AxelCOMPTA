@@ -1,0 +1,36 @@
+category_id,nom_bridge,categorie,note
+87,Gas & Fuel,carburant,
+309,Tolls,peage_stationnement,
+251,Parking,peage_stationnement,
+288,Car maintenance,entretien_reparation_vehicule,
+222,Maintenance,entretien_reparation_vehicule,parent Auto & Transport dans les données réelles
+247,Auto insurance,assurance_vehicule,
+245,Health insurance,assurance_personnelle_sante,
+277,Mobile phone,telecommunications,
+180,Internet,telecommunications,
+207,Fine,amendes_infractions,Bridge la met aussi sur des virements internes : jamais imputée seule
+264,Car rental,loyers_locations,
+441889,Accounting,honoraires_comptable_juridique,
+441899,Legal Fees,honoraires_comptable_juridique,
+441886,Employer contributions,charges_sociales_impots,
+159,Taxes,charges_sociales_impots,
+206,Taxes - Others,charges_sociales_impots,
+270,Online services,abonnements_logiciels,
+441888,Licences,abonnements_logiciels,
+164,Bank,frais_bancaires,
+195,Bank - Others,frais_bancaires,
+230,Salaries,recettes_plateformes,encaissement seulement : versements Bolt et Pop Svcs dans les données réelles
+441890,Salaries,remuneration_dirigeant,dépense seulement
+83,Restaurants,repas_et_receptions,usage personnel probable
+260,Fast foods,repas_et_receptions,usage personnel probable
+313,Coffee shop,repas_et_receptions,usage personnel probable
+188,Food - Others,repas_et_receptions,usage personnel probable
+227,Bars & Clubs,repas_et_receptions,usage personnel probable
+272,Clothing & Shoes,usage_personnel_suspect,
+248,Cosmetics,usage_personnel_suspect,
+315,Personal care,usage_personnel_suspect,
+236,Pharmacy,usage_personnel_suspect,
+325,Dentist,usage_personnel_suspect,
+308,Tobacco,usage_personnel_suspect,
+262,Sporting goods,usage_personnel_suspect,
+269,Amusements,usage_personnel_suspect,

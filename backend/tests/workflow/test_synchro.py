@@ -474,3 +474,39 @@ def test_un_montant_modifie_sur_un_sous_compte_est_contre_passe() -> None:
     inverses = [e for e in env.ledger.grand_livre(DOSSIER.id) if e.id.endswith(":contrepassation")]
     assert len(inverses) == 1
     assert any(ligne.compte == "5121" for ligne in inverses[0].lignes)
+
+
+def test_un_virement_entre_deux_enveloppes_va_au_580_sans_question() -> None:
+    """AXE-826 : MK DRIVING vire « cotisation URSSAF » de son compte PRO à son
+    compte Social. Les deux jambes vont au 580, rien n'est à trancher, rien
+    ne passe en charges sociales."""
+    env = Env(
+        {
+            "acc": [
+                _tx(
+                    "s",
+                    "cotisation URSSAF",
+                    -42.0,
+                    "2026-09-01",
+                    "2026-09-01 10:00:00",
+                    account_id="pro",
+                    operation_type="transfer",
+                ),
+                _tx(
+                    "e",
+                    "cotisation URSSAF",
+                    42.0,
+                    "2026-09-01",
+                    "2026-09-01 10:00:01",
+                    account_id="social",
+                    operation_type="transfer",
+                ),
+            ]
+        }
+    )
+
+    rapport = _synchroniser_avec_comptes(env, CompteBancaireMemoire())
+
+    assert (rapport.nouvelles, rapport.a_trancher) == (2, 0)
+    assert env.comptes("s") == {"580", "5121"}
+    assert env.comptes("e") == {"580", "5122"}

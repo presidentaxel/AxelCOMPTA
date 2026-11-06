@@ -23,6 +23,8 @@
     "lib/montant.ts",
     "lib/montant.test.ts",
     "lib/comptes-bancaires.ts",
-    "lib/comptes-bancaires.test.ts"
+    "lib/comptes-bancaires.test.ts",
+    "lib/langage-chauffeur.ts",
+    "lib/langage-chauffeur.test.ts"
   ]
 }

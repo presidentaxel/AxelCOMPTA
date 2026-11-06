@@ -92,6 +92,25 @@ Les règles ajoutées sont en confiance basse : elles proposent, l'indiv
 tranche. `compte_courant_associe` n'a pas de compte dans le pack : même à
 haute confiance, il reste à trancher, parce que son compte dépend du statut.
 
+## Ordre des étages (AXE-826, 2026-11-05)
+
+0. **Virements internes** (`virements_internes.py`) : deux jambes de montants
+   opposés, à un jour près, sur deux comptes bancaires du dossier → 580,
+   imputées sans question. Avant les règles : un virement « carburant » entre
+   deux enveloppes n'est pas un plein.
+1. **Règles** du pack ; celles qui décrivent un paiement à un commerçant
+   (`CATEGORIES_DE_PAIEMENT`) ne s'appliquent pas à un virement
+   (`type_operation == "transfer"`).
+2. **Modèle** ML, qui s'abstient sous son seuil.
+3. **Catégorie de la banque** (Bridge, `packs_vtc/categories_bridge.csv`) si
+   le modèle s'abstient : `Etage.BANQUE`, confiance 0,5, une proposition
+   jamais imputée.
+
+La mémoire du pipeline est indexée par (libellé, montant, type d'opération,
+catégorie de la banque) ; l'appariement se fait sur le lot, hors mémoire.
+Mesure du 2026-11-05, sans modèle ML : MK DRIVING 18 % → 56 % classées seules,
+B'CARS 6 % → 44 %.
+
 ## Statuts
 
 - **Au 2026-11-05** : étages 1 et 2 (règles, modèle v2 calibré avec
