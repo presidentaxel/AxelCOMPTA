@@ -117,7 +117,8 @@ def _annuler(
         comptabilisees[annulation.id] = annulation
 
 
-def _id_ecriture(dossier: Dossier, source_nom: str, transaction_id: str) -> EcritureId:
+def id_ecriture(dossier: Dossier, source_nom: str, transaction_id: str) -> EcritureId:
+    """L'écriture d'une opération bancaire : stable d'une synchro à l'autre."""
     return EcritureId(f"{dossier.id}:{source_nom}-{transaction_id}")
 
 
@@ -166,7 +167,7 @@ def _traiter_transactions(
         dossier, source_nom, lot, comptabilisees, periodes, pipeline
     )
     for transaction in lot.transactions:
-        ecriture_id = _id_ecriture(dossier, source_nom, transaction.id)
+        ecriture_id = id_ecriture(dossier, source_nom, transaction.id)
         existante = comptabilisees.get(ecriture_id)
         if existante is not None:
             _relever_existante(
@@ -219,7 +220,7 @@ def _propositions_des_ouvertes(
     nouvelles = [
         t
         for t in lot.transactions
-        if _id_ecriture(dossier, source_nom, t.id) not in comptabilisees
+        if id_ecriture(dossier, source_nom, t.id) not in comptabilisees
         and periode_close_de(t.date, periodes) is None
     ]
     return {p.transaction_id: p for p in pipeline.categoriser_lot(dossier.id, nouvelles)}
@@ -265,7 +266,7 @@ def _signaler_supprimees(
 ) -> int:
     signalees = 0
     for transaction_id in lot.supprimees:
-        existante = comptabilisees.get(_id_ecriture(dossier, source_nom, transaction_id))
+        existante = comptabilisees.get(id_ecriture(dossier, source_nom, transaction_id))
         if existante is None:
             continue
         signalees += 1

@@ -58,6 +58,7 @@ from axelcompta.demo_api import (
     get_decisions,
     get_dossiers,
     get_exercices,
+    get_journal_ingestion,
     get_justificatifs,
     get_ledger,
     get_notifications,
@@ -65,6 +66,7 @@ from axelcompta.demo_api import (
     get_propositions,
     get_provisions_cloture,
     get_registre_anomalies,
+    get_resolutions_quarantaine,
     get_role_membre,
     get_signatures_inpi,
     get_tags,
@@ -76,6 +78,7 @@ from axelcompta.demo_comptes_memory import InMemoryCompteRepository
 from axelcompta.demo_justificatifs import InMemoryJustificatifRepository
 from axelcompta.ingestion.comptes_bancaires import CompteBancaireMemoire
 from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion
+from axelcompta.ingestion.journal import InMemoryJournalIngestion
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ingestion.providers.chauffeurs_demo import PROFILS_DEMO
 from axelcompta.ledger.contrepassation import contrepasser
@@ -100,6 +103,7 @@ from axelcompta.workflow.notifications import (
     message,
 )
 from axelcompta.workflow.propositions import InMemoryPropositionRepository
+from axelcompta.workflow.resolutions_quarantaine import ResolutionsMemoire
 from axelcompta.workflow.signature import DocumentSigne
 from axelcompta.workflow.signature_memory import InMemorySignatureRepository
 from axelcompta.workflow.verdicts import VerdictsMemoire
@@ -181,6 +185,37 @@ def _sans_caches(app: FastAPI) -> None:
     app.dependency_overrides[get_cache_classees] = lambda: vide
 
 
+def _surcharger_depots_simples(app: FastAPI) -> None:
+    """Un dépôt en mémoire par dépendance, une seule instance par client
+    (comme la base : ce qu'une requête écrit, la suivante le relit)."""
+    comptes_bancaires_stub = CompteBancaireMemoire()
+    app.dependency_overrides[get_comptes_bancaires] = lambda: comptes_bancaires_stub
+    # Une seule instance par client, comme la base : une qualification reste
+    # visible aux requêtes suivantes.
+    registre_stub = RegistreInstructions()
+    app.dependency_overrides[get_registre_anomalies] = lambda: registre_stub
+    notifications_stub = InMemoryNotificationRepository()
+    app.dependency_overrides[get_notifications] = lambda: notifications_stub
+    avenants_stub = InMemoryAvenantRegimeRepository()
+    app.dependency_overrides[get_avenants] = lambda: avenants_stub
+    exercices_stub = InMemoryExerciceRepository()
+    app.dependency_overrides[get_exercices] = lambda: exercices_stub
+    affectations_stub = InMemoryAffectationRepository()
+    app.dependency_overrides[get_affectations] = lambda: affectations_stub
+    provisions_stub = InMemoryProvisionsClotureRepository()
+    app.dependency_overrides[get_provisions_cloture] = lambda: provisions_stub
+    agregats_stub = InMemoryAgregatsRepository()
+    app.dependency_overrides[get_agregats] = lambda: agregats_stub
+    journal_stub = InMemoryJournalIngestion()
+    app.dependency_overrides[get_journal_ingestion] = lambda: journal_stub
+    resolutions_stub = ResolutionsMemoire()
+    app.dependency_overrides[get_resolutions_quarantaine] = lambda: resolutions_stub
+    tags_stub = TagsMemoire()
+    app.dependency_overrides[get_tags] = lambda: tags_stub
+    verdicts_stub = VerdictsMemoire()
+    app.dependency_overrides[get_verdicts] = lambda: verdicts_stub
+
+
 def _client_et_stubs(
     role: str = "admin",
 ) -> tuple[
@@ -212,29 +247,8 @@ def _client_et_stubs(
     app.dependency_overrides[get_decisions] = lambda: decisions_stub
     app.dependency_overrides[get_comptes] = lambda: comptes_stub
     app.dependency_overrides[get_justificatifs] = lambda: justificatifs_stub
-    comptes_bancaires_stub = CompteBancaireMemoire()
-    app.dependency_overrides[get_comptes_bancaires] = lambda: comptes_bancaires_stub
-    # Une seule instance par client, comme la base : une qualification reste
-    # visible aux requêtes suivantes.
-    registre_stub = RegistreInstructions()
-    app.dependency_overrides[get_registre_anomalies] = lambda: registre_stub
     app.dependency_overrides[get_signatures_inpi] = lambda: signatures_stub
-    notifications_stub = InMemoryNotificationRepository()
-    app.dependency_overrides[get_notifications] = lambda: notifications_stub
-    avenants_stub = InMemoryAvenantRegimeRepository()
-    app.dependency_overrides[get_avenants] = lambda: avenants_stub
-    exercices_stub = InMemoryExerciceRepository()
-    app.dependency_overrides[get_exercices] = lambda: exercices_stub
-    affectations_stub = InMemoryAffectationRepository()
-    app.dependency_overrides[get_affectations] = lambda: affectations_stub
-    provisions_stub = InMemoryProvisionsClotureRepository()
-    app.dependency_overrides[get_provisions_cloture] = lambda: provisions_stub
-    agregats_stub = InMemoryAgregatsRepository()
-    app.dependency_overrides[get_agregats] = lambda: agregats_stub
-    tags_stub = TagsMemoire()
-    app.dependency_overrides[get_tags] = lambda: tags_stub
-    verdicts_stub = VerdictsMemoire()
-    app.dependency_overrides[get_verdicts] = lambda: verdicts_stub
+    _surcharger_depots_simples(app)
     _sans_caches(app)
     # `droits_membre` est en Postgres : le rôle est fixé ici.
     app.dependency_overrides[get_role_membre] = lambda: role

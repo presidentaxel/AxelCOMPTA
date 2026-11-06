@@ -131,7 +131,10 @@ from axelcompta.ingestion.comptes_bancaires import CompteBancaire, CompteBancair
 from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
 from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion, classer
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
+from axelcompta.ingestion.journal import EntreeQuarantaine, JournalIngestion
+from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ingestion.providers.base import NormalizedTransaction
+from axelcompta.ingestion.providers.digifactory import normaliser_payload
 from axelcompta.ledger.banque import (
     comptes_hors_banque,
     est_reclassement_bancaire,
@@ -217,6 +220,12 @@ from axelcompta.workflow.notifications import (
 from axelcompta.workflow.notifications_postgres import PostgresNotificationRepository
 from axelcompta.workflow.propositions import PropositionRepository
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
+from axelcompta.workflow.quarantaine import (
+    LIBELLES_MOTIF,
+    ResolutionRefusee,
+    ecritures_de_resolution,
+    famille_du_motif,
+)
 from axelcompta.workflow.reclassement import (
     annuler_reclassements,
     grand_livre_comptable,
@@ -224,6 +233,8 @@ from axelcompta.workflow.reclassement import (
     reclasser,
 )
 from axelcompta.workflow.relances_consentement import mode_effectif
+from axelcompta.workflow.resolutions_quarantaine import Resolution, ResolutionsRepository
+from axelcompta.workflow.resolutions_quarantaine_postgres import PostgresResolutions
 from axelcompta.workflow.revue import (
     CategorieInconnueError,
     resoudre_ecriture_a_trancher,
@@ -231,6 +242,7 @@ from axelcompta.workflow.revue import (
 from axelcompta.workflow.signature import DocumentSigne, SignatureRepository
 from axelcompta.workflow.signature_demo import SignatureDemoProvider
 from axelcompta.workflow.signature_postgres import PostgresSignatureRepository
+from axelcompta.workflow.synchro import id_ecriture
 from axelcompta.workflow.verdicts import VerdictsRepository
 from axelcompta.workflow.verdicts_postgres import PostgresVerdicts
 
@@ -1249,6 +1261,21 @@ def get_dossier_du_portefeuille(
 
 
 DossierPortefeuilleDep = Annotated[Dossier, Depends(get_dossier_du_portefeuille)]
+
+
+def get_journal_ingestion() -> JournalIngestion:
+    """Quarantaine d'ingestion, lecture par le gestionnaire (AXE-424)."""
+    return PostgresJournalIngestion(_engine())
+
+
+JournalIngestionDep = Annotated[JournalIngestion, Depends(get_journal_ingestion)]
+
+
+def get_resolutions_quarantaine() -> ResolutionsRepository:
+    return PostgresResolutions(_engine())
+
+
+ResolutionsDep = Annotated[ResolutionsRepository, Depends(get_resolutions_quarantaine)]
 
 
 def get_ledger_du_dossier(
@@ -4534,6 +4561,122 @@ def _enregistrer_route_verdict(app: FastAPI) -> None:
         )
 
 
+class EntreeQuarantaineVue(BaseModel):
+    id: str
+    motif: str
+    libelle_motif: str
+    date: str | None
+    libelle: str | None
+    montant_cts: int | None
+    resoluble: bool
+    decision: str | None
+    resolue_par: str | None
+    resolue_le: str | None
+
+
+class ResolutionEntree(BaseModel):
+    decision: Literal["accepter", "ignorer"]
+
+
+def _entree_vue(
+    dossier: Dossier, entree: EntreeQuarantaine, resolution: Resolution | None
+) -> EntreeQuarantaineVue:
+    famille = famille_du_motif(entree.motif)
+    try:
+        transaction = normaliser_payload(dict(entree.payload), dossier.id)
+    except ValueError:
+        transaction = None
+    return EntreeQuarantaineVue(
+        id=entree.id,
+        motif=famille,
+        libelle_motif=LIBELLES_MOTIF.get(famille, "Ligne bancaire illisible"),
+        date=transaction.date.isoformat() if transaction else None,
+        libelle=transaction.libelle if transaction else None,
+        montant_cts=transaction.montant_cts if transaction else None,
+        resoluble=famille in LIBELLES_MOTIF,
+        decision=resolution.decision if resolution else None,
+        resolue_par=resolution.par if resolution else None,
+        resolue_le=resolution.le.isoformat() if resolution else None,
+    )
+
+
+def _resoudre_quarantaine(
+    dossier: Dossier,
+    entree: EntreeQuarantaine,
+    decision: Literal["accepter", "ignorer"],
+    base: LedgerService,
+    resolutions: ResolutionsRepository,
+    par: str,
+) -> Resolution:
+    """La résolution d'abord (une seule par entrée, l'unicité tranche deux
+    clics simultanés), puis les écritures."""
+    ecritures = base.grand_livre(dossier.id)
+    origine_id = id_ecriture(dossier, entree.source, entree.transaction_id or "")
+    a_ecrire = ecritures_de_resolution(
+        entree,
+        decision,
+        origine_id,
+        ecritures,
+        lambda payload, d: normaliser_payload(dict(payload), d),
+        base.periodes_closes(dossier.id),
+    )
+    resolution = Resolution(
+        dossier.id, entree.id, decision, tuple(e.id for e in a_ecrire), par, datetime.now(UTC)
+    )
+    resolutions.enregistrer(resolution)
+    for ecriture in a_ecrire:
+        base.enregistrer(ecriture)
+    return resolution
+
+
+def _enregistrer_routes_quarantaine(app: FastAPI) -> None:
+    @app.get("/dossiers/{dossier_id}/quarantaine", response_model=list[EntreeQuarantaineVue])
+    def lister_quarantaine(
+        dossier: DossierPortefeuilleDep,
+        journal: JournalIngestionDep,
+        resolutions: ResolutionsDep,
+    ) -> list[EntreeQuarantaineVue]:
+        """Opérations bancaires que la synchro n'a pas pu écrire seule (AXE-424)."""
+        resolues = resolutions.lister(dossier.id)
+        return [
+            _entree_vue(dossier, entree, resolues.get(entree.id))
+            for entree in journal.lister_quarantaine(dossier.id)
+        ]
+
+    @app.post("/dossiers/{dossier_id}/quarantaine/{entree_id}", response_model=EntreeQuarantaineVue)
+    def resoudre_quarantaine(
+        entree_id: str,
+        corps: ResolutionEntree,
+        dossier: DossierPortefeuilleDep,
+        journal: JournalIngestionDep,
+        resolutions: ResolutionsDep,
+        base: LedgerBaseDep,
+        role: RoleMembreDep,
+        identite: IdentiteDep,
+    ) -> EntreeQuarantaineVue:
+        """Accepter passe le nouveau montant (ou l'opération datée d'un
+        exercice clos) ; ignorer laisse le grand livre tel quel."""
+        _, identite_ok = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, "La lecture ne traite pas une opération bancaire.")
+        entree = next(
+            (e for e in journal.lister_quarantaine(dossier.id) if e.id == entree_id), None
+        )
+        if entree is None:
+            raise HTTPException(status_code=404, detail="Opération introuvable.")
+        try:
+            resolution = _resoudre_quarantaine(
+                dossier,
+                entree,
+                corps.decision,
+                base,
+                resolutions,
+                identite_ok.email or identite_ok.user_id,
+            )
+        except ResolutionRefusee as erreur:
+            raise HTTPException(status_code=409, detail=str(erreur)) from erreur
+        return _entree_vue(dossier, entree, resolution)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="AxeLCompta — API", version="0.0.1")
     from axelcompta.api.observabilite import brancher
@@ -4550,6 +4693,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_anomalies(app)
     _enregistrer_route_historique_anomalie(app)
     _enregistrer_routes_expert(app)
+    _enregistrer_routes_quarantaine(app)
     _enregistrer_routes_tags(app)
     _enregistrer_routes_revue(app)
     _enregistrer_routes_portefeuille(app)

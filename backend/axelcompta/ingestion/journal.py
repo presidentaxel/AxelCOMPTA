@@ -19,6 +19,9 @@ class EntreeQuarantaine:
     motif: str
     transaction_id: str | None
     payload: dict[str, object]
+    # Empreinte stable (dossier, source, motif, contenu) : la même entrée
+    # n'est jamais mise deux fois en quarantaine (AXE-424 : on la résout par lui).
+    id: str = ""
 
 
 def empreinte(*parties: str, payload: dict[str, object]) -> str:
@@ -110,7 +113,7 @@ class InMemoryJournalIngestion(JournalIngestion):
     ) -> None:
         cle = empreinte(dossier_id, source, motif, payload=payload)
         self._quarantaine.setdefault(
-            cle, EntreeQuarantaine(dossier_id, source, motif, transaction_id, payload)
+            cle, EntreeQuarantaine(dossier_id, source, motif, transaction_id, payload, cle)
         )
 
     def lister_quarantaine(self, dossier_id: DossierId) -> tuple[EntreeQuarantaine, ...]:

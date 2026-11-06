@@ -134,3 +134,13 @@ repliés dans l'opération) ; FEC, grand livre et balance lisent
 appliquées par-dessus tant que `scripts/materialiser_decisions.py` n'est pas
 passé.
 
+## Quarantaine d'ingestion résolue par le gestionnaire (AXE-424)
+
+`quarantaine.py` (pur) : accepter une opération modifiée par la banque
+passe le nouveau montant (`{opération}:corrige-{k}`) sur la catégorie
+qu'elle avait, après avoir contre-passé une correction précédente ;
+accepter une opération d'un exercice clos la passe au premier jour ouvert ;
+une opération supprimée est déjà contre-passée ; une ligne illisible ne
+s'accepte pas. `resolutions_quarantaine*.py` : une résolution par entrée,
+append-only (migration `b5f2d8a6c413`). Écran : page Anomalies du dossier.
+

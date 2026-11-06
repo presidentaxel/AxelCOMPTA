@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { InstructionAlerte } from "@/components/InstructionAlerte";
+import { QuarantaineDossier } from "@/components/QuarantaineDossier";
 import { Squelette } from "@/components/Squelette";
 import {
   ErreurAuthGestionnaire,
@@ -79,6 +80,7 @@ export default function AnomaliesPage() {
         </div>
       )}
       {erreur && <p className="mt-4 text-sm text-danger">{erreur}</p>}
+      <QuarantaineDossier dossierId={dossierId} ecriture={droit.ecriture} />
       {alertes && alertes.length === 0 && (
         <p className="mt-8 text-sm text-subtle">Aucune dépense à qualifier.</p>
       )}

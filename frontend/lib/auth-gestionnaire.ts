@@ -27,6 +27,7 @@ import {
 import type {
   AlerteAnomalie,
   DossierAgregat,
+  EntreeQuarantaine,
   EvenementAnomalie,
   FileExpert,
   ImputationFaite,
@@ -728,3 +729,34 @@ export async function noterVerdict(
     throw new ApiError(corps?.detail ?? "Le verdict n'a pas été enregistré.", reponse.status);
   }
 }
+
+// --- Quarantaine d'ingestion (AXE-424) ---
+
+export async function listerQuarantaine(dossierId: string): Promise<EntreeQuarantaine[]> {
+  const reponse = await requeteGestionnaire(`/dossiers/${dossierId}/quarantaine`);
+  if (!reponse.ok) {
+    throw new ApiError("Impossible de lire les opérations à revoir.", reponse.status);
+  }
+  return (await reponse.json()) as EntreeQuarantaine[];
+}
+
+export async function resoudreQuarantaine(
+  dossierId: string,
+  entreeId: string,
+  decision: "accepter" | "ignorer",
+): Promise<EntreeQuarantaine> {
+  const reponse = await requeteGestionnaire(
+    `/dossiers/${dossierId}/quarantaine/${encodeURIComponent(entreeId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision }),
+    },
+  );
+  if (!reponse.ok) {
+    const corps = (await reponse.json().catch(() => null)) as { detail?: string } | null;
+    throw new ApiError(corps?.detail ?? "L'opération n'a pas été traitée.", reponse.status);
+  }
+  return (await reponse.json()) as EntreeQuarantaine;
+}
+

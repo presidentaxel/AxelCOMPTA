@@ -88,6 +88,7 @@ class PostgresJournalIngestion(JournalIngestion):
                 ligne.motif,
                 ligne.transaction_id,
                 ligne.payload,
+                ligne.id,
             )
             for ligne in lignes
         )
