@@ -76,6 +76,8 @@ propositions_categorisation = Table(
     Column("categorie", String, nullable=False),
     Column("etage", String, nullable=False),
     Column("confiance", Float, nullable=False),
+    # Carte, virement, prélèvement… (AXE-836, migration d1e7a3c9f264).
+    Column("moyen_paiement", String, nullable=True),
 )
 
 # Notifications internes de l'indiv (cloche de l'espace chauffeur). On

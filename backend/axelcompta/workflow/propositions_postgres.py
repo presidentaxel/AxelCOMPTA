@@ -31,6 +31,7 @@ class PostgresPropositionRepository(PropositionRepository):
                     categorie=proposition.categorie,
                     etage=proposition.etage.name,
                     confiance=proposition.confiance,
+                    moyen_paiement=proposition.moyen_paiement,
                 )
                 .on_conflict_do_nothing(index_elements=[table.c.ecriture_id])
             )
@@ -62,4 +63,5 @@ def _proposition(ligne: Row[Any]) -> ProposedEntry:
         categorie=ligne.categorie,
         etage=Etage[ligne.etage],
         confiance=ligne.confiance,
+        moyen_paiement=ligne.moyen_paiement,
     )

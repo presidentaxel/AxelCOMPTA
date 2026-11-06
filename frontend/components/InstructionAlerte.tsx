@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { lireHistoriqueAlerte } from "@/lib/auth-gestionnaire";
 import { formatDate, formatMontant } from "@/lib/format";
+import { libelleMoyenPaiement } from "@/lib/moyens-paiement";
 import type { AlerteAnomalie, EvenementAnomalie } from "@/lib/types";
 
 const SUITE: Record<AlerteAnomalie["etat"], string> = {
@@ -40,7 +41,9 @@ export function InstructionAlerte({
         </span>
       </p>
       <p className="mt-2 text-xs text-subtle">
-        {formatDate(alerte.date)} · {SUITE[alerte.etat]}
+        {[formatDate(alerte.date), libelleMoyenPaiement(alerte.moyen_paiement ?? null), SUITE[alerte.etat]]
+          .filter(Boolean)
+          .join(" · ")}
       </p>
       {alerte.etat === "ouverte" && (
         <Button
