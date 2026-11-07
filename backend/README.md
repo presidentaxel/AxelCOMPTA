@@ -147,6 +147,10 @@ set -a && . ../.env && set +a
 .venv/bin/uvicorn axelcompta.api.app:app --port 8000
 ```
 
+Au démarrage, l'API vérifie que la base est à la tête Alembic du code et
+refuse de démarrer sinon (« lancer `alembic upgrade head` »). Sur un poste
+de dev, `AXELCOMPTA_SCHEMA_NON_VERIFIE=1` saute la vérification (AXE-841).
+
 **RLS depuis le 2026-09-22** (doc 03 §7, doc 12 §1.1) : `alembic upgrade
 head` crée aussi le rôle `axelcompta_web`, restreint par des policies —
 `DATABASE_URL_WEB` (voir `.env.example`) doit être défini avant de lancer

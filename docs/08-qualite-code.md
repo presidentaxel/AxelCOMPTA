@@ -137,3 +137,19 @@ de le remettre au vert, pas de contourner.
 - [ ] Doc module ou ADR mise à jour si une décision a été prise.
 - [ ] Revue par l'autre dev.
 - [ ] Démo possible sur staging avec données synthétiques.
+
+## Migrations Alembic (AXE-841, 6 nov. 2026)
+
+* **Une seule tête.** `tests/core/test_schema.py` échoue en CI si deux
+  migrations partent de la même révision, et dit laquelle rebrancher.
+* **Rebaser juste avant le merge.** Une PR qui ajoute une migration se
+  rebase sur `main` juste avant d'être mergée ; son `down_revision` pointe
+  sur la tête de `main` à ce moment-là.
+* **Supabase après le merge, jamais avant.** `alembic upgrade head` se lance
+  sur la base du portefeuille une fois la PR mergée. Pas de `stamp` pour
+  rattraper un schéma posé à la main.
+* **L'API vérifie au démarrage** que la base est à la tête du code
+  (`axelcompta/core/schema.py`) et refuse de démarrer sinon, avec la
+  commande à lancer. `AXELCOMPTA_SCHEMA_NON_VERIFIE=1` saute la vérification
+  sur un poste de dev, jamais en production.
+
