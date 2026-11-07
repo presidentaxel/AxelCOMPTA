@@ -122,3 +122,15 @@ verdicts « juste » / « faux » (migration `b3d8f1a6c924`, append-only),
 sans écriture : ils servent à mesurer la précision (AXE-816). Route
 `GET /expert/classees`, filtrée et paginée (50) côté serveur.
 
+## Décisions écrites au grand livre (AXE-420)
+
+`reclassement.py` (pur) : une décision du chauffeur écrit l'OD
+`{opération}:decision-{k}`, qui déplace le montant du compte en vigueur vers
+le nouveau. L'opération bancaire ne bouge pas. Une contre-passation de
+l'opération (synchro, imputation de l'expert) contre-passe aussi ses
+reclassements. Les écrans lisent `grand_livre_tranche` (reclassements
+repliés dans l'opération) ; FEC, grand livre et balance lisent
+`grand_livre_comptable` (le brut). Les décisions d'avant AXE-420 restent
+appliquées par-dessus tant que `scripts/materialiser_decisions.py` n'est pas
+passé.
+

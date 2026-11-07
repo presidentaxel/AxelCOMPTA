@@ -57,7 +57,7 @@ from axelcompta.tenants.statuts import RegimeTva, configuration_de
 from axelcompta.workflow.decisions import DecisionRepository
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
 from axelcompta.workflow.notifications import ecritures_a_trancher
-from axelcompta.workflow.revue import appliquer_decisions
+from axelcompta.workflow.reclassement import grand_livre_tranche
 
 
 class PassageRefuse(ValueError):
@@ -97,11 +97,10 @@ def preparer_passage(
         raise PassageRefuse(f"{sujet} encore une décision.", code="operations")
     configuration = configuration_de(dossier)
     colonne = configuration.colonne
-    tranchees = appliquer_decisions(
+    tranchees = grand_livre_tranche(
         ledger.grand_livre(dossier.id),
         decisions.lister_decisions(dossier.id),
-        configuration.comptes_categories_statut(),
-        charger_compte_par_categorie(),
+        (configuration.comptes_categories_statut(), charger_compte_par_categorie()),
     )
     parametres = ParametresCloture(
         exercice_debut=dossier.exercice_debut,

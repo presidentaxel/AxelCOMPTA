@@ -38,6 +38,7 @@ from axelcompta.tenants.models import Dossier
 
 from .auto_accept import construire_ecriture_categorisee
 from .propositions import PropositionRepository
+from .reclassement import annuler_reclassements
 
 COMPTE_ATTENTE = "471"
 # Motif de quarantaine montré au chauffeur : une opération bancaire datée dans
@@ -104,11 +105,16 @@ def _annuler(
     ledger: LedgerService, comptabilisees: dict[EcritureId, Ecriture], existante: Ecriture
 ) -> None:
     """Pose l'écriture inverse une seule fois. L'originale reste en place."""
-    inverse = contrepasser(existante, ledger.periodes_closes(existante.dossier_id))
+    periodes = ledger.periodes_closes(existante.dossier_id)
+    inverse = contrepasser(existante, periodes)
     if inverse.id in comptabilisees:
         return
     ledger.enregistrer(inverse)
     comptabilisees[inverse.id] = inverse
+    # AXE-420 : les reclassements des décisions sur cette opération aussi.
+    for annulation in annuler_reclassements(existante.id, list(comptabilisees.values()), periodes):
+        ledger.enregistrer(annulation)
+        comptabilisees[annulation.id] = annulation
 
 
 def _id_ecriture(dossier: Dossier, source_nom: str, transaction_id: str) -> EcritureId:
