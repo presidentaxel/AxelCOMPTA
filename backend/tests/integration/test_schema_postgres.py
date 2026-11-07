@@ -10,7 +10,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
 
 import axelcompta.demo_api as demo_api
@@ -40,6 +40,17 @@ def engine_web(engine: Engine) -> Iterator[Engine]:
     moteur = create_engine(url)
     yield moteur
     moteur.dispose()
+
+
+def test_la_revision_n_est_pas_masquee_par_la_securite_par_ligne(engine: Engine) -> None:
+    """Supabase active la sécurité par ligne sans règle : le rôle web ne
+    voyait aucune révision (AXE-841)."""
+    command.upgrade(_config(), "head")
+    with engine.connect() as connexion:
+        masquee = connexion.execute(
+            text("SELECT relrowsecurity FROM pg_class WHERE relname = 'alembic_version'")
+        ).scalar()
+    assert masquee is False
 
 
 def test_l_api_demarre_sur_une_base_a_jour_et_refuse_une_base_en_retard(
