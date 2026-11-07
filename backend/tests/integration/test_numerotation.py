@@ -167,7 +167,8 @@ def test_un_desequilibre_injecte_en_base_est_trouve(engine: Engine, id_unique: s
     with engine.begin() as connexion:
         connexion.execute(
             text(
-                "INSERT INTO lignes_ecriture (id, ecriture_id, compte, sens, montant_centimes, devise) "
+                "INSERT INTO lignes_ecriture "
+                "(id, ecriture_id, compte, sens, montant_centimes, devise) "
                 "VALUES (:id, :e, '625', 'DEBIT', 100, 'EUR')"
             ),
             {"id": f"{id_unique}-x", "e": f"{id_unique}:e0001"},
