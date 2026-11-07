@@ -119,11 +119,32 @@ def reclasser(
         if categorie == CATEGORIE_ANNULATION
         else compte_cible(categorie, comptes_statut, comptes_par_categorie)
     )
+    return reclasser_vers(source, vers, ecritures, periodes_closes)
+
+
+def reclasser_vers(
+    source: Ecriture,
+    vers: str,
+    ecritures: Sequence[Ecriture],
+    periodes_closes: Sequence[Periode] = (),
+) -> Ecriture | None:
+    """Le reclassement qui amène le montant de S sur `vers`, ou `None` s'il y
+    est déjà (ou si S n'a pas de ligne d'attente)."""
     de = compte_en_vigueur(source.id, ecritures)
     if vers == de or not any(ligne.compte == COMPTE_ATTENTE for ligne in source.lignes):
         return None
     rang = len(reclassements_de(source.id, ecritures)) + 1
     return ecriture_de_reclassement(source, rang, de, vers, periodes_closes)
+
+
+def dernier_compte_choisi(source_id: EcritureId, ecritures: Sequence[Ecriture]) -> str | None:
+    """Le compte de la dernière décision sur S, même contre-passée (AXE-424 :
+    l'opération corrigée garde la catégorie choisie). `None` sans décision."""
+    reclassements = reclassements_de(source_id, ecritures)
+    if not reclassements:
+        return None
+    compte = reclassements[-1].lignes[0].compte
+    return None if compte == COMPTE_ATTENTE else compte
 
 
 def annuler_reclassements(

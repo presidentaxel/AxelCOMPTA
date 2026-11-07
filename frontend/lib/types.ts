@@ -316,3 +316,18 @@ export type OperationsClassees = {
   compteurs: { auto: number; chauffeur: number; expert: number; justes: number; fausses: number };
   categories: string[];
 };
+
+/** AXE-424 : une opération bancaire que la synchro n'a pas pu écrire seule. */
+export type EntreeQuarantaine = {
+  id: string;
+  motif: string;
+  libelle_motif: string;
+  date: string | null;
+  libelle: string | null;
+  montant_cts: number | null;
+  resoluble: boolean;
+  decision: "accepter" | "ignorer" | null;
+  resolue_par: string | null;
+  resolue_le: string | null;
+};
+
