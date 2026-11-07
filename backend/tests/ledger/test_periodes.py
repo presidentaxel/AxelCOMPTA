@@ -108,3 +108,23 @@ def test_le_fec_de_l_exercice_clos_est_identique_a_l_octet_pres_apres_correction
 
     assert fec_2025() == avant
     assert {e.date for e in (inverse, nouvelle)} == {date(2026, 1, 1)}
+
+
+def test_le_report_va_au_debut_de_l_exercice_ouvert_du_dossier() -> None:
+    """AXE-838 : 2025 clos au 31/12, exercice ouvert au 01/03/2026 (date de
+    clôture changée) : la correction est datée du 01/03/2026."""
+    assert date_de_report(date(2025, 11, 4), [CLOS_2025], date(2026, 3, 1)) == date(2026, 3, 1)
+    # Exercice ouvert contigu : comme avant.
+    assert date_de_report(date(2025, 11, 4), [CLOS_2025], date(2026, 1, 1)) == date(2026, 1, 1)
+    # Un début d'exercice plus ancien (pas encore avancé) ne recule jamais la date.
+    assert date_de_report(date(2025, 11, 4), [CLOS_2025], date(2025, 1, 1)) == date(2026, 1, 1)
+    # Une date ouverte n'est jamais déplacée.
+    assert date_de_report(date(2026, 4, 2), [CLOS_2025], date(2026, 3, 1)) == date(2026, 4, 2)
+
+
+def test_une_imputation_sur_un_exercice_clos_va_au_debut_de_l_exercice_ouvert() -> None:
+    origine = _ecriture(date(2025, 11, 4))
+    inverse, nouvelle = preparer_imputation(
+        origine, "6061", {origine.id}, [CLOS_2025], debut_ouvert=date(2026, 3, 1)
+    )
+    assert inverse.date == nouvelle.date == date(2026, 3, 1)

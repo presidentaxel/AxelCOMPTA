@@ -22,10 +22,14 @@ def _sens_oppose(sens: Sens) -> Sens:
     return Sens.CREDIT if sens is Sens.DEBIT else Sens.DEBIT
 
 
-def contrepasser(ecriture: Ecriture, periodes_closes: Sequence[Periode] = ()) -> Ecriture:
+def contrepasser(
+    ecriture: Ecriture,
+    periodes_closes: Sequence[Periode] = (),
+    debut_ouvert: date | None = None,
+) -> Ecriture:
     """Datée comme l'originale, ou au premier jour de l'exercice ouvert si
-    l'originale tombe dans un exercice clos (I4)."""
-    le: date = date_de_report(ecriture.date, periodes_closes)
+    l'originale tombe dans un exercice clos (I4, `date_de_report`)."""
+    le: date = date_de_report(ecriture.date, periodes_closes, debut_ouvert)
     return Ecriture(
         id=id_contrepassation(ecriture.id),
         dossier_id=ecriture.dossier_id,

@@ -4171,14 +4171,21 @@ def imputer_ecriture(
         raise HTTPException(status_code=404, detail="Écriture inconnue.")
     try:
         inverse, nouvelle = preparer_imputation(
-            ecriture, entree.compte, set(connus), base.periodes_closes(dossier.id)
+            ecriture,
+            entree.compte,
+            set(connus),
+            base.periodes_closes(dossier.id),
+            dossier.exercice_debut,
         )
     except ImputationRefusee as erreur:
         raise HTTPException(status_code=400, detail=str(erreur)) from erreur
     base.enregistrer(inverse)
     # AXE-420 : la décision du chauffeur ne doit pas rester chargée en plus.
     for annulation in annuler_reclassements(
-        ecriture.id, list(connus.values()), base.periodes_closes(dossier.id)
+        ecriture.id,
+        list(connus.values()),
+        base.periodes_closes(dossier.id),
+        dossier.exercice_debut,
     ):
         base.enregistrer(annulation)
     base.enregistrer(nouvelle)
@@ -4209,7 +4216,7 @@ def annuler_imputation(
         ecriture = connus.get(EcritureId(identifiant))
         if ecriture is None:
             raise HTTPException(status_code=404, detail="Écriture inconnue.")
-        inverse = contrepasser(ecriture, periodes)
+        inverse = contrepasser(ecriture, periodes, dossier.exercice_debut)
         if inverse.id not in connus:
             base.enregistrer(inverse)
             connus[inverse.id] = inverse
