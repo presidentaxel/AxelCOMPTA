@@ -1,7 +1,7 @@
 """résolutions des entrées de quarantaine d'ingestion
 
 Revision ID: b5f2d8a6c413
-Revises: e9c2a7f14b63
+Revises: a3e8c1f5b297
 
 AXE-424. Une résolution par entrée (accepter / ignorer), avec son auteur
 et les écritures passées. Append-only, RLS par dossier. Le rôle web lit
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "b5f2d8a6c413"
-down_revision: str | Sequence[str] | None = "e9c2a7f14b63"
+down_revision: str | Sequence[str] | None = "a3e8c1f5b297"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
