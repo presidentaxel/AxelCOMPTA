@@ -18,12 +18,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from axelcompta.core.errors import SaisieInvalide
 from axelcompta.core.ids import DossierId, EcritureId
 from axelcompta.core.money import Money
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 
 
-class BulletinIncoherent(ValueError):
+class BulletinIncoherent(SaisieInvalide, ValueError):
     pass
 
 

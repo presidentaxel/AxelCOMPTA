@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime
 
+from axelcompta.core.errors import Conflit
 from axelcompta.core.ids import DossierId
 
 
@@ -37,7 +38,7 @@ class ExerciceRepository(ABC):
         """Du plus ancien au plus récent."""
 
 
-class ExerciceDejaClos(ValueError):
+class ExerciceDejaClos(Conflit, ValueError):
     pass
 
 
