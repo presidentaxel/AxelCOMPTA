@@ -27,7 +27,7 @@ Compta Demat » (outil DGFiP, Windows uniquement), que ce dépôt ne lance pas.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import date
 
 from axelcompta.core.errors import DomaineError
@@ -195,6 +195,7 @@ def _ligne_fec(
     libelles_comptes: Mapping[str, str],
 ) -> tuple[str, ...]:
     date_str = ecriture.date.strftime("%Y%m%d")
+    valide = (ecriture.valide_le.date() if ecriture.valide_le else ecriture.date).strftime("%Y%m%d")
     # AXE-557 : Debit et Credit sont des zones obligatoires (A.47 A-1).
     # Une ligne d'écriture à sens unique n'est pas une case de formulaire
     # inutilisée : le côté nul reste « 0,00 ». Les autres exports, eux,
@@ -217,7 +218,7 @@ def _ligne_fec(
         credit,
         "",  # EcritureLet — pas de lettrage modélisé (facultatif)
         "",  # DateLet
-        date_str,  # ValidDate — tout est validé immédiatement (doc 17 §3)
+        valide,  # ValidDate : horodatage de validation gardé en base (AXE-807)
         "",  # Montantdevise — toujours en EUR, zone facultative
         "",  # Idevise
     )
@@ -259,7 +260,9 @@ def _controler_corps(lignes: list[str]) -> None:
             numero = int(champs[2])
         except ValueError as erreur:
             raise FecInvalide("EcritureNum n'est pas un entier") from erreur
-        if date_precedente and champs[3] < date_precedente:
+        # Ordre chronologique de **validation** (ValidDate) : une écriture
+        # antidatée validée plus tard vient après (AXE-807).
+        if date_precedente and champs[15] < date_precedente:
             raise FecInvalide("les écritures ne sont pas dans l'ordre chronologique")
         if numero != precedent and numero != precedent + 1:
             raise FecInvalide("EcritureNum n'est pas une séquence continue")
@@ -267,7 +270,7 @@ def _controler_corps(lignes: list[str]) -> None:
         if debit > 0 and credit > 0:
             raise FecInvalide("une ligne est à la fois au débit et au crédit")
         precedent = numero
-        date_precedente = champs[3]
+        date_precedente = champs[15]
         par_numero.setdefault(numero, []).append((debit, credit))
     _controler_equilibre(par_numero)
 
@@ -282,21 +285,43 @@ def valider_fec(contenu: str) -> None:
     _controler_corps(enregistrements[1:])
 
 
+def ordre_fec(ecritures: Sequence[Ecriture]) -> list[tuple[int, Ecriture]]:
+    """(numéro, écriture) dans l'ordre du FEC (AXE-807, I3).
+
+    Les écritures en base portent leur numéro, attribué à la validation :
+    elles sortent dans cet ordre, avec ce numéro. Celles qui n'en ont pas
+    (écritures d'inventaire calculées à la clôture, grand livre en mémoire)
+    suivent, triées par date (à-nouveaux d'abord), numérotées à la suite.
+    Un trou dans les numéros gardés est refusé par `valider_fec`."""
+    numerotees = sorted((e for e in ecritures if e.numero is not None), key=_numero)
+    ordre_journal = {Journal.AN: 0}
+    calculees = sorted(
+        (e for e in ecritures if e.numero is None),
+        key=lambda e: (e.date, ordre_journal.get(e.journal, 1), e.id),
+    )
+    dernier = _numero(numerotees[-1]) if numerotees else 0
+    return [(_numero(e), e) for e in numerotees] + [
+        (dernier + rang, e) for rang, e in enumerate(calculees, start=1)
+    ]
+
+
+def _numero(ecriture: Ecriture) -> int:
+    return ecriture.numero or 0
+
+
 def exporter_fec(
     ecritures: tuple[Ecriture, ...], libelles_comptes: Mapping[str, str] | None = None
 ) -> str:
-    """Écritures triées par date (les à-nouveaux d'abord le même jour), puis
-    numérotées 1, 2, 3... dans cet ordre : la séquence continue et
-    chronologique qu'exige le BOI, quelle que soit la numérotation interne.
+    """Une ligne par ligne d'écriture, dans l'ordre et avec les numéros de
+    `ordre_fec` : la séquence continue de l'exercice, dans l'ordre de
+    validation (`ValidDate`) qu'exige le BOI.
 
     `libelles_comptes` : libellé propre au dossier d'un compte précis, qui
     remplace celui du plan comptable (AXE-832 : « Banque — Compte PRO » pour
     5121). Un libellé vide garde celui du plan."""
     libelles = libelles_comptes or {}
-    ordre_journal = {Journal.AN: 0}
-    triees = sorted(ecritures, key=lambda e: (e.date, ordre_journal.get(e.journal, 1), e.id))
     lignes_texte = [SEPARATEUR_ZONE.join(COLONNES_FEC)]
-    for numero, ecriture in enumerate(triees, start=1):
+    for numero, ecriture in ordre_fec(ecritures):
         lignes_texte += [
             SEPARATEUR_ZONE.join(_ligne_fec(ecriture, numero, ligne, libelles))
             for ligne in ecriture.lignes

@@ -16,6 +16,7 @@ from axelcompta.core.ids import DossierId, EcritureId
 from axelcompta.core.money import Money
 from axelcompta.core.rls import appliquer_rls
 
+from .balance import SoldeJournal
 from .invariants import verifier_equilibre
 from .models import Ecriture, Journal, LigneEcriture, Sens
 from .orm import ecritures, lignes_ecriture
@@ -104,6 +105,8 @@ def _lire_entetes(connexion: Connection, dossier_id: DossierId) -> dict[str, Ecr
             libelle=ligne.libelle,
             reference_piece=ligne.reference_piece,
             lignes=(),
+            numero=ligne.numero,
+            valide_le=ligne.valide_le,
         )
         for ligne in resultat
     }
@@ -130,3 +133,23 @@ def _lire_lignes(connexion: Connection, dossier_id: DossierId) -> dict[str, list
             )
         )
     return par_ecriture
+
+
+def soldes_par_journal(engine: Engine) -> list[SoldeJournal]:
+    """Débits et crédits par dossier et par journal, toute la base, en une
+    requête (contrôle I7 des tâches planifiées, connexion propriétaire)."""
+    requete = text(
+        """
+        SELECT e.dossier_id, e.journal,
+               COALESCE(SUM(l.montant_centimes) FILTER (WHERE l.sens = 'DEBIT'), 0),
+               COALESCE(SUM(l.montant_centimes) FILTER (WHERE l.sens = 'CREDIT'), 0)
+          FROM ecritures e JOIN lignes_ecriture l ON l.ecriture_id = e.id
+         GROUP BY e.dossier_id, e.journal
+         ORDER BY e.dossier_id, e.journal
+        """
+    )
+    with engine.connect() as connexion:
+        return [
+            SoldeJournal(DossierId(dossier), journal, int(debit), int(credit))
+            for dossier, journal, debit, credit in connexion.execute(requete)
+        ]
