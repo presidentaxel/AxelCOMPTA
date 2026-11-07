@@ -8,8 +8,10 @@ from datetime import date
 import pytest
 
 from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.core.metriques import METRIQUES
+from axelcompta.ledger.balance import SoldeJournal
 from axelcompta.synchro_digifactory import ResultatDossier
-from axelcompta.taches import lancer_taches
+from axelcompta.taches import BilanTaches, controler_balance, lancer_taches
 from axelcompta.tenants.memory import InMemoryDossierRepository
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.tags import EXCLUSIONS_PAR_DEFAUT, TAG_SOCIETE_DU_GESTIONNAIRE, EtatTags
@@ -183,3 +185,23 @@ def test_un_echec_de_prechauffage_ne_bloque_rien() -> None:
 
     assert not bilan.echec
     assert bilan.lignes[-1] == "A notifications : 1 créées, 0 en échec"
+
+
+def test_la_balance_equilibree_est_notee_sans_alerte() -> None:
+    alertes: list[str] = []
+    bilan = BilanTaches()
+    controler_balance(bilan, lambda: [SoldeJournal(DossierId("a"), "BQ", 5, 5)], alertes.append)
+    assert bilan.lignes == ["balance : équilibrée"]
+    assert not bilan.echec and alertes == []
+
+
+def test_un_desequilibre_de_balance_declenche_l_alerte() -> None:
+    """AXE-807, I7 : alerte, ligne au journal, échec du passage ; rien n'est
+    corrigé."""
+    alertes: list[str] = []
+    bilan = BilanTaches()
+    controler_balance(bilan, lambda: [SoldeJournal(DossierId("a"), "OD", 12, 10)], alertes.append)
+    assert bilan.echec
+    assert len(alertes) == 2  # le journal, puis le total du dossier
+    assert bilan.lignes[0].startswith("ALERTE balance déséquilibrée : a, journal OD")
+    assert "balance_desequilibree_total 2" in METRIQUES.texte()
