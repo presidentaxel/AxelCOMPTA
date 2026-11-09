@@ -17,9 +17,9 @@ dirigeant (`retenu` à `None`) et ne produit rien.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Protocol
 
@@ -68,6 +68,20 @@ class CompteReleve:
     solde_cts: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class ComptesAChoisir:
+    """Comptes d'un dossier qui attendent le choix du dirigeant (AXE-851).
+
+    Ce que le gestionnaire en voit : des nombres et une date, jamais les
+    comptes ni les opérations (doc 19 §2.4)."""
+
+    nombre: int
+    depuis: datetime  # création du plus ancien compte en attente
+    # Opérations archivées de ces comptes : la synchro les écarte tant que
+    # le choix n'est pas fait (AXE-729).
+    operations: int
+
+
 class CompteBancaireRepository(Protocol):
     def lister(self, dossier_id: DossierId) -> tuple[CompteBancaire, ...]: ...
 
@@ -89,6 +103,11 @@ class CompteBancaireRepository(Protocol):
 
     def relu(self, dossier_id: DossierId) -> None:
         """La synchro a relu l'historique : plus rien « à relire »."""
+        ...
+
+    def a_choisir(self, dossier_ids: Sequence[DossierId]) -> dict[DossierId, ComptesAChoisir]:
+        """Par dossier, ses comptes à décider. Un dossier sans compte en
+        attente est absent. Une seule lecture pour tout le portefeuille."""
         ...
 
 
@@ -138,6 +157,11 @@ def _creer(
         retenu=retenu,
     )
     return depot.ajouter(nouveau).compte_comptable
+
+
+def nombre_a_choisir(comptes: Iterable[CompteBancaire]) -> int:
+    """Comptes qui attendent le choix du dirigeant (AXE-851)."""
+    return sum(1 for compte in comptes if compte.retenu is None)
 
 
 def comptes_ecartes(depot: CompteBancaireRepository, dossier_id: DossierId) -> frozenset[str]:
@@ -197,7 +221,11 @@ class CompteBancaireMemoire:
 
     def __init__(self) -> None:
         self._comptes: dict[tuple[DossierId, str], CompteBancaire] = {}
+        self._crees_le: dict[tuple[DossierId, str], datetime] = {}
         self.decisions: list[tuple[DossierId, str, bool, UserId, datetime]] = []
+        # La mémoire ne garde pas l'archive brute : les tests posent ici le
+        # nombre d'opérations écartées par compte.
+        self.operations: dict[tuple[DossierId, str], int] = {}
 
     def decider(
         self, dossier_id: DossierId, compte_comptable: str, retenu: bool, par: UserId, le: datetime
@@ -225,7 +253,23 @@ class CompteBancaireMemoire:
 
     def ajouter(self, compte: CompteBancaire) -> CompteBancaire:
         cle = (compte.dossier_id, compte.identifiant)
+        self._crees_le.setdefault(cle, datetime.now(UTC))
         return self._comptes.setdefault(cle, compte)
+
+    def a_choisir(self, dossier_ids: Sequence[DossierId]) -> dict[DossierId, ComptesAChoisir]:
+        voulus = set(dossier_ids)
+        en_attente: dict[DossierId, list[tuple[DossierId, str]]] = {}
+        for cle, compte in self._comptes.items():
+            if cle[0] in voulus and compte.retenu is None:
+                en_attente.setdefault(cle[0], []).append(cle)
+        return {
+            dossier_id: ComptesAChoisir(
+                nombre=len(cles),
+                depuis=min(self._crees_le[cle] for cle in cles),
+                operations=sum(self.operations.get(cle, 0) for cle in cles),
+            )
+            for dossier_id, cles in en_attente.items()
+        }
 
     def relever(self, dossier_id: DossierId, releve: CompteReleve, releve_le: datetime) -> None:
         cle = (dossier_id, releve.identifiant)
