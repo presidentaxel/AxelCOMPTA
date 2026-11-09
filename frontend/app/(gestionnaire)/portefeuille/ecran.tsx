@@ -39,6 +39,7 @@ import { gardeTag, libelleTag, SANS_TAG, TOUS_LES_TAGS, totauxPortefeuille } fro
 import type { DossierAgregat, ReglageTags } from "@/lib/types";
 import { useDroitGestionnaire } from "@/lib/use-droit";
 import { Squelette } from "@/components/Squelette";
+import { SynchronisationPortefeuille } from "@/components/SynchronisationPortefeuille";
 import {
   PastillesTags,
   PoseEnLot,
@@ -191,6 +192,7 @@ export function EcranEntreprises() {
         </Link>
       </div>
       <AlerteConnexions />
+      <SynchronisationPortefeuille ecriture={droit.ecriture} onTerminee={charger} />
       {retires.length > 0 && (
         <section className="mt-6 rounded-lg border border-border bg-canvas p-4">
           <h2 className="text-sm font-semibold text-ink">Retirées de la liste</h2>

@@ -36,6 +36,8 @@
     "lib/classees.test.ts",
     "lib/types.ts",
     "lib/quarantaine.ts",
-    "lib/quarantaine.test.ts"
+    "lib/quarantaine.test.ts",
+    "lib/synchronisation.ts",
+    "lib/synchronisation.test.ts"
   ]
 }

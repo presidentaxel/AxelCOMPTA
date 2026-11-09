@@ -45,6 +45,7 @@ from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.repository import DossierRepository
 from axelcompta.tenants.tags import SANS_TAGS, EtatTags, etat_du_portefeuille, exclus, retenus
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
+from axelcompta.worker import dependances_reelles, detecter_portefeuilles
 from axelcompta.workflow.notifications import ResultatNotification
 
 # Reçoit aussi les dossiers à synchroniser sans classement automatique.
@@ -216,6 +217,10 @@ def main() -> int:
         lambda tenant_id: etat_du_portefeuille(PostgresTagsRepository(engine), tenant_id),
         lambda d: prechauffer_caches(engine, d),
     )
+    try:
+        bilan.lignes += detecter_portefeuilles(dependances_reelles(), debut.date())
+    except Exception as exc:  # noqa: BLE001 — la détection n'arrête pas le passage
+        bilan.lignes.append(f"nouveaux chauffeurs : échec ({type(exc).__name__})")
     if debut.hour == HEURE_CONTROLE_BALANCE:
         installer_sentry()
         controler_balance(bilan, lambda: soldes_par_journal(engine), _alerter_sentry)

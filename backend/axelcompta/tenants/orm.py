@@ -221,3 +221,33 @@ reglages_exclusion = Table(
     Column("par", String, nullable=False),
     Column("le", DateTime(timezone=True), nullable=False),
 )
+
+# Contacts Digifactory sans dossier, proposés au gestionnaire (AXE-845).
+# Réécrits à chaque détection par le worker (rôle propriétaire).
+contacts_proposes = Table(
+    "contacts_proposes",
+    metadata,
+    Column("tenant_id", String, ForeignKey("tenants.id"), primary_key=True),
+    Column("contact_nr", String, primary_key=True),
+    Column("nom", String, nullable=False),
+    Column("siren", String, nullable=True),
+    Column("forme", String, nullable=True),
+    Column("exercice_debut", Date, nullable=True),
+    Column("code_naf", String, nullable=True),
+    Column("avertissements", JSON, nullable=False),
+    Column("cessee", Boolean, nullable=False),
+    Column("detecte_le", DateTime(timezone=True), nullable=False),
+)
+
+# Décisions du gestionnaire sur ces contacts, append-only : la dernière fait foi.
+decisions_contacts = Table(
+    "decisions_contacts",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("rang", BigInteger, Identity(), nullable=False),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False, index=True),
+    Column("contact_nr", String, nullable=False),
+    Column("decision", String, nullable=False),
+    Column("par", String, nullable=False),
+    Column("le", DateTime(timezone=True), nullable=False),
+)

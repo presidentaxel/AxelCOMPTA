@@ -8,8 +8,11 @@ dépend que de core, le worker reçoit les handlers.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
+from typing import Protocol
 
-TYPES = frozenset({"synchro_digifactory", "notifier", "ml"})
+TYPE_SYNCHRO = "synchro_digifactory"
+TYPES = frozenset({TYPE_SYNCHRO, "notifier", "ml"})
 TENTATIVES_MAX = 3
 
 
@@ -28,6 +31,15 @@ class Job:
     tentatives: int
     verrou_par: str | None
     ordre: int
+    # Suivi affiché au gestionnaire (AXE-845) : résumé ou erreur en clair.
+    resultat: str | None = None
+    derniere_erreur: str | None = None
+    cree_le: datetime | None = None
+    termine_le: datetime | None = None
+
+    @property
+    def actif(self) -> bool:
+        return self.statut in ("en_attente", "en_cours")
 
 
 class FileMemoire:
@@ -84,3 +96,34 @@ class FileMemoire:
 
     def lire(self, identifiant: str) -> Job:
         return self._jobs[identifiant]
+
+    def demander(self, tenant_id: str, type_job: str, payload: str = "{}") -> Job:
+        """Comme `FilePostgres.demander` : la demande active si elle existe."""
+        actif = next(
+            (
+                j
+                for j in self._jobs.values()
+                if j.tenant_id == tenant_id and j.type == type_job and j.actif
+            ),
+            None,
+        )
+        if actif is not None:
+            return actif
+        job = self.deposer(f"job-{self._ordre + 1}", tenant_id, type_job, payload)
+        job = replace(job, cree_le=datetime.now(UTC))
+        self._jobs[job.id] = job
+        return job
+
+    def dernier(self, tenant_id: str, type_job: str) -> Job | None:
+        candidats = [
+            j for j in self._jobs.values() if j.tenant_id == tenant_id and j.type == type_job
+        ]
+        return max(candidats, key=lambda j: j.ordre) if candidats else None
+
+
+class DemandesDeJobs(Protocol):
+    """Ce dont l'API a besoin : déposer une demande et suivre la dernière."""
+
+    def demander(self, tenant_id: str, type_job: str, payload: str = "{}") -> Job: ...
+
+    def dernier(self, tenant_id: str, type_job: str) -> Job | None: ...
