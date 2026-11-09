@@ -33,9 +33,10 @@ délègue à `create_app` ci-dessous : les routes sont encore ici.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from collections.abc import Set as AbstractSet
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -60,6 +61,7 @@ from axelcompta.affectations import (
     enregistrer_bulletin,
     proposer,
 )
+from axelcompta.anomaly.detecteurs import CATEGORIE_CARBURANT
 from axelcompta.anomaly.instruction import InstructionsRepository
 from axelcompta.anomaly.instruction_postgres import PostgresInstructions
 from axelcompta.anomaly.models import Alerte, MouvementSurveille
@@ -150,6 +152,7 @@ from axelcompta.packs.vtc_demo import (
     charger_categories_banque,
     charger_compte_par_categorie,
     charger_regles,
+    plancher_de,
 )
 from axelcompta.tenants.affectations import AffectationRepository
 from axelcompta.tenants.affectations_postgres import PostgresAffectationRepository
@@ -389,6 +392,7 @@ class AlerteAnomalieVue(BaseModel):
     libelle_mouvement: str
     montant_centimes: int
     date: str
+    moyen_paiement: str | None = None  # carte, virement, prélèvement… (AXE-836)
 
 
 class EvenementAnomalieVue(BaseModel):
@@ -1087,8 +1091,10 @@ def _mouvements_surveilles(
     ledger: InMemoryLedgerService,
     justificatifs: JustificatifRepository,
     decisions: DecisionRepository,
+    moyens: Mapping[EcritureId, str] | None = None,
 ) -> tuple[MouvementSurveille, ...]:
-    """Sorties catégorisées, hors écritures contre-passées. Plafond 10 000."""
+    """Sorties catégorisées, hors écritures contre-passées. Plafond 10 000.
+    `moyens` : le moyen de paiement par écriture, quand il est connu (AXE-836)."""
     ecritures = ledger.grand_livre(dossier.id)
     exclues = annulees(ecritures)
     avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
@@ -1112,7 +1118,8 @@ def _mouvements_surveilles(
             ecriture.id in avec_photo,
         )
         if mouvement is not None:
-            mouvements.append(mouvement)
+            moyen = (moyens or {}).get(ecriture.id)
+            mouvements.append(dataclasses.replace(mouvement, moyen_paiement=moyen))
     return tuple(mouvements)
 
 
@@ -3770,6 +3777,7 @@ def _alerte_vue(alerte: Alerte, etat: str) -> AlerteAnomalieVue:
         libelle_mouvement=alerte.libelle_mouvement,
         montant_centimes=alerte.montant_centimes,
         date=alerte.date.isoformat(),
+        moyen_paiement=alerte.moyen_paiement,
     )
 
 
@@ -3778,11 +3786,18 @@ def _alertes_du_ledger(
     ledger: InMemoryLedgerService,
     decisions: DecisionRepository,
     justificatifs: JustificatifRepository,
+    moyens: Mapping[EcritureId, str] | None = None,
 ) -> dict[str, Alerte]:
     """Les alertes d'un ledger déjà construit avec les décisions : qui en a
     déjà un ne le relit pas en base."""
-    mouvements = _mouvements_surveilles(dossier, ledger, justificatifs, decisions)
-    return {alerte.id: alerte for alerte in analyser(mouvements)}
+    mouvements = _mouvements_surveilles(dossier, ledger, justificatifs, decisions, moyens)
+    return {alerte.id: alerte for alerte in analyser(mouvements, _plancher_carburant())}
+
+
+@functools.cache
+def _plancher_carburant() -> int | None:
+    """Le plancher carburant du pack (AXE-837), lu une fois."""
+    return plancher_de(CATEGORIE_CARBURANT, charger_regles())
 
 
 def _alertes_du_dossier(
@@ -3790,9 +3805,19 @@ def _alertes_du_dossier(
     base: LedgerService,
     decisions: DecisionRepository,
     justificatifs: JustificatifRepository,
+    propositions: PropositionRepository | None = None,
 ) -> dict[str, Alerte]:
     ledger = _ledger_avec_decisions(dossier, base, decisions)
-    return _alertes_du_ledger(dossier, ledger, decisions, justificatifs)
+    moyens = (
+        {
+            e: p.moyen_paiement
+            for e, p in propositions.lister(dossier.id).items()
+            if p.moyen_paiement
+        }
+        if propositions is not None
+        else None
+    )
+    return _alertes_du_ledger(dossier, ledger, decisions, justificatifs, moyens)
 
 
 def _enregistrer_route_historique_anomalie(app: FastAPI) -> None:
@@ -3819,9 +3844,10 @@ def _enregistrer_routes_anomalies(app: FastAPI) -> None:
         base: LedgerBaseDep,
         decisions: DecisionsDep,
         justificatifs: JustificatifsDep,
+        propositions: PropositionsDep,
         registre: RegistreAnomaliesDep,
     ) -> list[AlerteAnomalieVue]:
-        alertes = _alertes_du_dossier(dossier, base, decisions, justificatifs)
+        alertes = _alertes_du_dossier(dossier, base, decisions, justificatifs, propositions)
         etats = registre.etats(dossier.id)
         return [_alerte_vue(alerte, etats.get(alerte.id, "ouverte")) for alerte in alertes.values()]
 
@@ -3836,6 +3862,7 @@ def _enregistrer_routes_anomalies(app: FastAPI) -> None:
         base: LedgerBaseDep,
         decisions: DecisionsDep,
         justificatifs: JustificatifsDep,
+        propositions: PropositionsDep,
         registre: RegistreAnomaliesDep,
         identite: IdentiteDep,
         role: RoleMembreDep,
@@ -3843,7 +3870,7 @@ def _enregistrer_routes_anomalies(app: FastAPI) -> None:
         """Le gestionnaire qualifie. Lecture consulte, ne qualifie pas."""
         _exiger_ecriture(role, "La lecture ne qualifie pas une alerte.")
         _, identite = _verifier_acces_gestionnaire(identite)
-        alertes = _alertes_du_dossier(dossier, base, decisions, justificatifs)
+        alertes = _alertes_du_dossier(dossier, base, decisions, justificatifs, propositions)
         alerte = alertes.get(alerte_id)
         if alerte is None:
             raise HTTPException(status_code=404, detail="Alerte inconnue.")
