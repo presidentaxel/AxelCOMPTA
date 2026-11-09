@@ -2079,6 +2079,10 @@ def _enregistrer_routes_dossiers(app: FastAPI) -> None:
         )
         return _avec_tags(vues, etat_du_portefeuille(tags, tenant_id))
 
+
+def _enregistrer_route_lecture_dossier(app: FastAPI) -> None:
+    """La fiche d'un dossier. Le compte de test y laisse une trace (AXE-822)."""
+
     @app.get("/dossiers/{dossier_id}", response_model=DossierResume)
     def obtenir_dossier(
         request: Request,
@@ -5574,6 +5578,7 @@ def create_app() -> FastAPI:
     brancher_erreurs(app)
     _configurer_contexte_rls(app)
     _enregistrer_routes_dossiers(app)
+    _enregistrer_route_lecture_dossier(app)
     _enregistrer_routes_import_dossiers(app)
     _enregistrer_routes_securite(app)
     _enregistrer_routes_mfa_et_acces(app)
