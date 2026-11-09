@@ -813,3 +813,58 @@ export async function deciderNouveauxChauffeurs(
   );
 }
 
+
+// --- Création des dossiers depuis un fichier (AXE-809) ---
+
+export type LigneImport = {
+  numero: number;
+  dossier_id: string | null;
+  nom: string | null;
+  erreurs: string[];
+  avertissements: string[];
+};
+
+export type RapportImport = {
+  lignes: LigneImport[];
+  a_creer: number;
+  en_erreur: number;
+  creation: Synchronisation | null;
+};
+
+function corpsFichier(fichier: File): FormData {
+  const corps = new FormData();
+  corps.append("fichier", fichier);
+  return corps;
+}
+
+/** Le rapport ligne par ligne ; rien n'est créé. */
+export async function verifierImport(fichier: File, sirene: boolean): Promise<RapportImport> {
+  return lireJson(
+    await requeteGestionnaire(`/portefeuille/import-dossiers/rapport?sirene=${sirene}`, {
+      method: "POST",
+      body: corpsFichier(fichier),
+    }),
+    "Le fichier n'a pas pu être vérifié.",
+  );
+}
+
+/** Admin : confie les lignes valides au worker, qui les crée en un lot. */
+export async function importerDossiers(fichier: File): Promise<RapportImport> {
+  return lireJson(
+    await requeteGestionnaire("/portefeuille/import-dossiers", {
+      method: "POST",
+      body: corpsFichier(fichier),
+    }),
+    "L'import n'a pas pu être lancé.",
+  );
+}
+
+export async function suivreImport(): Promise<Synchronisation | null> {
+  return lireJson(await requeteGestionnaire("/portefeuille/import-dossiers"), "Suivi indisponible.");
+}
+
+export async function telechargerModeleImport(): Promise<Blob> {
+  const reponse = await requeteGestionnaire("/portefeuille/import-dossiers/modele.csv");
+  if (!reponse.ok) throw new ApiError("Modèle indisponible.", reponse.status);
+  return reponse.blob();
+}

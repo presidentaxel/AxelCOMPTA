@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import json
 import re
 import uuid
 from collections.abc import Mapping, Sequence
@@ -146,7 +147,7 @@ from axelcompta.ingestion.journal import EntreeQuarantaine, JournalIngestion
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ingestion.providers.digifactory import normaliser_payload
-from axelcompta.jobs.file import TYPE_SYNCHRO, DemandesDeJobs, Job
+from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, TYPE_SYNCHRO, DemandesDeJobs, Job
 from axelcompta.jobs.postgres import FilePostgres
 from axelcompta.ledger.banque import (
     comptes_hors_banque,
@@ -159,6 +160,7 @@ from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.ledger.models import Ecriture, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
+from axelcompta.nouveaux_contacts import fiche_sirene
 from axelcompta.packs.vtc_demo import (
     charger_categories_banque,
     charger_compte_par_categorie,
@@ -189,6 +191,8 @@ from axelcompta.tenants.contacts_proposes_postgres import PostgresContactsPropos
 from axelcompta.tenants.exercices import ExerciceRepository
 from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
 from axelcompta.tenants.franchise_tva import MillesimeInconnu, suivre_franchise
+from axelcompta.tenants.import_dossiers import MODELE_CSV, lire_csv
+from axelcompta.tenants.import_dossiers import rapport as rapport_import
 from axelcompta.tenants.models import MODES_RELANCE, Dossier, Tenant
 from axelcompta.tenants.orm import droits_membre, rappels, regles_rappel
 from axelcompta.tenants.postgres import PostgresDossierRepository
@@ -4879,6 +4883,97 @@ def _synchronisation_vue(job: Job | None) -> SynchronisationVue | None:
     )
 
 
+class LigneImportVue(BaseModel):
+    numero: int
+    dossier_id: str | None
+    nom: str | None
+    erreurs: list[str]
+    avertissements: list[str]
+
+
+class RapportImportVue(BaseModel):
+    """AXE-809 : ligne par ligne, avant toute création."""
+
+    lignes: list[LigneImportVue]
+    a_creer: int
+    en_erreur: int
+    creation: SynchronisationVue | None = None
+
+
+def _rapport_import(
+    tenant_id: TenantId,
+    contenu: bytes,
+    dossiers: DossierRepository,
+    sirene: bool,
+) -> tuple[RapportImportVue, list[dict[str, str]]]:
+    lignes = lire_csv(contenu)
+    existants = [d.id for d in dossiers.lister_par_tenant(tenant_id)]
+    resultat = rapport_import(tenant_id, lignes, existants, fiche_sirene if sirene else None)
+    vue = RapportImportVue(
+        lignes=[
+            LigneImportVue(
+                numero=ligne.numero,
+                dossier_id=ligne.dossier.id if ligne.dossier else None,
+                nom=ligne.dossier.nom if ligne.dossier else None,
+                erreurs=list(ligne.erreurs),
+                avertissements=list(ligne.avertissements),
+            )
+            for ligne in resultat.lignes
+        ],
+        a_creer=len(resultat.valides),
+        en_erreur=resultat.en_erreur,
+    )
+    return vue, lignes
+
+
+def _enregistrer_routes_import_dossiers(app: FastAPI) -> None:
+    """AXE-809 : créer les dossiers d'un portefeuille depuis un fichier CSV."""
+
+    @app.get("/portefeuille/import-dossiers/modele.csv")
+    def modele_import(identite: IdentiteDep) -> Response:
+        _verifier_acces_gestionnaire(identite)
+        return _fichier(MODELE_CSV, "text/csv; charset=utf-8", "modele-dossiers.csv")
+
+    @app.post("/portefeuille/import-dossiers/rapport", response_model=RapportImportVue)
+    async def rapport_import_dossiers(
+        fichier: UploadFile, identite: IdentiteDep, dossiers: DossiersDep, sirene: bool = False
+    ) -> RapportImportVue:
+        """Rien n'est écrit. `sirene` interroge Sirene ligne par ligne (plus lent)."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _rapport_import(tenant_id, await fichier.read(), dossiers, sirene)[0]
+
+    @app.post("/portefeuille/import-dossiers", response_model=RapportImportVue)
+    async def importer_dossiers(
+        fichier: UploadFile,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        dossiers: DossiersDep,
+        demandes: DemandesJobsDep,
+    ) -> RapportImportVue:
+        """Admin. Les lignes valides sont créées par le worker, en un lot ;
+        les lignes en erreur ne le sont pas."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        if role != "admin":
+            raise HTTPException(status_code=403, detail="Réservé à un administrateur.")
+        en_cours = demandes.dernier(str(tenant_id), TYPE_IMPORT_DOSSIERS)
+        if en_cours is not None and en_cours.actif:
+            raise HTTPException(status_code=409, detail="Un import est déjà en cours.")
+        vue, lignes = _rapport_import(tenant_id, await fichier.read(), dossiers, False)
+        if vue.a_creer == 0:
+            return vue
+        job = demandes.demander(
+            str(tenant_id), TYPE_IMPORT_DOSSIERS, json.dumps({"lignes": lignes})
+        )
+        return vue.model_copy(update={"creation": _synchronisation_vue(job)})
+
+    @app.get("/portefeuille/import-dossiers", response_model=SynchronisationVue | None)
+    def suivre_import(
+        demandes: DemandesJobsDep, identite: IdentiteDep
+    ) -> SynchronisationVue | None:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _synchronisation_vue(demandes.dernier(str(tenant_id), TYPE_IMPORT_DOSSIERS))
+
+
 def _nouveaux_chauffeurs(
     tenant_id: TenantId, contacts: ContactsProposesRepository
 ) -> list[NouveauChauffeurVue]:
@@ -4967,6 +5062,7 @@ def create_app() -> FastAPI:
     brancher_erreurs(app)
     _configurer_contexte_rls(app)
     _enregistrer_routes_dossiers(app)
+    _enregistrer_routes_import_dossiers(app)
     _enregistrer_routes_transactions(app)
     _enregistrer_route_correction(app)
     _enregistrer_routes_annulation(app)
