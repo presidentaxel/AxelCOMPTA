@@ -5,9 +5,9 @@
 
 import { enTetesSupabase, URL_SUPABASE } from "./auth-chauffeur";
 
-import type { Facteur } from "./mfa-code";
+import { imageDuQr, type Facteur } from "./mfa-code";
 
-export { codeNormalise, facteurVerifie, type Facteur } from "./mfa-code";
+export { codeNormalise, facteurVerifie, imageDuQr, type Facteur } from "./mfa-code";
 export type Enrolement = { facteurId: string; qrCode: string; secret: string };
 export type Jetons = { accessToken: string; refreshToken: string };
 
@@ -51,7 +51,11 @@ export async function enroler(accessToken: string, facteurs: readonly Facteur[])
     reponse,
     "Impossible de préparer la double authentification.",
   );
-  return { facteurId: corps.id, qrCode: corps.totp.qr_code, secret: corps.totp.secret };
+  return {
+    facteurId: corps.id,
+    qrCode: imageDuQr(corps.totp.qr_code),
+    secret: corps.totp.secret,
+  };
 }
 
 /** Défi puis vérification du code : renvoie les jetons `aal2`. */

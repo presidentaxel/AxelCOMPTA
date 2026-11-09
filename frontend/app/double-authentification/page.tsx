@@ -5,8 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Etat } from "@/components/Etat";
 import { Squelette } from "@/components/Squelette";
+import { SaisieCode } from "@/components/SaisieCode";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   obtenirSessionGestionnaire,
   remplacerJetonsGestionnaire,
@@ -27,10 +27,10 @@ type Etape =
   | { statut: "code"; facteurId: string }
   | { statut: "enrolement"; enrolement: Enrolement };
 
-/** AXE-812 : double authentification du gestionnaire. Sans facteur, il en
- * enrôle un (QR code à scanner) ; avec, il saisit le code. Le code vérifié
- * donne une session `aal2`, que l'API exige pour un admin. */
-export default function SecuritePage() {
+/** AXE-812 : double authentification du gestionnaire, seule à cette adresse.
+ * Sans facteur, il enrôle un (QR code à scanner) ; avec, il saisit le code.
+ * Le code vérifié donne une session `aal2`, que l'API exige pour un admin. */
+export default function DoubleAuthentificationPage() {
   const router = useRouter();
   const [etape, setEtape] = useState<Etape>({ statut: "chargement" });
   const [saisie, setSaisie] = useState("");
@@ -61,10 +61,10 @@ export default function SecuritePage() {
   }, [router]);
 
   useEffect(() => {
-    // Premier chargement à l'ouverture de l'écran.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // Une seule fois : relancer referait un QR à chaque rendu.
+    // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
     void preparer();
-  }, [preparer]);
+  }, []);
 
   async function valider(evenement: React.FormEvent) {
     evenement.preventDefault();
@@ -80,7 +80,8 @@ export default function SecuritePage() {
     try {
       const jetons = await verifierCode(session.accessToken, facteurId, code);
       remplacerJetonsGestionnaire(jetons.accessToken, jetons.refreshToken);
-      router.replace(cheminDeRetour(window.location.search, "/"));
+      const retour = cheminDeRetour(window.location.search, "/");
+      router.replace(retour === "/securite" || retour.startsWith("/securite?") ? "/" : retour);
     } catch (exception) {
       setRefus(exception instanceof Error ? exception.message : "Code refusé.");
     } finally {
@@ -89,13 +90,13 @@ export default function SecuritePage() {
   }
 
   return (
-    <section aria-labelledby="titre-securite" className="max-w-md">
-      <h1 id="titre-securite" className="text-xl font-semibold text-ink">
+    <section aria-labelledby="titre-double-auth">
+      <h1 id="titre-double-auth" className="text-xl font-bold text-ink">
         Double authentification
       </h1>
       {etape.statut === "chargement" && (
         <div className="mt-6 space-y-3" aria-hidden>
-          <Squelette className="h-40 w-40" />
+          <Squelette className="h-52 w-52" />
           <Squelette className="h-9 w-full" />
         </div>
       )}
@@ -103,18 +104,17 @@ export default function SecuritePage() {
         <Etat type="erreur" message={etape.message} onReessayer={() => void preparer()} />
       )}
       {etape.statut === "enrolement" && (
-        <div className="mt-4 space-y-3 text-sm text-ink">
+        <div className="mt-4 space-y-4 text-sm text-ink">
           <p>
             Votre rôle demande un code en plus du mot de passe. Scannez ce QR code avec une
             application d&apos;authentification (Google Authenticator, 1Password, Authy…), puis
             saisissez le code qu&apos;elle affiche.
           </p>
-          {/* QR code SVG fourni par Supabase : une image, pas une page. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={etape.enrolement.qrCode}
             alt="QR code à scanner avec votre application d'authentification"
-            className="h-44 w-44 rounded-md border border-border bg-white p-2"
+            className="h-52 w-52 rounded-md border border-border bg-white p-2"
           />
           <p className="text-subtle">
             Sans appareil photo, saisissez cette clé :{" "}
@@ -128,24 +128,22 @@ export default function SecuritePage() {
         </p>
       )}
       {(etape.statut === "code" || etape.statut === "enrolement") && (
-        <form onSubmit={valider} className="mt-4 flex items-start gap-2">
-          <div className="flex-1">
-            <Input
-              value={saisie}
-              onChange={(e) => setSaisie(e.target.value)}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              placeholder="123 456"
-              aria-label="Code à 6 chiffres"
-              aria-invalid={refus !== null}
-              aria-describedby={refus ? "refus-code" : undefined}
-            />
-            {refus && (
-              <p id="refus-code" className="mt-1 text-sm text-danger">
-                {refus}
-              </p>
-            )}
-          </div>
+        <form onSubmit={valider} className="mt-4 space-y-3">
+          <SaisieCode
+            valeur={saisie}
+            onChange={(valeur) => {
+              setSaisie(valeur);
+              setRefus(null);
+            }}
+            invalide={refus !== null}
+            idErreur={refus ? "refus-code" : undefined}
+            disabled={envoi}
+          />
+          {refus && (
+            <p id="refus-code" className="text-sm text-danger">
+              {refus}
+            </p>
+          )}
           <Button type="submit" disabled={envoi}>
             {envoi ? "Vérification…" : "Valider"}
           </Button>

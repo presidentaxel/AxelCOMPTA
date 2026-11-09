@@ -8,6 +8,7 @@ import {
   lireMoi,
   tracerConnexionGestionnaire,
 } from "@/lib/auth-gestionnaire";
+import { CHEMIN_DOUBLE_AUTHENTIFICATION } from "@/lib/mfa-code";
 import { cheminDeRetour } from "@/lib/session";
 
 /** Connexion gestionnaire (doc 03 §7). Hors du groupe `(gestionnaire)` pour
@@ -27,7 +28,9 @@ export default function ConnexionGestionnairePage() {
           const moi = await lireMoi().catch(() => null);
           // AXE-812 : un admin saisit son code (ou s'enrôle) avant d'entrer.
           router.replace(
-            moi?.mfa_requise ? `/securite?${new URLSearchParams({ retour }).toString()}` : retour,
+            moi?.mfa_requise
+              ? `${CHEMIN_DOUBLE_AUTHENTIFICATION}?${new URLSearchParams({ retour }).toString()}`
+              : retour,
           );
         }}
       />
