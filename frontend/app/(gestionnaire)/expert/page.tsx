@@ -22,6 +22,7 @@ import {
 } from "@/lib/classees";
 import { remplacerSujetsDuDossier } from "@/lib/file-expert";
 import { formatMontant } from "@/lib/format";
+import { libelleMoyenPaiement } from "@/lib/moyens-paiement";
 import {
   ecrireFiltreTag,
   gardeTag,
@@ -354,6 +355,11 @@ export default function ModeExpertPage() {
                       {sujet.dossier_nom} · {COTE[sujet.cote]} · {NATURE[sujet.nature]}
                     </span>
                     <span className="mt-0.5 block text-sm text-subtle">{sujet.detail}</span>
+                    {sujet.moyen_paiement && (
+                      <span className="mt-0.5 block text-sm text-subtle">
+                        {libelleMoyenPaiement(sujet.moyen_paiement)}
+                      </span>
+                    )}
                     {sujet.compte_actuel && (
                       <span className="mt-0.5 block text-sm text-subtle">
                         Compte actuel {sujet.compte_actuel}

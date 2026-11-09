@@ -520,6 +520,9 @@ class SujetExpertVue(BaseModel):
     imputable: bool
     compte_actuel: str | None = None
     compte_suggere: str | None = None
+    # Comment l'argent est sorti (carte, virement…), lu à l'affichage pour
+    # tous les sujets d'une opération bancaire (AXE-855).
+    moyen_paiement: str | None = None
 
 
 class LigneImputationVue(BaseModel):
@@ -4564,6 +4567,7 @@ def imputer_ecriture(
     decisions: DecisionsDep,
     justificatifs: JustificatifsDep,
     registre: RegistreAnomaliesDep,
+    propositions: PropositionsDep,
     identite: IdentiteDep,
 ) -> ImputationVue:
     """Pose la contre-passation et la nouvelle écriture. L'originale reste.
@@ -4593,7 +4597,9 @@ def imputer_ecriture(
     ):
         base.enregistrer(annulation)
     base.enregistrer(nouvelle)
-    sujets = _sujets_expert(dossier, base, decisions, justificatifs, registre)
+    sujets = _avec_moyens_de_paiement(
+        _sujets_expert(dossier, base, decisions, justificatifs, registre), propositions
+    )
     return ImputationVue(
         ecriture_id=nouvelle.id,
         contrepassation_id=inverse.id,
@@ -4624,6 +4630,22 @@ def annuler_imputation(
         if inverse.id not in connus:
             base.enregistrer(inverse)
             connus[inverse.id] = inverse
+
+
+def _avec_moyens_de_paiement(
+    sujets: list[SujetExpertVue], propositions: PropositionRepository
+) -> list[SujetExpertVue]:
+    """AXE-855 : le moyen de paiement de chaque sujet lié à une opération,
+    en une lecture pour toute la file. Lu à l'affichage, pas gardé dans le
+    cache des sujets (AXE-824) : un sujet déjà gardé l'a aussi."""
+    ids = [EcritureId(s.ecriture_id) for s in sujets if s.ecriture_id is not None]
+    moyens = propositions.moyens_de_paiement(ids)
+    return [
+        s.model_copy(update={"moyen_paiement": moyens.get(EcritureId(s.ecriture_id))})
+        if s.ecriture_id is not None and EcritureId(s.ecriture_id) in moyens
+        else s
+        for s in sujets
+    ]
 
 
 def _sujets_qualifies(
@@ -4690,6 +4712,7 @@ def _enregistrer_routes_expert(app: FastAPI) -> None:
         tags: TagsDep,
         agregats: AgregatsDep,
         cache: CacheFileExpertDep,
+        propositions: PropositionsDep,
         identite: IdentiteDep,
     ) -> FileExpertVue:
         """File de l'expert-comptable. Seuls les dossiers changés sont
@@ -4701,12 +4724,15 @@ def _enregistrer_routes_expert(app: FastAPI) -> None:
             d for d in dossiers.lister_par_tenant(tenant_id) if not etat.exclu(d.id, "expert")
         )
         sources = (base, decisions, justificatifs)
-        sujets = _sujets_qualifies(
-            _sujets_du_portefeuille(portefeuille, sources, agregats, cache),
-            portefeuille,
-            etat,
-            registre,
-            sources,
+        sujets = _avec_moyens_de_paiement(
+            _sujets_qualifies(
+                _sujets_du_portefeuille(portefeuille, sources, agregats, cache),
+                portefeuille,
+                etat,
+                registre,
+                sources,
+            ),
+            propositions,
         )
         presents = {sujet.dossier_id for sujet in sujets}
         return FileExpertVue(
