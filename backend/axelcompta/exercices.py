@@ -41,6 +41,7 @@ from axelcompta.closing.cloture_fiscale import (
 from axelcompta.closing.models import ParametresCloture, ProvisionCloture
 from axelcompta.closing.ouverture import ecriture_a_nouveaux
 from axelcompta.core.db import engine_depuis_env
+from axelcompta.core.errors import Conflit
 from axelcompta.core.ids import DossierId
 from axelcompta.ledger.models import Ecriture
 from axelcompta.ledger.repository import PostgresLedgerService
@@ -60,7 +61,7 @@ from axelcompta.workflow.notifications import ecritures_a_trancher
 from axelcompta.workflow.reclassement import grand_livre_tranche
 
 
-class PassageRefuse(ValueError):
+class PassageRefuse(Conflit, ValueError):
     """L'exercice ne peut pas être clos maintenant ; le message dit pourquoi."""
 
     def __init__(self, message: str, *, code: str = "autre") -> None:

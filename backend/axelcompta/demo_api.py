@@ -43,7 +43,6 @@ from typing import Annotated, Any, Literal, Protocol, cast
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -61,10 +60,11 @@ from axelcompta.affectations import (
     enregistrer_bulletin,
     proposer,
 )
-from axelcompta.anomaly.instruction import InstructionsRepository, TransitionRefusee
+from axelcompta.anomaly.instruction import InstructionsRepository
 from axelcompta.anomaly.instruction_postgres import PostgresInstructions
 from axelcompta.anomaly.models import Alerte, MouvementSurveille
 from axelcompta.anomaly.service import analyser
+from axelcompta.api.erreurs import brancher_erreurs
 from axelcompta.categorize.appris import (
     OperationTranchee,
     libelle_sans_categorie,
@@ -87,8 +87,8 @@ from axelcompta.closing.bilan_simplifie import ClotureSimplifieeService
 from axelcompta.closing.cloture_fiscale import chiffre_affaires_ht
 from axelcompta.closing.dividendes import RetenuesDividendes, retenues
 from axelcompta.closing.models import LiassePivot, ParametresCloture, ProvisionCloture
-from axelcompta.closing.paie import Bulletin, BulletinIncoherent
-from axelcompta.closing.provisions import ProvisionInvalide, valider_provision
+from axelcompta.closing.paie import Bulletin
+from axelcompta.closing.provisions import valider_provision
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, UserId
 from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
@@ -99,7 +99,6 @@ from axelcompta.demo_auth import (
     identite_tolerante,
 )
 from axelcompta.demo_comptes import (
-    CompteDejaInviteError,
     CompteRepository,
     InvitationAbsente,
     InvitationFermee,
@@ -110,7 +109,6 @@ from axelcompta.demo_comptes import (
 from axelcompta.demo_jalons import JALONS_EXERCICE, etape_depuis_preuves
 from axelcompta.demo_justificatifs import JustificatifRepository
 from axelcompta.documents.postgres import PostgresJustificatifRepository
-from axelcompta.documents.preparer import JustificatifRefuse
 from axelcompta.exercices import (
     PassageExercice,
     PassageRefuse,
@@ -144,7 +142,6 @@ from axelcompta.ledger.banque import (
 from axelcompta.ledger.contrepassation import annulees, contrepasser
 from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.ledger.models import Ecriture, Sens
-from axelcompta.ledger.periodes import PeriodeClose
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
 from axelcompta.packs.vtc_demo import (
@@ -184,7 +181,6 @@ from axelcompta.tenants.tags import (
     TRAITEMENTS,
     EtatTags,
     Tag,
-    TagInvalide,
     TagsRepository,
     etat_du_portefeuille,
     nom_de_tag,
@@ -206,7 +202,7 @@ from axelcompta.workflow.decisions import (
     decision_en_vigueur,
 )
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
-from axelcompta.workflow.expert import ImputationRefusee, preparer_imputation
+from axelcompta.workflow.expert import preparer_imputation
 from axelcompta.workflow.file_expert_cache import CacheFileExpert, SujetsGardes
 from axelcompta.workflow.file_expert_cache_postgres import (
     PostgresCacheFileExpert,
@@ -235,10 +231,7 @@ from axelcompta.workflow.reclassement import (
 from axelcompta.workflow.relances_consentement import mode_effectif
 from axelcompta.workflow.resolutions_quarantaine import Resolution, ResolutionsRepository
 from axelcompta.workflow.resolutions_quarantaine_postgres import PostgresResolutions
-from axelcompta.workflow.revue import (
-    CategorieInconnueError,
-    resoudre_ecriture_a_trancher,
-)
+from axelcompta.workflow.revue import resoudre_ecriture_a_trancher
 from axelcompta.workflow.signature import DocumentSigne, SignatureRepository
 from axelcompta.workflow.signature_demo import SignatureDemoProvider
 from axelcompta.workflow.signature_postgres import PostgresSignatureRepository
@@ -1497,12 +1490,9 @@ def _enregistrer_decision(
             detail="Cette opération n'a pas de proposition d'origine.",
         )
     comptes = charger_compte_par_categorie()
-    try:
-        resoudre_ecriture_a_trancher(
-            ecriture, categorie, configuration_de(dossier).comptes_categories_statut(), comptes
-        )
-    except CategorieInconnueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    resoudre_ecriture_a_trancher(
+        ecriture, categorie, configuration_de(dossier).comptes_categories_statut(), comptes
+    )
     courante = decisions.decision_courante(dossier.id, ecriture.id)
     maintenant = datetime.now(UTC)
     if courante is not None and maintenant <= courante.decide_le:
@@ -1567,15 +1557,12 @@ def _decision_suivante(
         ecriture = next((e for e in ecritures if e.id == ecriture_id), None)
         if ecriture is None:
             raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
-        try:
-            resoudre_ecriture_a_trancher(
-                ecriture,
-                categorie,
-                configuration_de(dossier).comptes_categories_statut(),
-                charger_compte_par_categorie(),
-            )
-        except CategorieInconnueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        resoudre_ecriture_a_trancher(
+            ecriture,
+            categorie,
+            configuration_de(dossier).comptes_categories_statut(),
+            charger_compte_par_categorie(),
+        )
     decisions.enregistrer_decision(
         DecisionHumaine(
             dossier_id=dossier.id,
@@ -1648,10 +1635,7 @@ def _trancher_groupe(
                 status_code=500,
                 detail="Cette opération n'a pas de proposition d'origine.",
             )
-        try:
-            resoudre_ecriture_a_trancher(ecriture, entree.categorie, comptes_statut, comptes)
-        except CategorieInconnueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        resoudre_ecriture_a_trancher(ecriture, entree.categorie, comptes_statut, comptes)
         a_ecrire.append(
             DecisionHumaine(
                 dossier_id=dossier.id,
@@ -1705,10 +1689,7 @@ def _joindre_justificatif(
         )
     contenu = fichier.file.read()
     extension = Path(fichier.filename or "").suffix or ".jpg"
-    try:
-        justificatifs.enregistrer(dossier.tenant_id, dossier.id, ecriture.id, contenu, extension)
-    except JustificatifRefuse as erreur:
-        raise HTTPException(status_code=400, detail=str(erreur)) from erreur
+    justificatifs.enregistrer(dossier.tenant_id, dossier.id, ecriture.id, contenu, extension)
     return ecriture
 
 
@@ -2337,10 +2318,6 @@ def _dossiers_du_portefeuille(
     return trouves
 
 
-def _en_400(erreur: TagInvalide) -> HTTPException:
-    return HTTPException(status_code=400, detail=str(erreur))
-
-
 def _enregistrer_routes_tags(app: FastAPI) -> None:
     @app.get("/tags", response_model=ReglageTagsVue)
     def lire_tags(tags: TagsDep, identite: IdentiteDep) -> ReglageTagsVue:
@@ -2352,10 +2329,7 @@ def _enregistrer_routes_tags(app: FastAPI) -> None:
         corps: NouveauTag, tags: TagsDep, role: RoleMembreDep, identite: IdentiteDep
     ) -> ReglageTagsVue:
         tenant_id, _identite = _gestionnaire_qui_ecrit(identite, role)
-        try:
-            tags.creer_tag(Tag(tenant_id, nom_de_tag(corps.nom), corps.description.strip()))
-        except TagInvalide as erreur:
-            raise _en_400(erreur) from erreur
+        tags.creer_tag(Tag(tenant_id, nom_de_tag(corps.nom), corps.description.strip()))
         return _reglage_tags_vue(tags, tenant_id)
 
     @app.post("/tags/{tag}/dossiers", status_code=204)
@@ -2373,10 +2347,7 @@ def _enregistrer_routes_tags(app: FastAPI) -> None:
         maintenant = datetime.now(UTC)
         for dossier_id in _dossiers_du_portefeuille(dossiers, tenant_id, corps.dossier_ids):
             geste = tags.poser if corps.pose else tags.retirer
-            try:
-                geste(tenant_id, dossier_id, tag, identite_ok.user_id, maintenant)
-            except TagInvalide as erreur:
-                raise _en_400(erreur) from erreur
+            geste(tenant_id, dossier_id, tag, identite_ok.user_id, maintenant)
 
     @app.put("/tags/exclusions/{traitement}", response_model=ReglageTagsVue)
     def regler_exclusion(
@@ -2387,16 +2358,13 @@ def _enregistrer_routes_tags(app: FastAPI) -> None:
         identite: IdentiteDep,
     ) -> ReglageTagsVue:
         tenant_id, identite_ok = _gestionnaire_qui_ecrit(identite, role)
-        try:
-            tags.regler_exclusion(
-                tenant_id,
-                traitement,
-                frozenset(corps.tags),
-                identite_ok.user_id,
-                datetime.now(UTC),
-            )
-        except TagInvalide as erreur:
-            raise _en_400(erreur) from erreur
+        tags.regler_exclusion(
+            tenant_id,
+            traitement,
+            frozenset(corps.tags),
+            identite_ok.user_id,
+            datetime.now(UTC),
+        )
         return _reglage_tags_vue(tags, tenant_id)
 
 
@@ -2784,10 +2752,7 @@ def _enregistrer_routes_membres(app: FastAPI) -> None:
         # il ne doit jamais exister avant son rôle. L'upsert laisse un nouvel
         # essai passer si l'invitation a échoué après.
         _ecrire_role(tenant_id, email, entree.role)
-        try:
-            comptes.inviter_membre(str(tenant_id), email, entree.role)
-        except CompteDejaInviteError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        comptes.inviter_membre(str(tenant_id), email, entree.role)
         return MembrePortefeuille(email=email, role=entree.role, statut="invité")
 
     @app.patch("/portefeuille/membres", response_model=MembrePortefeuille)
@@ -2858,10 +2823,7 @@ def _enregistrer_routes_invitation(app: FastAPI) -> None:
         vrai e-mail via Supabase Auth — pas un simulateur. Uniquement pour un
         dossier de son propre portefeuille (`DossierPortefeuilleDep`)."""
         _exiger_ecriture(role, "La lecture seule n'invite pas.")
-        try:
-            invitation = comptes.inviter(dossier.id, entree.email)
-        except CompteDejaInviteError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        invitation = comptes.inviter(dossier.id, entree.email)
         return InvitationVue(
             dossier_id=invitation.dossier_id,
             email=invitation.email,
@@ -3374,11 +3336,8 @@ def _lire_provisions(corps: ProvisionsVue) -> tuple[ProvisionCloture, ...]:
         )
         for ligne in corps.lignes
     )
-    try:
-        for provision in provisions:
-            valider_provision(provision)
-    except ProvisionInvalide as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    for provision in provisions:
+        valider_provision(provision)
     return provisions
 
 
@@ -3576,10 +3535,7 @@ def _proposer_affectation(
     exercices: ExerciceRepository,
     affectations: AffectationRepository,
 ) -> PropositionAffectation:
-    try:
-        return proposer(dossier, ledger, exercices, affectations, datetime.now(UTC).date())
-    except (AffectationImpossible, MillesimeDividendesInconnu) as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return proposer(dossier, ledger, exercices, affectations, datetime.now(UTC).date())
 
 
 def _vue_affectation(proposition: PropositionAffectation) -> AffectationVue:
@@ -3626,8 +3582,8 @@ def _enregistrer_routes_affectation(app: FastAPI) -> None:
         _verifier_acces_dossier(dossier.id, identite)
         try:
             proposition = _proposer_affectation(dossier, ledger, exercices, affectations)
-        except HTTPException as refus:
-            return AffectationVue(applicable=False, raison=str(refus.detail))
+        except (AffectationImpossible, MillesimeDividendesInconnu) as refus:
+            return AffectationVue(applicable=False, raison=str(refus))
         return _vue_affectation(proposition)
 
     @app.post("/dossiers/{dossier_id}/affectation", response_model=AffectationVue)
@@ -3761,18 +3717,15 @@ def _enregistrer_routes_dividendes_paie(app: FastAPI) -> None:
         identite: IdentiteDep,
     ) -> DividendesVue:
         _verifier_acces_dossier(dossier.id, identite)
-        try:
-            decides = dividendes_decides(dossier, ledger, exercices, affectations)
-            detail = declarer_versement(
-                decides,
-                dossier,
-                ledger,
-                corps.verse_le,
-                corps.dispense_prelevement,
-                datetime.now(UTC).date(),
-            )
-        except (AffectationImpossible, MillesimeDividendesInconnu) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        decides = dividendes_decides(dossier, ledger, exercices, affectations)
+        detail = declarer_versement(
+            decides,
+            dossier,
+            ledger,
+            corps.verse_le,
+            corps.dispense_prelevement,
+            datetime.now(UTC).date(),
+        )
         return _vue_dividendes(dataclasses.replace(decides, declare=detail), detail)
 
 
@@ -3799,12 +3752,7 @@ def _enregistrer_routes_paie(app: FastAPI) -> None:
             cotisations_patronales=corps.cotisations_patronales_cts,
             prelevement_a_la_source=corps.prelevement_a_la_source_cts,
         )
-        try:
-            ecriture = enregistrer_bulletin(dossier, ledger, bulletin)
-        except AffectationImpossible as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except BulletinIncoherent as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        ecriture = enregistrer_bulletin(dossier, ledger, bulletin)
         return _bulletin_vue(ecriture)
 
 
@@ -3895,18 +3843,15 @@ def _enregistrer_routes_anomalies(app: FastAPI) -> None:
         alerte = alertes.get(alerte_id)
         if alerte is None:
             raise HTTPException(status_code=404, detail="Alerte inconnue.")
-        try:
-            etat = registre.instruire(
-                dossier.id,
-                alerte_id,
-                entree.decision,
-                # L'auteur se lit dans l'historique (AXE-800) : l'e-mail, pas l'uuid.
-                identite.email or identite.user_id,
-                entree.commentaire,
-                datetime.now(UTC),
-            )
-        except TransitionRefusee as erreur:
-            raise HTTPException(status_code=400, detail=str(erreur)) from erreur
+        etat = registre.instruire(
+            dossier.id,
+            alerte_id,
+            entree.decision,
+            # L'auteur se lit dans l'historique (AXE-800) : l'e-mail, pas l'uuid.
+            identite.email or identite.user_id,
+            entree.commentaire,
+            datetime.now(UTC),
+        )
         return _alerte_vue(alerte, etat)
 
 
@@ -4169,16 +4114,13 @@ def imputer_ecriture(
     ecriture = connus.get(EcritureId(entree.ecriture_id))
     if ecriture is None:
         raise HTTPException(status_code=404, detail="Écriture inconnue.")
-    try:
-        inverse, nouvelle = preparer_imputation(
-            ecriture,
-            entree.compte,
-            set(connus),
-            base.periodes_closes(dossier.id),
-            dossier.exercice_debut,
-        )
-    except ImputationRefusee as erreur:
-        raise HTTPException(status_code=400, detail=str(erreur)) from erreur
+    inverse, nouvelle = preparer_imputation(
+        ecriture,
+        entree.compte,
+        set(connus),
+        base.periodes_closes(dossier.id),
+        dossier.exercice_debut,
+    )
     base.enregistrer(inverse)
     # AXE-420 : la décision du chauffeur ne doit pas rester chargée en plus.
     for annulation in annuler_reclassements(
@@ -4220,12 +4162,6 @@ def annuler_imputation(
         if inverse.id not in connus:
             base.enregistrer(inverse)
             connus[inverse.id] = inverse
-
-
-async def _periode_close_en_409(_requete: Request, erreur: Exception) -> JSONResponse:
-    """I4 : une écriture dans un exercice clos est refusée par le grand livre,
-    sur toutes les routes qui écrivent. 409 avec la phrase, pas 500."""
-    return JSONResponse(status_code=409, content={"detail": str(erreur)})
 
 
 def _sujets_qualifies(
@@ -4691,7 +4627,7 @@ def create_app() -> FastAPI:
     brancher(app)
     app.state.digifactory_branche = True
     _configurer_cors(app)
-    app.add_exception_handler(PeriodeClose, _periode_close_en_409)
+    brancher_erreurs(app)
     _configurer_contexte_rls(app)
     _enregistrer_routes_dossiers(app)
     _enregistrer_routes_transactions(app)

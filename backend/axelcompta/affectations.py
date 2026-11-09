@@ -33,6 +33,7 @@ from axelcompta.closing.dividendes import (
     retenues,
 )
 from axelcompta.closing.paie import Bulletin, ecriture_bulletin, id_bulletin
+from axelcompta.core.errors import Conflit
 from axelcompta.core.pcg import COMPTE_BANQUE
 from axelcompta.ledger.models import Ecriture
 from axelcompta.ledger.service import LedgerService
@@ -51,7 +52,7 @@ _HORS_CHARGES_COURANTES = ("695", "68")
 COMPTE_REMUNERATION_NON_SALARIE = "644"
 
 
-class AffectationImpossible(ValueError):
+class AffectationImpossible(Conflit, ValueError):
     """Pas d'affectation à décider maintenant ; le message dit pourquoi."""
 
 

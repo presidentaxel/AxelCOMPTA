@@ -18,6 +18,8 @@ from enum import StrEnum
 from functools import cache
 from pathlib import Path
 
+from axelcompta.core.errors import SaisieInvalide
+
 from .models import Dossier
 
 CHEMIN_MATRICE = Path(__file__).with_name("matrice_statuts.toml")
@@ -137,7 +139,7 @@ def charger_matrice(chemin: Path = CHEMIN_MATRICE) -> Matrice:
     )
 
 
-class ConfigurationInvalide(ValueError):
+class ConfigurationInvalide(SaisieInvalide, ValueError):
     """Toutes les erreurs d'un coup, pour qu'un import ou un formulaire puisse
     les afficher ensemble plutôt qu'une à la fois."""
 
