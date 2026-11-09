@@ -21,10 +21,9 @@ import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from axelcompta.core.libelles import sans_categorie
+
 SEUIL_SIMILARITE = 0.6
-# Catégorie collée au libellé de l'écriture par la synchro
-# (`workflow/auto_accept.py`) : à retirer avant de comparer.
-_SUFFIXE_CATEGORIE = re.compile(r"\s+\([a-z0-9_]+\)$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,7 +40,9 @@ class PropositionApprise:
 
 
 def libelle_sans_categorie(libelle: str) -> str:
-    return _SUFFIXE_CATEGORIE.sub("", libelle)
+    """Les anciennes écritures portent la catégorie en suffixe (AXE-848) :
+    à retirer avant de comparer."""
+    return sans_categorie(libelle)
 
 
 def normaliser(libelle: str) -> str:

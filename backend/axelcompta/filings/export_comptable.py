@@ -13,6 +13,7 @@ from __future__ import annotations
 import csv
 import io
 
+from axelcompta.core.libelles import sans_categorie
 from axelcompta.ledger.models import Ecriture, Sens
 
 from .fec import libelle_compte
@@ -56,7 +57,7 @@ def exporter_grand_livre(ecritures: tuple[Ecriture, ...]) -> str:
                 libelle_compte(ligne.compte),
                 ecriture.date.isoformat(),
                 ecriture.id,
-                ecriture.libelle,
+                sans_categorie(ecriture.libelle),
                 ligne.sens.name,
                 _montant_affiche(ligne.montant.centimes),
             ]

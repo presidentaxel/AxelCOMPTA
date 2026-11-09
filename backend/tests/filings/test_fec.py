@@ -191,3 +191,12 @@ def test_un_trou_dans_les_numeros_gardes_est_refuse() -> None:
     troisieme = dataclasses.replace(_ecriture("b", 6), numero=3)
     with pytest.raises(FecInvalide, match="séquence continue"):
         exporter_fec((premiere, troisieme))
+
+
+def test_le_fec_retire_l_ancien_suffixe_de_categorie() -> None:
+    """AXE-848 : les écritures d'avant le 9 nov. gardent « (catégorie) » en
+    base (grand livre immuable) ; le FEC ne l'exporte plus."""
+    ancienne = dataclasses.replace(_ecriture_uber(), libelle="XQZW 000 (non_categorise_a_verifier)")
+    fec = exporter_fec((ancienne,))
+    assert "non_categorise_a_verifier" not in fec
+    assert "\tXQZW 000\t" in fec

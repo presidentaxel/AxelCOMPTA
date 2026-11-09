@@ -37,7 +37,9 @@ def construire_ecriture_categorisee(
         dossier_id=transaction.dossier_id,
         journal=Journal.BQ,
         date=transaction.date,
-        libelle=f"{transaction.libelle} ({proposition.categorie})",
+        # Le libellé de la banque, tel quel : la catégorie est dans la
+        # proposition enregistrée, plus dans le libellé (AXE-848).
+        libelle=transaction.libelle,
         reference_piece=None,
         lignes=(
             LigneEcriture(compte=compte_banque, sens=sens_512, montant=montant),

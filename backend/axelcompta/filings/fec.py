@@ -31,6 +31,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 
 from axelcompta.core.errors import DomaineError
+from axelcompta.core.libelles import sans_categorie
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 
 COLONNES_FEC = (
@@ -213,7 +214,7 @@ def _ligne_fec(
         "",  # CompAuxLib
         _zone(ecriture.reference_piece or ecriture.id),
         date_str,  # PieceDate — pas distincte de la date d'écriture (démo)
-        _zone(ecriture.libelle),
+        _zone(sans_categorie(ecriture.libelle)),
         debit,
         credit,
         "",  # EcritureLet — pas de lettrage modélisé (facultatif)

@@ -12,6 +12,9 @@ dont tous les autres ont le droit de dépendre.
 - `errors.py` — `DomaineError`, `InvariantViole`.
 - `ids.py` — identifiants typés (`DossierId`, `EcritureId`, `TransactionId`...).
 - `db.py` — bootstrap SQLAlchemy (métadonnées partagées, moteur).
+- `libelles.py` — l'ancien suffixe « (catégorie) » des libellés d'écriture
+  (AXE-848) : `sans_categorie()` à l'affichage et à l'export,
+  `categorie_du_suffixe()` en repli pour les écritures d'avant le 9 nov.
 - `pcg.py` — `nature_depuis_compte()` (**fait, semaine 3**) : convention PCG
   générique classe 6 = charge / classe 7 = produit. Volontairement ici et
   pas dans `packs/` : ce n'est pas une règle spécifique au pack VTC.
