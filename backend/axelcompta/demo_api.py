@@ -99,6 +99,7 @@ from axelcompta.closing.paie import Bulletin
 from axelcompta.closing.provisions import valider_provision
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, UserId
+from axelcompta.core.libelles import categorie_du_suffixe, sans_categorie
 from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
 from axelcompta.core.rls import appliquer_rls, contexte_identite
 from axelcompta.demo_auth import (
@@ -1126,7 +1127,7 @@ def _transaction_vue(ecriture: Ecriture, a_justificatif: bool, annulee: bool) ->
     return TransactionVue(
         ecriture_id=ecriture.id,
         date=ecriture.date.isoformat(),
-        libelle=ecriture.libelle,
+        libelle=sans_categorie(ecriture.libelle),  # AXE-848 : jamais la catégorie technique
         montant_cts=_montant_512(ecriture),
         compte=_compte_affiche(ecriture),
         statut="à trancher" if a_trancher else "validé",
@@ -1154,7 +1155,7 @@ def _mouvement_anomalie(
         dossier_id=dossier.id,
         ecriture_id=ecriture.id,
         date=ecriture.date,
-        libelle=ecriture.libelle,
+        libelle=sans_categorie(ecriture.libelle),  # AXE-848
         montant_centimes=_montant_512(ecriture),
         categorie=categorie,
         justificatif_id=ecriture.id if a_justificatif else None,
@@ -1910,7 +1911,12 @@ def prechauffer_caches(engine: Engine, dossiers: Sequence[Dossier]) -> int:
     a_refaire = [d for d in dossiers if _cache_perime(lignes.get(d.id), gardes.get(d.id))]
     for dossier in a_refaire:
         _agregat_du_dossier(dossier, lignes.get(dossier.id), base, decisions, provisions, agregats)
-    sources = (base, decisions, PostgresJustificatifRepository(engine))
+    sources = (
+        base,
+        decisions,
+        PostgresJustificatifRepository(engine),
+        PostgresPropositionRepository(engine),
+    )
     _sujets_du_portefeuille(a_refaire, sources, agregats, cache)
     _operations_gardees(
         dossiers,
@@ -4305,17 +4311,28 @@ def _enregistrer_routes_anomalies(app: FastAPI) -> None:
 _CATEGORIES_TICKET = frozenset({"usage_personnel_suspect", "non_categorise_a_verifier"})
 
 
-def _categorie_du_libelle(libelle: str) -> str | None:
-    debut = libelle.rfind(" (")
-    if debut < 0 or not libelle.endswith(")"):
-        return None
-    return libelle[debut + 2 : -1]
+def _categories_d_origine(
+    dossier: Dossier, ledger: LedgerService, propositions: PropositionRepository | None
+) -> dict[EcritureId, str]:
+    """AXE-848 : la catégorie du pipeline à la synchro, lue dans la
+    proposition enregistrée. En repli, l'ancien suffixe du libellé (écritures
+    d'avant le 9 nov., ou sans proposition)."""
+    enregistrees = (
+        {e: p.categorie for e, p in propositions.lister(dossier.id).items()}
+        if propositions is not None
+        else {}
+    )
+    origines: dict[EcritureId, str] = {}
+    for ecriture in ledger.grand_livre(dossier.id):
+        categorie = enregistrees.get(ecriture.id) or categorie_du_suffixe(ecriture.libelle)
+        if categorie:
+            origines[ecriture.id] = categorie
+    return origines
 
 
-def _ticket_necessaire(vue: TransactionVue) -> bool:
+def _ticket_necessaire(vue: TransactionVue, categorie: str | None) -> bool:
     if vue.montant_cts >= 0 or vue.a_justificatif or vue.statut == "à trancher":
         return False
-    categorie = _categorie_du_libelle(vue.libelle)
     if categorie is None:
         return False
     if categorie == CATEGORIE_RETRAIT_ESPECES:
@@ -4359,7 +4376,9 @@ def _comptes_expert() -> list[CompteChoix]:
     return [CompteChoix(compte=compte, libelle=libelle_compte(compte)) for compte in comptes]
 
 
-def _sujet_depuis_vue(dossier: Dossier, vue: TransactionVue) -> SujetExpertVue | None:
+def _sujet_depuis_vue(
+    dossier: Dossier, vue: TransactionVue, categorie_origine: str | None = None
+) -> SujetExpertVue | None:
     if vue.statut == "à trancher" and vue.categorie == CATEGORIE_A_PRECISER:
         return _sujet(
             dossier,
@@ -4386,7 +4405,7 @@ def _sujet_depuis_vue(dossier: Dossier, vue: TransactionVue) -> SujetExpertVue |
             _compte_chiffre(vue.compte),
             _compte_suggere(vue.proposition),
         )
-    if not _ticket_necessaire(vue):
+    if not _ticket_necessaire(vue, categorie_origine):
         return None
     return _sujet(
         dossier,
@@ -4479,18 +4498,22 @@ def _sujet_selon_etat(
 
 
 PREFIXE_ANOMALIE = "anomalie:"
+# Ce que la file expert lit de chaque dossier.
+SourcesExpert = tuple[
+    LedgerService, DecisionRepository, JustificatifRepository, PropositionRepository
+]
 
 
 def _sujets_du_portefeuille(
     portefeuille: Sequence[Dossier],
-    sources: tuple[LedgerService, DecisionRepository, JustificatifRepository],
+    sources: SourcesExpert,
     agregats: AgregatsRepository,
     cache: CacheFileExpert,
 ) -> list[SujetExpertVue]:
     """Sujets gardés quand la version du dossier n'a pas bougé, recalculés
     sinon (AXE-824). La version est lue **avant** le calcul : une écriture
     arrivée pendant le calcul la fait monter, le prochain affichage refait."""
-    base, decisions, justificatifs = sources
+    base, decisions, justificatifs, propositions = sources
     ids = [dossier.id for dossier in portefeuille]
     versions = {d: ligne.version for d, ligne in agregats.lire(ids).items()}
     gardes = cache.lire(ids)
@@ -4501,7 +4524,9 @@ def _sujets_du_portefeuille(
         if garde is not None and garde.valables(version):
             sujets.extend(SujetExpertVue.model_validate(s) for s in garde.sujets)
             continue
-        calcules = _sujets_expert(dossier, base, decisions, justificatifs, None)
+        calcules = _sujets_expert(
+            dossier, base, decisions, justificatifs, None, propositions=propositions
+        )
         cache.enregistrer(dossier.id, version, [s.model_dump() for s in calcules])
         sujets.extend(calcules)
     return sujets
@@ -4514,16 +4539,19 @@ def _sujets_expert(
     justificatifs: JustificatifRepository,
     registre: InstructionsRepository | None,
     avec_anomalies: bool = True,
+    propositions: PropositionRepository | None = None,
 ) -> list[SujetExpertVue]:
     ledger = _ledger_avec_decisions(dossier, base, decisions)
     exclues = annulees(ledger.grand_livre(dossier.id))
+    origines = _categories_d_origine(dossier, ledger, propositions)
     sujets = [
         sujet
         for vue in _avec_categories(
             _vues_dossier(dossier, ledger, justificatifs), decisions.lister_decisions(dossier.id)
         )
         if EcritureId(vue.ecriture_id) not in exclues
-        if (sujet := _sujet_depuis_vue(dossier, vue)) is not None
+        if (sujet := _sujet_depuis_vue(dossier, vue, origines.get(EcritureId(vue.ecriture_id))))
+        is not None
     ]
     if avec_anomalies:
         sujets.extend(
@@ -4598,7 +4626,10 @@ def imputer_ecriture(
         base.enregistrer(annulation)
     base.enregistrer(nouvelle)
     sujets = _avec_moyens_de_paiement(
-        _sujets_expert(dossier, base, decisions, justificatifs, registre), propositions
+        _sujets_expert(
+            dossier, base, decisions, justificatifs, registre, propositions=propositions
+        ),
+        propositions,
     )
     return ImputationVue(
         ecriture_id=nouvelle.id,
@@ -4653,7 +4684,7 @@ def _sujets_qualifies(
     portefeuille: Sequence[Dossier],
     etat: EtatTags,
     registre: InstructionsRepository,
-    sources: tuple[LedgerService, DecisionRepository, JustificatifRepository],
+    sources: SourcesExpert,
 ) -> list[SujetExpertVue]:
     """Le cache garde toutes les alertes. Tags d'anomalies et qualifications
     s'appliquent à la lecture (AXE-814, AXE-829)."""
@@ -4691,11 +4722,11 @@ def _sujet_visible(
 def _anomalies_fraiches(
     dossier: Dossier,
     registre: InstructionsRepository,
-    sources: tuple[LedgerService, DecisionRepository, JustificatifRepository],
+    sources: SourcesExpert,
 ) -> list[SujetExpertVue]:
     """Reconstruit les anomalies d'un dossier qualifié en usage personnel :
     le cache ne contient pas la proposition de reclassement."""
-    base, decisions, justificatifs = sources
+    base, decisions, justificatifs, _propositions = sources
     ledger = _ledger_avec_decisions(dossier, base, decisions)
     exclues = annulees(ledger.grand_livre(dossier.id))
     return _sujets_anomalies(dossier, ledger, decisions, justificatifs, registre, exclues)
@@ -4723,7 +4754,7 @@ def _enregistrer_routes_expert(app: FastAPI) -> None:
         portefeuille = tuple(
             d for d in dossiers.lister_par_tenant(tenant_id) if not etat.exclu(d.id, "expert")
         )
-        sources = (base, decisions, justificatifs)
+        sources = (base, decisions, justificatifs, propositions)
         sujets = _avec_moyens_de_paiement(
             _sujets_qualifies(
                 _sujets_du_portefeuille(portefeuille, sources, agregats, cache),

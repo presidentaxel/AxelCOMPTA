@@ -5,4 +5,5 @@ Les lignes d'une autre version sont recalculées. Le verdict n'en fait pas
 partie : il est posé à la lecture.
 """
 
-VERSION_CLASSEES = 1
+# 2 : libellés sans l'ancien suffixe « (catégorie) » (AXE-848).
+VERSION_CLASSEES = 2

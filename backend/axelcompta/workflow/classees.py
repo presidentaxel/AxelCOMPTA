@@ -18,6 +18,7 @@ from typing import Literal
 
 from axelcompta.categorize.models import Etage, ProposedEntry
 from axelcompta.core.ids import DossierId, EcritureId
+from axelcompta.core.libelles import sans_categorie
 from axelcompta.ledger.contrepassation import annulees, origine
 from axelcompta.ledger.models import Ecriture, Sens
 
@@ -162,7 +163,7 @@ def _operation(
         dossier_id=ecriture.dossier_id,
         ecriture_id=ecriture.id,
         date=ecriture.date,
-        libelle=ecriture.libelle,
+        libelle=sans_categorie(ecriture.libelle),  # AXE-848
         montant_cts=_banque(ecriture),
         compte=compte,
         categorie=categorie,

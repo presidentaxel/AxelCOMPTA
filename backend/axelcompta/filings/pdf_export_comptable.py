@@ -13,6 +13,7 @@ from itertools import groupby
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
+from axelcompta.core.libelles import sans_categorie
 from axelcompta.ledger.models import Ecriture, Sens
 
 from .export_comptable import _totaux_par_compte
@@ -130,7 +131,8 @@ def rendre_grand_livre_pdf(ecritures: tuple[Ecriture, ...], *, dossier_id: str) 
             dessin.setFont("Helvetica", 8)
             dessin.drawString(_MARGE_G, y, ecriture.date.isoformat())
             dessin.drawString(_MARGE_G + 55, y, _id_ecriture_affiche(ecriture.id))
-            libelle = ecriture.libelle[:42] + ("…" if len(ecriture.libelle) > 42 else "")
+            complet = sans_categorie(ecriture.libelle)
+            libelle = complet[:42] + ("…" if len(complet) > 42 else "")
             dessin.drawString(_MARGE_G + 160, y, libelle)
             montant = _euros(ligne.montant.centimes)
             if ligne.sens is Sens.DEBIT:

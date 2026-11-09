@@ -51,3 +51,12 @@ def test_recette_debite_la_banque_et_credite_le_compte_de_produit() -> None:
     verifier_equilibre(ecriture)
     ligne_512 = next(ligne for ligne in ecriture.lignes if ligne.compte == "512")
     assert ligne_512.sens is Sens.DEBIT
+
+
+def test_le_libelle_est_celui_de_la_banque_sans_la_categorie() -> None:
+    """AXE-848 : la catégorie est dans la proposition enregistrée, plus dans
+    le libellé (elle finissait dans le FEC)."""
+    ecriture = construire_ecriture_categorisee(
+        _transaction(-45_00), _proposition("carburant"), compte="6061", numero=1
+    )
+    assert ecriture.libelle == "TOTAL ACCESS A6"

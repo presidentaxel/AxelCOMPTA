@@ -20,7 +20,8 @@ from axelcompta.core.ids import DossierId
 
 # À monter quand le calcul des sujets change sans écriture (règles, pack,
 # libellés) : les lignes d'une autre version sont recalculées.
-VERSION_FILE = 1
+# 2 : libellés sans l'ancien suffixe « (catégorie) » (AXE-848).
+VERSION_FILE = 2
 
 
 @dataclass(frozen=True, slots=True)

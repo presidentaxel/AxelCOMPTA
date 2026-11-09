@@ -114,3 +114,50 @@ def test_je_ne_sais_plus_reste_en_attente_et_passe_a_l_expert() -> None:
     (sujet,) = [s for s in sujets if s["id"] == f"trancher:{RETRAIT}"]
     assert sujet["cote"] == "gestionnaire"
     assert "ne sait plus" in sujet["detail"]
+
+
+def test_sans_suffixe_le_ticket_est_demande_d_apres_la_proposition() -> None:
+    """AXE-848 : la synchro n'écrit plus « (retrait_especes) » dans le
+    libellé. La catégorie d'origine se lit dans la proposition enregistrée,
+    et le ticket reste demandé ; le libellé affiché est celui de la banque."""
+    client = _client()
+    nouveau = EcritureId("DEMO_karim:digifactory-dab2")
+    _ledger_du_client(client).enregistrer(
+        Ecriture(
+            id=nouveau,
+            dossier_id=DossierId(KARIM),
+            journal=Journal.BQ,
+            date=date(2026, 3, 2),
+            libelle="RETRAIT DAB PARIS 11",
+            reference_piece=None,
+            lignes=(
+                LigneEcriture("512", Sens.CREDIT, Money(100_00)),
+                LigneEcriture("471", Sens.DEBIT, Money(100_00)),
+            ),
+        )
+    )
+    propositions = client.app.dependency_overrides[get_propositions]()  # type: ignore[attr-defined]
+    propositions.enregistrer(
+        nouveau,
+        ProposedEntry(
+            DossierId(KARIM), TransactionId("dab2"), CATEGORIE_RETRAIT_ESPECES, Etage.REGLE, 0.95
+        ),
+    )
+    reponse = client.post(
+        f"/dossiers/{KARIM}/transactions/{nouveau}/decision",
+        json={"categorie": "repas_et_receptions"},
+        headers=_en_tete(KARIM),
+    )
+    assert reponse.status_code == 200, reponse.text
+
+    sujets = client.get("/expert/file", headers=_en_tete_gestionnaire()).json()["sujets"]
+
+    (ticket,) = [s for s in sujets if s["id"] == f"ticket:{nouveau}"]
+    assert ticket["libelle"] == "RETRAIT DAB PARIS 11"
+
+
+def test_une_ancienne_ecriture_s_affiche_sans_sa_categorie() -> None:
+    client = _client_avec_retrait()  # libellé « … (retrait_especes) », d'avant AXE-848
+    operations = client.get(f"/dossiers/{KARIM}/transactions", headers=_en_tete(KARIM)).json()
+    (retrait,) = [o for o in operations if o["ecriture_id"] == RETRAIT]
+    assert retrait["libelle"] == "RETRAIT DAB PARIS 11"
