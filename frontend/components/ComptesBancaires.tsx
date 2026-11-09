@@ -4,8 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Etat } from "@/components/Etat";
 import { Squelette } from "@/components/Squelette";
-import { listerComptesBancairesChauffeur } from "@/lib/auth-chauffeur";
-import { rapprochement, titreCompte } from "@/lib/comptes-bancaires";
+import { Button } from "@/components/ui/button";
+import { ApiError } from "@/lib/api";
+import {
+  ErreurAuthChauffeur,
+  deciderCompteBancaireChauffeur,
+  listerComptesBancairesChauffeur,
+} from "@/lib/auth-chauffeur";
+import { choixCompte, estNonVentile, rapprochement, titreCompte } from "@/lib/comptes-bancaires";
 import { formatDate, formatMontant } from "@/lib/format";
 import type { CompteBancaireVue } from "@/lib/types";
 
@@ -55,7 +61,12 @@ export function ComptesBancaires({ dossierId }: { dossierId: string }) {
       {etat.statut === "pret" && etat.comptes.length > 0 && (
         <ul className="mt-3 divide-y divide-hairline">
           {etat.comptes.map((compte) => (
-            <LigneCompte key={compte.compte} compte={compte} />
+            <LigneCompte
+              key={compte.compte}
+              dossierId={dossierId}
+              compte={compte}
+              onDecide={(comptes) => setEtat({ statut: "pret", comptes })}
+            />
           ))}
         </ul>
       )}
@@ -63,8 +74,60 @@ export function ComptesBancaires({ dossierId }: { dossierId: string }) {
   );
 }
 
-function LigneCompte({ compte }: { compte: CompteBancaireVue }) {
+function LigneCompte({
+  dossierId,
+  compte,
+  onDecide,
+}: {
+  dossierId: string;
+  compte: CompteBancaireVue;
+  onDecide: (comptes: CompteBancaireVue[]) => void;
+}) {
   const etat = rapprochement(compte);
+  const choix = choixCompte(compte);
+  const [enCours, setEnCours] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  async function decider(retenu: boolean) {
+    setEnCours(true);
+    setErreur(null);
+    try {
+      onDecide(await deciderCompteBancaireChauffeur(dossierId, compte.compte, retenu));
+    } catch (exception) {
+      setErreur(
+        exception instanceof ErreurAuthChauffeur || exception instanceof ApiError
+          ? exception.message
+          : "Votre choix n'a pas pu être enregistré.",
+      );
+    } finally {
+      setEnCours(false);
+    }
+  }
+
+  if (choix !== "retenu") {
+    return (
+      <li className="py-3">
+        <span className="text-sm font-medium text-ink">{titreCompte(compte)}</span>
+        <p className="mt-1 text-sm text-subtle">
+          {choix === "a_decider"
+            ? "Ce compte sert-il à votre activité ? Tant que vous n'avez pas répondu, ses opérations ne sont pas comptées."
+            : "Compte personnel : ses opérations ne sont pas comptées."}
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Button type="button" variant="secondary" className="min-h-11" disabled={enCours} onClick={() => decider(true)}>
+            Oui, compte de l&apos;activité
+          </Button>
+          {choix === "a_decider" && (
+            <Button type="button" variant="secondary" className="min-h-11" disabled={enCours} onClick={() => decider(false)}>
+              Non, compte personnel
+            </Button>
+          )}
+        </div>
+        {erreur && <p className="mt-1 text-xs text-danger">{erreur}</p>}
+      </li>
+    );
+  }
+
   return (
     <li className="py-3">
       <div className="flex items-baseline justify-between gap-4">
@@ -86,6 +149,17 @@ function LigneCompte({ compte }: { compte: CompteBancaireVue }) {
           </span>
         )}
       </p>
+      {!estNonVentile(compte) && (
+        <button
+          type="button"
+          className="mt-1 min-h-11 text-xs font-medium text-primary underline-offset-2 hover:underline"
+          disabled={enCours}
+          onClick={() => decider(false)}
+        >
+          C&apos;est un compte personnel
+        </button>
+      )}
+      {erreur && <p className="mt-1 text-xs text-danger">{erreur}</p>}
     </li>
   );
 }

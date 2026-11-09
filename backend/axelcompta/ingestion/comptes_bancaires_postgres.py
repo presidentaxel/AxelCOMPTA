@@ -5,16 +5,18 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from sqlalchemy import and_, select, update
+from sqlalchemy import and_, literal, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Connection, Engine, Row
 
-from axelcompta.core.ids import DossierId
+from axelcompta.core.ids import DossierId, UserId
 from axelcompta.core.rls import appliquer_rls
+from axelcompta.workflow.audit import ACTE_COMPTE_ECARTE, ACTE_COMPTE_RETENU, noter
 
 from .comptes_bancaires import (
     NOMBRE_MAX_COMPTES,
     CompteBancaire,
+    CompteInconnu,
     CompteReleve,
     TropDeComptesBancaires,
     compte_comptable_suivant,
@@ -30,6 +32,8 @@ def _compte(ligne: Row[tuple[object, ...]]) -> CompteBancaire:
         nom=ligne.nom,
         solde_banque_cts=ligne.solde_banque_cts,
         solde_releve_le=ligne.solde_releve_le,
+        retenu=ligne.retenu,
+        a_relire=bool(ligne.a_relire),
     )
 
 
@@ -57,6 +61,7 @@ class PostgresCompteBancaireRepository:
                         identifiant=candidat.identifiant,
                         compte_comptable=candidat.compte_comptable,
                         nom=candidat.nom,
+                        retenu=candidat.retenu,
                         cree_le=datetime.now(UTC),
                     )
                     .on_conflict_do_nothing()
@@ -87,6 +92,42 @@ class PostgresCompteBancaireRepository:
                     )
                 )
                 .values(**valeurs)
+            )
+
+    def decider(
+        self, dossier_id: DossierId, compte_comptable: str, retenu: bool, par: UserId, le: datetime
+    ) -> CompteBancaire:
+        """Le choix et sa trace dans la même transaction (journal d'audit)."""
+        cible = and_(
+            comptes_bancaires.c.dossier_id == dossier_id,
+            comptes_bancaires.c.compte_comptable == compte_comptable,
+        )
+        # Retenu après coup : la prochaine synchro relit l'historique.
+        relire = or_(
+            comptes_bancaires.c.a_relire,
+            and_(literal(retenu), comptes_bancaires.c.retenu.is_not(True)),
+        )
+        with self._engine.begin() as connexion:
+            appliquer_rls(connexion)
+            ligne = connexion.execute(
+                update(comptes_bancaires)
+                .where(cible)
+                .values(retenu=retenu, a_relire=relire)
+                .returning(*comptes_bancaires.c)
+            ).first()
+            if ligne is None:
+                raise CompteInconnu(f"{dossier_id} : pas de compte {compte_comptable}")
+            acte = ACTE_COMPTE_RETENU if retenu else ACTE_COMPTE_ECARTE
+            noter(connexion, dossier_id, acte, compte_comptable, par, le)
+        return _compte(ligne)
+
+    def relu(self, dossier_id: DossierId) -> None:
+        with self._engine.begin() as connexion:
+            appliquer_rls(connexion)
+            connexion.execute(
+                update(comptes_bancaires)
+                .where(comptes_bancaires.c.dossier_id == dossier_id, comptes_bancaires.c.a_relire)
+                .values(a_relire=False)
             )
 
     @staticmethod
