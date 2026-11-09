@@ -65,6 +65,9 @@ class IdentiteAuthentifiee:
     email: str
     dossier_id: DossierId | None = None
     tenant_id: TenantId | None = None
+    # Niveau d'authentification Supabase (AXE-812) : « aal2 » une fois le
+    # code TOTP vérifié dans cette session, « aal1 » avec le mot de passe seul.
+    aal: str = "aal1"
 
 
 @lru_cache(maxsize=1)
@@ -120,6 +123,7 @@ def verifier_jwt(jeton: str, cle_verification: Any) -> IdentiteAuthentifiee:
         email=charge_utile.get("email", ""),
         dossier_id=DossierId(dossier_id) if dossier_id else None,
         tenant_id=TenantId(tenant_id) if tenant_id else None,
+        aal=str(charge_utile.get("aal", "aal1")),
     )
 
 
