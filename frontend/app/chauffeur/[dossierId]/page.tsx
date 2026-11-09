@@ -16,6 +16,7 @@ import {
   type DecisionEnAttente,
 } from "@/app/chauffeur/use-decision-differee";
 import { useDossierChauffeur, useOperationsChauffeur } from "@/app/chauffeur/use-dossier";
+import { ConfirmationEntreprise } from "@/components/ConfirmationEntreprise";
 import { ConfirmationGroupee } from "@/components/ConfirmationGroupee";
 import { Etat } from "@/components/Etat";
 import { QuestionCategorisation } from "@/components/QuestionCategorisation";
@@ -275,6 +276,7 @@ function Activite({
         {annonce}
       </div>
       <Entete dossier={dossier} onReessayer={reessayerEchecs} />
+      <ConfirmationEntreprise dossierId={dossierId} />
       {transactions.statut === "pret" && !sansOperation && (
       <div className="sticky top-0 z-20 -mx-4 mt-8 bg-canvas-app px-4 pb-3 pt-1">
         <div className="flex gap-2">

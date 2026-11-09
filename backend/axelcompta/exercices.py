@@ -49,6 +49,7 @@ from axelcompta.ledger.service import LedgerService
 from axelcompta.packs.vtc_demo import charger_compte_par_categorie
 from axelcompta.tenants.avenants import AvenantRegime, regime_pour_exercice
 from axelcompta.tenants.avenants_postgres import PostgresAvenantRegimeRepository
+from axelcompta.tenants.confirmation import raison_ambiguite
 from axelcompta.tenants.exercices import ExerciceClos, ExerciceDejaClos, ExerciceRepository
 from axelcompta.tenants.franchise_tva import EtatFranchise, MillesimeInconnu, suivre_franchise
 from axelcompta.tenants.models import Dossier
@@ -91,6 +92,10 @@ def preparer_passage(
             f"L'exercice se termine le {fin:%d/%m/%Y}. Il n'est pas terminé.",
             code="pas_termine",
         )
+    ambiguite = raison_ambiguite(dossier)
+    if ambiguite is not None:
+        # AXE-730 : on ne clôt pas un dossier dont la forme ou l'identité est incertaine.
+        raise PassageRefuse(ambiguite, code="configuration")
     en_attente = ecritures_a_trancher(ledger, decisions, dossier.id)
     if en_attente:
         nombre = len(en_attente)

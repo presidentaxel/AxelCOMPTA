@@ -6,10 +6,15 @@ clés étrangères."""
 from __future__ import annotations
 
 import dataclasses
+import importlib.util
 from collections.abc import Callable
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
@@ -19,6 +24,7 @@ from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, 
 from axelcompta.demo_identites import IDENTITE_KARIM
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.postgres import PostgresDossierRepository
+from axelcompta.workflow.orm import journal_audit
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
 from axelcompta.workflow.verdicts_postgres import PostgresVerdicts
 
@@ -204,3 +210,51 @@ def test_le_dernier_verdict_d_une_ecriture_fait_foi(
     depot.noter(DossierId("d1"), EcritureId("d1:e2"), "juste", UserId("louis"), le)
 
     assert PostgresVerdicts(engine).derniers(DossierId("d1")) == {"d1:e1": "faux", "d1:e2": "juste"}
+
+
+def test_la_confirmation_du_dirigeant_est_ecrite_et_tracee(engine: Engine, id_unique: str) -> None:
+    """AXE-730 : forme choisie, plus rien à confirmer, acte au journal d'audit."""
+    metadata.create_all(engine)
+    repo = PostgresDossierRepository(engine)
+    repo.enregistrer_tenant(Tenant(id=TenantId(id_unique), nom="T"))
+    dossier = dataclasses.replace(
+        _dossier(id_unique, id_unique), forme_juridique="SAS", a_confirmer=("forme_juridique",)
+    )
+    repo.enregistrer(dossier)
+
+    confirme = dataclasses.replace(dossier, forme_juridique="SASU", a_confirmer=())
+    repo.confirmer_configuration(confirme, UserId("dirigeant"), datetime(2026, 11, 6, tzinfo=UTC))
+
+    assert repo.obtenir(dossier.id) == confirme
+    with engine.connect() as connexion:
+        actes = connexion.execute(
+            select(
+                journal_audit.c.type_acte, journal_audit.c.reference, journal_audit.c.acteur
+            ).where(journal_audit.c.dossier_id == dossier.id)
+        ).all()
+    assert [tuple(acte) for acte in actes] == [
+        ("configuration_confirmee", "SASU/IS/reel_normal", "dirigeant")
+    ]
+
+
+def test_la_migration_marque_sas_et_sarl_a_confirmer(engine: Engine, id_unique: str) -> None:
+    """AXE-730 : une SAS créée avant AXE-834 n'a jamais confirmé sa forme."""
+    metadata.create_all(engine)
+    repo = PostgresDossierRepository(engine)
+    repo.enregistrer_tenant(Tenant(id=TenantId(id_unique), nom="T"))
+    sas = dataclasses.replace(_dossier(f"sas-{id_unique}", id_unique), forme_juridique="SAS")
+    sasu = _dossier(f"sasu-{id_unique}", id_unique)
+    for dossier in (sas, sasu):
+        repo.enregistrer(dossier)
+
+    chemin = Path(__file__).parents[2] / "migrations/versions/e4b9d2a7c815_forme_a_confirmer.py"
+    spec = importlib.util.spec_from_file_location("forme_a_confirmer", chemin)
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    with engine.begin() as connexion:
+        with Operations.context(MigrationContext.configure(connexion)):
+            migration.upgrade()
+
+    assert repo.obtenir(sas.id).a_confirmer == ("forme_juridique",)  # type: ignore[union-attr]
+    assert repo.obtenir(sasu.id).a_confirmer == ()  # type: ignore[union-attr]

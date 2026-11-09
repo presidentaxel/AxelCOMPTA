@@ -42,6 +42,8 @@
     "lib/moyens-paiement.ts",
     "lib/moyens-paiement.test.ts",
     "lib/retrait-especes.ts",
-    "lib/retrait-especes.test.ts"
+    "lib/retrait-especes.test.ts",
+    "lib/confirmation-configuration.ts",
+    "lib/confirmation-configuration.test.ts"
   ]
 }

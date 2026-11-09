@@ -19,6 +19,8 @@ from .orm import journal_audit
 ACTE_CONNEXION = "connexion"
 ACTE_EXPORT = "export"
 ACTE_CONSULTATION = "consultation"
+# Le dirigeant confirme forme et régimes (AXE-730).
+ACTE_CONFIGURATION = "configuration_confirmee"
 
 
 def noter(
