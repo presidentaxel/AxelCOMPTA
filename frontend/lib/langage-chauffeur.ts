@@ -11,6 +11,8 @@ const LIBELLES: Record<string, string> = {
   assurance_personnelle_sante: "Mutuelle",
   assurance_vehicule: "Assurance",
   carburant: "Carburant",
+  retrait_especes: "Retrait d'espèces",
+  a_preciser_expert: "À préciser par le comptable",
   charges_sociales_impots: "Cotisations et impôts",
   commissions_plateformes: "Commission de plateforme",
   compte_courant_associe: "Apport ou remboursement",
