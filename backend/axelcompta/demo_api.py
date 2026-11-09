@@ -3469,19 +3469,16 @@ def _preparer_cloture(
     avenants: AvenantRegimeRepository,
     provisions: tuple[ProvisionCloture, ...] = (),
 ) -> PassageExercice:
-    try:
-        return preparer_passage(
-            dossier,
-            ledger,
-            decisions,
-            avenants.lister(dossier.id),
-            datetime.now(UTC).date(),
-            provisions,
-        )
-    except PassageRefuse as exc:
-        erreur = HTTPException(status_code=409, detail=str(exc))
-        erreur.code_metier = exc.code  # type: ignore[attr-defined]
-        raise erreur from exc
+    """Lève `PassageRefuse` (un `Conflit` : 409 avec sa phrase, AXE-839) ;
+    l'aperçu la lit pour dire pourquoi, avec son code (AXE-853)."""
+    return preparer_passage(
+        dossier,
+        ledger,
+        decisions,
+        avenants.lister(dossier.id),
+        datetime.now(UTC).date(),
+        provisions,
+    )
 
 
 class ProvisionVue(BaseModel):
@@ -3579,11 +3576,11 @@ def _passage_cloture(
     )
 
 
-def _vue_cloture_impossible(refus: HTTPException, debut: str, fin: str) -> ClotureExerciceVue:
+def _vue_cloture_impossible(refus: PassageRefuse, debut: str, fin: str) -> ClotureExerciceVue:
     return ClotureExerciceVue(
         possible=False,
-        raison=str(refus.detail),
-        code=getattr(refus, "code_metier", None),
+        raison=str(refus),
+        code=refus.code,
         exercice_debut=debut,
         exercice_fin=fin,
     )
@@ -3605,7 +3602,7 @@ def _enregistrer_routes_cloture_exercice(app: FastAPI) -> None:
         debut, fin = dossier.exercice_debut.isoformat(), dossier.fin_exercice().isoformat()
         try:
             passage = _passage_cloture(dossier, ledger, decisions, avenants, provisions)
-        except HTTPException as refus:
+        except PassageRefuse as refus:
             return _vue_cloture_impossible(refus, debut, fin)
         return ClotureExerciceVue(
             possible=True,

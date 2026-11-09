@@ -77,6 +77,7 @@ from axelcompta.demo_comptes import Invitation
 from axelcompta.demo_comptes_memory import InMemoryCompteRepository
 from axelcompta.demo_identites import IDENTITE_SOPHIE
 from axelcompta.demo_justificatifs import InMemoryJustificatifRepository
+from axelcompta.exercices import attestation as attestation_exercice
 from axelcompta.ingestion.comptes_bancaires import CompteBancaireMemoire
 from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion
 from axelcompta.ingestion.journal import InMemoryJournalIngestion
@@ -2345,3 +2346,24 @@ def test_imputer_un_dossier_inconnu_ne_retourne_rien() -> None:
         headers=_en_tete_gestionnaire(),
     )
     assert reponse.status_code == 404
+
+
+def test_une_cloture_refusee_repond_409_avec_sa_phrase_et_l_apercu_garde_son_code() -> None:
+    """AXE-853 : le refus est une erreur métier (`PassageRefuse`, un
+    `Conflit`), plus une `HTTPException` décorée. L'aperçu lit son code ;
+    la validation répond 409 par le gestionnaire commun (AXE-839)."""
+    client = _client()
+    url = "/dossiers/DEMO_sophie/cloture-exercice"
+    en_tete = _en_tete("DEMO_sophie")
+    apercu = client.get(url, headers=en_tete).json()
+    assert (apercu["possible"], apercu["code"]) == (False, "operations")
+    depot = client.app.dependency_overrides[get_dossiers]()  # type: ignore[attr-defined]
+    sophie = depot.obtenir(DossierId("DEMO_sophie"))
+    assert sophie is not None and sophie.identite is not None
+    dirigeant = sophie.identite.dirigeant
+    texte = attestation_exercice(sophie, f"{dirigeant.prenoms} {dirigeant.nom}")
+
+    refus = client.post(url, headers=en_tete, json={"attestation": texte})
+
+    assert refus.status_code == 409
+    assert refus.json()["detail"] == apercu["raison"]
