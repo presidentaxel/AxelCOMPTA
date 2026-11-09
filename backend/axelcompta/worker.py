@@ -18,6 +18,7 @@ reçues ») s'affiche sous le bouton. Lancé chaque minute par le planificateur 
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
@@ -26,7 +27,7 @@ from datetime import UTC, date, datetime
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.ingestion.providers.digifactory import DigifactoryHttpClient
-from axelcompta.jobs.file import TYPE_SYNCHRO, Job
+from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, TYPE_SYNCHRO, Job
 from axelcompta.jobs.postgres import FilePostgres
 from axelcompta.nouveaux_contacts import (
     LireFiche,
@@ -38,6 +39,7 @@ from axelcompta.nouveaux_contacts import (
 from axelcompta.synchro_digifactory import ResultatDossier, synchroniser_portefeuille
 from axelcompta.tenants.contacts_proposes import ContactsProposesRepository, PropositionStockee
 from axelcompta.tenants.contacts_proposes_postgres import PostgresContactsProposes
+from axelcompta.tenants.import_dossiers import rapport as rapport_import
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.repository import DossierRepository
@@ -175,7 +177,23 @@ def resume(crees: int, propositions: list[Proposition], resultats: list[Resultat
     return ", ".join(morceaux)
 
 
+def importer_dossiers(job: Job, dossiers: DossierRepository) -> str:
+    """AXE-809 : les lignes du fichier, revalidées contre le portefeuille du
+    moment (un second dépôt ne crée rien de plus), créées dans un lot."""
+    tenant_id = TenantId(job.tenant_id)
+    lignes = json.loads(job.payload).get("lignes", [])
+    existants = [d.id for d in dossiers.lister_par_tenant(tenant_id)]
+    resultat = rapport_import(tenant_id, lignes, existants)
+    crees = dossiers.enregistrer_lot(resultat.valides)
+    morceaux = [_quantite(crees, "dossier créé", "dossiers créés")]
+    if resultat.en_erreur:
+        morceaux.append(_quantite(resultat.en_erreur, "ligne écartée", "lignes écartées"))
+    return ", ".join(morceaux)
+
+
 def executer_job(job: Job, deps: Dependances, aujourd_hui: date) -> str:
+    if job.type == TYPE_IMPORT_DOSSIERS:
+        return importer_dossiers(job, deps.dossiers)
     if job.type != TYPE_SYNCHRO:
         raise ValueError(f"type de job non pris en charge : {job.type}")
     return synchroniser_portefeuille_suivi(TenantId(job.tenant_id), deps, aujourd_hui)

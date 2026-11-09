@@ -193,6 +193,11 @@ export function EcranEntreprises() {
       </div>
       <AlerteConnexions />
       <SynchronisationPortefeuille ecriture={droit.ecriture} onTerminee={charger} />
+      {droit.admin && (
+        <Link href="/import-dossiers" className="mt-2 inline-block text-sm font-medium text-primary">
+          Importer des entreprises depuis un fichier
+        </Link>
+      )}
       {retires.length > 0 && (
         <section className="mt-6 rounded-lg border border-border bg-canvas p-4">
           <h2 className="text-sm font-semibold text-ink">Retirées de la liste</h2>

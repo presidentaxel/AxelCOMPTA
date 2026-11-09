@@ -3,13 +3,14 @@ qui fait de l'I/O)."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 
 from axelcompta.core.ids import DossierId, TenantId, UserId
 from axelcompta.core.rls import appliquer_rls
@@ -40,34 +41,19 @@ class PostgresDossierRepository(DossierRepository):
             )
 
     def enregistrer(self, dossier: Dossier) -> None:
-        configuration_de(dossier)
+        self.enregistrer_lot([dossier])
+
+    def enregistrer_lot(self, lot: Sequence[Dossier]) -> int:
+        """Tout le lot dans une transaction (AXE-809), ou rien. Un dossier déjà
+        présent est laissé tel quel. Renvoie le nombre de dossiers créés."""
+        for dossier in lot:
+            configuration_de(dossier)
+        crees = 0
         with self._engine.begin() as connexion:
             appliquer_rls(connexion)
-            connexion.execute(
-                insert(dossiers)
-                .values(
-                    id=dossier.id,
-                    tenant_id=dossier.tenant_id,
-                    forme_juridique=dossier.forme_juridique,
-                    regime_imposition=dossier.regime_imposition,
-                    regime_tva=dossier.regime_tva,
-                    nom=dossier.nom,
-                    tva_recettes_regime=dossier.tva_recettes_regime,
-                    exercice_debut=dossier.exercice_debut,
-                    plateformes=list(dossier.plateformes),
-                    mode_acces_bancaire=dossier.mode_acces_bancaire,
-                    contact_nr=dossier.contact_nr,
-                    exercice_fin=dossier.exercice_fin,
-                    identite=identite_vers_json(dossier.identite),
-                    retire_le=dossier.retire_le,
-                    pack_metier=dossier.pack_metier,
-                    option_ir_debut=dossier.option_ir_debut,
-                    relance_consentement=dossier.relance_consentement,
-                    code_naf=dossier.code_naf,
-                    a_confirmer=list(dossier.a_confirmer),
-                )
-                .on_conflict_do_nothing(index_elements=[dossiers.c.id])
-            )
+            for dossier in lot:
+                crees += _inserer(connexion, dossier)
+        return crees
 
     def obtenir(self, dossier_id: DossierId) -> Dossier | None:
         with self._engine.connect() as connexion:
@@ -246,3 +232,33 @@ def _vers_tenant(ligne: Any) -> Tenant:
     return Tenant(
         id=TenantId(ligne.id), nom=ligne.nom, relance_consentement=ligne.relance_consentement
     )
+
+
+def _inserer(connexion: Connection, dossier: Dossier) -> int:
+    """1 si le dossier est créé, 0 s'il existait déjà (idempotent sur l'id)."""
+    resultat = connexion.execute(
+        insert(dossiers)
+        .values(
+            id=dossier.id,
+            tenant_id=dossier.tenant_id,
+            forme_juridique=dossier.forme_juridique,
+            regime_imposition=dossier.regime_imposition,
+            regime_tva=dossier.regime_tva,
+            nom=dossier.nom,
+            tva_recettes_regime=dossier.tva_recettes_regime,
+            exercice_debut=dossier.exercice_debut,
+            plateformes=list(dossier.plateformes),
+            mode_acces_bancaire=dossier.mode_acces_bancaire,
+            contact_nr=dossier.contact_nr,
+            exercice_fin=dossier.exercice_fin,
+            identite=identite_vers_json(dossier.identite),
+            retire_le=dossier.retire_le,
+            pack_metier=dossier.pack_metier,
+            option_ir_debut=dossier.option_ir_debut,
+            relance_consentement=dossier.relance_consentement,
+            code_naf=dossier.code_naf,
+            a_confirmer=list(dossier.a_confirmer),
+        )
+        .on_conflict_do_nothing(index_elements=[dossiers.c.id])
+    )
+    return int(resultat.rowcount or 0)
