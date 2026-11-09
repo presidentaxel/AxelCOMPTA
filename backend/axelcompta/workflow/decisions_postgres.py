@@ -9,7 +9,7 @@ import uuid
 from collections.abc import Sequence
 
 from sqlalchemy import select
-from sqlalchemy.engine import Engine, Row
+from sqlalchemy.engine import Connection, Engine, Row
 
 from axelcompta.categorize.models import Etage
 from axelcompta.core.ids import DossierId, EcritureId, UserId
@@ -33,27 +33,7 @@ class PostgresDecisionRepository(DecisionRepository):
         with self._engine.begin() as connexion:
             appliquer_rls(connexion)
             for decision in decisions:
-                identifiant = str(uuid.uuid4())
-                connexion.execute(
-                    decisions_humaines.insert().values(
-                        id=identifiant,
-                        dossier_id=decision.dossier_id,
-                        ecriture_id=decision.ecriture_id,
-                        categorie=decision.categorie,
-                        etage_origine=decision.etage_origine.name,
-                        confiance_origine=decision.confiance_origine,
-                        decide_par=decision.decide_par,
-                        decide_le=decision.decide_le,
-                    )
-                )
-                noter(
-                    connexion,
-                    decision.dossier_id,
-                    "decision",
-                    identifiant,
-                    decision.decide_par,
-                    decision.decide_le,
-                )
+                inserer_decision(connexion, decision)
 
     def decision_courante(
         self, dossier_id: DossierId, ecriture_id: EcritureId
@@ -115,6 +95,32 @@ class PostgresDecisionRepository(DecisionRepository):
                 )
                 for ligne in resultat
             )
+
+
+def inserer_decision(connexion: Connection, decision: DecisionHumaine) -> None:
+    """La décision et sa ligne de journal d'audit, dans la transaction de
+    l'appelant (contexte RLS déjà posé)."""
+    identifiant = str(uuid.uuid4())
+    connexion.execute(
+        decisions_humaines.insert().values(
+            id=identifiant,
+            dossier_id=decision.dossier_id,
+            ecriture_id=decision.ecriture_id,
+            categorie=decision.categorie,
+            etage_origine=decision.etage_origine.name,
+            confiance_origine=decision.confiance_origine,
+            decide_par=decision.decide_par,
+            decide_le=decision.decide_le,
+        )
+    )
+    noter(
+        connexion,
+        decision.dossier_id,
+        "decision",
+        identifiant,
+        decision.decide_par,
+        decision.decide_le,
+    )
 
 
 def _ligne_vers_decision(ligne: Row[tuple[object, ...]]) -> DecisionHumaine:

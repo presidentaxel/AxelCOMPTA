@@ -20,6 +20,11 @@ import {
   retirerDossier,
   type RegleRappel,
 } from "@/lib/auth-gestionnaire";
+import {
+  attendUnChoixDeCompte,
+  bandeauComptesAChoisir,
+  phraseComptesAChoisir,
+} from "@/lib/comptes-a-choisir";
 import { phraseAConfirmer } from "@/lib/configuration-dossier";
 import {
   libelleBanque,
@@ -47,6 +52,7 @@ import {
   TagsDuDossier,
 } from "@/components/TagsEntreprises";
 
+const COMPTES_A_CHOISIR = "a_choisir";
 type FiltreCompte = "tous" | "sans_compte" | "invite" | "ouvert";
 type FiltreResultat = "tous" | "negatif" | "positif";
 
@@ -65,6 +71,7 @@ export function EcranEntreprises() {
   const forme = params.get("forme") ?? "toutes";
   const tva = params.get("tva") ?? "toutes";
   const etape = params.get("etape") ?? "toutes";
+  const banque = params.get("banque") === COMPTES_A_CHOISIR ? COMPTES_A_CHOISIR : "toutes";
   const tag = params.get("tag") ?? TOUS_LES_TAGS;
   const [reglageTags, setReglageTags] = useState<ReglageTags | null>(null);
   const [coches, setCoches] = useState<string[]>([]);
@@ -141,6 +148,7 @@ export function EcranEntreprises() {
       if (forme !== "toutes" && dossier.forme_juridique !== forme) return false;
       if (tva !== "toutes" && dossier.tva_recettes_regime !== tva) return false;
       if (etape !== "toutes" && !gardeEtape(dossier, etape)) return false;
+      if (banque === COMPTES_A_CHOISIR && !attendUnChoixDeCompte(dossier)) return false;
       if (!gardeTag({ tags: dossier.tags ?? [] }, tag)) return false;
       if (!aiguille) return true;
       return `${dossier.nom} ${dossier.plateformes.join(" ")}`.toLowerCase().includes(aiguille);
@@ -155,8 +163,9 @@ export function EcranEntreprises() {
       }
       return a.nom.localeCompare(b.nom, "fr");
     });
-  }, [compte, dossiers, etape, forme, recherche, resultat, tag, tri, tva]);
+  }, [banque, compte, dossiers, etape, forme, recherche, resultat, tag, tri, tva]);
 
+  const bandeau = useMemo(() => bandeauComptesAChoisir(dossiers ?? []), [dossiers]);
   const pages = Math.max(1, Math.ceil(visibles.length / PAR_PAGE));
   const pageCourante = Math.min(page, pages);
   const tranche = visibles.slice((pageCourante - 1) * PAR_PAGE, pageCourante * PAR_PAGE);
@@ -167,6 +176,7 @@ export function EcranEntreprises() {
     forme !== "toutes" ||
     tva !== "toutes" ||
     etape !== "toutes" ||
+    banque !== "toutes" ||
     tag !== TOUS_LES_TAGS ||
     tri !== "nom";
 
@@ -193,6 +203,11 @@ export function EcranEntreprises() {
       </div>
       <AlerteConnexions />
       <SynchronisationPortefeuille ecriture={droit.ecriture} onTerminee={charger} />
+      {droit.admin && (
+        <Link href="/import-dossiers" className="mt-2 inline-block text-sm font-medium text-primary">
+          Importer des entreprises depuis un fichier
+        </Link>
+      )}
       {retires.length > 0 && (
         <section className="mt-6 rounded-lg border border-border bg-canvas p-4">
           <h2 className="text-sm font-semibold text-ink">Retirées de la liste</h2>
@@ -253,6 +268,18 @@ export function EcranEntreprises() {
         )
       )}
 
+      {bandeau && banque !== COMPTES_A_CHOISIR && (
+        <div
+          role="status"
+          className="mt-6 flex flex-wrap items-center gap-3 rounded-md border border-warning/40 bg-pending-subtle px-4 py-3"
+        >
+          <p className="flex-1 text-sm text-ink">{bandeau}</p>
+          <Button type="button" variant="secondary" size="sm" onClick={() => ecrire({ banque: COMPTES_A_CHOISIR })}>
+            Voir ces entreprises
+          </Button>
+        </div>
+      )}
+
       <div className="mt-8 flex items-center gap-2">
         <Input
           value={recherche}
@@ -298,6 +325,15 @@ export function EcranEntreprises() {
           }))}
           onChoisir={(valeur) => ecrire({ etape: valeur })}
         />
+        <Filtre
+          libelle="Comptes bancaires"
+          valeur={banque}
+          options={[
+            { id: "toutes", libelle: "Tous" },
+            { id: COMPTES_A_CHOISIR, libelle: "À choisir" },
+          ]}
+          onChoisir={(valeur) => ecrire({ banque: valeur })}
+        />
         {reglageTags && (
           <Filtre
             libelle="Tag"
@@ -322,7 +358,8 @@ export function EcranEntreprises() {
         />
         {filtresActifs && (
           <Button type="button" variant="ghost" size="sm" onClick={() => ecrire({
-            q: null, compte: null, resultat: null, forme: null, tva: null, etape: null, tag: null, tri: null,
+            q: null, compte: null, resultat: null, forme: null, tva: null, etape: null, banque: null, tag: null,
+            tri: null,
           })}>
             Réinitialiser
           </Button>
@@ -410,7 +447,12 @@ export function EcranEntreprises() {
                     etape={dossier.etape_precedente}
                     compteOuvert={dossier.statut_invitation === "actif"}
                   />
-                  {[dossier.alerte_regime, dossier.alerte_tva, phraseAConfirmer(dossier.a_confirmer ?? [])]
+                  {[
+                    dossier.alerte_regime,
+                    dossier.alerte_tva,
+                    phraseAConfirmer(dossier.a_confirmer ?? []),
+                    phraseComptesAChoisir(dossier),
+                  ]
                     .filter((alerte): alerte is string => alerte !== null)
                     .map((alerte) => (
                       <span key={alerte} className="block text-sm text-subtle">

@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import base64
-
 import pytest
 
 from axelcompta.jobs.executer import executer
 from axelcompta.jobs.file import FileMemoire, TypeInconnu
 from axelcompta.jobs.postgres import REQUETE_PRENDRE
-from axelcompta.tenants.mfa import code_totp, secret_aleatoire, verifier_totp
 from axelcompta.tenants.roles import peut
 from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_CONSULTATION, ACTE_EXPORT
 
@@ -57,14 +54,6 @@ def test_un_type_inconnu_est_refuse() -> None:
 
 def test_la_requete_postgres_saute_les_lignes_verrouillees() -> None:
     assert "FOR UPDATE SKIP LOCKED" in REQUETE_PRENDRE
-
-
-def test_vecteur_rfc_6238() -> None:
-    secret = base64.b32encode(b"12345678901234567890").decode("ascii").rstrip("=")
-    assert code_totp(secret, 59) == "287082"
-    assert verifier_totp(secret, "287082", 59)
-    assert not verifier_totp(secret, "000000", 59)
-    assert len(secret_aleatoire()) > 0
 
 
 def test_les_roles_v1() -> None:

@@ -3,6 +3,7 @@ contacts Digifactory et synchronise, avec un résumé pour l'écran."""
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 
 from axelcompta.core.ids import DossierId, TenantId
@@ -113,3 +114,40 @@ def test_le_passage_planifie_propose_les_nouveaux_contacts() -> None:
     ]
     assert len(contacts.propositions(T)) == 3
     assert synchros == []  # la détection seule ne synchronise pas
+
+
+def test_l_import_cree_les_lignes_valides_en_un_lot_et_ne_double_rien() -> None:
+    """AXE-809 : le worker revalide contre le portefeuille du moment."""
+    from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, Job
+    from axelcompta.tenants.memory import InMemoryDossierRepository
+    from axelcompta.tenants.models import Tenant
+    from axelcompta.worker import importer_dossiers
+
+    depot = InMemoryDossierRepository()
+    depot.enregistrer_tenant(Tenant(id=TenantId("t"), nom="T"))
+    ligne = {
+        "siren": "552100554",
+        "nom": "MK DRIVING",
+        "forme_juridique": "SASU",
+        "regime_imposition": "IS",
+        "regime_tva": "reel_normal",
+        "exercice_debut": "2026-01-01",
+    }
+    job = Job(
+        "j1",
+        "t",
+        TYPE_IMPORT_DOSSIERS,
+        json.dumps({"lignes": [ligne, {**ligne, "siren": "1"}]}),
+        10,
+        "en_cours",
+        1,
+        "worker",
+        1,
+    )
+
+    premier = importer_dossiers(job, depot)
+    second = importer_dossiers(job, depot)
+
+    assert premier == "1 dossier créé, 1 ligne écartée"
+    assert second == "0 dossier créé, 2 lignes écartées"
+    assert [d.nom for d in depot.lister_par_tenant(TenantId("t"))] == ["MK DRIVING"]

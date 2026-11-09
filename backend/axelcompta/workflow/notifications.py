@@ -40,6 +40,9 @@ TYPE_CONNEXION_J14 = "connexion_j14"
 TYPE_CONNEXION_J7 = "connexion_j7"
 TYPE_CONNEXION_EXPIREE = "connexion_expiree"
 TYPE_CONNEXION_A_REFAIRE = "connexion_a_refaire"
+# AXE-851 : un compte bancaire attend le choix du dirigeant (activité ou
+# personnel). Tant qu'il n'a pas choisi, la synchro écarte ses opérations.
+TYPE_COMPTES_A_CHOISIR = "comptes_a_choisir"
 MESSAGES_FIXES = {
     TYPE_CLOTURE_A_VALIDER: "Votre exercice est terminé : relisez-le et validez sa clôture.",
     TYPE_CONNEXION_J14: (
@@ -196,14 +199,26 @@ def regrouper(
     return tuple(sorted(retenus.values(), key=lambda n: n.envoye_le, reverse=True))
 
 
-def texte_cloche(notification: NotificationEnvoyee, nb_a_trancher: int) -> str | None:
-    """Texte affiché. Le nombre d'opérations est celui du moment : celui de
-    l'envoi resterait après qu'elles ont été traitées. Zéro : on n'affiche
-    pas, pour ne pas ouvrir un écran « Tout est à jour »."""
+def message_comptes_a_choisir(nb: int) -> str:
+    if nb == 1:
+        return "Un compte bancaire attend votre choix : sert-il à votre activité ?"
+    return f"{nb} comptes bancaires attendent votre choix : servent-ils à votre activité ?"
+
+
+def texte_cloche(
+    notification: NotificationEnvoyee, nb_a_trancher: int, comptes_a_choisir: int = 0
+) -> str | None:
+    """Texte affiché. Les nombres sont ceux du moment : ceux de l'envoi
+    resteraient après traitement. Zéro : on n'affiche pas, pour ne pas
+    ouvrir un écran « Tout est à jour »."""
     if notification.type == TYPE_A_TRANCHER:
         if nb_a_trancher < 1:
             return None
         return message(nb_a_trancher)
+    if notification.type == TYPE_COMPTES_A_CHOISIR:
+        if comptes_a_choisir < 1:
+            return None
+        return message_comptes_a_choisir(comptes_a_choisir)
     if notification.type in MESSAGES_FIXES:
         return MESSAGES_FIXES[notification.type]
     return None
@@ -222,11 +237,12 @@ def pour_la_cloche(
     notifications: Sequence[NotificationEnvoyee],
     nb_a_trancher: int,
     limite: int,
+    comptes_a_choisir: int = 0,
 ) -> tuple[NotificationCloche, ...]:
     """Ce que la cloche montre : un sujet, un texte à jour, au plus `limite`."""
     affichees: list[NotificationCloche] = []
     for notification in regrouper(notifications):
-        texte = texte_cloche(notification, nb_a_trancher)
+        texte = texte_cloche(notification, nb_a_trancher, comptes_a_choisir)
         if texte is None:
             continue
         affichees.append(
@@ -300,3 +316,29 @@ def notifier_cloture_a_valider(
         )
     )
     return ResultatNotification(dossier_id, "creee", type=TYPE_CLOTURE_A_VALIDER)
+
+
+def notifier_comptes_a_choisir(
+    dossier_id: DossierId,
+    nb_comptes: int,
+    notifications: NotificationRepository,
+    maintenant: datetime,
+) -> ResultatNotification:
+    """AXE-851. Une notification dès qu'un compte attend le choix du
+    dirigeant, puis un rappel par `RAPPEL` tant qu'il attend. Choisir vide
+    le compteur, ce qui arrête les rappels d'eux-mêmes."""
+    if nb_comptes < 1:
+        return ResultatNotification(dossier_id, "rien_a_faire", type=TYPE_COMPTES_A_CHOISIR)
+    derniere = notifications.derniere(dossier_id, TYPE_COMPTES_A_CHOISIR)
+    if derniere is not None and maintenant - derniere.envoye_le < RAPPEL:
+        return ResultatNotification(dossier_id, "deja_notifie", type=TYPE_COMPTES_A_CHOISIR)
+    notifications.enregistrer(
+        NotificationEnvoyee(
+            id=uuid.uuid4().hex,
+            dossier_id=dossier_id,
+            type=TYPE_COMPTES_A_CHOISIR,
+            envoye_le=maintenant,
+            ecriture_ids=(),
+        )
+    )
+    return ResultatNotification(dossier_id, "creee", type=TYPE_COMPTES_A_CHOISIR)

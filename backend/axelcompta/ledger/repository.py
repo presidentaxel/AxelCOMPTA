@@ -29,26 +29,9 @@ class PostgresLedgerService(LedgerService):
         self._engine = engine
 
     def enregistrer(self, ecriture: Ecriture) -> EcritureId:
-        verifier_equilibre(ecriture)
         with self._engine.begin() as connexion:
             appliquer_rls(connexion)
-            verifier_hors_periode_close(
-                ecriture.date, _periodes_closes(connexion, ecriture.dossier_id)
-            )
-            connexion.execute(
-                ecritures.insert().values(
-                    id=ecriture.id,
-                    dossier_id=ecriture.dossier_id,
-                    journal=ecriture.journal.name,
-                    date=ecriture.date,
-                    libelle=ecriture.libelle,
-                    reference_piece=ecriture.reference_piece,
-                )
-            )
-            connexion.execute(
-                lignes_ecriture.insert(),
-                [_ligne_vers_ligne(ecriture.id, ligne) for ligne in ecriture.lignes],
-            )
+            inserer_ecriture(connexion, ecriture)
         return ecriture.id
 
     def periodes_closes(self, dossier_id: DossierId) -> tuple[Periode, ...]:
@@ -65,6 +48,29 @@ class PostgresLedgerService(LedgerService):
             dataclasses.replace(entete, lignes=tuple(lignes_par_ecriture.get(eid, ())))
             for eid, entete in entetes.items()
         )
+
+
+def inserer_ecriture(connexion: Connection, ecriture: Ecriture) -> None:
+    """Écrit une écriture dans la transaction de l'appelant, après les mêmes
+    contrôles que `enregistrer` : équilibre (I1) et période ouverte (I4).
+    Sert à écrire une écriture avec un autre fait, tout ou rien (AXE-852).
+    Le contexte RLS doit déjà être posé sur `connexion`."""
+    verifier_equilibre(ecriture)
+    verifier_hors_periode_close(ecriture.date, _periodes_closes(connexion, ecriture.dossier_id))
+    connexion.execute(
+        ecritures.insert().values(
+            id=ecriture.id,
+            dossier_id=ecriture.dossier_id,
+            journal=ecriture.journal.name,
+            date=ecriture.date,
+            libelle=ecriture.libelle,
+            reference_piece=ecriture.reference_piece,
+        )
+    )
+    connexion.execute(
+        lignes_ecriture.insert(),
+        [_ligne_vers_ligne(ecriture.id, ligne) for ligne in ecriture.lignes],
+    )
 
 
 def _periodes_closes(connexion: Connection, dossier_id: DossierId) -> tuple[Periode, ...]:

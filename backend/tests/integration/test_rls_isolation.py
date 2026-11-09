@@ -35,6 +35,7 @@ from axelcompta.ingestion.comptes_bancaires import CompteBancaire, CompteInconnu
 from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
 from axelcompta.ingestion.consentement import ReleveSante, SanteConnexion, StatutConsentement
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
+from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.tenants.affectations import AffectationDejaDecidee, DecisionAffectation
@@ -43,6 +44,7 @@ from axelcompta.tenants.avenants import AvenantRegime, MotifAvenant
 from axelcompta.tenants.avenants_postgres import PostgresAvenantRegimeRepository
 from axelcompta.tenants.exercices import ExerciceClos, ExerciceDejaClos
 from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
+from axelcompta.tenants.journal_portefeuille_postgres import PostgresJournalPortefeuille
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.statuts import RegimeImposition
@@ -554,3 +556,62 @@ def test_le_dirigeant_ne_change_que_le_choix_de_ses_comptes(
 
     assert depot_admin.lister(DossierId("sophie"))[0].retenu is False
     assert depot_admin.lister(DossierId("karim"))[0].retenu is None
+
+
+def test_journal_portefeuille_isole_par_portefeuille_et_en_ajout_seul(
+    engine: Engine, engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """AXE-812 (migration `b8e4c2d7a613`) : un portefeuille ne lit ni
+    n'écrit le journal d'un autre, et une ligne ne se modifie pas."""
+    le = datetime(2026, 11, 9, 9, 0, tzinfo=UTC)
+    journal_web = PostgresJournalPortefeuille(engine_web)
+    with contexte_identite(dossier_id=None, tenant_id="tenant-a"):
+        journal_web.noter(TenantId("tenant-a"), "connexion", "127.0.0.1 · test", UserId("u"), le)
+        with pytest.raises((ProgrammingError, DBAPIError)):
+            journal_web.noter(TenantId("tenant-b"), "connexion", "x", UserId("u"), le)
+    with contexte_identite(dossier_id=None, tenant_id="tenant-b"):
+        with engine_web.connect() as connexion:
+            appliquer_rls(connexion)
+            visibles = connexion.execute(text("SELECT count(*) FROM journal_portefeuille")).scalar()
+    assert visibles == 0
+    with engine.begin() as connexion, pytest.raises((ProgrammingError, DBAPIError)):
+        connexion.execute(text("UPDATE journal_portefeuille SET reference = 'efface'"))
+
+
+def test_comptes_a_choisir_ne_donne_que_des_nombres_du_portefeuille(
+    engine: Engine, engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """AXE-851 (migration `a7d3e5c1b904`) : le gestionnaire voit, par
+    dossier de son portefeuille, combien de comptes attendent un choix et
+    combien d'opérations ils retiennent. L'archive brute reste fermée au
+    rôle web : la fonction ne renvoie que des comptages."""
+    karim = DossierId("karim")
+    depot_admin = PostgresCompteBancaireRepository(engine)
+    depot_admin.ajouter(CompteBancaire(karim, "pro", "5121", retenu=True))
+    depot_admin.ajouter(CompteBancaire(karim, "perso", "5122"))
+    depot_admin.ajouter(CompteBancaire(karim, "livret", "5123"))
+    depot_admin.ajouter(CompteBancaire(DossierId("yanis"), "autre", "5121"))
+    journal = PostgresJournalIngestion(engine)
+    for transaction, compte, maj in (
+        ("t1", "perso", "1"),
+        ("t1", " perso ", "2"),  # relue modifiée : une seule opération
+        ("t2", "perso", "1"),
+        ("t3", "livret", "1"),
+        ("t4", "pro", "1"),  # compte retenu : ne compte pas
+    ):
+        payload: dict[str, object] = {"id": transaction, "account_id": compte, "maj": maj}
+        journal.archiver(karim, "digifactory", transaction, maj, payload)
+    depot_web = PostgresCompteBancaireRepository(engine_web)
+    tous = [karim, DossierId("sophie"), DossierId("yanis")]
+
+    with contexte_identite(dossier_id=None, tenant_id="tenant-a"):
+        vus = depot_web.a_choisir(tous)
+        with engine_web.connect() as connexion, pytest.raises((ProgrammingError, DBAPIError)):
+            appliquer_rls(connexion)
+            connexion.execute(text("SELECT count(*) FROM ingestion_brut"))
+    assert set(vus) == {karim}
+    assert (vus[karim].nombre, vus[karim].operations) == (2, 3)
+    with contexte_identite(dossier_id=None, tenant_id="tenant-b"):
+        assert set(depot_web.a_choisir(tous)) == {DossierId("yanis")}
+    with contexte_identite(dossier_id=None, tenant_id=None):
+        assert depot_web.a_choisir(tous) == {}

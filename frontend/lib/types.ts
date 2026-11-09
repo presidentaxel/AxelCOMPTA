@@ -89,6 +89,10 @@ export type DossierAgregat = {
   /** AXE-829 : tags du dossier ; exclu des compteurs, il reste listé, grisé. */
   tags: string[];
   exclu_compteurs: boolean;
+  /** AXE-851 : comptes bancaires qui attendent le choix du dirigeant, sans leur détail. */
+  comptes_a_choisir: number;
+  comptes_a_choisir_depuis: string | null;
+  operations_en_attente_de_choix: number;
 };
 
 export type TagPortefeuille = { nom: string; description: string };

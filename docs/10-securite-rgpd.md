@@ -5,8 +5,16 @@
 >   avant tout LLM avec tests de fuite (AXE-436), journal d'audit
 >   append-only des décisions et signatures, Sentry seulement si un DSN est
 >   posé.
-> - Pas fait : MFA demandée à la connexion et journal des connexions et
->   exports (AXE-812), sauvegardes avec restauration testée et hébergement
+> - **AXE-812 (9 nov.)** : MFA native de Supabase. L'admin (et, avec
+>   AXE-800, l'expert-comptable) n'ouvre le portefeuille qu'avec un jeton
+>   `aal2` (code TOTP vérifié) ; sinon seul l'écran « Double
+>   authentification » répond. Pas de codes de secours natifs : un autre
+>   admin réinitialise, tracé au `journal_portefeuille` (ajout seul). Chaque
+>   export (FEC, liasses, grand livre, balance, dossier greffe) et chaque
+>   connexion laissent une ligne au journal d'audit ; le dirigeant les relit
+>   sur son écran Compte. Les connexions **échouées** ne passent pas par
+>   l'API : elles se lisent dans les journaux de Supabase Auth.
+> - Pas fait : sauvegardes avec restauration testée et hébergement
 >   de production (AXE-811), isolation de la production, qui ne contient plus de données de démo (AXE-810, doc 17), DPA et
 >   CGU (AXE-813), offboarding (export et purge d'un tenant, doc 14 :
 >   aucun ticket).
