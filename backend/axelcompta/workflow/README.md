@@ -134,6 +134,13 @@ repliés dans l'opération) ; FEC, grand livre et balance lisent
 appliquées par-dessus tant que `scripts/materialiser_decisions.py` n'est pas
 passé.
 
+`decisions_et_reclassements.py` (AXE-852) : la décision et son OD
+s'écrivent ensemble, tout ou rien. Les OD se calculent d'abord, sans rien
+écrire ; `PostgresDecisionsEtReclassements` écrit décisions, journal d'audit
+et OD dans une seule transaction (`inserer_decision`, `inserer_ecriture`).
+Une OD refusée (déséquilibre, période close) ne laisse plus de décision
+seule. En mémoire, `EnSequence` écrit les OD avant les décisions.
+
 ## Quarantaine d'ingestion résolue par le gestionnaire (AXE-424)
 
 `quarantaine.py` (pur) : accepter une opération modifiée par la banque
