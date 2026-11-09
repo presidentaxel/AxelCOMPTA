@@ -12,6 +12,7 @@ from axelcompta.core.money import Money
 from axelcompta.demo_api import (
     get_comptes_bancaires,
     get_ledger,
+    get_notifications,
     libelles_banques,
     vues_comptes_bancaires,
 )
@@ -23,6 +24,7 @@ from axelcompta.ingestion.comptes_bancaires import (
 )
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.ledger.service import LedgerService
+from axelcompta.workflow.notifications import notifier_comptes_a_choisir
 from tests.test_demo_api import (  # noqa: F401 — fixtures autouse réutilisées
     _client_et_stubs,
     _en_tete,
@@ -176,3 +178,36 @@ def test_seul_le_dirigeant_decide() -> None:
         headers=_en_tete_gestionnaire(),
     )
     assert reponse.status_code == 403
+
+
+def test_le_gestionnaire_voit_combien_de_comptes_attendent_un_choix() -> None:
+    """AXE-851 : un nombre, une date et les opérations retenues, sans le
+    nom ni le solde des comptes (doc 19 §2.4)."""
+    client, comptes = _client_pro_et_perso()
+    comptes.operations[(KARIM, "perso")] = 12
+
+    reponse = client.get("/dossiers", headers=_en_tete_gestionnaire())
+
+    par_dossier = {d["dossier_id"]: d for d in reponse.json()}
+    karim = par_dossier["DEMO_karim"]
+    assert (karim["comptes_a_choisir"], karim["operations_en_attente_de_choix"]) == (1, 12)
+    assert karim["comptes_a_choisir_depuis"] is not None
+    assert "Livret" not in reponse.text
+    assert par_dossier["DEMO_sophie"]["comptes_a_choisir"] == 0
+    _decider(client, "5122", False)
+    apres = client.get("/dossiers", headers=_en_tete_gestionnaire()).json()
+    assert {d["dossier_id"]: d["comptes_a_choisir"] for d in apres}["DEMO_karim"] == 0
+
+
+def test_la_cloche_du_chauffeur_dit_combien_de_comptes_attendent() -> None:
+    client, comptes = _client_pro_et_perso()
+    overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
+    notifier_comptes_a_choisir(KARIM, 1, overrides[get_notifications](), datetime(2026, 11, 9))
+    url = "/dossiers/DEMO_karim/notifications"
+
+    messages = [n["message"] for n in client.get(url, headers=_en_tete("DEMO_karim")).json()]
+    assert "Un compte bancaire attend votre choix : sert-il à votre activité ?" in messages
+
+    _decider(client, "5122", False)
+    messages = [n["message"] for n in client.get(url, headers=_en_tete("DEMO_karim")).json()]
+    assert not any("attend votre choix" in m for m in messages)

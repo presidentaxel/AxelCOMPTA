@@ -6,11 +6,13 @@ ici, et pas dans chaque route, que l'isolation entre portefeuilles se joue.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from datetime import datetime
 
 from axelcompta.core.ids import DossierId, TenantId, UserId
 
 from .models import Dossier, Tenant
+from .statuts import configuration_de
 
 
 class DossierRepository(ABC):
@@ -24,6 +26,17 @@ class DossierRepository(ABC):
         tel quel (pas de mise à jour silencieuse d'une config comptable).
         Lève `ConfigurationInvalide` (statuts.py) avant toute écriture si la
         configuration fiscale n'a pas de sens."""
+
+    def enregistrer_lot(self, lot: Sequence[Dossier]) -> int:
+        """Plusieurs dossiers d'un coup (AXE-809) ; renvoie le nombre de créés.
+        Tout ou rien là où le stockage le permet (Postgres : une transaction).
+        Toutes les configurations sont vérifiées avant la première écriture."""
+        for dossier in lot:
+            configuration_de(dossier)
+        nouveaux = [d for d in lot if self.obtenir(d.id) is None]
+        for dossier in lot:
+            self.enregistrer(dossier)
+        return len(nouveaux)
 
     @abstractmethod
     def obtenir(self, dossier_id: DossierId) -> Dossier | None:

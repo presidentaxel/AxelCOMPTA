@@ -15,6 +15,8 @@
   },
   "include": [
     "lib/messages-auth.ts",
+    "lib/mfa-code.ts",
+    "lib/mfa.test.ts",
     "lib/messages-auth.test.ts",
     "lib/activite-url.ts",
     "lib/activite-url.test.ts",
@@ -26,6 +28,8 @@
     "lib/comptes-bancaires.test.ts",
     "lib/langage-chauffeur.ts",
     "lib/langage-chauffeur.test.ts",
+    "lib/comptes-a-choisir.ts",
+    "lib/comptes-a-choisir.test.ts",
     "lib/configuration-dossier.ts",
     "lib/configuration-dossier.test.ts",
     "lib/tags.ts",

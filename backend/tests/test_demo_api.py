@@ -39,6 +39,7 @@ from axelcompta.core.money import Money
 from axelcompta.demo_api import (
     DossierResume,
     GuideGreffeVue,
+    IdentiteDep,
     TransactionVue,
     _avec_propositions,
     _frises,
@@ -58,7 +59,9 @@ from axelcompta.demo_api import (
     get_decisions,
     get_dossiers,
     get_exercices,
+    get_journal_acces,
     get_journal_ingestion,
+    get_journal_portefeuille,
     get_justificatifs,
     get_ledger,
     get_notifications,
@@ -67,6 +70,7 @@ from axelcompta.demo_api import (
     get_provisions_cloture,
     get_registre_anomalies,
     get_resolutions_quarantaine,
+    get_role_appelant,
     get_role_membre,
     get_signatures_inpi,
     get_tags,
@@ -90,6 +94,7 @@ from axelcompta.tenants.affectations import InMemoryAffectationRepository
 from axelcompta.tenants.agregats import AgregatStocke, InMemoryAgregatsRepository
 from axelcompta.tenants.avenants import InMemoryAvenantRegimeRepository, programmer_bascules
 from axelcompta.tenants.exercices import InMemoryExerciceRepository
+from axelcompta.tenants.journal_portefeuille import JournalPortefeuilleMemoire
 from axelcompta.tenants.memory import InMemoryDossierRepository
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.provisions_cloture import InMemoryProvisionsClotureRepository
@@ -97,6 +102,7 @@ from axelcompta.tenants.tags_memoire import TagsMemoire
 from axelcompta.workflow.decisions import DecisionHumaine
 from axelcompta.workflow.decisions_memory import InMemoryDecisionRepository
 from axelcompta.workflow.file_expert_cache import SansCache
+from axelcompta.workflow.journal_acces import JournalAccesMemoire
 from axelcompta.workflow.notifications import (
     InMemoryNotificationRepository,
     NotificationEnvoyee,
@@ -125,14 +131,18 @@ def _jeton_chauffeur(dossier_id: str) -> str:
     return jwt.encode(charge_utile, _CLE_PRIVEE_TEST, algorithm="ES256")
 
 
-def _jeton_gestionnaire(tenant_id: str = "TENANT_DEMO", dossier_id: str | None = None) -> str:
+def _jeton_gestionnaire(
+    tenant_id: str = "TENANT_DEMO", dossier_id: str | None = None, aal: str = "aal2"
+) -> str:
     """doc 03 §7 : le lien gestionnaire vit dans `app_metadata` (écrit côté
-    serveur), pas `user_metadata` (modifiable par l'utilisateur)."""
+    serveur), pas `user_metadata` (modifiable par l'utilisateur). Code TOTP
+    vérifié (`aal2`) par défaut : l'admin l'exige (AXE-812)."""
     charge_utile: dict[str, object] = {
         "sub": "gestionnaire-1",
         "email": "gestionnaire@example.com",
         "aud": "authenticated",
         "exp": datetime.now(UTC) + timedelta(hours=1),
+        "aal": aal,
         "app_metadata": {"tenant_id": tenant_id},
     }
     if dossier_id is not None:
@@ -141,9 +151,9 @@ def _jeton_gestionnaire(tenant_id: str = "TENANT_DEMO", dossier_id: str | None =
 
 
 def _en_tete_gestionnaire(
-    tenant_id: str = "TENANT_DEMO", dossier_id: str | None = None
+    tenant_id: str = "TENANT_DEMO", dossier_id: str | None = None, aal: str = "aal2"
 ) -> dict[str, str]:
-    return {"Authorization": f"Bearer {_jeton_gestionnaire(tenant_id, dossier_id)}"}
+    return {"Authorization": f"Bearer {_jeton_gestionnaire(tenant_id, dossier_id, aal)}"}
 
 
 def _en_tete(dossier_id: str) -> dict[str, str]:
@@ -197,6 +207,10 @@ def _surcharger_depots_simples(app: FastAPI) -> None:
     app.dependency_overrides[get_registre_anomalies] = lambda: registre_stub
     notifications_stub = InMemoryNotificationRepository()
     app.dependency_overrides[get_notifications] = lambda: notifications_stub
+    journal_acces_stub = JournalAccesMemoire()
+    app.dependency_overrides[get_journal_acces] = lambda: journal_acces_stub
+    journal_portefeuille_stub = JournalPortefeuilleMemoire()
+    app.dependency_overrides[get_journal_portefeuille] = lambda: journal_portefeuille_stub
     avenants_stub = InMemoryAvenantRegimeRepository()
     app.dependency_overrides[get_avenants] = lambda: avenants_stub
     exercices_stub = InMemoryExerciceRepository()
@@ -253,6 +267,11 @@ def _client_et_stubs(
     _sans_caches(app)
     # `droits_membre` est en Postgres : le rôle est fixé ici.
     app.dependency_overrides[get_role_membre] = lambda: role
+
+    def _role_appelant(identite: IdentiteDep) -> str | None:
+        return role if identite is not None and identite.tenant_id is not None else None
+
+    app.dependency_overrides[get_role_appelant] = _role_appelant
     app.dependency_overrides[get_consentements] = lambda: _ConsentementsStub()
     return TestClient(app), decisions_stub, justificatifs_stub, signatures_stub
 

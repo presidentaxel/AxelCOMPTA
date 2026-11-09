@@ -162,6 +162,20 @@ droits_membre = Table(
     Column("role", String, nullable=False),
 )
 
+# Ce qui arrive au portefeuille, pas à un dossier (AXE-812, migration
+# `b8e4c2d7a613`) : connexions, réinitialisation de la double
+# authentification d'un membre. Ajout seul (trigger).
+journal_portefeuille = Table(
+    "journal_portefeuille",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False, index=True),
+    Column("type_acte", String, nullable=False),
+    Column("reference", String, nullable=False),
+    Column("acteur", String, nullable=False),
+    Column("acte_le", DateTime(timezone=True), nullable=False),
+)
+
 # Agrégats de la vue portefeuille (AXE-566, migration `e7b3d9a15c42`). Périmés
 # par des triggers Postgres à chaque écriture qui les concerne : `version`
 # monte, `a_jour` retombe. Voir `tenants/agregats.py`.

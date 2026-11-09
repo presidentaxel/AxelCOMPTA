@@ -277,6 +277,16 @@ function appelChauffeur(path: string, init: RequestInit = {}): Promise<Response>
   return appelAuthentifie(ESPACE_CHAUFFEUR, `${baseUrlApi()}${path}`, init);
 }
 
+/** AXE-812 : trace la connexion au journal du dossier. Une trace manquée
+ * ne bloque pas l'entrée. */
+export async function tracerConnexionChauffeur(): Promise<void> {
+  try {
+    await appelChauffeur("/session/connexion", { method: "POST" });
+  } catch {
+    // L'entrée n'en dépend pas.
+  }
+}
+
 /** Requête brute avec le jeton chauffeur — factorisé pour `fetchAvecAuthChauffeur`
  * (JSON) et `telechargerAvecAuthChauffeur` (fichier binaire), doc 19 §8bis :
  * toutes les routes de niveau dossier exigent désormais ce jeton. */

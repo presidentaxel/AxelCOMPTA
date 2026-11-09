@@ -4,7 +4,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { FormulaireConnexion } from "@/components/FormulaireConnexion";
-import { connexionParMotDePasse, obtenirSession } from "@/lib/auth-chauffeur";
+import {
+  connexionParMotDePasse,
+  obtenirSession,
+  tracerConnexionChauffeur,
+} from "@/lib/auth-chauffeur";
 import { cheminDeRetour, sessionAExpire } from "@/lib/session";
 
 /** doc 19 §5.2 : e-mail + mot de passe, ou lien magique. Pas de
@@ -34,6 +38,7 @@ export default function ConnexionChauffeurPage() {
       sousTitre="Retrouvez vos transactions et vos justificatifs."
       onConnecte={async (email, motDePasse) => {
         const session = await connexionParMotDePasse(email, motDePasse);
+        void tracerConnexionChauffeur();
         // Un retour vers le dossier d'un autre renvoie de toute façon vers le
         // sien (`use-dossier.ts`). `replace` : le bouton retour ne ramène pas
         // au formulaire.

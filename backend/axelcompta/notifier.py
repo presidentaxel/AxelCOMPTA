@@ -25,6 +25,8 @@ from sqlalchemy.engine import Engine
 
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.ingestion.comptes_bancaires import CompteBancaireRepository, nombre_a_choisir
+from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
 from axelcompta.ingestion.consentement import ReleveConsentement
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
 from axelcompta.ledger.repository import PostgresLedgerService
@@ -40,6 +42,7 @@ from axelcompta.workflow.notifications import (
     ResultatNotification,
     notifier_a_trancher,
     notifier_cloture_a_valider,
+    notifier_comptes_a_choisir,
 )
 from axelcompta.workflow.notifications_postgres import PostgresNotificationRepository
 from axelcompta.workflow.relances_consentement import notifier_consentement
@@ -53,8 +56,10 @@ def notifier_portefeuille(
     maintenant: datetime,
     tenant: Tenant | None = None,
     consentements: Mapping[DossierId, ReleveConsentement] | None = None,
+    comptes_bancaires: CompteBancaireRepository | None = None,
 ) -> list[ResultatNotification]:
-    """`consentements` à None saute les relances de connexion bancaire."""
+    """`consentements` à None saute les relances de connexion bancaire ;
+    `comptes_bancaires` à None, les comptes à choisir (AXE-851)."""
     resultats: list[ResultatNotification] = []
     for dossier in dossiers:
         try:
@@ -70,6 +75,15 @@ def notifier_portefeuille(
                 resultats.append(
                     notifier_consentement(
                         dossier, tenant, consentements.get(dossier.id), notifications, maintenant
+                    )
+                )
+            if comptes_bancaires is not None:
+                resultats.append(
+                    notifier_comptes_a_choisir(
+                        dossier.id,
+                        nombre_a_choisir(comptes_bancaires.lister(dossier.id)),
+                        notifications,
+                        maintenant,
                     )
                 )
         except Exception as exc:  # noqa: BLE001 — un dossier en échec ne bloque pas les autres
@@ -97,6 +111,7 @@ def notifier_depuis_base(
         datetime.now(UTC).replace(tzinfo=None),
         tenant,
         PostgresConsentementRepository(engine).lister([d.id for d in dossiers]),
+        PostgresCompteBancaireRepository(engine),
     )
 
 

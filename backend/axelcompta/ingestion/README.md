@@ -64,6 +64,14 @@ ne dépend jamais d'`ingestion` en retour, règle absolue doc 03 §3).
   `c3f7a2e81d45`, RLS par dossier, rôle web en lecture seule).
 - `journal.comptes_des_transactions()` relit l'`account_id` de chaque
   transaction archivée, pour la reprise des écritures restées au 512.
+- `a_choisir()` (AXE-851) : par dossier, les comptes « à décider »
+  (AXE-729), depuis quand, et combien d'opérations archivées ils retiennent.
+  En Postgres, une fonction `SECURITY DEFINER`
+  (`axelcompta_comptes_a_choisir`, migration `a7d3e5c1b904`) ne renvoie que
+  ces comptages : le rôle web ne lit pas l'archive brute. Elle applique la
+  règle de `dossiers_isolation` elle-même ; sans contexte RLS, elle ne voit
+  rien. Le gestionnaire le voit dans Entreprises, le dirigeant dans sa
+  cloche (`notifications.TYPE_COMPTES_A_CHOISIR`).
 
 ## Statuts
 
