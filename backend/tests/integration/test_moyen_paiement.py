@@ -23,7 +23,10 @@ def test_la_migration_reprend_le_moyen_de_paiement(
 ) -> None:
     cfg = Config(str(BACKEND / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND / "migrations"))
-    command.upgrade(cfg, "e9c2a7f14b63")
+    # Juste avant cette migration. Partir de e9c2a7f14b63 referait la
+    # numérotation (AXE-807), qui recrée compteurs_ecritures déjà posée
+    # par create_all dans creer_dossier.
+    command.upgrade(cfg, "c8d4e2f7a915")
     creer_dossier("d1")
     with engine.begin() as connexion:
         for transaction_id, type_operation, recu in (
