@@ -43,6 +43,7 @@ from axelcompta.tenants.avenants import AvenantRegime, MotifAvenant
 from axelcompta.tenants.avenants_postgres import PostgresAvenantRegimeRepository
 from axelcompta.tenants.exercices import ExerciceClos, ExerciceDejaClos
 from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
+from axelcompta.tenants.journal_portefeuille_postgres import PostgresJournalPortefeuille
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.statuts import RegimeImposition
@@ -554,3 +555,23 @@ def test_le_dirigeant_ne_change_que_le_choix_de_ses_comptes(
 
     assert depot_admin.lister(DossierId("sophie"))[0].retenu is False
     assert depot_admin.lister(DossierId("karim"))[0].retenu is None
+
+
+def test_journal_portefeuille_isole_par_portefeuille_et_en_ajout_seul(
+    engine: Engine, engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """AXE-812 (migration `b8e4c2d7a613`) : un portefeuille ne lit ni
+    n'écrit le journal d'un autre, et une ligne ne se modifie pas."""
+    le = datetime(2026, 11, 9, 9, 0, tzinfo=UTC)
+    journal_web = PostgresJournalPortefeuille(engine_web)
+    with contexte_identite(dossier_id=None, tenant_id="tenant-a"):
+        journal_web.noter(TenantId("tenant-a"), "connexion", "127.0.0.1 · test", UserId("u"), le)
+        with pytest.raises((ProgrammingError, DBAPIError)):
+            journal_web.noter(TenantId("tenant-b"), "connexion", "x", UserId("u"), le)
+    with contexte_identite(dossier_id=None, tenant_id="tenant-b"):
+        with engine_web.connect() as connexion:
+            appliquer_rls(connexion)
+            visibles = connexion.execute(text("SELECT count(*) FROM journal_portefeuille")).scalar()
+    assert visibles == 0
+    with engine.begin() as connexion, pytest.raises((ProgrammingError, DBAPIError)):
+        connexion.execute(text("UPDATE journal_portefeuille SET reference = 'efface'"))

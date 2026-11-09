@@ -61,6 +61,7 @@ def _jeton(**metadonnees: dict[str, str]) -> str:
         "email": "x@example.com",
         "aud": "authenticated",
         "exp": datetime.now(UTC) + timedelta(hours=1),
+        "aal": "aal2",  # code TOTP vérifié : l'admin l'exige (AXE-812)
         **metadonnees,
     }
     return jwt.encode(charge, _CLE, algorithm="ES256")

@@ -14,7 +14,7 @@
 
 import { ApiError } from "./api";
 import { MESSAGE_SANS_PORTEFEUILLE, MESSAGE_SESSION } from "./messages-auth";
-import { appelAuthentifie } from "./session";
+import { appelAuthentifie, erreurApi, lireCorps } from "./session";
 import {
   changerEmailAvecJeton,
   decoderChargeUtileJwt,
@@ -166,6 +166,46 @@ function enregistrerSessionGestionnaire(session: SessionGestionnaire): void {
   } catch {
     // Session utilisable pour cette page, simplement pas persistée.
   }
+}
+
+/** AXE-812 : ce que l'écran doit savoir de la session (rôle, code exigé). */
+export type Moi = { email: string; role: string; mfa_requise: boolean; aal: string };
+
+export async function lireMoi(): Promise<Moi> {
+  const reponse = await requeteGestionnaire("/portefeuille/moi");
+  if (!reponse.ok) {
+    throw erreurApi(await lireCorps(reponse), reponse);
+  }
+  return (await reponse.json()) as Moi;
+}
+
+/** AXE-812 : trace la connexion au journal du portefeuille. Une trace
+ * manquée ne bloque pas l'entrée. */
+export async function tracerConnexionGestionnaire(): Promise<void> {
+  try {
+    await requeteGestionnaire("/session/connexion", { method: "POST" });
+  } catch {
+    // Le serveur répondra à la prochaine requête ; l'entrée n'en dépend pas.
+  }
+}
+
+/** AXE-812 : les jetons `aal2` obtenus après la vérification du code. */
+export function remplacerJetonsGestionnaire(accessToken: string, refreshToken: string): void {
+  const session = obtenirSessionGestionnaire();
+  if (!session) return;
+  enregistrerSessionGestionnaire({ ...session, accessToken, refreshToken });
+}
+
+/** AXE-812 : un autre admin retire les facteurs d'un membre. */
+export async function reinitialiserMfaMembre(email: string): Promise<number> {
+  const reponse = await requeteGestionnaire(
+    `/portefeuille/membres/${encodeURIComponent(email)}/mfa/reinitialiser`,
+    { method: "POST" },
+  );
+  if (!reponse.ok) {
+    throw erreurApi(await lireCorps(reponse), reponse);
+  }
+  return ((await reponse.json()) as { facteurs_retires: number }).facteurs_retires;
 }
 
 const ESPACE_GESTIONNAIRE = {
