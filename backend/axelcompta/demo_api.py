@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import json
 import re
 import uuid
 from collections.abc import Mapping, Sequence
@@ -137,6 +138,8 @@ from axelcompta.ingestion.comptes_bancaires import (
     CompteBancaireRepository,
     CompteDejaComptabilise,
     CompteInconnu,
+    ComptesAChoisir,
+    nombre_a_choisir,
     verifier_ecartable,
 )
 from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
@@ -146,7 +149,7 @@ from axelcompta.ingestion.journal import EntreeQuarantaine, JournalIngestion
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ingestion.providers.digifactory import normaliser_payload
-from axelcompta.jobs.file import TYPE_SYNCHRO, DemandesDeJobs, Job
+from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, TYPE_SYNCHRO, DemandesDeJobs, Job
 from axelcompta.jobs.postgres import FilePostgres
 from axelcompta.ledger.banque import (
     comptes_hors_banque,
@@ -159,6 +162,7 @@ from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.ledger.models import Ecriture, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
+from axelcompta.nouveaux_contacts import fiche_sirene
 from axelcompta.packs.vtc_demo import (
     charger_categories_banque,
     charger_compte_par_categorie,
@@ -189,6 +193,14 @@ from axelcompta.tenants.contacts_proposes_postgres import PostgresContactsPropos
 from axelcompta.tenants.exercices import ExerciceRepository
 from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
 from axelcompta.tenants.franchise_tva import MillesimeInconnu, suivre_franchise
+from axelcompta.tenants.import_dossiers import MODELE_CSV, lire_csv
+from axelcompta.tenants.import_dossiers import rapport as rapport_import
+from axelcompta.tenants.journal_portefeuille import (
+    ACTE_CONNEXION_MEMBRE,
+    ACTE_MFA_REINITIALISEE,
+    JournalPortefeuille,
+)
+from axelcompta.tenants.journal_portefeuille_postgres import PostgresJournalPortefeuille
 from axelcompta.tenants.models import MODES_RELANCE, Dossier, Tenant
 from axelcompta.tenants.orm import droits_membre, rappels, regles_rappel
 from axelcompta.tenants.postgres import PostgresDossierRepository
@@ -211,6 +223,7 @@ from axelcompta.tenants.tags import (
     nom_de_tag,
 )
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
+from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT
 from axelcompta.workflow.classees import (
     Filtres,
     OperationClassee,
@@ -227,12 +240,22 @@ from axelcompta.workflow.decisions import (
     DecisionRepository,
     decision_en_vigueur,
 )
+from axelcompta.workflow.decisions_et_reclassements import (
+    EcrireDecisions,
+    EnSequence,
+    PostgresDecisionsEtReclassements,
+)
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
 from axelcompta.workflow.expert import preparer_imputation
 from axelcompta.workflow.file_expert_cache import CacheFileExpert, SujetsGardes
 from axelcompta.workflow.file_expert_cache_postgres import (
     PostgresCacheFileExpert,
     cache_operations_classees,
+)
+from axelcompta.workflow.journal_acces import (
+    ACTES_VISIBLES_DU_DIRIGEANT,
+    JournalAcces,
+    PostgresJournalAcces,
 )
 from axelcompta.workflow.notifications import (
     NotificationRepository,
@@ -405,6 +428,12 @@ class DossierAgregat(BaseModel):
     # Configuration proposée sans certitude (AXE-834) : « forme_juridique »,
     # « exercice ». Une information de configuration, pas un détail comptable.
     a_confirmer: list[str] = []
+    # AXE-851 : comptes bancaires qui attendent le choix du dirigeant. Leurs
+    # opérations sont écartées par la synchro tant qu'il n'a pas choisi. Des
+    # nombres et une date, jamais les comptes ni les opérations (doc 19 §2.4).
+    comptes_a_choisir: int = 0
+    comptes_a_choisir_depuis: str | None = None
+    operations_en_attente_de_choix: int = 0
 
 
 class AlerteAnomalieVue(BaseModel):
@@ -869,6 +898,7 @@ def _agregat(
     dossier: Dossier,
     statut_invitation: str | None,
     preuves: set[str],
+    comptes_a_choisir: ComptesAChoisir | None = None,
 ) -> DossierAgregat:
     """Ce que le gestionnaire voit : les montants gardés en base, et tout ce
     qui change sans écriture lu à l'affichage (le dossier, l'invitation, les
@@ -898,6 +928,11 @@ def _agregat(
         alerte_regime=alerte_option_ir(dossier),
         alerte_tva=stocke.alerte_tva,
         a_confirmer=list(dossier.a_confirmer),
+        comptes_a_choisir=comptes_a_choisir.nombre if comptes_a_choisir else 0,
+        comptes_a_choisir_depuis=(
+            comptes_a_choisir.depuis.date().isoformat() if comptes_a_choisir else None
+        ),
+        operations_en_attente_de_choix=comptes_a_choisir.operations if comptes_a_choisir else 0,
     )
 
 
@@ -1199,6 +1234,21 @@ def get_ledger() -> LedgerService:
     return PostgresLedgerService(_engine())
 
 
+def get_ecrire_decisions(
+    decisions: Annotated[DecisionRepository, Depends(get_decisions)],
+    base: Annotated[LedgerService, Depends(get_ledger)],
+) -> EcrireDecisions:
+    """AXE-852 : décisions et OD de reclassement dans une seule transaction
+    quand les deux dépôts sont en base. Les tests remplacent les dépôts par
+    des versions en mémoire : ils reçoivent l'écriture en séquence, sur ces
+    mêmes dépôts."""
+    if isinstance(decisions, PostgresDecisionRepository) and isinstance(
+        base, PostgresLedgerService
+    ):
+        return PostgresDecisionsEtReclassements(_engine())
+    return EnSequence(decisions, base)
+
+
 def get_propositions() -> PropositionRepository:
     """Dépendance FastAPI — ce que le pipeline avait proposé par écriture."""
     return PostgresPropositionRepository(_engine())
@@ -1237,6 +1287,7 @@ def get_etat_categorisation() -> EtatCategorisation:
 DecisionsDep = Annotated[DecisionRepository, Depends(get_decisions)]
 DossiersDep = Annotated[DossierRepository, Depends(get_dossiers)]
 LedgerBaseDep = Annotated[LedgerService, Depends(get_ledger)]
+EcrireDecisionsDep = Annotated[EcrireDecisions, Depends(get_ecrire_decisions)]
 PropositionsDep = Annotated[PropositionRepository, Depends(get_propositions)]
 
 
@@ -1281,6 +1332,30 @@ def get_comptes() -> CompteRepository:
 ComptesDep = Annotated[CompteRepository, Depends(get_comptes)]
 
 IdentiteDep = Annotated[IdentiteAuthentifiee | None, Depends(identite_chauffeur_optionnelle)]
+
+
+def get_journal_acces() -> JournalAcces:
+    """Dépendance FastAPI — voir `_engine` (AXE-812)."""
+    return PostgresJournalAcces(_engine())
+
+
+def get_journal_portefeuille() -> JournalPortefeuille:
+    """Dépendance FastAPI — voir `_engine` (AXE-812)."""
+    return PostgresJournalPortefeuille(_engine())
+
+
+JournalAccesDep = Annotated[JournalAcces, Depends(get_journal_acces)]
+JournalPortefeuilleDep = Annotated[JournalPortefeuille, Depends(get_journal_portefeuille)]
+
+
+def _tracer_export(
+    journal: JournalAcces, dossier: Dossier, identite: IdentiteAuthentifiee | None, nom: str
+) -> None:
+    """AXE-812 : chaque téléchargement d'un export laisse sa ligne au journal
+    d'audit (qui, quel fichier, quand). `identite` est déjà vérifiée par
+    `DossierDep`."""
+    if identite is not None:
+        journal.noter(dossier.id, ACTE_EXPORT, nom, identite.user_id, datetime.now(UTC))
 
 
 def get_dossier_autorise(dossier_id: str, identite: IdentiteDep, dossiers: DossiersDep) -> Dossier:
@@ -1475,6 +1550,7 @@ def _trancher(
     decisions: DecisionRepository,
     propositions: PropositionRepository,
     decide_par: UserId,
+    ecrire: EcrireDecisions,
 ) -> Ecriture:
     """doc 17 §9 bloc C : la décision humaine, pour de vrai — déclenche le
     `workflow` testé (doc 05 §5), pas un changement d'état côté React seul.
@@ -1497,8 +1573,8 @@ def _trancher(
         )
     if not any(ligne.compte == COMPTE_ATTENTE for ligne in ecriture.lignes):
         raise HTTPException(status_code=409, detail="Cette opération n'est pas à classer.")
-    _enregistrer_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
-    _ecrire_reclassements(dossier, base, [(ecriture.id, categorie)])
+    decision = _nouvelle_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
+    ecrire.ecrire([decision], _reclassements(dossier, base, [(ecriture.id, categorie)]))
     return _ecriture_decidee(dossier, base, decisions, ecriture_id)
 
 
@@ -1510,6 +1586,7 @@ def _corriger(
     decisions: DecisionRepository,
     propositions: PropositionRepository,
     decide_par: UserId,
+    ecrire: EcrireDecisions,
 ) -> Ecriture:
     """Corriger, c'est enregistrer une nouvelle décision. L'ancienne reste
     (doc 05 §5) : la dernière prévaut, rien n'est modifié en place."""
@@ -1526,20 +1603,21 @@ def _corriger(
             status_code=409,
             detail="Cette opération ne se corrige pas par une nouvelle catégorie.",
         )
-    _enregistrer_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
-    _ecrire_reclassements(dossier, base, [(ecriture.id, categorie)])
+    decision = _nouvelle_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
+    ecrire.ecrire([decision], _reclassements(dossier, base, [(ecriture.id, categorie)]))
     return _ecriture_decidee(dossier, base, decisions, ecriture_id)
 
 
-def _enregistrer_decision(
+def _nouvelle_decision(
     dossier: Dossier,
     ecriture: Ecriture,
     categorie: str,
     decisions: DecisionRepository,
     propositions: PropositionRepository,
     decide_par: UserId,
-) -> None:
-    """Pose la décision si la catégorie a un compte. N'écrit rien sinon."""
+) -> DecisionHumaine:
+    """La décision à écrire, si la catégorie a un compte. N'écrit rien :
+    l'appelant l'écrit avec son OD de reclassement (AXE-852)."""
     proposition = propositions.obtenir(dossier.id, ecriture.id)
     if proposition is None:
         raise HTTPException(
@@ -1554,38 +1632,37 @@ def _enregistrer_decision(
     maintenant = datetime.now(UTC)
     if courante is not None and maintenant <= courante.decide_le:
         maintenant = courante.decide_le + timedelta(microseconds=1)
-    decisions.enregistrer_decision(
-        DecisionHumaine(
-            dossier_id=dossier.id,
-            ecriture_id=ecriture.id,
-            categorie=categorie,
-            etage_origine=proposition.etage,
-            confiance_origine=proposition.confiance,
-            decide_par=decide_par,
-            decide_le=maintenant,
-        )
+    return DecisionHumaine(
+        dossier_id=dossier.id,
+        ecriture_id=ecriture.id,
+        categorie=categorie,
+        etage_origine=proposition.etage,
+        confiance_origine=proposition.confiance,
+        decide_par=decide_par,
+        decide_le=maintenant,
     )
 
 
-def _ecrire_reclassements(
+def _reclassements(
     dossier: Dossier, base: LedgerService, tranchees: Sequence[tuple[EcritureId, str]]
-) -> None:
-    """AXE-420 : chaque décision écrit son OD de reclassement, juste après
-    avoir été enregistrée. Rien n'est écrit si le montant est déjà sur le
-    bon compte. Une décision dont l'écriture échouerait reste appliquée par
-    la couche de reprise (`grand_livre_tranche`) tant que l'opération n'a
-    aucun reclassement."""
+) -> list[Ecriture]:
+    """AXE-420 : l'OD de reclassement de chaque décision, calculée sans rien
+    écrire. Aucune si le montant est déjà sur le bon compte. Les OD d'un
+    même lot se suivent : chacune part du compte laissé par la précédente.
+    L'appelant les écrit avec leurs décisions, tout ou rien (AXE-852)."""
     ecritures = list(base.grand_livre(dossier.id))
     par_id = {e.id: e for e in ecritures}
     periodes = base.periodes_closes(dossier.id)
+    calculees: list[Ecriture] = []
     for ecriture_id, categorie in tranchees:
         source = par_id.get(ecriture_id)
         if source is None:
             continue
         reclassement = reclasser(source, categorie, ecritures, _comptes(dossier), periodes)
         if reclassement is not None:
-            base.enregistrer(reclassement)
+            calculees.append(reclassement)
             ecritures.append(reclassement)
+    return calculees
 
 
 def _ecriture_decidee(
@@ -1603,6 +1680,7 @@ def _decision_suivante(
     decisions: DecisionRepository,
     justificatifs: JustificatifRepository,
     decide_par: UserId,
+    ecrire: EcrireDecisions,
 ) -> TransactionVue:
     """Enregistre une décision qui en remplace une déjà en vigueur."""
     courante = decisions.decision_courante(dossier.id, EcritureId(ecriture_id))
@@ -1620,18 +1698,16 @@ def _decision_suivante(
             configuration_de(dossier).comptes_categories_statut(),
             charger_compte_par_categorie(),
         )
-    decisions.enregistrer_decision(
-        DecisionHumaine(
-            dossier_id=dossier.id,
-            ecriture_id=EcritureId(ecriture_id),
-            categorie=categorie,
-            etage_origine=en_vigueur.etage_origine,
-            confiance_origine=en_vigueur.confiance_origine,
-            decide_par=decide_par,
-            decide_le=datetime.now(UTC),
-        )
+    decision = DecisionHumaine(
+        dossier_id=dossier.id,
+        ecriture_id=EcritureId(ecriture_id),
+        categorie=categorie,
+        etage_origine=en_vigueur.etage_origine,
+        confiance_origine=en_vigueur.confiance_origine,
+        decide_par=decide_par,
+        decide_le=datetime.now(UTC),
     )
-    _ecrire_reclassements(dossier, base, [(EcritureId(ecriture_id), categorie)])
+    ecrire.ecrire([decision], _reclassements(dossier, base, [(EcritureId(ecriture_id), categorie)]))
     ledger = _ledger_avec_decisions(dossier, base, decisions)
     ecritures_vues = ledger.grand_livre(dossier.id)
     ecriture_vue = next(e for e in ecritures_vues if e.id == ecriture_id)
@@ -1662,6 +1738,7 @@ def _trancher_groupe(
     decisions: DecisionRepository,
     propositions: PropositionRepository,
     decide_par: UserId,
+    ecrire: EcrireDecisions,
 ) -> list[Ecriture]:
     """Tout ou rien : une seule opération refusée refuse le lot, avec sa
     raison, et rien n'est écrit."""
@@ -1704,8 +1781,9 @@ def _trancher_groupe(
                 decide_le=maintenant,
             )
         )
-    decisions.enregistrer_decisions(a_ecrire)
-    _ecrire_reclassements(dossier, base, [(d.ecriture_id, d.categorie) for d in a_ecrire])
+    ecrire.ecrire(
+        a_ecrire, _reclassements(dossier, base, [(d.ecriture_id, d.categorie) for d in a_ecrire])
+    )
     ledger_a_jour = _ledger_avec_decisions(dossier, base, decisions)
     voulues = {decision.ecriture_id for decision in a_ecrire}
     return [e for e in ledger_a_jour.grand_livre(dossier.id) if e.id in voulues]
@@ -1850,14 +1928,17 @@ def _agregats_portefeuille(
     signatures: SignatureRepository,
     provisions: ProvisionsClotureRepository,
     agregats: AgregatsRepository,
+    comptes_bancaires: CompteBancaireRepository,
 ) -> list[DossierAgregat]:
     """Une lecture des agrégats gardés, une lecture des comptes (Supabase,
-    tous les dossiers d'un coup), puis par dossier ce qui change sans
-    écriture : les preuves de l'exercice et la date du jour."""
+    tous les dossiers d'un coup), une des comptes bancaires à choisir, puis
+    par dossier ce qui change sans écriture : les preuves de l'exercice et la
+    date du jour."""
     ids = [dossier.id for dossier in dossiers]
     lignes = agregats.lire(ids)
     invitations = comptes.statuts(ids)
     preuves = _preuves_exercice(signatures, ids)
+    a_choisir = comptes_bancaires.a_choisir(ids)
     resultat: list[DossierAgregat] = []
     for dossier in dossiers:
         invitation = invitations.get(dossier.id)
@@ -1869,6 +1950,7 @@ def _agregats_portefeuille(
                 dossier,
                 _statut_invitation_vue(invitation.statut) if invitation else None,
                 preuves.get(dossier.id, set()),
+                a_choisir.get(dossier.id),
             )
         )
     return resultat
@@ -1885,6 +1967,7 @@ def _enregistrer_routes_dossiers(app: FastAPI) -> None:
         provisions: ProvisionsDep,
         agregats: AgregatsDep,
         tags: TagsDep,
+        comptes_bancaires: ComptesBancairesDep,
         identite: IdentiteDep,
     ) -> list[DossierAgregat]:
         """Vue gestionnaire (doc 19 §2.1) : agrégats des dossiers **de son
@@ -1901,6 +1984,7 @@ def _enregistrer_routes_dossiers(app: FastAPI) -> None:
             signatures,
             provisions,
             agregats,
+            comptes_bancaires,
         )
         return _avec_tags(vues, etat_du_portefeuille(tags, tenant_id))
 
@@ -1955,6 +2039,7 @@ def _enregistrer_routes_revue(app: FastAPI) -> None:
         decisions: DecisionsDep,
         propositions: PropositionsDep,
         justificatifs: JustificatifsDep,
+        ecrire: EcrireDecisionsDep,
         identite: IdentiteDep,
     ) -> list[TransactionVue]:
         """« Tout confirmer » : les mêmes contrôles que pour une décision
@@ -1962,7 +2047,7 @@ def _enregistrer_routes_revue(app: FastAPI) -> None:
         toutes les décisions dans une seule transaction."""
         identite = _verifier_acces_dossier(dossier.id, identite)
         ecritures = _trancher_groupe(
-            dossier, entree, base, decisions, propositions, identite.user_id
+            dossier, entree, base, decisions, propositions, identite.user_id, ecrire
         )
         avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
         return [_vue_tranchee(e, e.id in avec_photo, entree.categorie) for e in ecritures]
@@ -1983,11 +2068,19 @@ def _enregistrer_route_correction(app: FastAPI) -> None:
         decisions: DecisionsDep,
         propositions: PropositionsDep,
         justificatifs: JustificatifsDep,
+        ecrire: EcrireDecisionsDep,
         identite: IdentiteDep,
     ) -> TransactionVue:
         identite = _verifier_acces_dossier(dossier.id, identite)
         ecriture = _corriger(
-            dossier, ecriture_id, entree.categorie, base, decisions, propositions, identite.user_id
+            dossier,
+            ecriture_id,
+            entree.categorie,
+            base,
+            decisions,
+            propositions,
+            identite.user_id,
+            ecrire,
         )
         return _vue_tranchee(
             ecriture,
@@ -2009,6 +2102,7 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
         decisions: DecisionsDep,
         propositions: PropositionsDep,
         justificatifs: JustificatifsDep,
+        ecrire: EcrireDecisionsDep,
         identite: IdentiteDep,
     ) -> TransactionVue:
         """Indiv qui tranche sa propre écriture (doc 19 §5.6, doc 19 §8bis :
@@ -2016,7 +2110,14 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
         l'accès à un autre dossier."""
         identite = _verifier_acces_dossier(dossier.id, identite)
         ecriture = _trancher(
-            dossier, ecriture_id, entree.categorie, base, decisions, propositions, identite.user_id
+            dossier,
+            ecriture_id,
+            entree.categorie,
+            base,
+            decisions,
+            propositions,
+            identite.user_id,
+            ecrire,
         )
         # `_trancher` refuse une écriture contre-passée : celle-ci ne l'est pas.
         return _vue_tranchee(
@@ -2061,6 +2162,7 @@ def _enregistrer_routes_annulation(app: FastAPI) -> None:
         base: LedgerBaseDep,
         decisions: DecisionsDep,
         justificatifs: JustificatifsDep,
+        ecrire: EcrireDecisionsDep,
         identite: IdentiteDep,
     ) -> TransactionVue:
         identite = _verifier_acces_dossier(dossier.id, identite)
@@ -2072,6 +2174,7 @@ def _enregistrer_routes_annulation(app: FastAPI) -> None:
             decisions,
             justificatifs,
             identite.user_id,
+            ecrire,
         )
 
 
@@ -2201,6 +2304,45 @@ def get_role_membre(identite: IdentiteDep) -> str:
 
 
 RoleMembreDep = Annotated[str, Depends(get_role_membre)]
+
+# AXE-812 (décision du 6 nov.) : MFA native de Supabase. Ces rôles n'ouvrent
+# le portefeuille qu'avec un jeton `aal2` (code TOTP vérifié dans la session).
+# `expert_comptable` arrive avec AXE-800.
+ROLES_MFA_OBLIGATOIRE = frozenset({"admin", "expert_comptable"})
+MESSAGE_MFA_REQUISE = "Activez la double authentification pour continuer."
+# Ce qu'un compte sans `aal2` peut encore appeler : savoir qu'il doit
+# s'enrôler, et tracer sa connexion. L'enrôlement lui-même passe par
+# Supabase Auth, pas par cette API.
+_ROUTES_SANS_MFA = frozenset({("GET", "/portefeuille/moi"), ("POST", "/session/connexion")})
+
+
+def get_role_appelant(identite: IdentiteDep) -> str | None:
+    """Rôle de l'appelant dans son portefeuille, `None` s'il n'en a pas
+    (chauffeur). En dépendance pour que la suite rapide le surcharge."""
+    if identite is None or identite.tenant_id is None:
+        return None
+    return _role_membre(identite.tenant_id, identite.email)
+
+
+RoleAppelantDep = Annotated[str | None, Depends(get_role_appelant)]
+
+
+def mfa_requise(role: str | None, identite: IdentiteAuthentifiee | None) -> bool:
+    return role in ROLES_MFA_OBLIGATOIRE and identite is not None and identite.aal != "aal2"
+
+
+def exiger_double_authentification(
+    request: Request, identite: IdentiteDep, role: RoleAppelantDep
+) -> None:
+    """AXE-812 : appliqué à toute l'API. Un admin (ou un expert-comptable)
+    connecté sans code n'atteint que `_ROUTES_SANS_MFA` : 403, et l'écran
+    l'envoie s'enrôler ou saisir son code."""
+    if not mfa_requise(role, identite):
+        return
+    chemin = getattr(request.scope.get("route"), "path", request.url.path)
+    if (request.method, chemin) in _ROUTES_SANS_MFA:
+        return
+    raise HTTPException(status_code=403, detail=MESSAGE_MFA_REQUISE)
 
 
 def _exiger_ecriture(role: str, detail: str) -> None:
@@ -2986,6 +3128,20 @@ def _inviter_en_masse(
     return InvitationsMasseVue(lignes=vues, nb_invitees=sum(v.resultat == "invité" for v in vues))
 
 
+def _exporter(
+    journal: JournalAcces,
+    dossier: Dossier,
+    identite: IdentiteAuthentifiee | None,
+    contenu: bytes | str,
+    media_type: str,
+    nom_fichier: str,
+) -> Response:
+    """Le fichier, et sa trace au journal d'audit (AXE-812). Appelé une fois
+    le fichier produit : un export refusé ne laisse pas de ligne."""
+    _tracer_export(journal, dossier, identite, nom_fichier)
+    return _fichier(contenu, media_type, nom_fichier)
+
+
 def _fichier(contenu: bytes | str, media_type: str, nom_fichier: str) -> Response:
     corps = contenu.encode("utf-8") if isinstance(contenu, str) else contenu
     return Response(
@@ -3000,21 +3156,43 @@ def _enregistrer_routes_pieces_greffe(app: FastAPI) -> None:
 
     @app.get("/dossiers/{dossier_id}/bilan.pdf")
     def telecharger_bilan(
-        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+        dossier: DossierDep,
+        ledger: LedgerDossierDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+        journal_acces: JournalAccesDep,
     ) -> Response:
         pdf = extraire_page_2033(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions)), "2033A"
         )
-        return _fichier(pdf, "application/pdf", f"bilan-actif-passif-{dossier.id}.pdf")
+        return _exporter(
+            journal_acces,
+            dossier,
+            identite,
+            pdf,
+            "application/pdf",
+            f"bilan-actif-passif-{dossier.id}.pdf",
+        )
 
     @app.get("/dossiers/{dossier_id}/compte-resultat.pdf")
     def telecharger_compte_resultat(
-        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+        dossier: DossierDep,
+        ledger: LedgerDossierDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+        journal_acces: JournalAccesDep,
     ) -> Response:
         pdf = extraire_page_2033(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions)), "2033B"
         )
-        return _fichier(pdf, "application/pdf", f"compte-de-resultat-{dossier.id}.pdf")
+        return _exporter(
+            journal_acces,
+            dossier,
+            identite,
+            pdf,
+            "application/pdf",
+            f"compte-de-resultat-{dossier.id}.pdf",
+        )
 
 
 def _enregistrer_routes_declarations(app: FastAPI) -> None:
@@ -3023,7 +3201,11 @@ def _enregistrer_routes_declarations(app: FastAPI) -> None:
 
     @app.get("/dossiers/{dossier_id}/cerfa-2065.pdf")
     def telecharger_cerfa(
-        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+        dossier: DossierDep,
+        ledger: LedgerDossierDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+        journal_acces: JournalAccesDep,
     ) -> Response:
         if not _colonne(dossier).soumis_is:
             raise HTTPException(
@@ -3037,11 +3219,17 @@ def _enregistrer_routes_declarations(app: FastAPI) -> None:
         pdf = PdfCerfa2065Renderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
         )
-        return _fichier(pdf, "application/pdf", f"cerfa-2065-{dossier.id}.pdf")
+        return _exporter(
+            journal_acces, dossier, identite, pdf, "application/pdf", f"cerfa-2065-{dossier.id}.pdf"
+        )
 
     @app.get("/dossiers/{dossier_id}/cerfa-2031.pdf")
     def telecharger_cerfa_2031(
-        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+        dossier: DossierDep,
+        ledger: LedgerDossierDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+        journal_acces: JournalAccesDep,
     ) -> Response:
         if _colonne(dossier).soumis_is:
             raise HTTPException(
@@ -3055,7 +3243,9 @@ def _enregistrer_routes_declarations(app: FastAPI) -> None:
         pdf = PdfCerfa2031Renderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
         )
-        return _fichier(pdf, "application/pdf", f"cerfa-2031-{dossier.id}.pdf")
+        return _exporter(
+            journal_acces, dossier, identite, pdf, "application/pdf", f"cerfa-2031-{dossier.id}.pdf"
+        )
 
 
 def _enregistrer_routes_cloture(app: FastAPI) -> None:
@@ -3065,23 +3255,43 @@ def _enregistrer_routes_cloture(app: FastAPI) -> None:
 
     @app.get("/dossiers/{dossier_id}/liasse.pdf")
     def telecharger_liasse(
-        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+        dossier: DossierDep,
+        ledger: LedgerDossierDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+        journal_acces: JournalAccesDep,
     ) -> Response:
         pdf = PdfLiasseSimplifieeRenderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
         )
-        return _fichier(pdf, "application/pdf", f"liasse-{dossier.id}.pdf")
+        nom = f"liasse-{dossier.id}.pdf"
+        return _exporter(journal_acces, dossier, identite, pdf, "application/pdf", nom)
 
     @app.get("/dossiers/{dossier_id}/liasse-fiscale.pdf")
     def telecharger_liasse_fiscale(
-        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+        dossier: DossierDep,
+        ledger: LedgerDossierDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+        journal_acces: JournalAccesDep,
     ) -> Response:
         _exiger_operations_tranchees(dossier, ledger)
         _exiger_dossier_clair(dossier)
         pdf = PdfLiasseFiscaleRenderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
         )
-        return _fichier(pdf, "application/pdf", f"liasse-fiscale-{dossier.id}.pdf")
+        return _exporter(
+            journal_acces,
+            dossier,
+            identite,
+            pdf,
+            "application/pdf",
+            f"liasse-fiscale-{dossier.id}.pdf",
+        )
+
+
+def _enregistrer_route_fec(app: FastAPI) -> None:
+    """Le FEC (A.47 A-1), tracé au journal d'audit à chaque téléchargement."""
 
     @app.get("/dossiers/{dossier_id}/fec.txt")
     def telecharger_fec(
@@ -3089,6 +3299,8 @@ def _enregistrer_routes_cloture(app: FastAPI) -> None:
         ledger: LedgerComptableDep,
         provisions: ProvisionsDep,
         comptes: ComptesBancairesDep,
+        identite: IdentiteDep,
+        journal_acces: JournalAccesDep,
     ) -> Response:
         ecritures = _ecritures_avec_cloture(
             dossier, ledger, _provisions_saisies(dossier, provisions)
@@ -3100,7 +3312,7 @@ def _enregistrer_routes_cloture(app: FastAPI) -> None:
             else f"fec-{dossier.id}.txt"
         )
         fec = exporter_fec(ecritures, libelles_banques(comptes.lister(dossier.id)))
-        return _fichier(fec, "text/plain; charset=utf-8", nom)
+        return _exporter(journal_acces, dossier, identite, fec, "text/plain; charset=utf-8", nom)
 
 
 def _soldes_par_compte(ecritures: tuple[Ecriture, ...]) -> dict[str, int]:
@@ -3206,43 +3418,84 @@ def _ecritures_sur_le_compte(ecritures: tuple[Ecriture, ...], compte: str) -> in
 def _enregistrer_routes_exports(app: FastAPI) -> None:
     @app.get("/dossiers/{dossier_id}/grand-livre.csv")
     def telecharger_grand_livre(
-        dossier: DossierDep, ledger: LedgerComptableDep, provisions: ProvisionsDep
+        dossier: DossierDep,
+        ledger: LedgerComptableDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+        journal_acces: JournalAccesDep,
     ) -> Response:
         ecritures = _ecritures_avec_cloture(
             dossier, ledger, _provisions_saisies(dossier, provisions)
         )
-        return _fichier(
-            exporter_grand_livre(ecritures), "text/csv", f"grand-livre-{dossier.id}.csv"
+        return _exporter(
+            journal_acces,
+            dossier,
+            identite,
+            exporter_grand_livre(ecritures),
+            "text/csv",
+            f"grand-livre-{dossier.id}.csv",
         )
 
     @app.get("/dossiers/{dossier_id}/grand-livre.pdf")
     def telecharger_grand_livre_pdf(
-        dossier: DossierDep, ledger: LedgerComptableDep, provisions: ProvisionsDep
+        dossier: DossierDep,
+        ledger: LedgerComptableDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+        journal_acces: JournalAccesDep,
     ) -> Response:
         ecritures = _ecritures_avec_cloture(
             dossier, ledger, _provisions_saisies(dossier, provisions)
         )
         pdf = rendre_grand_livre_pdf(ecritures, dossier_id=str(dossier.id))
-        return _fichier(pdf, "application/pdf", f"grand-livre-{dossier.id}.pdf")
+        return _exporter(
+            journal_acces,
+            dossier,
+            identite,
+            pdf,
+            "application/pdf",
+            f"grand-livre-{dossier.id}.pdf",
+        )
+
+
+def _enregistrer_routes_balance(app: FastAPI) -> None:
+    """Balance, en CSV et en PDF, tracée au journal d'audit (AXE-812)."""
 
     @app.get("/dossiers/{dossier_id}/balance.csv")
     def telecharger_balance(
-        dossier: DossierDep, ledger: LedgerComptableDep, provisions: ProvisionsDep
+        dossier: DossierDep,
+        ledger: LedgerComptableDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+        journal_acces: JournalAccesDep,
     ) -> Response:
         ecritures = _ecritures_avec_cloture(
             dossier, ledger, _provisions_saisies(dossier, provisions)
         )
-        return _fichier(exporter_balance(ecritures), "text/csv", f"balance-{dossier.id}.csv")
+        return _exporter(
+            journal_acces,
+            dossier,
+            identite,
+            exporter_balance(ecritures),
+            "text/csv",
+            f"balance-{dossier.id}.csv",
+        )
 
     @app.get("/dossiers/{dossier_id}/balance.pdf")
     def telecharger_balance_pdf(
-        dossier: DossierDep, ledger: LedgerComptableDep, provisions: ProvisionsDep
+        dossier: DossierDep,
+        ledger: LedgerComptableDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+        journal_acces: JournalAccesDep,
     ) -> Response:
         ecritures = _ecritures_avec_cloture(
             dossier, ledger, _provisions_saisies(dossier, provisions)
         )
         pdf = rendre_balance_pdf(ecritures, dossier_id=str(dossier.id))
-        return _fichier(pdf, "application/pdf", f"balance-{dossier.id}.pdf")
+        return _exporter(
+            journal_acces, dossier, identite, pdf, "application/pdf", f"balance-{dossier.id}.pdf"
+        )
 
 
 def _document_greffe_inpi(
@@ -3269,6 +3522,8 @@ def _enregistrer_routes_greffe_inpi(app: FastAPI) -> None:
         ledger: LedgerDossierDep,
         signatures: SignaturesInpiDep,
         provisions: ProvisionsDep,
+        identite: IdentiteDep,
+        journal_acces: JournalAccesDep,
     ) -> Response:
         _exiger_depot_greffe(dossier)
         document_signe = signatures.dernier(dossier.id, TYPE_DOCUMENT_GREFFE_INPI)
@@ -3277,7 +3532,8 @@ def _enregistrer_routes_greffe_inpi(app: FastAPI) -> None:
             if document_signe is not None
             else _document_greffe_inpi(dossier, ledger, _provisions_saisies(dossier, provisions))
         )
-        return _fichier(pdf, "application/pdf", f"greffe-inpi-{dossier.id}.pdf")
+        nom = f"greffe-inpi-{dossier.id}.pdf"
+        return _exporter(journal_acces, dossier, identite, pdf, "application/pdf", nom)
 
     @app.post("/dossiers/{dossier_id}/greffe-inpi/signature", response_model=SignatureGreffeVue)
     def signer_greffe_inpi(
@@ -3339,12 +3595,14 @@ def _enregistrer_routes_notifications(app: FastAPI) -> None:
         notifications: NotificationsDep,
         ledger: LedgerBaseDep,
         decisions: DecisionsDep,
+        comptes_bancaires: ComptesBancairesDep,
     ) -> list[NotificationVue]:
         nb = len(ecritures_a_trancher(ledger, decisions, dossier.id))
         visibles = pour_la_cloche(
             notifications.lister(dossier.id, _HISTORIQUE_AVANT_REGROUPEMENT),
             nb,
             _NOTIFICATIONS_AFFICHEES,
+            nombre_a_choisir(comptes_bancaires.lister(dossier.id)),
         )
         return [
             NotificationVue(
@@ -4876,6 +5134,97 @@ def _synchronisation_vue(job: Job | None) -> SynchronisationVue | None:
     )
 
 
+class LigneImportVue(BaseModel):
+    numero: int
+    dossier_id: str | None
+    nom: str | None
+    erreurs: list[str]
+    avertissements: list[str]
+
+
+class RapportImportVue(BaseModel):
+    """AXE-809 : ligne par ligne, avant toute création."""
+
+    lignes: list[LigneImportVue]
+    a_creer: int
+    en_erreur: int
+    creation: SynchronisationVue | None = None
+
+
+def _rapport_import(
+    tenant_id: TenantId,
+    contenu: bytes,
+    dossiers: DossierRepository,
+    sirene: bool,
+) -> tuple[RapportImportVue, list[dict[str, str]]]:
+    lignes = lire_csv(contenu)
+    existants = [d.id for d in dossiers.lister_par_tenant(tenant_id)]
+    resultat = rapport_import(tenant_id, lignes, existants, fiche_sirene if sirene else None)
+    vue = RapportImportVue(
+        lignes=[
+            LigneImportVue(
+                numero=ligne.numero,
+                dossier_id=ligne.dossier.id if ligne.dossier else None,
+                nom=ligne.dossier.nom if ligne.dossier else None,
+                erreurs=list(ligne.erreurs),
+                avertissements=list(ligne.avertissements),
+            )
+            for ligne in resultat.lignes
+        ],
+        a_creer=len(resultat.valides),
+        en_erreur=resultat.en_erreur,
+    )
+    return vue, lignes
+
+
+def _enregistrer_routes_import_dossiers(app: FastAPI) -> None:
+    """AXE-809 : créer les dossiers d'un portefeuille depuis un fichier CSV."""
+
+    @app.get("/portefeuille/import-dossiers/modele.csv")
+    def modele_import(identite: IdentiteDep) -> Response:
+        _verifier_acces_gestionnaire(identite)
+        return _fichier(MODELE_CSV, "text/csv; charset=utf-8", "modele-dossiers.csv")
+
+    @app.post("/portefeuille/import-dossiers/rapport", response_model=RapportImportVue)
+    async def rapport_import_dossiers(
+        fichier: UploadFile, identite: IdentiteDep, dossiers: DossiersDep, sirene: bool = False
+    ) -> RapportImportVue:
+        """Rien n'est écrit. `sirene` interroge Sirene ligne par ligne (plus lent)."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _rapport_import(tenant_id, await fichier.read(), dossiers, sirene)[0]
+
+    @app.post("/portefeuille/import-dossiers", response_model=RapportImportVue)
+    async def importer_dossiers(
+        fichier: UploadFile,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        dossiers: DossiersDep,
+        demandes: DemandesJobsDep,
+    ) -> RapportImportVue:
+        """Admin. Les lignes valides sont créées par le worker, en un lot ;
+        les lignes en erreur ne le sont pas."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        if role != "admin":
+            raise HTTPException(status_code=403, detail="Réservé à un administrateur.")
+        en_cours = demandes.dernier(str(tenant_id), TYPE_IMPORT_DOSSIERS)
+        if en_cours is not None and en_cours.actif:
+            raise HTTPException(status_code=409, detail="Un import est déjà en cours.")
+        vue, lignes = _rapport_import(tenant_id, await fichier.read(), dossiers, False)
+        if vue.a_creer == 0:
+            return vue
+        job = demandes.demander(
+            str(tenant_id), TYPE_IMPORT_DOSSIERS, json.dumps({"lignes": lignes})
+        )
+        return vue.model_copy(update={"creation": _synchronisation_vue(job)})
+
+    @app.get("/portefeuille/import-dossiers", response_model=SynchronisationVue | None)
+    def suivre_import(
+        demandes: DemandesJobsDep, identite: IdentiteDep
+    ) -> SynchronisationVue | None:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _synchronisation_vue(demandes.dernier(str(tenant_id), TYPE_IMPORT_DOSSIERS))
+
+
 def _nouveaux_chauffeurs(
     tenant_id: TenantId, contacts: ContactsProposesRepository
 ) -> list[NouveauChauffeurVue]:
@@ -4954,8 +5303,126 @@ def _enregistrer_routes_synchronisation(app: FastAPI) -> None:
         return _synchronisation_vue(demandes.dernier(tenant_id, TYPE_SYNCHRO))
 
 
+class MoiVue(BaseModel):
+    """AXE-812 : ce que l'écran doit savoir de la session gestionnaire."""
+
+    email: str
+    role: str
+    mfa_requise: bool  # le rôle l'exige et la session n'a pas encore de code
+    aal: str
+
+
+class ReinitialisationMfaVue(BaseModel):
+    facteurs_retires: int
+
+
+class ActeAccesVue(BaseModel):
+    type: str  # "export" | "consultation" | "connexion"
+    reference: str
+    par_vous: bool
+    le: str
+
+
+def _adresse_et_agent(request: Request) -> str:
+    """IP et navigateur de la connexion, bornés : une trace, pas un relevé."""
+    ip = request.client.host if request.client else "?"
+    agent = (request.headers.get("user-agent") or "?")[:160]
+    return f"{ip} · {agent}"
+
+
+def _enregistrer_routes_securite(app: FastAPI) -> None:
+    """AXE-812 : double authentification et traces d'accès."""
+
+    @app.get("/portefeuille/moi", response_model=MoiVue)
+    def moi(identite: IdentiteDep, role: RoleAppelantDep) -> MoiVue:
+        """Accessible sans code : l'écran y apprend qu'il doit s'enrôler."""
+        _tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        return MoiVue(
+            email=identite.email,
+            role=role or "admin",
+            mfa_requise=mfa_requise(role, identite),
+            aal=identite.aal,
+        )
+
+    @app.post("/session/connexion", status_code=204)
+    def tracer_connexion(
+        request: Request,
+        identite: IdentiteDep,
+        portefeuille: JournalPortefeuilleDep,
+        journal_acces: JournalAccesDep,
+    ) -> None:
+        """Appelé par l'écran juste après une connexion réussie. Une
+        connexion échouée n'arrive jamais ici : elle se lit dans les journaux
+        de Supabase Auth."""
+        if identite is None:
+            raise HTTPException(status_code=401, detail="Authentification requise.")
+        maintenant, trace = datetime.now(UTC), _adresse_et_agent(request)
+        if identite.tenant_id is not None:
+            portefeuille.noter(
+                identite.tenant_id, ACTE_CONNEXION_MEMBRE, trace, identite.user_id, maintenant
+            )
+        if identite.dossier_id is not None:
+            journal_acces.noter(
+                identite.dossier_id, ACTE_CONNEXION, trace, identite.user_id, maintenant
+            )
+
+
+def _enregistrer_routes_mfa_et_acces(app: FastAPI) -> None:
+    """AXE-812 : réinitialiser la double authentification d'un membre ;
+    relire les accès à un dossier."""
+
+    @app.post(
+        "/portefeuille/membres/{email}/mfa/reinitialiser", response_model=ReinitialisationMfaVue
+    )
+    def reinitialiser_mfa(
+        email: str,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        comptes: ComptesDep,
+        portefeuille: JournalPortefeuilleDep,
+    ) -> ReinitialisationMfaVue:
+        """Par un autre admin seulement, tracé. Le membre enrôlera un nouveau
+        facteur à sa prochaine connexion (pas de codes de secours natifs)."""
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        if role != "admin":
+            raise HTTPException(status_code=403, detail="Réservé à un administrateur.")
+        if email.strip().lower() == identite.email.lower():
+            raise HTTPException(
+                status_code=409, detail="Un autre administrateur doit réinitialiser la vôtre."
+            )
+        retires = comptes.reinitialiser_mfa(str(tenant_id), email.strip())
+        portefeuille.noter(
+            tenant_id,
+            ACTE_MFA_REINITIALISEE,
+            email.strip().lower(),
+            identite.user_id,
+            datetime.now(UTC),
+        )
+        return ReinitialisationMfaVue(facteurs_retires=retires)
+
+    @app.get("/dossiers/{dossier_id}/acces", response_model=list[ActeAccesVue])
+    def lire_acces(
+        dossier: DossierDep, identite: IdentiteDep, journal_acces: JournalAccesDep
+    ) -> list[ActeAccesVue]:
+        """Le dirigeant voit qui a consulté ou exporté son dossier."""
+        moi = identite.user_id if identite else None
+        return [
+            ActeAccesVue(
+                type=acte.type_acte,
+                reference=acte.reference,
+                par_vous=acte.acteur == moi,
+                le=acte.le.isoformat(),
+            )
+            for acte in journal_acces.lister(dossier.id, ACTES_VISIBLES_DU_DIRIGEANT)
+        ]
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="AxeLCompta — API", version="0.0.1")
+    app = FastAPI(
+        title="AxeLCompta — API",
+        version="0.0.1",
+        dependencies=[Depends(exiger_double_authentification)],
+    )
     from axelcompta.api.observabilite import brancher
 
     brancher(app)
@@ -4964,6 +5431,9 @@ def create_app() -> FastAPI:
     brancher_erreurs(app)
     _configurer_contexte_rls(app)
     _enregistrer_routes_dossiers(app)
+    _enregistrer_routes_import_dossiers(app)
+    _enregistrer_routes_securite(app)
+    _enregistrer_routes_mfa_et_acces(app)
     _enregistrer_routes_transactions(app)
     _enregistrer_route_correction(app)
     _enregistrer_routes_annulation(app)
@@ -4982,7 +5452,9 @@ def create_app() -> FastAPI:
     _enregistrer_routes_membres(app)
     _enregistrer_routes_invitation(app)
     _enregistrer_routes_cloture(app)
+    _enregistrer_route_fec(app)
     _enregistrer_routes_exports(app)
+    _enregistrer_routes_balance(app)
     _enregistrer_routes_comptes_bancaires(app)
     _enregistrer_routes_provisions(app)
     _enregistrer_routes_declarations(app)

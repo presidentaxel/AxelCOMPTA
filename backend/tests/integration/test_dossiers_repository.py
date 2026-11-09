@@ -258,3 +258,19 @@ def test_la_migration_marque_sas_et_sarl_a_confirmer(engine: Engine, id_unique: 
 
     assert repo.obtenir(sas.id).a_confirmer == ("forme_juridique",)  # type: ignore[union-attr]
     assert repo.obtenir(sasu.id).a_confirmer == ()  # type: ignore[union-attr]
+
+
+def test_un_lot_de_dossiers_est_cree_tout_ou_rien(
+    engine: Engine, creer_dossier: Callable[[str], None]
+) -> None:
+    """AXE-809 : une ligne refusée par la base (portefeuille inconnu) annule
+    tout le lot ; un second dépôt du même lot ne crée rien de plus."""
+    creer_dossier("d0")
+    depot = PostgresDossierRepository(engine)
+    bons = [dataclasses.replace(_dossier(f"lot{n}", "t-test"), plateformes=()) for n in range(3)]
+    with pytest.raises(IntegrityError):
+        depot.enregistrer_lot([*bons, _dossier("orphelin", "tenant-inconnu")])
+    assert depot.obtenir(DossierId("lot0")) is None
+
+    assert depot.enregistrer_lot(bons) == 3
+    assert depot.enregistrer_lot(bons) == 0

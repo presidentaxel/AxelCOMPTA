@@ -12,7 +12,9 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 TYPE_SYNCHRO = "synchro_digifactory"
-TYPES = frozenset({TYPE_SYNCHRO, "notifier", "ml"})
+# Création des dossiers d'un fichier validé (AXE-809).
+TYPE_IMPORT_DOSSIERS = "import_dossiers"
+TYPES = frozenset({TYPE_SYNCHRO, TYPE_IMPORT_DOSSIERS, "notifier", "ml"})
 TENTATIVES_MAX = 3
 
 

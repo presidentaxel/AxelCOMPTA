@@ -16,6 +16,7 @@ from axelcompta.workflow.notifications import (
     RAPPEL,
     TYPE_A_TRANCHER,
     TYPE_CLOTURE_A_VALIDER,
+    TYPE_COMPTES_A_CHOISIR,
     TYPE_CONNEXION_A_REFAIRE,
     TYPE_CONNEXION_J14,
     InMemoryNotificationRepository,
@@ -24,6 +25,7 @@ from axelcompta.workflow.notifications import (
     message,
     notifier_a_trancher,
     notifier_cloture_a_valider,
+    notifier_comptes_a_choisir,
     pour_la_cloche,
 )
 
@@ -228,3 +230,33 @@ def test_la_cloture_a_valider_se_rappelle_chaque_semaine_jusqu_a_la_cloture() ->
     assert notifier_cloture_a_valider(D, fin, notifs, debut_2026 + RAPPEL).statut == "creee"
     (premiere, _) = notifs.lister(D, limite=5)[::-1]
     assert premiere.message == "Votre exercice est terminé : relisez-le et validez sa clôture."
+
+
+def test_les_comptes_a_choisir_se_rappellent_chaque_semaine_tant_qu_ils_attendent() -> None:
+    """AXE-851 : une notification, pas de répétition avant `RAPPEL`, rien
+    quand plus aucun compte n'attend."""
+    repo = InMemoryNotificationRepository()
+    t0 = datetime(2026, 11, 9, 8, 0)
+
+    assert notifier_comptes_a_choisir(D, 2, repo, t0).statut == "creee"
+    assert notifier_comptes_a_choisir(D, 2, repo, t0 + timedelta(days=1)).statut == "deja_notifie"
+    assert notifier_comptes_a_choisir(D, 2, repo, t0 + RAPPEL).statut == "creee"
+    assert notifier_comptes_a_choisir(D, 0, repo, t0 + 2 * RAPPEL).statut == "rien_a_faire"
+    assert [n.type for n in repo.historique] == [TYPE_COMPTES_A_CHOISIR] * 2
+
+
+def test_la_cloche_recompte_les_comptes_a_choisir() -> None:
+    repo = InMemoryNotificationRepository()
+    notifier_comptes_a_choisir(D, 2, repo, datetime(2026, 11, 9))
+    notifications = repo.lister(D, 10)
+
+    deux = pour_la_cloche(notifications, 0, 5, comptes_a_choisir=2)
+    un = pour_la_cloche(notifications, 0, 5, comptes_a_choisir=1)
+
+    assert [n.message for n in deux] == [
+        "2 comptes bancaires attendent votre choix : servent-ils à votre activité ?"
+    ]
+    assert [n.message for n in un] == [
+        "Un compte bancaire attend votre choix : sert-il à votre activité ?"
+    ]
+    assert pour_la_cloche(notifications, 0, 5, comptes_a_choisir=0) == ()

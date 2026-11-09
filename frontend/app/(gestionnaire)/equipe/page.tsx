@@ -14,6 +14,7 @@ import {
   listerMembres,
   obtenirSessionGestionnaire,
   publierEquipeSession,
+  reinitialiserMfaMembre,
   retirerMembre,
   type MembrePortefeuille,
   type RoleMembre,
@@ -32,6 +33,7 @@ export default function EquipePage() {
   const [email, setEmail] = useState("");
   const [membres, setMembres] = useState<MembrePortefeuille[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [emailInvite, setEmailInvite] = useState("");
   const [roleInvite, setRoleInvite] = useState<RoleMembre>("membre");
   const [enCours, setEnCours] = useState(false);
@@ -94,6 +96,11 @@ export default function EquipePage() {
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Équipe</h1>
       <p className="mt-2 text-sm text-subtle">Qui voit cette organisation, et jusqu&apos;où.</p>
       {erreur && <p className="mt-6 text-sm text-danger">{erreur}</p>}
+      {info && (
+        <p role="status" className="mt-6 text-sm text-ink">
+          {info}
+        </p>
+      )}
 
       <div className="mt-8 grid items-start gap-12 lg:grid-cols-3">
       <form
@@ -202,6 +209,27 @@ export default function EquipePage() {
                 >
                   Retirer l&apos;accès
                 </Button>
+                {membre.statut === "actif" && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={async () => {
+                      const phrase =
+                        `Réinitialiser la double authentification de ${membre.email} ? ` +
+                        "Il enrôlera un nouveau téléphone à sa prochaine connexion.";
+                      if (!window.confirm(phrase)) return;
+                      try {
+                        await reinitialiserMfaMembre(membre.email);
+                        setInfo(`Double authentification de ${membre.email} réinitialisée.`);
+                      } catch (exception) {
+                        setErreur(exception instanceof Error ? exception.message : "Échec.");
+                      }
+                    }}
+                  >
+                    Réinitialiser la double authentification
+                  </Button>
+                )}
               </div>
             )}
           </li>

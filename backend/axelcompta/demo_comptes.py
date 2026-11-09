@@ -69,6 +69,10 @@ class InvitationFermee(Conflit, ValueError):
     """Le compte est déjà ouvert : on ne renvoie ni n'annule l'invitation."""
 
 
+class MembreInconnu(Introuvable, LookupError):
+    """Aucun compte de ce portefeuille ne porte cet e-mail."""
+
+
 class CompteRepository(ABC):
     """Frontière vers le fournisseur de comptes — Supabase Auth pour la
     démo, implémentation maison prévue en V1 (doc 17 §9 bloc B)."""
@@ -97,6 +101,13 @@ class CompteRepository(ABC):
 
     def annuler(self, dossier_id: DossierId) -> None:
         """Retire une invitation encore en attente. Un compte ouvert reste."""
+        raise NotImplementedError
+
+    def reinitialiser_mfa(self, tenant_id: str, email: str) -> int:
+        """AXE-812 : retire les facteurs de double authentification d'un
+        membre du portefeuille ; il en enrôlera un nouveau à sa prochaine
+        connexion. Renvoie le nombre de facteurs retirés. Lève
+        `MembreInconnu` si l'e-mail n'est pas un membre de ce portefeuille."""
         raise NotImplementedError
 
     def statuts(self, dossier_ids: Iterable[DossierId]) -> dict[DossierId, Invitation]:
@@ -228,6 +239,24 @@ class SupabaseCompteRepository(CompteRepository):
             raise InvitationFermee("Le compte est déjà ouvert.")
         reponse = self._client.delete(f"/admin/users/{utilisateur['id']}")
         reponse.raise_for_status()
+
+    def reinitialiser_mfa(self, tenant_id: str, email: str) -> int:
+        membre = next(
+            (
+                u
+                for u in self._tous_les_utilisateurs()
+                if (u.get("email") or "").lower() == email.lower()
+                and str((u.get("app_metadata") or {}).get("tenant_id") or "") == tenant_id
+            ),
+            None,
+        )
+        if membre is None:
+            raise MembreInconnu(f"aucun membre {email} dans ce portefeuille")
+        facteurs = membre.get("factors") or []
+        for facteur in facteurs:
+            reponse = self._client.delete(f"/admin/users/{membre['id']}/factors/{facteur['id']}")
+            reponse.raise_for_status()
+        return len(facteurs)
 
     def _utilisateur_du_dossier(self, dossier_id: DossierId) -> dict[str, Any] | None:
         for utilisateur in self._tous_les_utilisateurs():

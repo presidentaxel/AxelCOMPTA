@@ -15,6 +15,7 @@ from .demo_comptes import (
     InvitationAbsente,
     InvitationFermee,
     MembreCompte,
+    MembreInconnu,
     StatutInvitation,
 )
 
@@ -23,6 +24,8 @@ class InMemoryCompteRepository(CompteRepository):
     def __init__(self) -> None:
         self._invitations: dict[DossierId, Invitation] = {}
         self._membres: dict[str, dict[str, bool]] = {}
+        # AXE-812 : facteurs TOTP enrôlés, par (portefeuille, e-mail).
+        self.facteurs_mfa: dict[tuple[str, str], int] = {}
 
     def inviter(
         self, dossier_id: DossierId, email: str, *, verifier_existant: bool = True
@@ -55,6 +58,13 @@ class InMemoryCompteRepository(CompteRepository):
         if invitation.statut is StatutInvitation.ACTIF:
             raise InvitationFermee("Le compte est déjà ouvert.")
         return invitation
+
+    def reinitialiser_mfa(self, tenant_id: str, email: str) -> int:
+        propre = email.strip()
+        if propre not in self._membres.get(tenant_id, {}):
+            raise MembreInconnu(f"aucun membre {email} dans ce portefeuille")
+        retires = self.facteurs_mfa.pop((tenant_id, propre), 0)
+        return retires
 
     def annuler(self, dossier_id: DossierId) -> None:
         invitation = self._invitations.get(dossier_id)
