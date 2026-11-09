@@ -156,6 +156,7 @@ function Ligne({
 }) {
   const [corriger, setCorriger] = useState(false);
   const [compte, setCompte] = useState("");
+  const [motif, setMotif] = useState(""); // AXE-800 : obligatoire
   const [erreur, setErreur] = useState<string | null>(null);
 
   function verdict(valeur: "juste" | "faux") {
@@ -170,7 +171,7 @@ function Ligne({
 
   function imputer() {
     setErreur(null);
-    imputerExpert(operation.dossier_id, operation.ecriture_id, compte)
+    imputerExpert(operation.dossier_id, operation.ecriture_id, compte, motif.trim())
       .then(() => {
         setCorriger(false);
         onFait();
@@ -222,7 +223,19 @@ function Ligne({
                   </option>
                 ))}
               </select>
-              <Button type="button" size="sm" disabled={!compte} onClick={imputer}>
+              <input
+                aria-label="Motif de la correction"
+                placeholder="Motif (obligatoire)"
+                value={motif}
+                onChange={(evenement) => setMotif(evenement.target.value)}
+                className="h-8 rounded-md border border-border bg-canvas px-2 text-sm text-ink"
+              />
+              <Button
+                type="button"
+                size="sm"
+                disabled={!compte || motif.trim().length < 3}
+                onClick={imputer}
+              >
                 Imputer
               </Button>
             </>

@@ -10,7 +10,7 @@ from axelcompta.core.ids import DossierId, EcritureId
 from axelcompta.demo_api import create_app
 from axelcompta.ledger.periodes import PeriodeClose
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
-    _client,
+    _client_expert,
     _en_tete_gestionnaire,
     _jwks_factice,
     _ledger_calcule_une_seule_fois,
@@ -20,7 +20,7 @@ from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
 
 
 def test_une_imputation_sur_un_exercice_clos_est_datee_du_premier_jour_ouvert() -> None:
-    client = _client()
+    client = _client_expert()
     ledger = _ledger_du_client(client)
     cible = _sujets_a_trancher(client, "DEMO_sophie")[0]
     originale = next(
@@ -31,7 +31,12 @@ def test_une_imputation_sur_un_exercice_clos_est_datee_du_premier_jour_ouvert() 
 
     reponse = client.post(
         "/expert/imputations",
-        json={"dossier_id": "DEMO_sophie", "ecriture_id": cible["ecriture_id"], "compte": "6061"},
+        json={
+            "dossier_id": "DEMO_sophie",
+            "ecriture_id": cible["ecriture_id"],
+            "compte": "6061",
+            "motif": "Plein de la flotte",
+        },
         headers=_en_tete_gestionnaire(),
     )
 

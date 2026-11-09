@@ -11,12 +11,13 @@ from __future__ import annotations
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from axelcompta.core.errors import Conflit, DomaineError, Introuvable, SaisieInvalide
+from axelcompta.core.errors import Conflit, DomaineError, Interdit, Introuvable, SaisieInvalide
 
 _STATUT_PAR_FAMILLE: tuple[tuple[type[DomaineError], int], ...] = (
     (Conflit, 409),
     (Introuvable, 404),
     (SaisieInvalide, 422),
+    (Interdit, 403),
 )
 
 

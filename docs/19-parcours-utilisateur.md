@@ -149,7 +149,10 @@ le rôle `expert_comptable`. Lui seul voit le détail des dossiers couverts
 par sa lettre de mission et peut y imputer, après avoir accepté un
 engagement de responsabilité ; chaque changement porte son nom et son
 motif, et le chauffeur les voit (doc 02 §2.3, AXE-800). Le logiciel ne
-décide pas à sa place. Un gestionnaire sans ce rôle garde la vue agrégée.
+décide pas à sa place. Un gestionnaire sans ce rôle garde la vue agrégée. En
+place depuis le 2026-11-09 : le mode expert, les anomalies, les opérations
+classées et la quarantaine ne s'ouvrent qu'à l'expert habilité, sur les
+dossiers de sa lettre de mission.
 
 ## 3. Modèle de compte et onboarding
 

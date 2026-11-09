@@ -214,6 +214,10 @@ export type TransactionVue = {
   // Décision humaine en vigueur, quand il y en a une. Absente des réponses
   // antérieures à AXE-686 : le client la traite comme nulle.
   categorie?: string | null;
+  /** AXE-800 : reclassée par l'expert-comptable du portefeuille. */
+  reclassee_par?: string | null;
+  reclassee_le?: string | null;
+  motif_reclassement?: string | null;
 };
 
 /** Clôture de l'exercice, préparée par l'API et validée par le chauffeur

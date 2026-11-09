@@ -19,6 +19,7 @@ from axelcompta.workflow.decisions import CATEGORIE_A_PRECISER
 from axelcompta.workflow.synchro import COMPTE_ATTENTE, choisir_compte
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client,
+    _client_expert,
     _en_tete,
     _en_tete_gestionnaire,
     _jwks_factice,
@@ -58,7 +59,8 @@ def test_un_retrait_reste_a_trancher_avec_sa_categorie(
 
 
 def _client_avec_retrait() -> TestClient:
-    client = _client()
+    # La file expert est lue par l'expert-comptable habilité (AXE-800).
+    client = _client_expert()
     _ledger_du_client(client).enregistrer(
         Ecriture(
             id=RETRAIT,

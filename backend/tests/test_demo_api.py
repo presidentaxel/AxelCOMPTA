@@ -59,7 +59,9 @@ from axelcompta.demo_api import (
     get_consultations,
     get_decisions,
     get_dossiers,
+    get_ecrire_role,
     get_exercices,
+    get_experts,
     get_journal_acces,
     get_journal_ingestion,
     get_journal_portefeuille,
@@ -104,6 +106,14 @@ from axelcompta.tenants.tags_memoire import TagsMemoire
 from axelcompta.workflow.consultations import JournalConsultationsMemoire
 from axelcompta.workflow.decisions import DecisionHumaine
 from axelcompta.workflow.decisions_memory import InMemoryDecisionRepository
+from axelcompta.workflow.expert_comptable import (
+    ROLE_EXPERT,
+    TEXTE_ENGAGEMENT,
+    VERSION_ENGAGEMENT,
+    Engagement,
+    ExpertMemoire,
+    Habilitation,
+)
 from axelcompta.workflow.file_expert_cache import SansCache
 from axelcompta.workflow.journal_acces import JournalAccesMemoire
 from axelcompta.workflow.notifications import (
@@ -263,6 +273,11 @@ def _client_et_stubs(
     dossiers_stub.enregistrer_tenant(Tenant(id=TenantId("AUTRE_TENANT"), nom="Autre"))
     app.dependency_overrides[get_dossiers] = lambda: dossiers_stub
     app.dependency_overrides[get_ledger] = lambda: ledger_stub
+    experts_stub = ExpertMemoire(ledger_stub)
+    app.dependency_overrides[get_ecrire_role] = lambda: lambda _tenant, _email, _role: None
+    app.dependency_overrides[get_experts] = lambda: experts_stub
+    if role == ROLE_EXPERT:
+        _expert_habilite(experts_stub)
     app.dependency_overrides[get_propositions] = lambda: propositions_stub
     app.dependency_overrides[get_decisions] = lambda: decisions_stub
     app.dependency_overrides[get_comptes] = lambda: comptes_stub
@@ -283,6 +298,48 @@ def _client_et_stubs(
 
 def _client() -> TestClient:
     return _client_et_stubs()[0]
+
+
+DOSSIERS_DE_DEMO = (DossierId("DEMO_karim"), DossierId("DEMO_sophie"), DossierId("DEMO_yanis"))
+
+
+def _expert_habilite(
+    experts: ExpertMemoire, dossiers: tuple[DossierId, ...] = DOSSIERS_DE_DEMO
+) -> None:
+    """AXE-800 : l'expert du portefeuille de démo, habilité sur les trois
+    dossiers, engagement accepté. Même e-mail que `_jeton_gestionnaire`."""
+    le = datetime(2026, 11, 9, 9, 0, tzinfo=UTC)
+    experts.habiliter(
+        Habilitation(
+            tenant_id=TenantId("TENANT_DEMO"),
+            email="gestionnaire@example.com",
+            nom="Claire Expert",
+            cabinet="Cabinet Exemple",
+            numero_ordre="13-000001",
+            lettre_mission="LM-2026-01",
+            date_lettre=date(2026, 1, 1),
+            dossiers=dossiers,
+            accordee_par=UserId("admin-1"),
+            accordee_le=le,
+        )
+    )
+    experts.accepter(
+        Engagement(
+            tenant_id=TenantId("TENANT_DEMO"),
+            email="gestionnaire@example.com",
+            version=VERSION_ENGAGEMENT,
+            texte=TEXTE_ENGAGEMENT,
+            adresse="test",
+            acteur=UserId("gestionnaire-1"),
+            accepte_le=le,
+        )
+    )
+
+
+def _client_expert() -> TestClient:
+    """Le mode expert, le détail des dossiers et les imputations sont à
+    l'expert-comptable habilité (AXE-800)."""
+    return _client_et_stubs(role=ROLE_EXPERT)[0]
 
 
 def test_lister_dossiers_retourne_les_3_chauffeurs_type() -> None:
@@ -2148,7 +2205,7 @@ def test_repetition_les_pdf_de_cloture_et_le_greffe() -> None:
 
 
 def test_le_gestionnaire_liste_les_anomalies_de_son_dossier() -> None:
-    client = _client()
+    client = _client_expert()
     reponse = client.get("/dossiers/DEMO_karim/anomalies", headers=_en_tete_gestionnaire())
     assert reponse.status_code == 200
     assert isinstance(reponse.json(), list)
@@ -2305,7 +2362,7 @@ def test_file_expert_ne_calcule_aucune_proposition(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr("axelcompta.demo_api.propositions_apprises", interdit)
 
-    reponse = _client().get("/expert/file", headers=_en_tete_gestionnaire())
+    reponse = _client_expert().get("/expert/file", headers=_en_tete_gestionnaire())
 
     assert reponse.status_code == 200
     assert "a_trancher" in {sujet["nature"] for sujet in reponse.json()["sujets"]}
@@ -2314,7 +2371,7 @@ def test_file_expert_ne_calcule_aucune_proposition(monkeypatch: pytest.MonkeyPat
 def test_file_expert_lit_le_grand_livre_une_fois_par_dossier(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    client = _client()
+    client = _client_expert()
     ledger = _ledger_du_client(client)
     lectures: list[str] = []
     lire = ledger.grand_livre
@@ -2337,7 +2394,7 @@ def _sujets_a_trancher(client: TestClient, dossier_id: str) -> list[dict[str, ob
 
 
 def test_imputer_retourne_les_sujets_a_jour_du_seul_dossier_impute() -> None:
-    client = _client()
+    client = _client_expert()
     avant = _sujets_a_trancher(client, "DEMO_sophie")
     assert avant
     cible = avant[0]
@@ -2348,6 +2405,7 @@ def test_imputer_retourne_les_sujets_a_jour_du_seul_dossier_impute() -> None:
             "dossier_id": "DEMO_sophie",
             "ecriture_id": cible["ecriture_id"],
             "compte": "6061",
+            "motif": "Plein de la flotte",
         },
         headers=_en_tete_gestionnaire(),
     )
@@ -2363,9 +2421,9 @@ def test_imputer_retourne_les_sujets_a_jour_du_seul_dossier_impute() -> None:
 
 
 def test_imputer_un_dossier_inconnu_ne_retourne_rien() -> None:
-    reponse = _client().post(
+    reponse = _client_expert().post(
         "/expert/imputations",
-        json={"dossier_id": "INCONNU", "ecriture_id": "x", "compte": "6061"},
+        json={"dossier_id": "INCONNU", "ecriture_id": "x", "compte": "6061", "motif": "Test"},
         headers=_en_tete_gestionnaire(),
     )
     assert reponse.status_code == 404

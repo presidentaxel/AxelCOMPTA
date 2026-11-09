@@ -14,6 +14,7 @@ from axelcompta.demo_api import get_journal_ingestion
 from axelcompta.ingestion.journal import InMemoryJournalIngestion
 from axelcompta.ledger.contrepassation import contrepasser
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
+from axelcompta.workflow.expert_comptable import ROLE_EXPERT
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client_et_stubs,
     _en_tete_gestionnaire,
@@ -27,7 +28,7 @@ EN_TETE = _en_tete_gestionnaire()
 ORIGINE = EcritureId("DEMO_sophie:digifactory-t1")
 
 
-def _client_avec_une_modification(role: str = "admin") -> TestClient:
+def _client_avec_une_modification(role: str = ROLE_EXPERT) -> TestClient:
     client = _client_et_stubs(role)[0]
     ledger = _ledger_du_client(client)
     origine = Ecriture(
@@ -87,12 +88,12 @@ def test_le_gestionnaire_voit_l_operation_et_l_accepte() -> None:
 
 
 def test_la_lecture_ne_resout_pas_et_une_entree_inconnue_est_404() -> None:
+    # AXE-800 : le détail d'un dossier est à l'expert-comptable ; un autre
+    # rôle ne lit ni ne résout la quarantaine.
     lecture = _client_avec_une_modification("lecture")
-    (entree,) = lecture.get(f"/dossiers/{SOPHIE}/quarantaine", headers=EN_TETE).json()
+    assert lecture.get(f"/dossiers/{SOPHIE}/quarantaine", headers=EN_TETE).status_code == 403
     refus = lecture.post(
-        f"/dossiers/{SOPHIE}/quarantaine/{entree['id']}",
-        json={"decision": "accepter"},
-        headers=EN_TETE,
+        f"/dossiers/{SOPHIE}/quarantaine/x", json={"decision": "accepter"}, headers=EN_TETE
     )
     assert refus.status_code == 403
     admin = _client_avec_une_modification()
