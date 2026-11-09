@@ -74,6 +74,22 @@ l'API de démo ». Après un `git pull`, `alembic upgrade head` avant l'API.
 Le CORS n'accepte que `http://localhost:3000` ; `DATABASE_URL_WEB` doit
 être défini, sinon chaque requête répond 500.
 
+### Compte de test (AXE-822)
+
+Pour voir l'espace chauffeur d'un vrai dossier avant que les chauffeurs aient
+un compte : un compte de test, pour Louis seulement, daté.
+
+    python scripts/compte_de_test.py creer test@exemple.fr --jusqu-au 2026-12-31
+    python scripts/compte_de_test.py supprimer test@exemple.fr
+
+Connecté sur `/chauffeur/login`, il choisit le dossier (« Quel dossier ? »)
+et voit l'espace du chauffeur, avec un bandeau « Mode test, lecture seule ».
+Toute écriture répond 403. Il ne lit que les dossiers de son portefeuille
+(`X-Dossier`, vérifié par l'API), n'a aucune route gestionnaire, et chaque
+dossier ouvert est tracé au journal d'audit (`consultation_compte_test`).
+Passé la date de fin (90 jours au plus), l'API le refuse. À supprimer avant
+que les chauffeurs se connectent.
+
 ## 6. Risques
 
 | Risque | Parade |

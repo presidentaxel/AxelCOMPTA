@@ -9,6 +9,7 @@ import { Cloche } from "@/components/Cloche";
 import { Marque } from "@/components/Marque";
 import { EVENEMENT_ACTIVITE, relireActivite } from "@/lib/activite-url";
 import { obtenirSession, type SessionChauffeur } from "@/lib/auth-chauffeur";
+import { PAGE_CHOIX_DOSSIER } from "@/lib/compte-de-test";
 import { clavierOuvert, insetClavier } from "@/lib/clavier-viewport";
 
 /** Pages d'entrée : pas de navigation, même si une session traîne encore
@@ -76,7 +77,10 @@ export default function ChauffeurLayout({ children }: { children: React.ReactNod
     };
   }, []);
 
-  const espace = session !== null && !PAGES_PUBLIQUES.has(chemin);
+  // Le compte de test sans dossier choisi n'a ni cloche ni barre (AXE-822).
+  const espace =
+    session !== null && !PAGES_PUBLIQUES.has(chemin) && chemin !== PAGE_CHOIX_DOSSIER &&
+    session.dossierId !== "";
 
   return (
     <div className="chauffeur bg-canvas-app">
@@ -86,6 +90,9 @@ export default function ChauffeurLayout({ children }: { children: React.ReactNod
           {espace && session && <Cloche dossierId={session.dossierId} chemin={chemin} />}
         </div>
       </header>
+      {session?.lecteurTest && !PAGES_PUBLIQUES.has(chemin) && (
+        <BandeauCompteDeTest session={session} chemin={chemin} />
+      )}
       <main
         className={`chauffeur-main mx-auto w-full min-h-0 max-w-md flex-1 overflow-x-clip overflow-y-auto px-4 py-6 ${
           espace ? "" : "sans-barre"
@@ -94,6 +101,26 @@ export default function ChauffeurLayout({ children }: { children: React.ReactNod
         {children}
       </main>
       {espace && session && <Barre dossierId={session.dossierId} chemin={chemin} />}
+    </div>
+  );
+}
+
+/** AXE-822 : rappel permanent que l'on regarde le dossier d'un autre, sans
+ * pouvoir rien changer, et le chemin pour en changer. */
+function BandeauCompteDeTest({ session, chemin }: { session: SessionChauffeur; chemin: string }) {
+  const dossier = session.dossierNom || session.dossierId;
+  return (
+    <div role="status" className="shrink-0 border-b border-warning/40 bg-pending-subtle">
+      <p className="mx-auto flex max-w-md items-center justify-between gap-3 px-4 py-2 text-sm text-ink">
+        <span className="min-w-0 truncate">
+          Mode test, lecture seule{dossier ? ` — ${dossier}` : ""}
+        </span>
+        {chemin !== PAGE_CHOIX_DOSSIER && (
+          <Link href={PAGE_CHOIX_DOSSIER} className="shrink-0 font-semibold text-primary underline">
+            Changer de dossier
+          </Link>
+        )}
+      </p>
     </div>
   );
 }

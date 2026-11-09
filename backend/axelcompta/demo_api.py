@@ -43,7 +43,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol, cast
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, insert, select, update
@@ -160,7 +160,7 @@ from axelcompta.ledger.banque import (
 )
 from axelcompta.ledger.contrepassation import annulees, contrepasser
 from axelcompta.ledger.memory import InMemoryLedgerService
-from axelcompta.ledger.models import Ecriture, Sens
+from axelcompta.ledger.models import Ecriture, Journal, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
 from axelcompta.nouveaux_contacts import fiche_sirene
@@ -234,6 +234,7 @@ from axelcompta.workflow.classees import (
 )
 from axelcompta.workflow.classees import classer as classer_operations
 from axelcompta.workflow.classees_cache import VERSION_CLASSEES
+from axelcompta.workflow.consultations import JournalConsultations, PostgresJournalConsultations
 from axelcompta.workflow.decisions import (
     CATEGORIE_A_PRECISER,
     CATEGORIE_ANNULATION,
@@ -435,6 +436,15 @@ class DossierAgregat(BaseModel):
     comptes_a_choisir: int = 0
     comptes_a_choisir_depuis: str | None = None
     operations_en_attente_de_choix: int = 0
+
+
+class DossierDeTestVue(BaseModel):
+    """Une ligne de l'écran « Quel dossier ? » du compte de test (AXE-822)."""
+
+    dossier_id: str
+    nom: str
+    forme_juridique: str
+    nb_operations: int
 
 
 class AlerteAnomalieVue(BaseModel):
@@ -1335,7 +1345,53 @@ def get_comptes() -> CompteRepository:
 
 ComptesDep = Annotated[CompteRepository, Depends(get_comptes)]
 
-IdentiteDep = Annotated[IdentiteAuthentifiee | None, Depends(identite_chauffeur_optionnelle)]
+_METHODES_LECTURE = frozenset({"GET", "HEAD"})
+
+
+def get_identite(
+    request: Request,
+    identite: Annotated[IdentiteAuthentifiee | None, Depends(identite_chauffeur_optionnelle)],
+    dossiers: DossiersDep,
+    x_dossier: Annotated[str | None, Header(alias="X-Dossier")] = None,
+) -> IdentiteAuthentifiee | None:
+    """L'identité de l'appelant. Pour le compte de test (AXE-822) seulement,
+    le dossier vient de l'en-tête `X-Dossier`, vérifié ici ; pour tout autre
+    compte, cet en-tête n'est jamais lu."""
+    if identite is None or identite.lecteur_test_tenant is None:
+        return identite
+    return _dossier_du_lecteur_test(identite, request.method, x_dossier, dossiers)
+
+
+def _dossier_du_lecteur_test(
+    identite: IdentiteAuthentifiee,
+    methode: str,
+    x_dossier: str | None,
+    dossiers: DossierRepository,
+) -> IdentiteAuthentifiee:
+    """Lecture seule : toute écriture répond 403, quelle que soit la route.
+    Le dossier demandé doit être dans le portefeuille du compte ; sinon 403,
+    sans dire s'il existe ailleurs."""
+    if methode not in _METHODES_LECTURE:
+        raise HTTPException(status_code=403, detail="Compte de test : lecture seule.")
+    if x_dossier is None:
+        return identite
+    dossier = dossiers.obtenir(DossierId(x_dossier))
+    if dossier is None or dossier.tenant_id != identite.lecteur_test_tenant:
+        raise HTTPException(
+            status_code=403, detail="Ce dossier n'est pas dans le portefeuille de test."
+        )
+    return dataclasses.replace(identite, dossier_id=dossier.id)
+
+
+IdentiteDep = Annotated[IdentiteAuthentifiee | None, Depends(get_identite)]
+
+
+def get_consultations() -> JournalConsultations:
+    """Dépendance FastAPI — voir `_engine`."""
+    return PostgresJournalConsultations(_engine())
+
+
+ConsultationsDep = Annotated[JournalConsultations, Depends(get_consultations)]
 
 
 def get_journal_acces() -> JournalAcces:
@@ -1861,9 +1917,13 @@ def _configurer_contexte_rls(app: FastAPI) -> None:
     @app.middleware("http")
     async def poser_contexte_rls(request: Request, call_next: Any) -> Any:
         identite = identite_tolerante(request.headers.get("authorization"))
+        # Le compte de test (AXE-822) lit son portefeuille comme un
+        # gestionnaire au niveau de la base ; l'API ne lui ouvre que les
+        # routes de dossier, une à une (`get_identite`).
+        tenant = identite and (identite.tenant_id or identite.lecteur_test_tenant)
         with contexte_identite(
             dossier_id=str(identite.dossier_id) if identite and identite.dossier_id else None,
-            tenant_id=str(identite.tenant_id) if identite and identite.tenant_id else None,
+            tenant_id=str(tenant) if tenant else None,
         ):
             return await call_next(request)
 
@@ -1965,6 +2025,28 @@ def _agregats_portefeuille(
     return resultat
 
 
+def _enregistrer_route_compte_de_test(app: FastAPI) -> None:
+    @app.get("/lecteur-test/dossiers", response_model=list[DossierDeTestVue])
+    def dossiers_du_compte_de_test(
+        identite: IdentiteDep, dossiers: DossiersDep, base: LedgerBaseDep
+    ) -> list[DossierDeTestVue]:
+        """AXE-822 : l'écran « Quel dossier ? » du compte de test. Réservé à
+        ce compte ; un gestionnaire ou un chauffeur reçoit 403."""
+        if identite is None:
+            raise HTTPException(status_code=401, detail="Authentification requise.")
+        if identite.lecteur_test_tenant is None:
+            raise HTTPException(status_code=403, detail="Réservé au compte de test.")
+        return [
+            DossierDeTestVue(
+                dossier_id=d.id,
+                nom=d.nom,
+                forme_juridique=d.forme_juridique,
+                nb_operations=sum(1 for e in base.grand_livre(d.id) if e.journal is Journal.BQ),
+            )
+            for d in dossiers.lister_par_tenant(identite.lecteur_test_tenant)
+        ]
+
+
 def _enregistrer_routes_dossiers(app: FastAPI) -> None:
     @app.get("/dossiers", response_model=list[DossierAgregat])
     def lister_dossiers(
@@ -2006,7 +2088,11 @@ def _enregistrer_routes_dossiers(app: FastAPI) -> None:
         signatures: SignaturesInpiDep,
         avenants: AvenantsDep,
         provisions: ProvisionsDep,
+        identite: IdentiteDep,
+        consultations: ConsultationsDep,
     ) -> DossierResume:
+        if identite is not None and identite.lecteur_test_tenant is not None:
+            consultations.noter(dossier.id, identite.user_id, datetime.now(UTC))
         resume = _resume(
             dossier,
             ledger,
@@ -5491,6 +5577,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_import_dossiers(app)
     _enregistrer_routes_securite(app)
     _enregistrer_routes_mfa_et_acces(app)
+    _enregistrer_route_compte_de_test(app)
     _enregistrer_routes_transactions(app)
     _enregistrer_route_correction(app)
     _enregistrer_routes_annulation(app)

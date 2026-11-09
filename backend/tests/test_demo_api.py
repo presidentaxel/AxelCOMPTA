@@ -56,6 +56,7 @@ from axelcompta.demo_api import (
     get_comptes,
     get_comptes_bancaires,
     get_consentements,
+    get_consultations,
     get_decisions,
     get_dossiers,
     get_exercices,
@@ -100,6 +101,7 @@ from axelcompta.tenants.memory import InMemoryDossierRepository
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.provisions_cloture import InMemoryProvisionsClotureRepository
 from axelcompta.tenants.tags_memoire import TagsMemoire
+from axelcompta.workflow.consultations import JournalConsultationsMemoire
 from axelcompta.workflow.decisions import DecisionHumaine
 from axelcompta.workflow.decisions_memory import InMemoryDecisionRepository
 from axelcompta.workflow.file_expert_cache import SansCache
@@ -212,6 +214,8 @@ def _surcharger_depots_simples(app: FastAPI) -> None:
     app.dependency_overrides[get_journal_acces] = lambda: journal_acces_stub
     journal_portefeuille_stub = JournalPortefeuilleMemoire()
     app.dependency_overrides[get_journal_portefeuille] = lambda: journal_portefeuille_stub
+    consultations_stub = JournalConsultationsMemoire()
+    app.dependency_overrides[get_consultations] = lambda: consultations_stub
     avenants_stub = InMemoryAvenantRegimeRepository()
     app.dependency_overrides[get_avenants] = lambda: avenants_stub
     exercices_stub = InMemoryExerciceRepository()

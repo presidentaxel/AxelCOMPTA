@@ -3,7 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { fetchAvecAuthChauffeur, obtenirSession } from "@/lib/auth-chauffeur";
+import {
+  choisirDossierDeTest,
+  fetchAvecAuthChauffeur,
+  obtenirSession,
+} from "@/lib/auth-chauffeur";
 import { messageEchecChargement } from "@/lib/session";
 import type { DossierResume, TransactionVue } from "@/lib/types";
 
@@ -21,6 +25,12 @@ function sessionOuvreLeDossier(dossierId: string, router: ReturnType<typeof useR
     const parametres = new URLSearchParams({ retour });
     router.replace(`/chauffeur/login?${parametres.toString()}`);
     return false;
+  }
+  if (session.lecteurTest) {
+    // AXE-822 : le compte de test ouvre le dossier de l'adresse ; le serveur
+    // refuse un dossier hors de son portefeuille.
+    if (session.dossierId !== dossierId) choisirDossierDeTest(dossierId, "");
+    return true;
   }
   if (session.dossierId !== dossierId) {
     router.replace(`/chauffeur/${session.dossierId}`);
