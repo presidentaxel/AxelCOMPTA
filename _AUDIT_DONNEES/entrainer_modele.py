@@ -44,6 +44,7 @@ Usage, depuis _AUDIT_DONNEES/ :
 """
 
 import argparse
+import hashlib
 import csv
 import json
 import math
@@ -358,6 +359,11 @@ def main() -> None:
     modele = pipeline(list(y)).fit(x, y)
     args.modele.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(modele, args.modele)
+    # AXE-825 : empreinte vérifiée au chargement (`ml_fallback.verifier_empreinte`).
+    empreinte = hashlib.sha256(args.modele.read_bytes()).hexdigest()
+    args.modele.with_name(args.modele.name + ".sha256").write_text(
+        f"{empreinte}  {args.modele.name}\n", encoding="utf-8"
+    )
     calibration = args.modele.with_suffix(".calibration.json")
     rapport += ecrire_calibration(calibration, oof)
     args.rapport.write_text("\n".join(rapport) + "\n", encoding="utf-8")

@@ -73,10 +73,11 @@ from axelcompta.categorize.appris import (
     propositions_apprises,
 )
 from axelcompta.categorize.ml_fallback import (
-    ModeleMlIndisponible,
     charger_calibration,
-    charger_modele,
+    repli_sans_modele_permis,
 )
+from axelcompta.categorize.modele_requis import EtatCategorisation, signaler
+from axelcompta.categorize.modele_requis import charger as charger_modele_et_etat
 from axelcompta.categorize.models import Etage
 from axelcompta.categorize.rules_and_ml import (
     CATEGORIE_PAR_DEFAUT,
@@ -318,6 +319,11 @@ class RegimeAVenirVue(BaseModel):
     exercice: int
     regime: str  # libellé de la colonne de la matrice
     motif: str
+
+
+class CategorisationVue(BaseModel):
+    modele_charge: bool
+    raison: str | None
 
 
 class DossierResume(BaseModel):
@@ -1199,18 +1205,21 @@ def get_propositions() -> PropositionRepository:
 
 
 _PIPELINE: RulesAndMlPipeline | None = None
+_ETAT_CATEGORISATION: EtatCategorisation | None = None
 
 
 def get_pipeline() -> RulesAndMlPipeline:
     """Dépendance FastAPI — règles du pack et modèle chargés une fois par
     processus. Sans modèle sur le poste (fichier gitignoré), les règles
-    seules : l'étage ML s'abstient, rien ne plante (doc 08 §5)."""
-    global _PIPELINE
+    seules pour servir les écrans, mais l'état est exposé et signalé
+    (AXE-825) : `GET /portefeuille/categorisation`."""
+    global _PIPELINE, _ETAT_CATEGORISATION
     if _PIPELINE is None:
-        try:
-            modele = charger_modele()
-        except ModeleMlIndisponible:
-            modele = None
+        charge = charger_modele_et_etat()
+        modele = charge.modele
+        _ETAT_CATEGORISATION = charge.etat
+        if modele is None and not repli_sans_modele_permis():
+            signaler(charge.etat.raison or "Modèle de catégorisation absent.")
         _PIPELINE = RulesAndMlPipeline(
             regles=charger_regles(),
             modele=modele,
@@ -1218,6 +1227,11 @@ def get_pipeline() -> RulesAndMlPipeline:
             categories_banque=charger_categories_banque(),
         )
     return _PIPELINE
+
+
+def get_etat_categorisation() -> EtatCategorisation:
+    get_pipeline()
+    return _ETAT_CATEGORISATION or EtatCategorisation(True, "")
 
 
 DecisionsDep = Annotated[DecisionRepository, Depends(get_decisions)]
@@ -2233,6 +2247,18 @@ def _regle_vue(ligne: Row[Any]) -> RegleVue:
         jours_avant=ligne.jours_avant,
         actif=bool(ligne.actif),
     )
+
+
+def _enregistrer_route_categorisation(app: FastAPI) -> None:
+    @app.get("/portefeuille/categorisation", response_model=CategorisationVue)
+    def lire_categorisation(
+        identite: IdentiteDep,
+        etat: Annotated[EtatCategorisation, Depends(get_etat_categorisation)],
+    ) -> CategorisationVue:
+        """AXE-825 : le modèle est-il chargé ? Sinon, la catégorisation est
+        dégradée et la synchro ne tourne pas."""
+        _verifier_acces_gestionnaire(identite)
+        return CategorisationVue(modele_charge=etat.modele_charge, raison=etat.raison)
 
 
 def _enregistrer_routes_portefeuille(app: FastAPI) -> None:
@@ -4952,6 +4978,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_tags(app)
     _enregistrer_routes_revue(app)
     _enregistrer_routes_portefeuille(app)
+    _enregistrer_route_categorisation(app)
     _enregistrer_routes_connexions(app)
     _enregistrer_routes_rappels(app)
     _enregistrer_routes_regles(app)

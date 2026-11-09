@@ -369,3 +369,9 @@ export type ConfigurationDossier = {
   identite_manquante: string[];
   raison_blocage: string | null;
 };
+
+/** AXE-825 : sans modèle, la synchro s'arrête et la catégorisation est dégradée. */
+export type EtatCategorisation = {
+  modele_charge: boolean;
+  raison: string | null;
+};
