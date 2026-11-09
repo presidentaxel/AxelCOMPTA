@@ -3,8 +3,9 @@
 **Aucun compte n'est créé** (depuis le 2026-11-05, AXE-726) : le dirigeant
 de chaque société est invité par le gestionnaire avec sa vraie adresse
 (écran Invitations), et confirme sa configuration à la première connexion
-(AXE-730). La forme juridique est reprise de Sirene quand le contact a un
-SIREN ; le reste de la configuration est une valeur par défaut.
+(AXE-730). La forme, le premier exercice et l'activité viennent de Sirene
+(AXE-834) ; une société cessée est ignorée, une activité qui n'est pas du
+VTC est signalée.
 
 Le compte Digifactory de Serenity contient aussi des contacts qui ne sont
 pas des chauffeurs (ses propres sociétés, des plateformes) : on ne crée de
@@ -17,7 +18,7 @@ Usage, depuis backend/ :
     python scripts/ajouter_chauffeurs_digifactory.py --lister
     python scripts/ajouter_chauffeurs_digifactory.py --contacts 7416,8780 --sans-synchro
     python scripts/ajouter_chauffeurs_digifactory.py --contacts 7416,8780
-    python scripts/ajouter_chauffeurs_digifactory.py --formes
+    python scripts/ajouter_chauffeurs_digifactory.py --sirene   # réaligne les dossiers existants
 
 Idempotent : un contact déjà mappé est laissé tel quel. La synchro rejoue
 sans doublon (curseur).
@@ -28,38 +29,28 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
-import httpx
 from dotenv import load_dotenv
 
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.demo_digifactory import (
     TENANT_DEMO,
     dossier_depuis_contact,
-    forme_depuis_nature_juridique,
     nom_affiche,
     numero_contact,
+    preparer_dossier,
     siren_contact,
 )
 from axelcompta.ingestion.providers.digifactory import DigifactoryHttpClient
+from axelcompta.nouveaux_contacts import fiche_sirene
 from axelcompta.synchro_digifactory import synchroniser_portefeuille
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.postgres import PostgresDossierRepository
-
-
-def _assurer_dossier(depot: PostgresDossierRepository, voulu: Dossier) -> tuple[Dossier, str]:
-    if voulu.contact_nr is None:
-        raise RuntimeError(f"{voulu.id} sans contact")
-    existant = depot.par_contact_nr(voulu.contact_nr)
-    if existant is not None:
-        return existant, "déjà en base"
-    depot.enregistrer(voulu)
-    enregistre = depot.obtenir(voulu.id)
-    if enregistre is None:
-        raise RuntimeError(f"{voulu.id} non relu après écriture")
-    return enregistre, "créé"
+from axelcompta.tenants.sirene import FicheSirene, configurer_depuis_sirene
+from axelcompta.tenants.tags import POSE_PAR_IMPORT, TAG_CHAUFFEUR, a_taguer_chauffeur
+from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 
 
 async def _contacts_bruts() -> dict[str, dict[str, object]]:
@@ -71,43 +62,30 @@ async def _contacts_bruts() -> dict[str, dict[str, object]]:
     return {str(nr): contact for nr, contact in brut.items() if isinstance(contact, dict)}
 
 
-def _forme_sirene(siren: str) -> str | None:
-    """Recherche d'entreprises (data.gouv, sans clé). On n'accepte que le
-    résultat dont le SIREN est exactement celui demandé."""
-    reponse = httpx.get(
-        "https://recherche-entreprises.api.gouv.fr/search",
-        params={"q": siren, "per_page": 1},
-        headers={"accept": "application/json"},
-        timeout=15.0,
-    )
-    reponse.raise_for_status()
-    resultats = reponse.json().get("results") or []
-    if not resultats or str(resultats[0].get("siren") or "") != siren:
-        return None
-    nature = resultats[0].get("nature_juridique")
-    if not isinstance(nature, str):
-        return None
-    return forme_depuis_nature_juridique(nature)
+def _fiche_sirene(siren: str | None) -> FicheSirene | None:
+    """Même lecture que la détection automatique (AXE-845)."""
+    return fiche_sirene(siren)
 
 
-def _aligner_formes(depot: PostgresDossierRepository) -> None:
+def _aligner_sirene(depot: PostgresDossierRepository) -> None:
+    """Dossiers déjà en base : forme, premier exercice, activité et éléments à
+    confirmer repris de Sirene. Un exercice déjà juste ne bouge pas."""
     for contact in asyncio.run(_contacts_bruts()).values():
         dossier = depot.par_contact_nr(numero_contact(contact))
         if dossier is None:
             continue
-        siren = siren_contact(contact)
-        if siren is None:
-            print(
-                f"{dossier.id} : pas de SIREN, forme laissée {dossier.forme_juridique}", flush=True
-            )
+        fiche = _fiche_sirene(siren_contact(contact))
+        if fiche is None:
+            print(f"{dossier.id} : pas de fiche Sirene, laissé tel quel", flush=True)
             continue
-        forme = _forme_sirene(siren)
-        if forme is None:
-            print(f"{dossier.id} : nature juridique non reconnue", flush=True)
-            continue
-        if forme != dossier.forme_juridique:
-            depot.poser_forme_juridique(dossier.id, forme)
-        print(f"{dossier.id} : {forme}", flush=True)
+        nouveau = configurer_depuis_sirene(dossier, fiche, date.today())
+        if nouveau != dossier:
+            depot.reconfigurer_depuis_sirene(nouveau)
+        print(
+            f"{dossier.id} : {nouveau.forme_juridique}, exercice du {nouveau.exercice_debut}, "
+            f"NAF {nouveau.code_naf}, à confirmer {list(nouveau.a_confirmer)}",
+            flush=True,
+        )
 
 
 def _arguments() -> argparse.Namespace:
@@ -117,7 +95,9 @@ def _arguments() -> argparse.Namespace:
     action.add_argument(
         "--contacts", help="numéros de contact à importer, séparés par des virgules"
     )
-    action.add_argument("--formes", action="store_true", help="reprend les formes Sirene")
+    action.add_argument(
+        "--sirene", "--formes", action="store_true", help="réaligne les dossiers sur Sirene"
+    )
     parseur.add_argument("--sans-synchro", action="store_true", help="dossiers seulement")
     return parseur.parse_args()
 
@@ -146,12 +126,8 @@ def _importer(
     for numero in sorted(contacts.keys() - voulus_nr, key=int):
         print(f"{numero} : hors liste, ignoré", flush=True)
     depot.enregistrer_tenant(Tenant(id=TENANT_DEMO, nom="Portefeuille démo"))
-    dossiers = tuple(
-        _poser(depot, dossier_depuis_contact(contacts[numero], date.today()))
-        for numero in sorted(voulus_nr, key=int)
-    )
-    _aligner_formes(depot)
-    return dossiers
+    poses = (_poser(depot, contacts[numero]) for numero in sorted(voulus_nr, key=int))
+    return tuple(dossier for dossier in poses if dossier is not None)
 
 
 def _synchroniser(dossiers: tuple[Dossier, ...]) -> int:
@@ -176,21 +152,47 @@ def _synchroniser(dossiers: tuple[Dossier, ...]) -> int:
 def main() -> int:
     arguments = _arguments()
     load_dotenv(Path(__file__).resolve().parents[2] / ".env")
-    depot = PostgresDossierRepository(engine_depuis_env())
-    if arguments.formes:
-        _aligner_formes(depot)
+    engine = engine_depuis_env()
+    depot = PostgresDossierRepository(engine)
+    if arguments.sirene:
+        _aligner_sirene(depot)
+        _taguer_chauffeurs(depot, PostgresTagsRepository(engine))
         return 0
     contacts = asyncio.run(_contacts_bruts())
     if arguments.lister:
         _lister(depot, contacts)
         return 0
     dossiers = _importer(depot, contacts, arguments.contacts)
+    _taguer_chauffeurs(depot, PostgresTagsRepository(engine))
     return 0 if arguments.sans_synchro else _synchroniser(dossiers)
 
 
-def _poser(depot: PostgresDossierRepository, voulu: Dossier) -> Dossier:
-    dossier, etat = _assurer_dossier(depot, voulu)
-    print(f"{dossier.id} ({dossier.nom}) : {etat}", flush=True)
+def _taguer_chauffeurs(depot: PostgresDossierRepository, tags: PostgresTagsRepository) -> None:
+    """Tag `chauffeur` d'après le NAF (AXE-829). Les autres tags
+    (`societe_du_gestionnaire`, `hors_perimetre`) se posent à la main."""
+    for dossier_id in a_taguer_chauffeur(depot.lister_par_tenant(TENANT_DEMO)):
+        tags.poser(TENANT_DEMO, dossier_id, TAG_CHAUFFEUR, POSE_PAR_IMPORT, datetime.now(UTC))
+        print(f"{dossier_id} : tag chauffeur", flush=True)
+
+
+def _poser(depot: PostgresDossierRepository, contact: dict[str, object]) -> Dossier | None:
+    """Le dossier du contact, créé d'après Sirene s'il n'existe pas.
+    `None` : société cessée, rien n'est créé."""
+    numero = numero_contact(contact)
+    existant = depot.par_contact_nr(numero)
+    if existant is not None:
+        print(f"{existant.id} ({existant.nom}) : déjà en base", flush=True)
+        return existant
+    voulu = dossier_depuis_contact(contact, date.today())
+    dossier, avertissements = preparer_dossier(
+        voulu, _fiche_sirene(siren_contact(contact)), date.today()
+    )
+    for avertissement in avertissements:
+        print(f"{voulu.id} ({voulu.nom}) : {avertissement}", flush=True)
+    if dossier is None:
+        return None
+    depot.enregistrer(dossier)
+    print(f"{dossier.id} ({dossier.nom}) : créé", flush=True)
     return dossier
 
 

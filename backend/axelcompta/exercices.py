@@ -41,6 +41,7 @@ from axelcompta.closing.cloture_fiscale import (
 from axelcompta.closing.models import ParametresCloture, ProvisionCloture
 from axelcompta.closing.ouverture import ecriture_a_nouveaux
 from axelcompta.core.db import engine_depuis_env
+from axelcompta.core.errors import Conflit
 from axelcompta.core.ids import DossierId
 from axelcompta.ledger.models import Ecriture
 from axelcompta.ledger.repository import PostgresLedgerService
@@ -48,6 +49,7 @@ from axelcompta.ledger.service import LedgerService
 from axelcompta.packs.vtc_demo import charger_compte_par_categorie
 from axelcompta.tenants.avenants import AvenantRegime, regime_pour_exercice
 from axelcompta.tenants.avenants_postgres import PostgresAvenantRegimeRepository
+from axelcompta.tenants.confirmation import raison_ambiguite
 from axelcompta.tenants.exercices import ExerciceClos, ExerciceDejaClos, ExerciceRepository
 from axelcompta.tenants.franchise_tva import EtatFranchise, MillesimeInconnu, suivre_franchise
 from axelcompta.tenants.models import Dossier
@@ -57,10 +59,10 @@ from axelcompta.tenants.statuts import RegimeTva, configuration_de
 from axelcompta.workflow.decisions import DecisionRepository
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
 from axelcompta.workflow.notifications import ecritures_a_trancher
-from axelcompta.workflow.revue import appliquer_decisions
+from axelcompta.workflow.reclassement import grand_livre_tranche
 
 
-class PassageRefuse(ValueError):
+class PassageRefuse(Conflit, ValueError):
     """L'exercice ne peut pas être clos maintenant ; le message dit pourquoi."""
 
     def __init__(self, message: str, *, code: str = "autre") -> None:
@@ -90,6 +92,10 @@ def preparer_passage(
             f"L'exercice se termine le {fin:%d/%m/%Y}. Il n'est pas terminé.",
             code="pas_termine",
         )
+    ambiguite = raison_ambiguite(dossier)
+    if ambiguite is not None:
+        # AXE-730 : on ne clôt pas un dossier dont la forme ou l'identité est incertaine.
+        raise PassageRefuse(ambiguite, code="configuration")
     en_attente = ecritures_a_trancher(ledger, decisions, dossier.id)
     if en_attente:
         nombre = len(en_attente)
@@ -97,11 +103,10 @@ def preparer_passage(
         raise PassageRefuse(f"{sujet} encore une décision.", code="operations")
     configuration = configuration_de(dossier)
     colonne = configuration.colonne
-    tranchees = appliquer_decisions(
+    tranchees = grand_livre_tranche(
         ledger.grand_livre(dossier.id),
         decisions.lister_decisions(dossier.id),
-        configuration.comptes_categories_statut(),
-        charger_compte_par_categorie(),
+        (configuration.comptes_categories_statut(), charger_compte_par_categorie()),
     )
     parametres = ParametresCloture(
         exercice_debut=dossier.exercice_debut,

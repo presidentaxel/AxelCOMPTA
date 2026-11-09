@@ -9,6 +9,18 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from axelcompta.core.schema import tete_unique, verification_demandee, verifier_schema
+
+
+def verifier_schema_au_demarrage() -> None:
+    """Refuse de démarrer sur une base en retard (AXE-841). Lu au démarrage
+    du serveur, pas à l'import : les tests importent l'app sans base."""
+    if not verification_demandee():
+        return
+    from axelcompta import demo_api
+
+    verifier_schema(demo_api._engine(), tete_unique())
+
 
 def create_app() -> FastAPI:
     # Import local : demo_api construit son app au chargement, et ne doit
@@ -16,6 +28,8 @@ def create_app() -> FastAPI:
     from axelcompta import demo_api
 
     app: FastAPI = demo_api.app
+    if verifier_schema_au_demarrage not in app.router.on_startup:
+        app.router.on_startup.append(verifier_schema_au_demarrage)
     if not any(getattr(route, "path", "") == "/sante" for route in app.routes):
 
         @app.get("/sante")

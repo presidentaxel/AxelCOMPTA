@@ -19,6 +19,9 @@ class EntreeQuarantaine:
     motif: str
     transaction_id: str | None
     payload: dict[str, object]
+    # Empreinte stable (dossier, source, motif, contenu) : la même entrée
+    # n'est jamais mise deux fois en quarantaine (AXE-424 : on la résout par lui).
+    id: str = ""
 
 
 def empreinte(*parties: str, payload: dict[str, object]) -> str:
@@ -67,10 +70,23 @@ class JournalIngestion(ABC):
     def avancer_curseur(self, dossier_id: DossierId, source: str, valeur: datetime) -> None:
         """Ne recule jamais : une valeur antérieure au curseur courant est ignorée."""
 
+    @abstractmethod
+    def comptes_des_transactions(self, dossier_id: DossierId, source: str) -> dict[str, str]:
+        """`{transaction_id: account_id}` lu dans l'archive brute (AXE-832).
+        Une transaction sans `account_id` est absente du résultat."""
+
+
+def compte_du_payload(payload: dict[str, object]) -> str | None:
+    """`account_id` d'une ligne archivée, ou `None`."""
+    valeur = payload.get("account_id")
+    texte = "" if valeur is None else str(valeur).strip()
+    return texte or None
+
 
 class InMemoryJournalIngestion(JournalIngestion):
     def __init__(self) -> None:
         self.brut: dict[str, dict[str, object]] = {}
+        self._comptes: dict[tuple[str, str, str], str] = {}
         self._quarantaine: dict[str, EntreeQuarantaine] = {}
         self._curseurs: dict[tuple[str, str], datetime] = {}
 
@@ -83,6 +99,9 @@ class InMemoryJournalIngestion(JournalIngestion):
         payload: dict[str, object],
     ) -> None:
         self.brut.setdefault(empreinte(dossier_id, source, payload=payload), payload)
+        compte = compte_du_payload(payload)
+        if transaction_id is not None and compte is not None:
+            self._comptes[(dossier_id, source, transaction_id)] = compte
 
     def mettre_en_quarantaine(
         self,
@@ -94,7 +113,7 @@ class InMemoryJournalIngestion(JournalIngestion):
     ) -> None:
         cle = empreinte(dossier_id, source, motif, payload=payload)
         self._quarantaine.setdefault(
-            cle, EntreeQuarantaine(dossier_id, source, motif, transaction_id, payload)
+            cle, EntreeQuarantaine(dossier_id, source, motif, transaction_id, payload, cle)
         )
 
     def lister_quarantaine(self, dossier_id: DossierId) -> tuple[EntreeQuarantaine, ...]:
@@ -107,3 +126,10 @@ class InMemoryJournalIngestion(JournalIngestion):
         actuel = self._curseurs.get((dossier_id, source))
         if actuel is None or valeur > actuel:
             self._curseurs[(dossier_id, source)] = valeur
+
+    def comptes_des_transactions(self, dossier_id: DossierId, source: str) -> dict[str, str]:
+        return {
+            transaction_id: compte
+            for (dossier, src, transaction_id), compte in self._comptes.items()
+            if dossier == dossier_id and src == source
+        }

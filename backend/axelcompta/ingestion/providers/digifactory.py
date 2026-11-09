@@ -143,7 +143,33 @@ def _normaliser(tx: dict[str, Any], dossier_id: DossierId) -> NormalizedTransact
         libelle=str(tx.get("provider_description", "")),
         source_provider="digifactory",
         raw_payload=tx,
+        compte_bancaire=_identifiant_compte(tx.get("account_id")),
+        type_operation=_type_operation(tx.get("operation_type")),
+        categorie_banque=_identifiant_compte(tx.get("category_id")),
     )
+
+
+def normaliser_payload(tx: dict[str, Any], dossier_id: DossierId) -> NormalizedTransaction:
+    """Une ligne Digifactory brute (celle gardée en quarantaine) relue comme
+    à la synchro. Lève `ValueError` si elle est inexploitable (AXE-424)."""
+    return _normaliser(tx, dossier_id)
+
+
+def _type_operation(valeur: object) -> str | None:
+    """`operation_type` Digifactory ; « unknown » ne dit rien, donc `None`."""
+    if not isinstance(valeur, str):
+        return None
+    texte = valeur.strip().lower()
+    return None if texte in ("", "unknown") else texte
+
+
+def _identifiant_compte(valeur: object) -> str | None:
+    """`account_id` de la transaction (doc 16 §3.1 : la clé du payload n'est
+    pas fiable, ce champ l'est). Absent ou vide : banque inconnue."""
+    if valeur is None:
+        return None
+    texte = str(valeur).strip()
+    return texte or None
 
 
 def fenetres_mensuelles(debut: date, jusqua: date) -> tuple[tuple[datetime, datetime], ...]:

@@ -31,6 +31,8 @@ from axelcompta.core.ids import DossierId, EcritureId, TenantId, UserId
 from axelcompta.core.money import Money
 from axelcompta.core.rls import appliquer_rls, contexte_identite
 from axelcompta.documents.postgres import PostgresJustificatifRepository
+from axelcompta.ingestion.comptes_bancaires import CompteBancaire, CompteInconnu
+from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
 from axelcompta.ingestion.consentement import ReleveSante, SanteConnexion, StatutConsentement
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
@@ -44,6 +46,7 @@ from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.statuts import RegimeImposition
+from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.workflow.decisions import DecisionHumaine
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
 from axelcompta.workflow.notifications import NotificationEnvoyee
@@ -469,3 +472,85 @@ def test_un_justificatif_reste_dans_son_dossier(
         assert repo.a_un_justificatif(TenantId("tenant-a"), DossierId("karim"), photo) is False
     with contexte_identite(dossier_id=None, tenant_id="tenant-a"):
         assert repo.a_un_justificatif(TenantId("tenant-a"), DossierId("karim"), photo) is True
+
+
+def test_un_compte_bancaire_reste_dans_son_dossier(
+    engine: Engine, engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """Migration `c3f7a2e81d45` (AXE-832) : Karim lit ses comptes, Sophie et
+    le gestionnaire de l'autre portefeuille non ; le rôle web ne peut rien
+    écrire (l'attribution passe par la synchro)."""
+    PostgresCompteBancaireRepository(engine).ajouter(
+        CompteBancaire(DossierId("karim"), "pro", "5121", "Compte PRO")
+    )
+    web = PostgresCompteBancaireRepository(engine_web)
+    with contexte_identite(dossier_id="karim", tenant_id=None):
+        assert [c.compte_comptable for c in web.lister(DossierId("karim"))] == ["5121"]
+        with pytest.raises((ProgrammingError, DBAPIError)):
+            web.ajouter(CompteBancaire(DossierId("karim"), "autre", "5122"))
+    with contexte_identite(dossier_id="sophie", tenant_id=None):
+        assert web.lister(DossierId("karim")) == ()
+    with contexte_identite(dossier_id=None, tenant_id="tenant-b"):
+        assert web.lister(DossierId("karim")) == ()
+
+
+def test_les_tags_restent_dans_leur_portefeuille(
+    engine: Engine, engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """Migration `e5b9d3f72a48` (AXE-829) : le portefeuille A tague ses
+    dossiers, ne voit pas les tags de B, et ne peut pas taguer un dossier de
+    B. Les événements ne se modifient pas."""
+    le = datetime(2026, 11, 5, tzinfo=UTC)
+    web = PostgresTagsRepository(engine_web)
+    with contexte_identite(dossier_id=None, tenant_id="tenant-a"):
+        web.poser(TenantId("tenant-a"), DossierId("karim"), "chauffeur", UserId("louis"), le)
+        assert web.tags_des_dossiers(TenantId("tenant-a")) == {
+            DossierId("karim"): frozenset({"chauffeur"})
+        }
+        with pytest.raises((ProgrammingError, DBAPIError)):
+            web.poser(TenantId("tenant-a"), DossierId("yanis"), "chauffeur", UserId("louis"), le)
+    with contexte_identite(dossier_id=None, tenant_id="tenant-b"):
+        assert web.tags_des_dossiers(TenantId("tenant-a")) == {}
+    with engine.begin() as connexion, pytest.raises(DBAPIError):
+        connexion.execute(text("UPDATE evenements_tags SET pose = false"))
+
+
+@pytest.mark.parametrize(
+    "requete",
+    [
+        "ALTER TABLE ecritures DISABLE TRIGGER ALL",
+        "ALTER TABLE ecritures DISABLE TRIGGER ecritures_immuables",
+        "ALTER TABLE lignes_ecriture DISABLE TRIGGER ALL",
+        "SET session_replication_role = replica",
+        "DROP TRIGGER ecritures_immuables ON ecritures",
+    ],
+)
+def test_le_role_web_ne_peut_pas_lever_les_verrous(engine_web: Engine, requete: str) -> None:
+    """AXE-810 : aucun chemin applicatif ne peut suspendre l'immuabilité (I2).
+    Seul le propriétaire des tables le peut, et l'API ne s'y connecte pas."""
+    with engine_web.connect() as connexion, pytest.raises((ProgrammingError, DBAPIError)):
+        connexion.execute(text(requete))
+
+
+def test_le_dirigeant_ne_change_que_le_choix_de_ses_comptes(
+    engine: Engine, engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """AXE-729 (migration `f6c1a8e3b927`) : le rôle web retient ou écarte un
+    compte de son dossier, jamais celui d'un autre, et ne touche ni au nom
+    ni au solde."""
+    depot_admin = PostgresCompteBancaireRepository(engine)
+    for dossier_id in ("sophie", "karim"):
+        depot_admin.ajouter(CompteBancaire(DossierId(dossier_id), "perso", "5121"))
+    depot_web = PostgresCompteBancaireRepository(engine_web)
+    le = datetime(2026, 11, 6, 10, 0, tzinfo=UTC)
+    with contexte_identite(dossier_id="sophie", tenant_id=None):
+        depot_web.decider(DossierId("sophie"), "5121", False, UserId("sophie"), le)
+        with pytest.raises(CompteInconnu):
+            depot_web.decider(DossierId("karim"), "5121", False, UserId("sophie"), le)
+        with engine_web.begin() as connexion:
+            appliquer_rls(connexion)
+            with pytest.raises((ProgrammingError, DBAPIError)):
+                connexion.execute(text("UPDATE comptes_bancaires SET nom = 'autre'"))
+
+    assert depot_admin.lister(DossierId("sophie"))[0].retenu is False
+    assert depot_admin.lister(DossierId("karim"))[0].retenu is None

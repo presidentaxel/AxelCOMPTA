@@ -28,6 +28,7 @@ from axelcompta.closing.bilan_simplifie import ClotureSimplifieeService
 from axelcompta.closing.models import LiassePivot, ParametresCloture
 from axelcompta.core.ids import EcritureId, TenantId
 from axelcompta.core.money import Money
+from axelcompta.core.pcg import COMPTE_BANQUE
 from axelcompta.demo_identites import IDENTITES_DEMO
 from axelcompta.filings.cerfa_2065 import PdfCerfa2065Renderer
 from axelcompta.filings.export_comptable import exporter_balance, exporter_grand_livre
@@ -154,7 +155,7 @@ def ecriture_apport_capital(profil: ProfilChauffeurType) -> Ecriture:
         libelle="Libération du capital social",
         reference_piece="STATUTS",
         lignes=(
-            LigneEcriture(compte="512", sens=Sens.DEBIT, montant=capital),
+            LigneEcriture(compte=COMPTE_BANQUE, sens=Sens.DEBIT, montant=capital),
             LigneEcriture(compte="1013", sens=Sens.CREDIT, montant=capital),
         ),
     )

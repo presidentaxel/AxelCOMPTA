@@ -25,17 +25,31 @@ from typing import Protocol
 from axelcompta.categorize.models import Etage, ProposedEntry
 from axelcompta.categorize.pipeline import CategorizationPipeline
 from axelcompta.core.ids import EcritureId
+from axelcompta.core.pcg import COMPTE_BANQUE
+from axelcompta.ingestion.comptes_bancaires import (
+    CompteBancaireRepository,
+    compte_de,
+    comptes_ecartes,
+)
 from axelcompta.ingestion.journal import JournalIngestion
-from axelcompta.ingestion.providers.base import LotTransactions
+from axelcompta.ingestion.providers.base import LotTransactions, NormalizedTransaction
+from axelcompta.ledger.banque import montant_bancaire
 from axelcompta.ledger.contrepassation import contrepasser, id_contrepassation
-from axelcompta.ledger.models import Ecriture, Sens
+from axelcompta.ledger.models import Ecriture
+from axelcompta.ledger.periodes import Periode, periode_close_de
 from axelcompta.ledger.service import LedgerService
 from axelcompta.tenants.models import Dossier
 
 from .auto_accept import construire_ecriture_categorisee
 from .propositions import PropositionRepository
+from .reclassement import annuler_reclassements
 
 COMPTE_ATTENTE = "471"
+# Motif de quarantaine montré au chauffeur : une opération bancaire datée dans
+# un exercice déjà clos ne s'y écrit plus ; le gestionnaire la reprend.
+MOTIF_PERIODE_CLOSE = (
+    "periode_close : opération datée dans un exercice déjà clos, à reprendre par votre gestionnaire"
+)
 
 # Sans settlement plateforme réconcilié (Rollee, doc 13 §4), un virement Uber
 # ou Bolt ne peut pas être comptabilisé en 706 : la ventilation TVA vient du
@@ -64,6 +78,12 @@ class RapportSynchro:
     supprimees_signalees: int
     rejets: int
     curseur: datetime | None
+    # Opérations datées dans un exercice clos, arrivées après la clôture :
+    # en quarantaine, jamais au grand livre (I4, AXE-806).
+    periode_close: int = 0
+    # Opérations d'un compte écarté ou à décider (AXE-729) : ni écriture ni
+    # question, gardées dans l'archive brute.
+    compte_non_retenu: int = 0
 
 
 def choisir_compte(proposition: ProposedEntry, comptes: dict[str, str]) -> str:
@@ -84,26 +104,33 @@ def choisir_compte(proposition: ProposedEntry, comptes: dict[str, str]) -> str:
 
 def _signature(ecriture: Ecriture) -> tuple[int, object]:
     """(montant signé côté banque, date) : ce qui ne doit plus bouger une fois
-    comptabilisé."""
-    for ligne in ecriture.lignes:
-        if ligne.compte == "512":
-            signe = 1 if ligne.sens is Sens.DEBIT else -1
-            return signe * ligne.montant.centimes, ecriture.date
-    return 0, ecriture.date
+    comptabilisé. Lu sur 512 ou sur un sous-compte 512x (AXE-832)."""
+    return montant_bancaire(ecriture), ecriture.date
 
 
 def _annuler(
-    ledger: LedgerService, comptabilisees: dict[EcritureId, Ecriture], existante: Ecriture
+    ledger: LedgerService,
+    comptabilisees: dict[EcritureId, Ecriture],
+    existante: Ecriture,
+    dossier: Dossier,
 ) -> None:
     """Pose l'écriture inverse une seule fois. L'originale reste en place."""
-    inverse = contrepasser(existante)
+    periodes = ledger.periodes_closes(existante.dossier_id)
+    inverse = contrepasser(existante, periodes, dossier.exercice_debut)
     if inverse.id in comptabilisees:
         return
     ledger.enregistrer(inverse)
     comptabilisees[inverse.id] = inverse
+    # AXE-420 : les reclassements des décisions sur cette opération aussi.
+    for annulation in annuler_reclassements(
+        existante.id, list(comptabilisees.values()), periodes, dossier.exercice_debut
+    ):
+        ledger.enregistrer(annulation)
+        comptabilisees[annulation.id] = annulation
 
 
-def _id_ecriture(dossier: Dossier, source_nom: str, transaction_id: str) -> EcritureId:
+def id_ecriture(dossier: Dossier, source_nom: str, transaction_id: str) -> EcritureId:
+    """L'écriture d'une opération bancaire : stable d'une synchro à l'autre."""
     return EcritureId(f"{dossier.id}:{source_nom}-{transaction_id}")
 
 
@@ -129,8 +156,10 @@ class _Compteurs:
     nouvelles: int = 0
     a_trancher: int = 0
     connues: int = 0
+    non_retenues: int = 0
     modifiees: int = 0
     supprimees: int = 0
+    periode_close: int = 0
 
 
 def _traiter_transactions(
@@ -143,40 +172,141 @@ def _traiter_transactions(
     propositions: PropositionRepository,
     pipeline: CategorizationPipeline,
     comptes: dict[str, str],
+    comptes_bancaires: CompteBancaireRepository | None,
 ) -> _Compteurs:
     compteurs = _Compteurs()
+    periodes = ledger.periodes_closes(dossier.id)
+    hors_retenus = _hors_comptes_retenus(
+        dossier, source_nom, lot, comptabilisees, comptes_bancaires
+    )
+    par_transaction = _propositions_des_ouvertes(
+        dossier, source_nom, lot, comptabilisees, periodes, pipeline, hors_retenus
+    )
     for transaction in lot.transactions:
-        ecriture_id = _id_ecriture(dossier, source_nom, transaction.id)
+        ecriture_id = id_ecriture(dossier, source_nom, transaction.id)
         existante = comptabilisees.get(ecriture_id)
         if existante is not None:
-            # Une fois contre-passée, l'originale ne compte plus : même revenue
-            # à l'identique, la ligne bancaire n'est plus comptabilisée et
-            # repart en quarantaine plutôt que de passer pour « déjà connue ».
-            deja_annulee = id_contrepassation(ecriture_id) in comptabilisees
-            inchangee = _signature(existante) == (transaction.montant_cts, transaction.date)
-            if inchangee and not deja_annulee:
-                compteurs.connues += 1
-            else:
-                compteurs.modifiees += 1
-                _annuler(ledger, comptabilisees, existante)
-                journal.mettre_en_quarantaine(
-                    dossier.id,
-                    source_nom,
-                    "modifiee_apres_comptabilisation",
-                    transaction.id,
-                    transaction.raw_payload,
-                )
+            _relever_existante(
+                dossier,
+                source_nom,
+                transaction,
+                existante,
+                ecriture_id,
+                comptabilisees,
+                journal,
+                ledger,
+                compteurs,
+            )
             continue
-        proposition = pipeline.categoriser(dossier.id, transaction)
+        if transaction.id in hors_retenus:
+            compteurs.non_retenues += 1
+            continue
+        if periode_close_de(transaction.date, periodes) is not None:
+            compteurs.periode_close += 1
+            journal.mettre_en_quarantaine(
+                dossier.id, source_nom, MOTIF_PERIODE_CLOSE, transaction.id, transaction.raw_payload
+            )
+            continue
+        proposition = par_transaction[transaction.id]
         compte = choisir_compte(proposition, comptes)
+        banque = _banque(dossier, transaction, comptes_bancaires)
         ecriture = dataclasses.replace(
-            construire_ecriture_categorisee(transaction, proposition, compte, 0), id=ecriture_id
+            construire_ecriture_categorisee(transaction, proposition, compte, 0, banque),
+            id=ecriture_id,
         )
-        propositions.enregistrer(ecriture_id, proposition)
+        propositions.enregistrer(
+            ecriture_id,
+            dataclasses.replace(proposition, moyen_paiement=transaction.type_operation),
+        )
         ledger.enregistrer(ecriture)
         compteurs.nouvelles += 1
         compteurs.a_trancher += compte == COMPTE_ATTENTE
     return compteurs
+
+
+def _banque(
+    dossier: Dossier,
+    transaction: NormalizedTransaction,
+    comptes_bancaires: CompteBancaireRepository | None,
+) -> str:
+    if comptes_bancaires is None:
+        return COMPTE_BANQUE
+    return compte_de(comptes_bancaires, dossier.id, transaction.compte_bancaire)
+
+
+def _hors_comptes_retenus(
+    dossier: Dossier,
+    source_nom: str,
+    lot: LotTransactions,
+    comptabilisees: dict[EcritureId, Ecriture],
+    comptes_bancaires: CompteBancaireRepository | None,
+) -> frozenset[str]:
+    """AXE-729 : nouvelles opérations d'un compte écarté ou à décider. Un
+    compte vu pour la première fois est enregistré ici, avant le tri."""
+    if comptes_bancaires is None:
+        return frozenset()
+    nouvelles = [
+        t
+        for t in lot.transactions
+        if t.compte_bancaire is not None
+        and id_ecriture(dossier, source_nom, t.id) not in comptabilisees
+    ]
+    for identifiant in dict.fromkeys(t.compte_bancaire for t in nouvelles):
+        compte_de(comptes_bancaires, dossier.id, identifiant)
+    ecartes = comptes_ecartes(comptes_bancaires, dossier.id)
+    return frozenset(t.id for t in nouvelles if t.compte_bancaire in ecartes)
+
+
+def _propositions_des_ouvertes(
+    dossier: Dossier,
+    source_nom: str,
+    lot: LotTransactions,
+    comptabilisees: dict[EcritureId, Ecriture],
+    periodes: tuple[Periode, ...],
+    pipeline: CategorizationPipeline,
+    hors_retenus: frozenset[str] = frozenset(),
+) -> dict[str, ProposedEntry]:
+    """Catégorisées ensemble : les deux jambes d'un virement interne ne se
+    reconnaissent que côte à côte (AXE-826). Une opération datée dans un
+    exercice clos n'entre pas dans le lot : elle part en quarantaine."""
+    nouvelles = [
+        t
+        for t in lot.transactions
+        if id_ecriture(dossier, source_nom, t.id) not in comptabilisees
+        and periode_close_de(t.date, periodes) is None
+        and t.id not in hors_retenus
+    ]
+    return {p.transaction_id: p for p in pipeline.categoriser_lot(dossier.id, nouvelles)}
+
+
+def _relever_existante(
+    dossier: Dossier,
+    source_nom: str,
+    transaction: NormalizedTransaction,
+    existante: Ecriture,
+    ecriture_id: EcritureId,
+    comptabilisees: dict[EcritureId, Ecriture],
+    journal: JournalIngestion,
+    ledger: LedgerService,
+    compteurs: _Compteurs,
+) -> None:
+    """Une fois contre-passée, l'originale ne compte plus : même revenue à
+    l'identique, la ligne bancaire n'est plus comptabilisée et repart en
+    quarantaine plutôt que de passer pour « déjà connue »."""
+    deja_annulee = id_contrepassation(ecriture_id) in comptabilisees
+    inchangee = _signature(existante) == (transaction.montant_cts, transaction.date)
+    if inchangee and not deja_annulee:
+        compteurs.connues += 1
+        return
+    compteurs.modifiees += 1
+    _annuler(ledger, comptabilisees, existante, dossier)
+    journal.mettre_en_quarantaine(
+        dossier.id,
+        source_nom,
+        "modifiee_apres_comptabilisation",
+        transaction.id,
+        transaction.raw_payload,
+    )
 
 
 def _signaler_supprimees(
@@ -189,11 +319,11 @@ def _signaler_supprimees(
 ) -> int:
     signalees = 0
     for transaction_id in lot.supprimees:
-        existante = comptabilisees.get(_id_ecriture(dossier, source_nom, transaction_id))
+        existante = comptabilisees.get(id_ecriture(dossier, source_nom, transaction_id))
         if existante is None:
             continue
         signalees += 1
-        _annuler(ledger, comptabilisees, existante)
+        _annuler(ledger, comptabilisees, existante, dossier)
         journal.mettre_en_quarantaine(
             dossier.id,
             source_nom,
@@ -213,8 +343,16 @@ async def synchroniser_dossier(
     propositions: PropositionRepository,
     pipeline: CategorizationPipeline,
     comptes_par_categorie: dict[str, str],
+    comptes_bancaires: CompteBancaireRepository | None = None,
 ) -> RapportSynchro:
-    lot = await source.lire_lot(dossier, journal.curseur(dossier.id, source_nom))
+    """`comptes_bancaires` : registre des sous-comptes 512x (AXE-832). Sans
+    lui, toute opération va au 512, comme avant."""
+    # Un compte retenu après coup : on relit tout pour importer son passé.
+    a_relire = comptes_bancaires is not None and any(
+        c.a_relire for c in comptes_bancaires.lister(dossier.id)
+    )
+    curseur = None if a_relire else journal.curseur(dossier.id, source_nom)
+    lot = await source.lire_lot(dossier, curseur)
     _archiver_lot(dossier, source_nom, journal, lot)
     comptabilisees = {e.id: e for e in ledger.grand_livre(dossier.id)}
     compteurs = _traiter_transactions(
@@ -227,8 +365,11 @@ async def synchroniser_dossier(
         propositions,
         pipeline,
         comptes_par_categorie,
+        comptes_bancaires,
     )
     supprimees = _signaler_supprimees(dossier, source_nom, lot, comptabilisees, journal, ledger)
+    if a_relire and comptes_bancaires is not None:
+        comptes_bancaires.relu(dossier.id)
     # Curseur en dernier : une interruption plus haut se rattrape au prochain passage.
     if lot.curseur is not None:
         journal.avancer_curseur(dossier.id, source_nom, lot.curseur)
@@ -240,6 +381,8 @@ async def synchroniser_dossier(
         supprimees_signalees=supprimees,
         rejets=len(lot.rejets),
         curseur=lot.curseur,
+        periode_close=compteurs.periode_close,
+        compte_non_retenu=compteurs.non_retenues,
     )
 
 

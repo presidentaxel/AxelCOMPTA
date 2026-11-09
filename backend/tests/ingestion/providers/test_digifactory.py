@@ -273,3 +273,48 @@ def test_premier_chargement_decoupe_par_mois_puis_le_suivant_utilise_since() -> 
     client.appels.clear()
     asyncio.run(provider.lire_lot(_dossier(), datetime(2026, 9, 1, 8, 0, 0)))
     assert client.appels == [(datetime(2026, 9, 1, 8, 0, 0), None, None)]
+
+
+def test_le_compte_bancaire_vient_du_champ_account_id() -> None:
+    """AXE-832 : chaque transaction porte son compte, pour le sous-compte 512x."""
+    ligne = {
+        "date": "2026-06-01",
+        "updated_at": "2026-06-01T00:00:00",
+        "deleted": False,
+        "future": False,
+        "provider_description": "TOTAL",
+    }
+    payload = {
+        "cle_quelconque": [
+            {**ligne, "id": "a", "amount": -10.0, "account_id": 67078894},
+            {**ligne, "id": "b", "amount": -12.0, "account_id": "  "},
+            {**ligne, "id": "c", "amount": -14.0},
+        ]
+    }
+    par_id = {str(t.id): t for t in parser_transactions(payload, DOSSIER, DEPUIS, JUSQUA)}
+    assert par_id["a"].compte_bancaire == "67078894"
+    assert par_id["b"].compte_bancaire is None
+    assert par_id["c"].compte_bancaire is None
+
+
+def test_le_type_et_la_categorie_de_la_banque_suivent_la_transaction() -> None:
+    """AXE-826 : `operation_type` et `category_id` deviennent des signaux ;
+    « unknown » ne dit rien."""
+    ligne = {
+        "date": "2026-06-01",
+        "updated_at": "2026-06-01T00:00:00",
+        "deleted": False,
+        "future": False,
+        "provider_description": "Tesla Inc.",
+    }
+    payload = {
+        "c": [
+            {**ligne, "id": "a", "amount": -13.0, "operation_type": "card", "category_id": 87},
+            {**ligne, "id": "b", "amount": -13.0, "operation_type": "unknown"},
+            {**ligne, "id": "c", "amount": -13.0, "operation_type": " Transfer "},
+        ]
+    }
+    par_id = {str(t.id): t for t in parser_transactions(payload, DOSSIER, DEPUIS, JUSQUA)}
+    assert (par_id["a"].type_operation, par_id["a"].categorie_banque) == ("card", "87")
+    assert (par_id["b"].type_operation, par_id["b"].categorie_banque) == (None, None)
+    assert par_id["c"].type_operation == "transfer"

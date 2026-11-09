@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from datetime import date
 
@@ -13,6 +14,34 @@ CATEGORIES_AMBIGUES = frozenset({"repas_et_receptions"})
 CATEGORIE_CARBURANT = "carburant"
 NATURE_COURSES = "courses"
 NATURE_CARBURANT = "carburant"
+# Double plein : signalé seulement s'il revient au moins ce nombre de jours
+# dans le même mois (AXE-836 : deux pleins un jour donné n'ont rien d'anormal
+# pour un chauffeur).
+JOURS_DOUBLE_PLEIN_PAR_MOIS = 3
+VIREMENT = "transfer"
+# Un libellé « générique » ne contient que ces mots : pas d'enseigne.
+_MOTS_GENERIQUES = frozenset(
+    {
+        "paiement",
+        "achat",
+        "depense",
+        "dépense",
+        "carburant",
+        "gazole",
+        "gasoil",
+        "essence",
+        "plein",
+        "cb",
+        "carte",
+        "vir",
+        "virement",
+        "de",
+        "du",
+        "le",
+        "la",
+    }
+)
+_MOT = re.compile(r"[a-zéèàç]+")
 
 
 def _alerte(mouvement: MouvementSurveille, code: str, libelle_ui: str, detail: str) -> Alerte:
@@ -26,6 +55,7 @@ def _alerte(mouvement: MouvementSurveille, code: str, libelle_ui: str, detail: s
         libelle_mouvement=mouvement.libelle,
         montant_centimes=mouvement.montant_centimes,
         date=mouvement.date,
+        moyen_paiement=mouvement.moyen_paiement,
     )
 
 
@@ -127,10 +157,70 @@ def detecter_doublons(mouvements: tuple[MouvementSurveille, ...]) -> tuple[Alert
     )
 
 
-def detecter_double_plein(mouvements: tuple[MouvementSurveille, ...]) -> tuple[Alerte, ...]:
-    return _alertes_groupees(
-        _grouper(mouvements, "plein"),
-        "double_plein",
-        "dépense atypique",
-        "Deux pleins le même jour.",
+def _carburant_sortant(mouvement: MouvementSurveille) -> bool:
+    return _sortie(mouvement) and mouvement.categorie == CATEGORIE_CARBURANT
+
+
+def detecter_petit_carburant(
+    mouvements: tuple[MouvementSurveille, ...], plancher_cts: int | None
+) -> tuple[Alerte, ...]:
+    """Carburant sous le plancher du pack (AXE-836/837) : café ou boutique de
+    station, ou montant faux. Signalé, jamais reclassé."""
+    if plancher_cts is None:
+        return ()
+    return tuple(
+        _alerte(
+            m, "carburant_petit_montant", "dépense à vérifier", "Montant trop faible pour un plein."
+        )
+        for m in mouvements
+        if _carburant_sortant(m) and -m.montant_centimes < plancher_cts
     )
+
+
+def libelle_generique(libelle: str) -> bool:
+    mots = _MOT.findall(libelle.lower())
+    return bool(mots) and all(mot in _MOTS_GENERIQUES for mot in mots)
+
+
+def detecter_libelle_generique(mouvements: tuple[MouvementSurveille, ...]) -> tuple[Alerte, ...]:
+    """Carburant sans enseigne (« Paiement carburant ») : surtout suspect
+    payé par virement, l'argent peut partir vers un autre compte."""
+    return tuple(
+        _alerte(
+            m,
+            "carburant_libelle_generique",
+            "dépense à vérifier",
+            "Libellé sans enseigne."
+            + (
+                " Payé par virement : vérifier le destinataire."
+                if m.moyen_paiement == VIREMENT
+                else ""
+            ),
+        )
+        for m in mouvements
+        if _carburant_sortant(m) and libelle_generique(m.libelle)
+    )
+
+
+def detecter_double_plein(
+    mouvements: tuple[MouvementSurveille, ...], plancher_cts: int | None = None
+) -> tuple[Alerte, ...]:
+    """Deux pleins (au-dessus du plancher) le même jour, **et** au moins
+    `JOURS_DOUBLE_PLEIN_PAR_MOIS` jours ainsi dans le mois."""
+    pleins = tuple(
+        m for m in mouvements if plancher_cts is None or -m.montant_centimes >= plancher_cts
+    )
+    jours_doubles = [g for g in _grouper(pleins, "plein").values() if len(g) >= 2]
+    par_mois: dict[tuple[str, int, int], list[list[MouvementSurveille]]] = defaultdict(list)
+    for groupe in jours_doubles:
+        premier = groupe[0]
+        par_mois[(premier.dossier_id, premier.date.year, premier.date.month)].append(groupe)
+    alertes: list[Alerte] = []
+    for groupes in par_mois.values():
+        if len(groupes) < JOURS_DOUBLE_PLEIN_PAR_MOIS:
+            continue
+        detail = f"Deux pleins le même jour, {len(groupes)} jours ce mois-ci."
+        alertes.extend(
+            _alerte(m, "double_plein", "dépense atypique", detail) for g in groupes for m in g
+        )
+    return tuple(alertes)

@@ -33,13 +33,14 @@ délègue à `create_app` ci-dessous : les routes sont encore ici.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from collections.abc import Set as AbstractSet
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Any, Literal, Protocol
+from typing import Annotated, Any, Literal, Protocol, cast
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -60,21 +61,29 @@ from axelcompta.affectations import (
     enregistrer_bulletin,
     proposer,
 )
-from axelcompta.anomaly.instruction import RegistreInstructions, TransitionRefusee
+from axelcompta.anomaly.detecteurs import CATEGORIE_CARBURANT
+from axelcompta.anomaly.instruction import InstructionsRepository
+from axelcompta.anomaly.instruction_postgres import PostgresInstructions
 from axelcompta.anomaly.models import Alerte, MouvementSurveille
 from axelcompta.anomaly.service import analyser
+from axelcompta.api.erreurs import brancher_erreurs
 from axelcompta.categorize.appris import (
     OperationTranchee,
     libelle_sans_categorie,
     propositions_apprises,
 )
 from axelcompta.categorize.ml_fallback import (
-    ModeleMlIndisponible,
     charger_calibration,
-    charger_modele,
+    repli_sans_modele_permis,
 )
+from axelcompta.categorize.modele_requis import EtatCategorisation, signaler
+from axelcompta.categorize.modele_requis import charger as charger_modele_et_etat
 from axelcompta.categorize.models import Etage
-from axelcompta.categorize.rules_and_ml import CATEGORIE_PAR_DEFAUT, RulesAndMlPipeline
+from axelcompta.categorize.rules_and_ml import (
+    CATEGORIE_PAR_DEFAUT,
+    CATEGORIE_RETRAIT_ESPECES,
+    RulesAndMlPipeline,
+)
 from axelcompta.closing.affectation import (
     MillesimeDividendesInconnu,
     disponible,
@@ -85,10 +94,11 @@ from axelcompta.closing.bilan_simplifie import ClotureSimplifieeService
 from axelcompta.closing.cloture_fiscale import chiffre_affaires_ht
 from axelcompta.closing.dividendes import RetenuesDividendes, retenues
 from axelcompta.closing.models import LiassePivot, ParametresCloture, ProvisionCloture
-from axelcompta.closing.paie import Bulletin, BulletinIncoherent
-from axelcompta.closing.provisions import ProvisionInvalide, valider_provision
+from axelcompta.closing.paie import Bulletin
+from axelcompta.closing.provisions import valider_provision
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, UserId
+from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
 from axelcompta.core.rls import appliquer_rls, contexte_identite
 from axelcompta.demo_auth import (
     IdentiteAuthentifiee,
@@ -96,7 +106,6 @@ from axelcompta.demo_auth import (
     identite_tolerante,
 )
 from axelcompta.demo_comptes import (
-    CompteDejaInviteError,
     CompteRepository,
     InvitationAbsente,
     InvitationFermee,
@@ -107,7 +116,6 @@ from axelcompta.demo_comptes import (
 from axelcompta.demo_jalons import JALONS_EXERCICE, etape_depuis_preuves
 from axelcompta.demo_justificatifs import JustificatifRepository
 from axelcompta.documents.postgres import PostgresJustificatifRepository
-from axelcompta.documents.preparer import JustificatifRefuse
 from axelcompta.exercices import (
     PassageExercice,
     PassageRefuse,
@@ -124,15 +132,39 @@ from axelcompta.filings.inpi_depot import GuideGreffe, PdfDepotInpiRenderer, gui
 from axelcompta.filings.liasse_fiscale import PdfLiasseFiscaleRenderer
 from axelcompta.filings.liasse_simplifiee import PdfLiasseSimplifieeRenderer
 from axelcompta.filings.pdf_export_comptable import rendre_balance_pdf, rendre_grand_livre_pdf
+from axelcompta.ingestion.comptes_bancaires import (
+    CompteBancaire,
+    CompteBancaireRepository,
+    CompteDejaComptabilise,
+    CompteInconnu,
+    verifier_ecartable,
+)
+from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
 from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion, classer
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
+from axelcompta.ingestion.journal import EntreeQuarantaine, JournalIngestion
+from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ingestion.providers.base import NormalizedTransaction
+from axelcompta.ingestion.providers.digifactory import normaliser_payload
+from axelcompta.jobs.file import TYPE_SYNCHRO, DemandesDeJobs, Job
+from axelcompta.jobs.postgres import FilePostgres
+from axelcompta.ledger.banque import (
+    comptes_hors_banque,
+    est_reclassement_bancaire,
+    ligne_banque,
+    montant_bancaire,
+)
 from axelcompta.ledger.contrepassation import annulees, contrepasser
 from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.ledger.models import Ecriture, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
-from axelcompta.packs.vtc_demo import charger_compte_par_categorie, charger_regles
+from axelcompta.packs.vtc_demo import (
+    charger_categories_banque,
+    charger_compte_par_categorie,
+    charger_regles,
+    plancher_de,
+)
 from axelcompta.tenants.affectations import AffectationRepository
 from axelcompta.tenants.affectations_postgres import PostgresAffectationRepository
 from axelcompta.tenants.agregats import AgregatsRepository, AgregatStocke, LigneAgregat
@@ -145,6 +177,15 @@ from axelcompta.tenants.avenants import (
     alerte_option_ir,
 )
 from axelcompta.tenants.avenants_postgres import PostgresAvenantRegimeRepository
+from axelcompta.tenants.confirmation import (
+    ConfirmationRefusee,
+    confirmer,
+    formes_proposees,
+    identite_manquante,
+    raison_ambiguite,
+)
+from axelcompta.tenants.contacts_proposes import ContactsProposesRepository
+from axelcompta.tenants.contacts_proposes_postgres import PostgresContactsProposes
 from axelcompta.tenants.exercices import ExerciceRepository
 from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
 from axelcompta.tenants.franchise_tva import MillesimeInconnu, suivre_franchise
@@ -161,14 +202,38 @@ from axelcompta.tenants.statuts import (
     charger_matrice,
     configuration_de,
 )
+from axelcompta.tenants.tags import (
+    TRAITEMENTS,
+    EtatTags,
+    Tag,
+    TagsRepository,
+    etat_du_portefeuille,
+    nom_de_tag,
+)
+from axelcompta.tenants.tags_postgres import PostgresTagsRepository
+from axelcompta.workflow.classees import (
+    Filtres,
+    OperationClassee,
+    Statut,
+    compter,
+    trier,
+)
+from axelcompta.workflow.classees import classer as classer_operations
+from axelcompta.workflow.classees_cache import VERSION_CLASSEES
 from axelcompta.workflow.decisions import (
+    CATEGORIE_A_PRECISER,
     CATEGORIE_ANNULATION,
     DecisionHumaine,
     DecisionRepository,
     decision_en_vigueur,
 )
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
-from axelcompta.workflow.expert import ImputationRefusee, preparer_imputation
+from axelcompta.workflow.expert import preparer_imputation
+from axelcompta.workflow.file_expert_cache import CacheFileExpert, SujetsGardes
+from axelcompta.workflow.file_expert_cache_postgres import (
+    PostgresCacheFileExpert,
+    cache_operations_classees,
+)
 from axelcompta.workflow.notifications import (
     NotificationRepository,
     ecritures_a_trancher,
@@ -177,15 +242,28 @@ from axelcompta.workflow.notifications import (
 from axelcompta.workflow.notifications_postgres import PostgresNotificationRepository
 from axelcompta.workflow.propositions import PropositionRepository
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
-from axelcompta.workflow.relances_consentement import mode_effectif
-from axelcompta.workflow.revue import (
-    CategorieInconnueError,
-    appliquer_decisions,
-    resoudre_ecriture_a_trancher,
+from axelcompta.workflow.quarantaine import (
+    LIBELLES_MOTIF,
+    ResolutionRefusee,
+    ecritures_de_resolution,
+    famille_du_motif,
 )
+from axelcompta.workflow.reclassement import (
+    annuler_reclassements,
+    grand_livre_comptable,
+    grand_livre_tranche,
+    reclasser,
+)
+from axelcompta.workflow.relances_consentement import mode_effectif
+from axelcompta.workflow.resolutions_quarantaine import Resolution, ResolutionsRepository
+from axelcompta.workflow.resolutions_quarantaine_postgres import PostgresResolutions
+from axelcompta.workflow.revue import CATEGORIE_USAGE_PERSONNEL, resoudre_ecriture_a_trancher
 from axelcompta.workflow.signature import DocumentSigne, SignatureRepository
 from axelcompta.workflow.signature_demo import SignatureDemoProvider
 from axelcompta.workflow.signature_postgres import PostgresSignatureRepository
+from axelcompta.workflow.synchro import id_ecriture
+from axelcompta.workflow.verdicts import VerdictsRepository
+from axelcompta.workflow.verdicts_postgres import PostgresVerdicts
 
 _TYPES_IMAGE_ACCEPTES = ("image/jpeg", "image/png", "image/webp", "image/heic", "image/heif")
 _EXTENSIONS_IMAGE = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
@@ -241,6 +319,11 @@ class RegimeAVenirVue(BaseModel):
     exercice: int
     regime: str  # libellé de la colonne de la matrice
     motif: str
+
+
+class CategorisationVue(BaseModel):
+    modele_charge: bool
+    raison: str | None
 
 
 class DossierResume(BaseModel):
@@ -315,6 +398,13 @@ class DossierAgregat(BaseModel):
     # régime, pas un détail comptable (doc 19 §2.4).
     alerte_regime: str | None = None
     alerte_tva: str | None = None
+    # AXE-829 : tags du dossier ; `exclu_compteurs` le sort des compteurs et
+    # filtres d'Entreprises (il reste listé, grisé).
+    tags: list[str] = []
+    exclu_compteurs: bool = False
+    # Configuration proposée sans certitude (AXE-834) : « forme_juridique »,
+    # « exercice ». Une information de configuration, pas un détail comptable.
+    a_confirmer: list[str] = []
 
 
 class AlerteAnomalieVue(BaseModel):
@@ -326,11 +416,38 @@ class AlerteAnomalieVue(BaseModel):
     libelle_mouvement: str
     montant_centimes: int
     date: str
+    moyen_paiement: str | None = None  # carte, virement, prélèvement… (AXE-836)
+
+
+class EvenementAnomalieVue(BaseModel):
+    etat: str
+    acteur: str
+    commentaire: str
+    le: str
 
 
 class InstructionAnomalieEntree(BaseModel):
     decision: Literal["en_instruction", "justifiee", "usage_personnel", "faux_positif"]
     commentaire: str = ""
+
+
+class CompteBancaireVue(BaseModel):
+    """AXE-832 : un compte bancaire, son sous-compte et ses deux soldes. Le
+    solde de la banque est celui du dernier relevé, `None` s'il n'a jamais
+    été relevé ; l'écart aussi."""
+
+    compte: str
+    nom: str | None
+    solde_comptable_cts: int
+    solde_banque_cts: int | None
+    releve_le: str | None
+    ecart_cts: int | None
+    # AXE-729 : True comptabilisé, False écarté (personnel), None à décider.
+    retenu: bool | None = True
+
+
+class DecisionCompteEntree(BaseModel):
+    retenu: bool
 
 
 class TransactionVue(BaseModel):
@@ -398,6 +515,8 @@ class AnnulationImputationEntree(BaseModel):
 class FileExpertVue(BaseModel):
     sujets: list[SujetExpertVue]
     comptes: list[CompteChoix]
+    # AXE-829 : tags des dossiers présents dans la file, pour le filtre.
+    tags_par_dossier: dict[str, list[str]] = {}
 
 
 class ImputationEntree(BaseModel):
@@ -462,15 +581,30 @@ class SignatureGreffeVue(BaseModel):
 def _ledger_avec_decisions(
     dossier: Dossier, base: LedgerService, decisions: DecisionRepository
 ) -> InMemoryLedgerService:
-    """Le ledger persisté, avec les décisions humaines ré-appliquées par-dessus
-    (doc 17 §9 bloc A/C). Les écritures d'origine ne sont jamais modifiées en
-    base (append-only, doc 06 §1) : une décision est une couche séparée."""
+    """Le grand livre vu par les écrans et la clôture (AXE-420) : les
+    reclassements écrits par les décisions, repliés dans leur opération
+    (`reclassement.grand_livre_tranche`)."""
     resultat = InMemoryLedgerService()
-    for ecriture in appliquer_decisions(
-        base.grand_livre(dossier.id),
-        decisions.lister_decisions(dossier.id),
-        configuration_de(dossier).comptes_categories_statut(),
-        charger_compte_par_categorie(),
+    for ecriture in grand_livre_tranche(
+        base.grand_livre(dossier.id), decisions.lister_decisions(dossier.id), _comptes(dossier)
+    ):
+        resultat.enregistrer(ecriture)
+    return resultat
+
+
+def _comptes(dossier: Dossier) -> tuple[dict[str, str | None], dict[str, str]]:
+    """(comptes de statut du dossier, comptes du pack) pour traduire une décision."""
+    return configuration_de(dossier).comptes_categories_statut(), charger_compte_par_categorie()
+
+
+def _ledger_comptable(
+    dossier: Dossier, base: LedgerService, decisions: DecisionRepository
+) -> InMemoryLedgerService:
+    """Le grand livre tel qu'en base, reclassements compris : FEC, grand
+    livre et balance téléchargés (AXE-420). Mêmes soldes que la vue des écrans."""
+    resultat = InMemoryLedgerService()
+    for ecriture in grand_livre_comptable(
+        base.grand_livre(dossier.id), decisions.lister_decisions(dossier.id), _comptes(dossier)
     ):
         resultat.enregistrer(ecriture)
     return resultat
@@ -576,6 +710,14 @@ def _exiger_depot_greffe(dossier: Dossier) -> None:
 def _message_operations_restantes(reste: int) -> str:
     nom = "opération" if reste == 1 else "opérations"
     return f"Il reste {reste} {nom} à traiter."
+
+
+def _exiger_dossier_clair(dossier: Dossier) -> None:
+    """AXE-730 : pas de liasse tant que la forme ou l'identité de la société
+    est incertaine. Même règle que la clôture (`preparer_passage`)."""
+    raison = raison_ambiguite(dossier)
+    if raison is not None:
+        raise HTTPException(status_code=409, detail=raison)
 
 
 def _exiger_operations_tranchees(dossier: Dossier, ledger: InMemoryLedgerService) -> None:
@@ -755,6 +897,7 @@ def _agregat(
         etape_precedente=etape_precedente,
         alerte_regime=alerte_option_ir(dossier),
         alerte_tva=stocke.alerte_tva,
+        a_confirmer=list(dossier.a_confirmer),
     )
 
 
@@ -790,7 +933,13 @@ def _vues_dossier(
     ecritures = ledger.grand_livre(dossier.id)
     exclues = annulees(ecritures)
     avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
-    return [_transaction_vue(e, e.id in avec_photo, e.id in exclues) for e in ecritures]
+    # Un reclassement entre banques (ventilation 512 → 512x, AXE-832) n'est
+    # pas une opération du relevé : le chauffeur ne le voit pas.
+    return [
+        _transaction_vue(e, e.id in avec_photo, e.id in exclues)
+        for e in ecritures
+        if not est_reclassement_bancaire(e)
+    ]
 
 
 def _transactions_dossier(
@@ -802,7 +951,12 @@ def _transactions_dossier(
 ) -> list[TransactionVue]:
     """Extrait de la route (doc 08 §2 : longueur de fonction)."""
     vues = _avec_categories(_vues_dossier(dossier, ledger, justificatifs), decisions)
-    return _avec_propositions(dossier, vues, decisions, pipeline)
+    banques = {
+        str(e.id): ligne.compte
+        for e in ledger.grand_livre(dossier.id)
+        if (ligne := ligne_banque(e)) is not None
+    }
+    return _avec_propositions(dossier, vues, decisions, pipeline, banques)
 
 
 def _avec_categories(
@@ -822,7 +976,30 @@ def _avec_categories(
     ]
 
 
-_ORIGINE_PAR_ETAGE = {Etage.REGLE: "regle", Etage.ML: "modele"}
+_ORIGINE_PAR_ETAGE = {Etage.REGLE: "regle", Etage.ML: "modele", Etage.BANQUE: "banque"}
+
+
+def _transactions_a_relire(
+    dossier: Dossier,
+    a_trancher: list[TransactionVue],
+    requetes: list[tuple[str, int]],
+    banques: dict[str, str],
+) -> list[NormalizedTransaction]:
+    """Les opérations à trancher, rejouées dans le pipeline. Le sous-compte
+    512x (AXE-832) permet d'y reconnaître les virements internes (AXE-826)."""
+    return [
+        NormalizedTransaction(
+            id=TransactionId(vue.ecriture_id),
+            dossier_id=dossier.id,
+            date=date.fromisoformat(vue.date),
+            montant_cts=vue.montant_cts,
+            libelle=libelle,
+            source_provider="lecture",
+            raw_payload={},
+            compte_bancaire=banques.get(vue.ecriture_id),
+        )
+        for vue, (libelle, _) in zip(a_trancher, requetes, strict=True)
+    ]
 
 
 def _avec_propositions(
@@ -830,6 +1007,7 @@ def _avec_propositions(
     vues: list[TransactionVue],
     decisions: tuple[DecisionHumaine, ...],
     pipeline: RulesAndMlPipeline | None,
+    banques: dict[str, str] | None = None,
 ) -> list[TransactionVue]:
     """Une proposition par opération à trancher : d'abord une opération
     semblable que l'indiv a déjà tranchée (dernière décision de chaque
@@ -848,19 +1026,7 @@ def _avec_propositions(
     apprises = propositions_apprises(tranchees, requetes)
     actuelles = (
         pipeline.categoriser_lot(
-            dossier.id,
-            [
-                NormalizedTransaction(
-                    id=TransactionId(vue.ecriture_id),
-                    dossier_id=dossier.id,
-                    date=date.fromisoformat(vue.date),
-                    montant_cts=vue.montant_cts,
-                    libelle=libelle,
-                    source_provider="lecture",
-                    raw_payload={},
-                )
-                for vue, (libelle, _) in zip(a_trancher, requetes, strict=True)
-            ],
+            dossier.id, _transactions_a_relire(dossier, a_trancher, requetes, banques or {})
         )
         if pipeline is not None
         else [None] * len(a_trancher)
@@ -897,19 +1063,16 @@ def _nb_a_trancher(ecritures: tuple[Ecriture, ...] | list[Ecriture]) -> int:
 
 
 def _montant_512(ecriture: Ecriture) -> int:
-    """Le sens de la ligne 512 donne le montant signé façon relevé bancaire
-    (doc 11 §1 : « chiffres irréprochables »), pas le montant absolu."""
-    for ligne in ecriture.lignes:
-        if ligne.compte == "512":
-            signe = 1 if ligne.sens is Sens.DEBIT else -1
-            return signe * ligne.montant.centimes
-    return 0
+    """Le sens de la ligne de banque (512 ou 512x) donne le montant signé
+    façon relevé bancaire (doc 11 §1 : « chiffres irréprochables »), pas le
+    montant absolu."""
+    return montant_bancaire(ecriture)
 
 
 def _compte_affiche(ecriture: Ecriture) -> str:
     """Une écriture de settlement a plusieurs comptes en contrepartie du 512
     (706/622/44566/44571) — pas un seul compte à afficher tel quel."""
-    autres = [ligne.compte for ligne in ecriture.lignes if ligne.compte != "512"]
+    autres = comptes_hors_banque(ecriture)
     return autres[0] if len(autres) == 1 else "règlement plateforme"
 
 
@@ -946,7 +1109,7 @@ def _mouvement_anomalie(
     categorie: str,
     a_justificatif: bool,
 ) -> MouvementSurveille | None:
-    autres = [ligne.compte for ligne in ecriture.lignes if ligne.compte != "512"]
+    autres = comptes_hors_banque(ecriture)
     if len(autres) != 1 or not categorie:
         return None
     return MouvementSurveille(
@@ -966,8 +1129,10 @@ def _mouvements_surveilles(
     ledger: InMemoryLedgerService,
     justificatifs: JustificatifRepository,
     decisions: DecisionRepository,
+    moyens: Mapping[EcritureId, str] | None = None,
 ) -> tuple[MouvementSurveille, ...]:
-    """Sorties catégorisées, hors écritures contre-passées. Plafond 10 000."""
+    """Sorties catégorisées, hors écritures contre-passées. Plafond 10 000.
+    `moyens` : le moyen de paiement par écriture, quand il est connu (AXE-836)."""
     ecritures = ledger.grand_livre(dossier.id)
     exclues = annulees(ecritures)
     avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
@@ -980,7 +1145,7 @@ def _mouvements_surveilles(
     for ecriture in ecritures:
         if ecriture.id in exclues or len(mouvements) >= 10_000:
             continue
-        autres = [ligne.compte for ligne in ecriture.lignes if ligne.compte != "512"]
+        autres = comptes_hors_banque(ecriture)
         categorie = decidees.get(ecriture.id, "")
         if not categorie and len(autres) == 1:
             categorie = par_compte.get(autres[0], "")
@@ -991,7 +1156,8 @@ def _mouvements_surveilles(
             ecriture.id in avec_photo,
         )
         if mouvement is not None:
-            mouvements.append(mouvement)
+            moyen = (moyens or {}).get(ecriture.id)
+            mouvements.append(dataclasses.replace(mouvement, moyen_paiement=moyen))
     return tuple(mouvements)
 
 
@@ -1039,30 +1205,47 @@ def get_propositions() -> PropositionRepository:
 
 
 _PIPELINE: RulesAndMlPipeline | None = None
+_ETAT_CATEGORISATION: EtatCategorisation | None = None
 
 
 def get_pipeline() -> RulesAndMlPipeline:
     """Dépendance FastAPI — règles du pack et modèle chargés une fois par
     processus. Sans modèle sur le poste (fichier gitignoré), les règles
-    seules : l'étage ML s'abstient, rien ne plante (doc 08 §5)."""
-    global _PIPELINE
+    seules pour servir les écrans, mais l'état est exposé et signalé
+    (AXE-825) : `GET /portefeuille/categorisation`."""
+    global _PIPELINE, _ETAT_CATEGORISATION
     if _PIPELINE is None:
-        try:
-            modele = charger_modele()
-        except ModeleMlIndisponible:
-            modele = None
+        charge = charger_modele_et_etat()
+        modele = charge.modele
+        _ETAT_CATEGORISATION = charge.etat
+        if modele is None and not repli_sans_modele_permis():
+            signaler(charge.etat.raison or "Modèle de catégorisation absent.")
         _PIPELINE = RulesAndMlPipeline(
             regles=charger_regles(),
             modele=modele,
             calibration=charger_calibration() if modele is not None else None,
+            categories_banque=charger_categories_banque(),
         )
     return _PIPELINE
+
+
+def get_etat_categorisation() -> EtatCategorisation:
+    get_pipeline()
+    return _ETAT_CATEGORISATION or EtatCategorisation(True, "")
 
 
 DecisionsDep = Annotated[DecisionRepository, Depends(get_decisions)]
 DossiersDep = Annotated[DossierRepository, Depends(get_dossiers)]
 LedgerBaseDep = Annotated[LedgerService, Depends(get_ledger)]
 PropositionsDep = Annotated[PropositionRepository, Depends(get_propositions)]
+
+
+def get_verdicts() -> VerdictsRepository:
+    """Verdicts « juste » / « faux » sur les classements (AXE-823)."""
+    return PostgresVerdicts(_engine())
+
+
+VerdictsDep = Annotated[VerdictsRepository, Depends(get_verdicts)]
 PipelineDep = Annotated[RulesAndMlPipeline, Depends(get_pipeline)]
 
 
@@ -1130,6 +1313,21 @@ def get_dossier_du_portefeuille(
 DossierPortefeuilleDep = Annotated[Dossier, Depends(get_dossier_du_portefeuille)]
 
 
+def get_journal_ingestion() -> JournalIngestion:
+    """Quarantaine d'ingestion, lecture par le gestionnaire (AXE-424)."""
+    return PostgresJournalIngestion(_engine())
+
+
+JournalIngestionDep = Annotated[JournalIngestion, Depends(get_journal_ingestion)]
+
+
+def get_resolutions_quarantaine() -> ResolutionsRepository:
+    return PostgresResolutions(_engine())
+
+
+ResolutionsDep = Annotated[ResolutionsRepository, Depends(get_resolutions_quarantaine)]
+
+
 def get_ledger_du_dossier(
     dossier: DossierDep, base: LedgerBaseDep, decisions: DecisionsDep
 ) -> InMemoryLedgerService:
@@ -1137,6 +1335,15 @@ def get_ledger_du_dossier(
 
 
 LedgerDossierDep = Annotated[InMemoryLedgerService, Depends(get_ledger_du_dossier)]
+
+
+def get_ledger_comptable(
+    dossier: DossierDep, base: LedgerBaseDep, decisions: DecisionsDep
+) -> InMemoryLedgerService:
+    return _ledger_comptable(dossier, base, decisions)
+
+
+LedgerComptableDep = Annotated[InMemoryLedgerService, Depends(get_ledger_comptable)]
 
 
 def get_justificatifs() -> JustificatifRepository:
@@ -1147,16 +1354,24 @@ def get_justificatifs() -> JustificatifRepository:
 
 JustificatifsDep = Annotated[JustificatifRepository, Depends(get_justificatifs)]
 
-_REGISTRE_ANOMALIES = RegistreInstructions()
+
+def get_comptes_bancaires() -> CompteBancaireRepository:
+    """Postgres, rôle web (lecture seule), policies RLS. Les tests surchargent
+    avec `CompteBancaireMemoire`."""
+    return PostgresCompteBancaireRepository(_engine())
 
 
-def get_registre_anomalies() -> RegistreInstructions:
-    """Qualifications d'alertes, en mémoire de process. Les tests passent
-    une instance neuve."""
-    return _REGISTRE_ANOMALIES
+ComptesBancairesDep = Annotated[CompteBancaireRepository, Depends(get_comptes_bancaires)]
 
 
-RegistreAnomaliesDep = Annotated[RegistreInstructions, Depends(get_registre_anomalies)]
+def get_registre_anomalies() -> InstructionsRepository:
+    """Qualifications d'alertes, en base (AXE-814) : elles survivent aux
+    redémarrages et se partagent entre workers. `RegistreInstructions` en
+    mémoire dans les tests."""
+    return PostgresInstructions(_engine())
+
+
+RegistreAnomaliesDep = Annotated[InstructionsRepository, Depends(get_registre_anomalies)]
 
 
 def get_signatures_inpi() -> SignatureRepository:
@@ -1225,6 +1440,33 @@ def get_agregats() -> AgregatsRepository:
 AgregatsDep = Annotated[AgregatsRepository, Depends(get_agregats)]
 
 
+def get_tags() -> TagsRepository:
+    """Tags du portefeuille (AXE-829). Postgres, rôle web, RLS par
+    portefeuille ; `TagsMemoire` dans les tests."""
+    return PostgresTagsRepository(_engine())
+
+
+TagsDep = Annotated[TagsRepository, Depends(get_tags)]
+
+
+def get_cache_file_expert() -> CacheFileExpert:
+    """Sujets de la file expert gardés par dossier (AXE-824) ; `SansCache`
+    dans les tests en mémoire, où rien ne monte les versions."""
+    return PostgresCacheFileExpert(_engine())
+
+
+CacheFileExpertDep = Annotated[CacheFileExpert, Depends(get_cache_file_expert)]
+
+
+def get_cache_classees() -> CacheFileExpert:
+    """Opérations déjà classées gardées par dossier (AXE-824). `SansCache`
+    dans les tests en mémoire, où rien ne monte les versions."""
+    return cache_operations_classees(_engine())
+
+
+CacheClasseesDep = Annotated[CacheFileExpert, Depends(get_cache_classees)]
+
+
 def _trancher(
     dossier: Dossier,
     ecriture_id: str,
@@ -1256,6 +1498,7 @@ def _trancher(
     if not any(ligne.compte == COMPTE_ATTENTE for ligne in ecriture.lignes):
         raise HTTPException(status_code=409, detail="Cette opération n'est pas à classer.")
     _enregistrer_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
+    _ecrire_reclassements(dossier, base, [(ecriture.id, categorie)])
     return _ecriture_decidee(dossier, base, decisions, ecriture_id)
 
 
@@ -1284,6 +1527,7 @@ def _corriger(
             detail="Cette opération ne se corrige pas par une nouvelle catégorie.",
         )
     _enregistrer_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
+    _ecrire_reclassements(dossier, base, [(ecriture.id, categorie)])
     return _ecriture_decidee(dossier, base, decisions, ecriture_id)
 
 
@@ -1303,12 +1547,9 @@ def _enregistrer_decision(
             detail="Cette opération n'a pas de proposition d'origine.",
         )
     comptes = charger_compte_par_categorie()
-    try:
-        resoudre_ecriture_a_trancher(
-            ecriture, categorie, configuration_de(dossier).comptes_categories_statut(), comptes
-        )
-    except CategorieInconnueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    resoudre_ecriture_a_trancher(
+        ecriture, categorie, configuration_de(dossier).comptes_categories_statut(), comptes
+    )
     courante = decisions.decision_courante(dossier.id, ecriture.id)
     maintenant = datetime.now(UTC)
     if courante is not None and maintenant <= courante.decide_le:
@@ -1324,6 +1565,27 @@ def _enregistrer_decision(
             decide_le=maintenant,
         )
     )
+
+
+def _ecrire_reclassements(
+    dossier: Dossier, base: LedgerService, tranchees: Sequence[tuple[EcritureId, str]]
+) -> None:
+    """AXE-420 : chaque décision écrit son OD de reclassement, juste après
+    avoir été enregistrée. Rien n'est écrit si le montant est déjà sur le
+    bon compte. Une décision dont l'écriture échouerait reste appliquée par
+    la couche de reprise (`grand_livre_tranche`) tant que l'opération n'a
+    aucun reclassement."""
+    ecritures = list(base.grand_livre(dossier.id))
+    par_id = {e.id: e for e in ecritures}
+    periodes = base.periodes_closes(dossier.id)
+    for ecriture_id, categorie in tranchees:
+        source = par_id.get(ecriture_id)
+        if source is None:
+            continue
+        reclassement = reclasser(source, categorie, ecritures, _comptes(dossier), periodes)
+        if reclassement is not None:
+            base.enregistrer(reclassement)
+            ecritures.append(reclassement)
 
 
 def _ecriture_decidee(
@@ -1352,15 +1614,12 @@ def _decision_suivante(
         ecriture = next((e for e in ecritures if e.id == ecriture_id), None)
         if ecriture is None:
             raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
-        try:
-            resoudre_ecriture_a_trancher(
-                ecriture,
-                categorie,
-                configuration_de(dossier).comptes_categories_statut(),
-                charger_compte_par_categorie(),
-            )
-        except CategorieInconnueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        resoudre_ecriture_a_trancher(
+            ecriture,
+            categorie,
+            configuration_de(dossier).comptes_categories_statut(),
+            charger_compte_par_categorie(),
+        )
     decisions.enregistrer_decision(
         DecisionHumaine(
             dossier_id=dossier.id,
@@ -1372,6 +1631,7 @@ def _decision_suivante(
             decide_le=datetime.now(UTC),
         )
     )
+    _ecrire_reclassements(dossier, base, [(EcritureId(ecriture_id), categorie)])
     ledger = _ledger_avec_decisions(dossier, base, decisions)
     ecritures_vues = ledger.grand_livre(dossier.id)
     ecriture_vue = next(e for e in ecritures_vues if e.id == ecriture_id)
@@ -1432,10 +1692,7 @@ def _trancher_groupe(
                 status_code=500,
                 detail="Cette opération n'a pas de proposition d'origine.",
             )
-        try:
-            resoudre_ecriture_a_trancher(ecriture, entree.categorie, comptes_statut, comptes)
-        except CategorieInconnueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        resoudre_ecriture_a_trancher(ecriture, entree.categorie, comptes_statut, comptes)
         a_ecrire.append(
             DecisionHumaine(
                 dossier_id=dossier.id,
@@ -1448,6 +1705,7 @@ def _trancher_groupe(
             )
         )
     decisions.enregistrer_decisions(a_ecrire)
+    _ecrire_reclassements(dossier, base, [(d.ecriture_id, d.categorie) for d in a_ecrire])
     ledger_a_jour = _ledger_avec_decisions(dossier, base, decisions)
     voulues = {decision.ecriture_id for decision in a_ecrire}
     return [e for e in ledger_a_jour.grand_livre(dossier.id) if e.id in voulues]
@@ -1488,10 +1746,7 @@ def _joindre_justificatif(
         )
     contenu = fichier.file.read()
     extension = Path(fichier.filename or "").suffix or ".jpg"
-    try:
-        justificatifs.enregistrer(dossier.tenant_id, dossier.id, ecriture.id, contenu, extension)
-    except JustificatifRefuse as erreur:
-        raise HTTPException(status_code=400, detail=str(erreur)) from erreur
+    justificatifs.enregistrer(dossier.tenant_id, dossier.id, ecriture.id, contenu, extension)
     return ecriture
 
 
@@ -1551,6 +1806,42 @@ def _agregat_du_dossier(
     return valeur
 
 
+def _cache_perime(ligne: LigneAgregat | None, garde: SujetsGardes | None) -> bool:
+    """Agrégat jamais calculé ou périmé, ou sujets gardés d'une autre version."""
+    if ligne is None or ligne.valeur is None:
+        return True
+    return garde is None or not garde.valables(ligne.version)
+
+
+def prechauffer_caches(engine: Engine, dossiers: Sequence[Dossier]) -> int:
+    """Après la synchro (tâches planifiées, AXE-824) : recalcule les agrégats,
+    les sujets de la file expert et les opérations classées des dossiers qui
+    ont changé, pour que le premier affichage du matin lise des valeurs
+    gardées. Retourne le nombre de dossiers recalculés pour la file."""
+    base = PostgresLedgerService(engine)
+    decisions = PostgresDecisionRepository(engine)
+    provisions = PostgresProvisionsClotureRepository(engine)
+    agregats = PostgresAgregatsRepository(engine)
+    cache = PostgresCacheFileExpert(engine)
+    ids = [dossier.id for dossier in dossiers]
+    lignes = agregats.lire(ids)
+    gardes = cache.lire(ids)
+    a_refaire = [d for d in dossiers if _cache_perime(lignes.get(d.id), gardes.get(d.id))]
+    for dossier in a_refaire:
+        _agregat_du_dossier(dossier, lignes.get(dossier.id), base, decisions, provisions, agregats)
+    sources = (base, decisions, PostgresJustificatifRepository(engine))
+    _sujets_du_portefeuille(a_refaire, sources, agregats, cache)
+    _operations_gardees(
+        dossiers,
+        base,
+        decisions,
+        PostgresPropositionRepository(engine),
+        agregats,
+        cache_operations_classees(engine),
+    )
+    return len(a_refaire)
+
+
 def _agregats_portefeuille(
     dossiers: Sequence[Dossier],
     base: LedgerService,
@@ -1593,6 +1884,7 @@ def _enregistrer_routes_dossiers(app: FastAPI) -> None:
         signatures: SignaturesInpiDep,
         provisions: ProvisionsDep,
         agregats: AgregatsDep,
+        tags: TagsDep,
         identite: IdentiteDep,
     ) -> list[DossierAgregat]:
         """Vue gestionnaire (doc 19 §2.1) : agrégats des dossiers **de son
@@ -1601,7 +1893,7 @@ def _enregistrer_routes_dossiers(app: FastAPI) -> None:
         triggers) : ouvrir la liste ne reparcourt pas le grand livre de
         chaque dossier."""
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
-        return _agregats_portefeuille(
+        vues = _agregats_portefeuille(
             dossiers.lister_par_tenant(tenant_id),
             base,
             decisions,
@@ -1610,6 +1902,7 @@ def _enregistrer_routes_dossiers(app: FastAPI) -> None:
             provisions,
             agregats,
         )
+        return _avec_tags(vues, etat_du_portefeuille(tags, tenant_id))
 
     @app.get("/dossiers/{dossier_id}", response_model=DossierResume)
     def obtenir_dossier(
@@ -1956,6 +2249,18 @@ def _regle_vue(ligne: Row[Any]) -> RegleVue:
     )
 
 
+def _enregistrer_route_categorisation(app: FastAPI) -> None:
+    @app.get("/portefeuille/categorisation", response_model=CategorisationVue)
+    def lire_categorisation(
+        identite: IdentiteDep,
+        etat: Annotated[EtatCategorisation, Depends(get_etat_categorisation)],
+    ) -> CategorisationVue:
+        """AXE-825 : le modèle est-il chargé ? Sinon, la catégorisation est
+        dégradée et la synchro ne tourne pas."""
+        _verifier_acces_gestionnaire(identite)
+        return CategorisationVue(modele_charge=etat.modele_charge, raison=etat.raison)
+
+
 def _enregistrer_routes_portefeuille(app: FastAPI) -> None:
     @app.get("/portefeuille", response_model=NomPortefeuille)
     def lire_portefeuille(dossiers: DossiersDep, identite: IdentiteDep) -> NomPortefeuille:
@@ -2009,6 +2314,127 @@ def _enregistrer_routes_portefeuille(app: FastAPI) -> None:
             raise HTTPException(status_code=404, detail="Dossier retiré introuvable.")
         dossiers.restaurer(dossier.id)
         return {"dossier_id": dossier.id}
+
+
+class TagVue(BaseModel):
+    nom: str
+    description: str
+
+
+class ReglageTagsVue(BaseModel):
+    """Tags du portefeuille et, par traitement, ceux qui en excluent."""
+
+    tags: list[TagVue]
+    traitements: dict[str, str]
+    exclusions: dict[str, list[str]]
+
+
+class NouveauTag(BaseModel):
+    nom: str
+    description: str = ""
+
+
+class PoseDeTags(BaseModel):
+    """Pose ou retrait en lot depuis la liste Entreprises."""
+
+    dossier_ids: list[str]
+    pose: bool = True
+
+
+class ReglageExclusion(BaseModel):
+    tags: list[str]
+
+
+def _avec_tags(vues: list[DossierAgregat], etat: EtatTags) -> list[DossierAgregat]:
+    """AXE-829 : tags de chaque dossier et sortie des compteurs."""
+    return [
+        vue.model_copy(
+            update={
+                "tags": sorted(etat.tags_de(DossierId(vue.dossier_id))),
+                "exclu_compteurs": etat.exclu(DossierId(vue.dossier_id), "compteurs"),
+            }
+        )
+        for vue in vues
+    ]
+
+
+def _reglage_tags_vue(depot: TagsRepository, tenant_id: TenantId) -> ReglageTagsVue:
+    return ReglageTagsVue(
+        tags=[TagVue(nom=t.nom, description=t.description) for t in depot.lister_tags(tenant_id)],
+        traitements=dict(TRAITEMENTS),
+        exclusions={k: sorted(v) for k, v in depot.exclusions(tenant_id).items()},
+    )
+
+
+def _gestionnaire_qui_ecrit(
+    identite: IdentiteAuthentifiee | None, role: str
+) -> tuple[TenantId, IdentiteAuthentifiee]:
+    """Rôle admin ou membre, jamais lecture (AXE-701)."""
+    tenant_id, identite_ok = _verifier_acces_gestionnaire(identite)
+    _exiger_ecriture(role, "Le rôle lecture ne pose pas de tags.")
+    return tenant_id, identite_ok
+
+
+def _dossiers_du_portefeuille(
+    dossiers: DossierRepository, tenant_id: TenantId, ids: Sequence[str]
+) -> list[DossierId]:
+    trouves = []
+    for brut in ids:
+        dossier = dossiers.obtenir(DossierId(brut))
+        if dossier is None or dossier.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Dossier introuvable.")
+        trouves.append(dossier.id)
+    return trouves
+
+
+def _enregistrer_routes_tags(app: FastAPI) -> None:
+    @app.get("/tags", response_model=ReglageTagsVue)
+    def lire_tags(tags: TagsDep, identite: IdentiteDep) -> ReglageTagsVue:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _reglage_tags_vue(tags, tenant_id)
+
+    @app.post("/tags", response_model=ReglageTagsVue)
+    def creer_tag(
+        corps: NouveauTag, tags: TagsDep, role: RoleMembreDep, identite: IdentiteDep
+    ) -> ReglageTagsVue:
+        tenant_id, _identite = _gestionnaire_qui_ecrit(identite, role)
+        tags.creer_tag(Tag(tenant_id, nom_de_tag(corps.nom), corps.description.strip()))
+        return _reglage_tags_vue(tags, tenant_id)
+
+    @app.post("/tags/{tag}/dossiers", status_code=204)
+    def poser_tags(
+        tag: str,
+        corps: PoseDeTags,
+        dossiers: DossiersDep,
+        tags: TagsDep,
+        role: RoleMembreDep,
+        identite: IdentiteDep,
+    ) -> None:
+        """Pose (ou retire, `pose: false`) un tag sur un ou plusieurs
+        dossiers. Chaque geste est un événement daté et signé."""
+        tenant_id, identite_ok = _gestionnaire_qui_ecrit(identite, role)
+        maintenant = datetime.now(UTC)
+        for dossier_id in _dossiers_du_portefeuille(dossiers, tenant_id, corps.dossier_ids):
+            geste = tags.poser if corps.pose else tags.retirer
+            geste(tenant_id, dossier_id, tag, identite_ok.user_id, maintenant)
+
+    @app.put("/tags/exclusions/{traitement}", response_model=ReglageTagsVue)
+    def regler_exclusion(
+        traitement: str,
+        corps: ReglageExclusion,
+        tags: TagsDep,
+        role: RoleMembreDep,
+        identite: IdentiteDep,
+    ) -> ReglageTagsVue:
+        tenant_id, identite_ok = _gestionnaire_qui_ecrit(identite, role)
+        tags.regler_exclusion(
+            tenant_id,
+            traitement,
+            frozenset(corps.tags),
+            identite_ok.user_id,
+            datetime.now(UTC),
+        )
+        return _reglage_tags_vue(tags, tenant_id)
 
 
 _URGENCE = {"expire": 0, "a_renouveler": 1, "jamais_connecte": 3, "actif": 4}
@@ -2395,10 +2821,7 @@ def _enregistrer_routes_membres(app: FastAPI) -> None:
         # il ne doit jamais exister avant son rôle. L'upsert laisse un nouvel
         # essai passer si l'invitation a échoué après.
         _ecrire_role(tenant_id, email, entree.role)
-        try:
-            comptes.inviter_membre(str(tenant_id), email, entree.role)
-        except CompteDejaInviteError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        comptes.inviter_membre(str(tenant_id), email, entree.role)
         return MembrePortefeuille(email=email, role=entree.role, statut="invité")
 
     @app.patch("/portefeuille/membres", response_model=MembrePortefeuille)
@@ -2469,10 +2892,7 @@ def _enregistrer_routes_invitation(app: FastAPI) -> None:
         vrai e-mail via Supabase Auth — pas un simulateur. Uniquement pour un
         dossier de son propre portefeuille (`DossierPortefeuilleDep`)."""
         _exiger_ecriture(role, "La lecture seule n'invite pas.")
-        try:
-            invitation = comptes.inviter(dossier.id, entree.email)
-        except CompteDejaInviteError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        invitation = comptes.inviter(dossier.id, entree.email)
         return InvitationVue(
             dossier_id=invitation.dossier_id,
             email=invitation.email,
@@ -2613,6 +3033,7 @@ def _enregistrer_routes_declarations(app: FastAPI) -> None:
                     "l'impôt sur les sociétés."
                 ),
             )
+        _exiger_dossier_clair(dossier)
         pdf = PdfCerfa2065Renderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
         )
@@ -2630,6 +3051,7 @@ def _enregistrer_routes_declarations(app: FastAPI) -> None:
                     "l'impôt sur le revenu."
                 ),
             )
+        _exiger_dossier_clair(dossier)
         pdf = PdfCerfa2031Renderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
         )
@@ -2655,6 +3077,7 @@ def _enregistrer_routes_cloture(app: FastAPI) -> None:
         dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
     ) -> Response:
         _exiger_operations_tranchees(dossier, ledger)
+        _exiger_dossier_clair(dossier)
         pdf = PdfLiasseFiscaleRenderer().rendre(
             _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
         )
@@ -2662,7 +3085,10 @@ def _enregistrer_routes_cloture(app: FastAPI) -> None:
 
     @app.get("/dossiers/{dossier_id}/fec.txt")
     def telecharger_fec(
-        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+        dossier: DossierDep,
+        ledger: LedgerComptableDep,
+        provisions: ProvisionsDep,
+        comptes: ComptesBancairesDep,
     ) -> Response:
         ecritures = _ecritures_avec_cloture(
             dossier, ledger, _provisions_saisies(dossier, provisions)
@@ -2673,13 +3099,114 @@ def _enregistrer_routes_cloture(app: FastAPI) -> None:
             if dossier.identite is not None
             else f"fec-{dossier.id}.txt"
         )
-        return _fichier(exporter_fec(ecritures), "text/plain; charset=utf-8", nom)
+        fec = exporter_fec(ecritures, libelles_banques(comptes.lister(dossier.id)))
+        return _fichier(fec, "text/plain; charset=utf-8", nom)
+
+
+def _soldes_par_compte(ecritures: tuple[Ecriture, ...]) -> dict[str, int]:
+    """Solde débiteur de chaque compte de banque, en centimes."""
+    soldes: dict[str, int] = {}
+    for ecriture in ecritures:
+        for ligne in ecriture.lignes:
+            if est_compte_banque(ligne.compte):
+                signe = 1 if ligne.sens is Sens.DEBIT else -1
+                soldes[ligne.compte] = soldes.get(ligne.compte, 0) + signe * ligne.montant.centimes
+    return soldes
+
+
+def _vue_compte_bancaire(compte: CompteBancaire, solde_comptable: int) -> CompteBancaireVue:
+    banque = compte.solde_banque_cts
+    return CompteBancaireVue(
+        compte=compte.compte_comptable,
+        nom=compte.nom,
+        solde_comptable_cts=solde_comptable,
+        solde_banque_cts=banque,
+        releve_le=compte.solde_releve_le.isoformat() if compte.solde_releve_le else None,
+        # Un compte non retenu n'est pas comptabilisé : pas d'écart à montrer.
+        ecart_cts=None if banque is None or compte.retenu is not True else solde_comptable - banque,
+        retenu=compte.retenu,
+    )
+
+
+def vues_comptes_bancaires(
+    comptes: tuple[CompteBancaire, ...], ecritures: tuple[Ecriture, ...]
+) -> list[CompteBancaireVue]:
+    """Un compte par sous-compte 512x, plus le 512 non ventilé s'il porte
+    encore un solde (écritures d'avant AXE-832, ou banque inconnue)."""
+    soldes = _soldes_par_compte(ecritures)
+    vues = [_vue_compte_bancaire(c, soldes.get(c.compte_comptable, 0)) for c in comptes]
+    reste = soldes.get(COMPTE_BANQUE, 0)
+    if reste:
+        vues.append(
+            CompteBancaireVue(
+                compte=COMPTE_BANQUE,
+                nom=None,
+                solde_comptable_cts=reste,
+                solde_banque_cts=None,
+                releve_le=None,
+                ecart_cts=None,
+            )
+        )
+    return vues
+
+
+def libelles_banques(comptes: tuple[CompteBancaire, ...]) -> dict[str, str]:
+    """Libellé FEC de chaque sous-compte : « Banque — <nom du compte> »."""
+    return {c.compte_comptable: f"Banque — {c.nom}" for c in comptes if c.nom}
+
+
+def _enregistrer_routes_comptes_bancaires(app: FastAPI) -> None:
+    @app.get("/dossiers/{dossier_id}/comptes-bancaires", response_model=list[CompteBancaireVue])
+    def lister_comptes_bancaires(
+        dossier: DossierDep, ledger: LedgerDossierDep, comptes: ComptesBancairesDep
+    ) -> list[CompteBancaireVue]:
+        """AXE-832 : soldes comptable et bancaire de chaque compte, côte à
+        côte. Réservé au chauffeur du dossier (doc 19 : le gestionnaire ne
+        voit pas de solde)."""
+        return vues_comptes_bancaires(comptes.lister(dossier.id), ledger.grand_livre(dossier.id))
+
+    @app.post(
+        "/dossiers/{dossier_id}/comptes-bancaires/{compte}/decision",
+        response_model=list[CompteBancaireVue],
+    )
+    def decider_compte_bancaire(
+        compte: str,
+        corps: DecisionCompteEntree,
+        dossier: DossierDep,
+        ledger: LedgerDossierDep,
+        comptes: ComptesBancairesDep,
+        identite: IdentiteDep,
+    ) -> list[CompteBancaireVue]:
+        """AXE-729 : le dirigeant retient un compte (pro) ou l'écarte
+        (personnel). Retenu après coup, son passé arrive à la synchro
+        suivante. Un compte qui a déjà des écritures ne s'écarte pas."""
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        ecritures = ledger.grand_livre(dossier.id)
+        try:
+            if not corps.retenu:
+                verifier_ecartable(_ecritures_sur_le_compte(ecritures, compte))
+            comptes.decider(dossier.id, compte, corps.retenu, identite.user_id, datetime.now(UTC))
+        except CompteInconnu as erreur:
+            raise HTTPException(status_code=404, detail=str(erreur)) from erreur
+        except CompteDejaComptabilise as erreur:
+            raise HTTPException(status_code=409, detail=str(erreur)) from erreur
+        return vues_comptes_bancaires(comptes.lister(dossier.id), ecritures)
+
+
+def _ecritures_sur_le_compte(ecritures: tuple[Ecriture, ...], compte: str) -> int:
+    """Écritures en vigueur (non contre-passées) qui mouvementent ce sous-compte."""
+    exclues = annulees(ecritures)
+    return sum(
+        1
+        for ecriture in ecritures
+        if ecriture.id not in exclues and any(ligne.compte == compte for ligne in ecriture.lignes)
+    )
 
 
 def _enregistrer_routes_exports(app: FastAPI) -> None:
     @app.get("/dossiers/{dossier_id}/grand-livre.csv")
     def telecharger_grand_livre(
-        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+        dossier: DossierDep, ledger: LedgerComptableDep, provisions: ProvisionsDep
     ) -> Response:
         ecritures = _ecritures_avec_cloture(
             dossier, ledger, _provisions_saisies(dossier, provisions)
@@ -2690,7 +3217,7 @@ def _enregistrer_routes_exports(app: FastAPI) -> None:
 
     @app.get("/dossiers/{dossier_id}/grand-livre.pdf")
     def telecharger_grand_livre_pdf(
-        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+        dossier: DossierDep, ledger: LedgerComptableDep, provisions: ProvisionsDep
     ) -> Response:
         ecritures = _ecritures_avec_cloture(
             dossier, ledger, _provisions_saisies(dossier, provisions)
@@ -2700,7 +3227,7 @@ def _enregistrer_routes_exports(app: FastAPI) -> None:
 
     @app.get("/dossiers/{dossier_id}/balance.csv")
     def telecharger_balance(
-        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+        dossier: DossierDep, ledger: LedgerComptableDep, provisions: ProvisionsDep
     ) -> Response:
         ecritures = _ecritures_avec_cloture(
             dossier, ledger, _provisions_saisies(dossier, provisions)
@@ -2709,7 +3236,7 @@ def _enregistrer_routes_exports(app: FastAPI) -> None:
 
     @app.get("/dossiers/{dossier_id}/balance.pdf")
     def telecharger_balance_pdf(
-        dossier: DossierDep, ledger: LedgerDossierDep, provisions: ProvisionsDep
+        dossier: DossierDep, ledger: LedgerComptableDep, provisions: ProvisionsDep
     ) -> Response:
         ecritures = _ecritures_avec_cloture(
             dossier, ledger, _provisions_saisies(dossier, provisions)
@@ -2870,6 +3397,64 @@ class ValidationClotureEntree(BaseModel):
     attestation: str
 
 
+class ConfigurationDossierVue(BaseModel):
+    """Ce que le dirigeant confirme (AXE-730), et ce qui reste à saisir."""
+
+    forme_juridique: str
+    formes_proposees: list[str]  # deux quand Sirene ne tranche pas
+    regime_imposition: str
+    regime_tva: str
+    exercice_debut: str
+    exercice_fin: str
+    a_confirmer: list[str]
+    identite_manquante: list[str]  # siege, capital, associes
+    raison_blocage: str | None  # ce qui bloque la clôture et la liasse
+
+
+class ConfirmationConfigurationEntree(BaseModel):
+    forme_juridique: str | None = None
+
+
+def _vue_configuration(dossier: Dossier) -> ConfigurationDossierVue:
+    return ConfigurationDossierVue(
+        forme_juridique=dossier.forme_juridique,
+        formes_proposees=list(formes_proposees(dossier)),
+        regime_imposition=dossier.regime_imposition,
+        regime_tva=dossier.regime_tva,
+        exercice_debut=dossier.exercice_debut.isoformat(),
+        exercice_fin=dossier.fin_exercice().isoformat(),
+        a_confirmer=list(dossier.a_confirmer),
+        identite_manquante=list(identite_manquante(dossier)),
+        raison_blocage=raison_ambiguite(dossier),
+    )
+
+
+def _enregistrer_routes_configuration(app: FastAPI) -> None:
+    """Le dirigeant voit sa configuration et la confirme (AXE-730). Le
+    gestionnaire voit « à confirmer » dans son portefeuille."""
+
+    @app.get("/dossiers/{dossier_id}/configuration", response_model=ConfigurationDossierVue)
+    def lire_configuration(dossier: DossierDep) -> ConfigurationDossierVue:
+        return _vue_configuration(dossier)
+
+    @app.post(
+        "/dossiers/{dossier_id}/configuration/confirmer", response_model=ConfigurationDossierVue
+    )
+    def confirmer_configuration(
+        corps: ConfirmationConfigurationEntree,
+        dossier: DossierDep,
+        dossiers: DossiersDep,
+        identite: IdentiteDep,
+    ) -> ConfigurationDossierVue:
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        try:
+            confirme = confirmer(dossier, corps.forme_juridique)
+        except ConfirmationRefusee as erreur:
+            raise HTTPException(status_code=422, detail=str(erreur)) from erreur
+        dossiers.confirmer_configuration(confirme, identite.user_id, datetime.now(UTC))
+        return _vue_configuration(confirme)
+
+
 def _signataire(dossier: Dossier, identite: IdentiteAuthentifiee) -> str:
     if dossier.identite is not None:
         dirigeant = dossier.identite.dirigeant
@@ -2920,11 +3505,8 @@ def _lire_provisions(corps: ProvisionsVue) -> tuple[ProvisionCloture, ...]:
         )
         for ligne in corps.lignes
     )
-    try:
-        for provision in provisions:
-            valider_provision(provision)
-    except ProvisionInvalide as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    for provision in provisions:
+        valider_provision(provision)
     return provisions
 
 
@@ -3122,10 +3704,7 @@ def _proposer_affectation(
     exercices: ExerciceRepository,
     affectations: AffectationRepository,
 ) -> PropositionAffectation:
-    try:
-        return proposer(dossier, ledger, exercices, affectations, datetime.now(UTC).date())
-    except (AffectationImpossible, MillesimeDividendesInconnu) as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return proposer(dossier, ledger, exercices, affectations, datetime.now(UTC).date())
 
 
 def _vue_affectation(proposition: PropositionAffectation) -> AffectationVue:
@@ -3172,8 +3751,8 @@ def _enregistrer_routes_affectation(app: FastAPI) -> None:
         _verifier_acces_dossier(dossier.id, identite)
         try:
             proposition = _proposer_affectation(dossier, ledger, exercices, affectations)
-        except HTTPException as refus:
-            return AffectationVue(applicable=False, raison=str(refus.detail))
+        except (AffectationImpossible, MillesimeDividendesInconnu) as refus:
+            return AffectationVue(applicable=False, raison=str(refus))
         return _vue_affectation(proposition)
 
     @app.post("/dossiers/{dossier_id}/affectation", response_model=AffectationVue)
@@ -3307,18 +3886,15 @@ def _enregistrer_routes_dividendes_paie(app: FastAPI) -> None:
         identite: IdentiteDep,
     ) -> DividendesVue:
         _verifier_acces_dossier(dossier.id, identite)
-        try:
-            decides = dividendes_decides(dossier, ledger, exercices, affectations)
-            detail = declarer_versement(
-                decides,
-                dossier,
-                ledger,
-                corps.verse_le,
-                corps.dispense_prelevement,
-                datetime.now(UTC).date(),
-            )
-        except (AffectationImpossible, MillesimeDividendesInconnu) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        decides = dividendes_decides(dossier, ledger, exercices, affectations)
+        detail = declarer_versement(
+            decides,
+            dossier,
+            ledger,
+            corps.verse_le,
+            corps.dispense_prelevement,
+            datetime.now(UTC).date(),
+        )
         return _vue_dividendes(dataclasses.replace(decides, declare=detail), detail)
 
 
@@ -3345,12 +3921,7 @@ def _enregistrer_routes_paie(app: FastAPI) -> None:
             cotisations_patronales=corps.cotisations_patronales_cts,
             prelevement_a_la_source=corps.prelevement_a_la_source_cts,
         )
-        try:
-            ecriture = enregistrer_bulletin(dossier, ledger, bulletin)
-        except AffectationImpossible as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except BulletinIncoherent as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        ecriture = enregistrer_bulletin(dossier, ledger, bulletin)
         return _bulletin_vue(ecriture)
 
 
@@ -3364,6 +3935,7 @@ def _alerte_vue(alerte: Alerte, etat: str) -> AlerteAnomalieVue:
         libelle_mouvement=alerte.libelle_mouvement,
         montant_centimes=alerte.montant_centimes,
         date=alerte.date.isoformat(),
+        moyen_paiement=alerte.moyen_paiement,
     )
 
 
@@ -3372,11 +3944,18 @@ def _alertes_du_ledger(
     ledger: InMemoryLedgerService,
     decisions: DecisionRepository,
     justificatifs: JustificatifRepository,
+    moyens: Mapping[EcritureId, str] | None = None,
 ) -> dict[str, Alerte]:
     """Les alertes d'un ledger déjà construit avec les décisions : qui en a
     déjà un ne le relit pas en base."""
-    mouvements = _mouvements_surveilles(dossier, ledger, justificatifs, decisions)
-    return {alerte.id: alerte for alerte in analyser(mouvements)}
+    mouvements = _mouvements_surveilles(dossier, ledger, justificatifs, decisions, moyens)
+    return {alerte.id: alerte for alerte in analyser(mouvements, _plancher_carburant())}
+
+
+@functools.cache
+def _plancher_carburant() -> int | None:
+    """Le plancher carburant du pack (AXE-837), lu une fois."""
+    return plancher_de(CATEGORIE_CARBURANT, charger_regles())
 
 
 def _alertes_du_dossier(
@@ -3384,9 +3963,36 @@ def _alertes_du_dossier(
     base: LedgerService,
     decisions: DecisionRepository,
     justificatifs: JustificatifRepository,
+    propositions: PropositionRepository | None = None,
 ) -> dict[str, Alerte]:
     ledger = _ledger_avec_decisions(dossier, base, decisions)
-    return _alertes_du_ledger(dossier, ledger, decisions, justificatifs)
+    moyens = (
+        {
+            e: p.moyen_paiement
+            for e, p in propositions.lister(dossier.id).items()
+            if p.moyen_paiement
+        }
+        if propositions is not None
+        else None
+    )
+    return _alertes_du_ledger(dossier, ledger, decisions, justificatifs, moyens)
+
+
+def _enregistrer_route_historique_anomalie(app: FastAPI) -> None:
+    @app.get(
+        "/dossiers/{dossier_id}/anomalies/{alerte_id}/historique",
+        response_model=list[EvenementAnomalieVue],
+    )
+    def historique_anomalie(
+        alerte_id: str, dossier: DossierPortefeuilleDep, registre: RegistreAnomaliesDep
+    ) -> list[EvenementAnomalieVue]:
+        """Chaque changement d'état, avec son auteur et sa date (AXE-814)."""
+        return [
+            EvenementAnomalieVue(
+                etat=e.etat, acteur=e.acteur, commentaire=e.commentaire, le=e.le.isoformat()
+            )
+            for e in registre.historique(dossier.id, alerte_id)
+        ]
 
 
 def _enregistrer_routes_anomalies(app: FastAPI) -> None:
@@ -3396,10 +4002,12 @@ def _enregistrer_routes_anomalies(app: FastAPI) -> None:
         base: LedgerBaseDep,
         decisions: DecisionsDep,
         justificatifs: JustificatifsDep,
+        propositions: PropositionsDep,
         registre: RegistreAnomaliesDep,
     ) -> list[AlerteAnomalieVue]:
-        alertes = _alertes_du_dossier(dossier, base, decisions, justificatifs)
-        return [_alerte_vue(alerte, registre.etat(alerte.id)) for alerte in alertes.values()]
+        alertes = _alertes_du_dossier(dossier, base, decisions, justificatifs, propositions)
+        etats = registre.etats(dossier.id)
+        return [_alerte_vue(alerte, etats.get(alerte.id, "ouverte")) for alerte in alertes.values()]
 
     @app.post(
         "/dossiers/{dossier_id}/anomalies/{alerte_id}",
@@ -3412,6 +4020,7 @@ def _enregistrer_routes_anomalies(app: FastAPI) -> None:
         base: LedgerBaseDep,
         decisions: DecisionsDep,
         justificatifs: JustificatifsDep,
+        propositions: PropositionsDep,
         registre: RegistreAnomaliesDep,
         identite: IdentiteDep,
         role: RoleMembreDep,
@@ -3419,16 +4028,19 @@ def _enregistrer_routes_anomalies(app: FastAPI) -> None:
         """Le gestionnaire qualifie. Lecture consulte, ne qualifie pas."""
         _exiger_ecriture(role, "La lecture ne qualifie pas une alerte.")
         _, identite = _verifier_acces_gestionnaire(identite)
-        alertes = _alertes_du_dossier(dossier, base, decisions, justificatifs)
+        alertes = _alertes_du_dossier(dossier, base, decisions, justificatifs, propositions)
         alerte = alertes.get(alerte_id)
         if alerte is None:
             raise HTTPException(status_code=404, detail="Alerte inconnue.")
-        try:
-            etat = registre.instruire(
-                alerte_id, entree.decision, identite.user_id, entree.commentaire
-            )
-        except TransitionRefusee as erreur:
-            raise HTTPException(status_code=400, detail=str(erreur)) from erreur
+        etat = registre.instruire(
+            dossier.id,
+            alerte_id,
+            entree.decision,
+            # L'auteur se lit dans l'historique (AXE-800) : l'e-mail, pas l'uuid.
+            identite.email or identite.user_id,
+            entree.commentaire,
+            datetime.now(UTC),
+        )
         return _alerte_vue(alerte, etat)
 
 
@@ -3448,6 +4060,9 @@ def _ticket_necessaire(vue: TransactionVue) -> bool:
     categorie = _categorie_du_libelle(vue.libelle)
     if categorie is None:
         return False
+    if categorie == CATEGORIE_RETRAIT_ESPECES:
+        # AXE-844 : des espèces dépensées pour l'activité demandent leur ticket.
+        return vue.categorie not in (None, CATEGORIE_USAGE_PERSONNEL)
     return categorie in _CATEGORIES_TICKET or categorie.startswith("a_verifier")
 
 
@@ -3459,7 +4074,7 @@ def _compte_suggere(proposition: str | None) -> str | None:
     if not proposition:
         return None
     compte = charger_compte_par_categorie().get(proposition)
-    if compte and compte != "512" and not compte.startswith("445"):
+    if compte and not est_compte_banque(compte) and not compte.startswith("445"):
         return compte
     return None
 
@@ -3480,13 +4095,26 @@ def _comptes_expert() -> list[CompteChoix]:
         {
             compte
             for compte in charger_compte_par_categorie().values()
-            if compte != "512" and not compte.startswith("445")
+            if not est_compte_banque(compte) and not compte.startswith("445")
         }
     )
     return [CompteChoix(compte=compte, libelle=libelle_compte(compte)) for compte in comptes]
 
 
 def _sujet_depuis_vue(dossier: Dossier, vue: TransactionVue) -> SujetExpertVue | None:
+    if vue.statut == "à trancher" and vue.categorie == CATEGORIE_A_PRECISER:
+        return _sujet(
+            dossier,
+            f"trancher:{vue.ecriture_id}",
+            "gestionnaire",
+            "a_trancher",
+            vue.libelle,
+            "Retrait d'espèces : le chauffeur ne sait plus à quoi il a servi.",
+            vue.montant_cts,
+            vue.ecriture_id,
+            _compte_chiffre(vue.compte),
+            None,
+        )
     if vue.statut == "à trancher":
         return _sujet(
             dossier,
@@ -3521,28 +4149,103 @@ def _sujets_anomalies(
     ledger: InMemoryLedgerService,
     decisions: DecisionRepository,
     justificatifs: JustificatifRepository,
-    registre: RegistreInstructions,
+    registre: InstructionsRepository | None,
     exclues: frozenset[EcritureId],
 ) -> list[SujetExpertVue]:
+    """`registre` à None : toutes les alertes, qualifiées ou non (ce que garde
+    le cache de la file, AXE-824 ; l'état se filtre à la lecture)."""
     sujets: list[SujetExpertVue] = []
     alertes = _alertes_du_ledger(dossier, ledger, decisions, justificatifs)
+    etats = {} if registre is None else registre.etats(dossier.id)
+    ecritures = {e.id: e for e in ledger.grand_livre(dossier.id)}
     for alerte in alertes.values():
         if alerte.ecriture_id in exclues:
             continue
-        if registre.etat(alerte.id) not in ("ouverte", "en_instruction"):
-            continue
-        sujets.append(
-            _sujet(
-                dossier,
-                f"anomalie:{alerte.id}",
-                "gestionnaire",
-                "anomalie",
-                alerte.libelle_ui,
-                alerte.detail,
-                alerte.montant_centimes,
-                str(alerte.ecriture_id),
-            )
+        sujet = _sujet_selon_etat(
+            dossier, alerte, etats.get(alerte.id, "ouverte"), ecritures.get(alerte.ecriture_id)
         )
+        if sujet is not None:
+            sujets.append(sujet)
+    return sujets
+
+
+def est_banque_ou_tva(compte: str) -> bool:
+    return compte.startswith("512") or compte.startswith("445")
+
+
+def _reclassement_personnel(
+    dossier: Dossier, alerte: Alerte, ecriture: Ecriture | None
+) -> SujetExpertVue | None:
+    """Alerte qualifiée « usage personnel » (AXE-814) : le reclassement vers
+    455 (108 en EI, matrice des statuts) est **proposé** dans la file, jamais
+    écrit. L'expert-comptable ou le chauffeur le valide par une imputation.
+    Rien à proposer si l'écriture y est déjà, ou si le statut ne prévoit pas
+    de compte (usage personnel signalé sans écriture)."""
+    cible = configuration_de(dossier).comptes_categories_statut().get("usage_personnel")
+    if cible is None or ecriture is None:
+        return None
+    actuels = {ligne.compte for ligne in ecriture.lignes if not est_banque_ou_tva(ligne.compte)}
+    if cible in actuels:
+        return None
+    return _sujet(
+        dossier,
+        f"reclassement:{alerte.id}",
+        "gestionnaire",
+        "anomalie",
+        alerte.libelle_mouvement,
+        f"Usage personnel retenu : reclassement proposé en {cible}, à valider.",
+        alerte.montant_centimes,
+        str(alerte.ecriture_id),
+        compte_actuel=min(actuels) if actuels else None,
+        compte_suggere=cible,
+    )
+
+
+def _sujet_selon_etat(
+    dossier: Dossier, alerte: Alerte, etat: str, ecriture: Ecriture | None
+) -> SujetExpertVue | None:
+    if etat == "usage_personnel":
+        return _reclassement_personnel(dossier, alerte, ecriture)
+    if etat not in ("ouverte", "en_instruction"):
+        return None
+    return _sujet(
+        dossier,
+        f"{PREFIXE_ANOMALIE}{alerte.id}",
+        "gestionnaire",
+        "anomalie",
+        alerte.libelle_ui,
+        alerte.detail,
+        alerte.montant_centimes,
+        str(alerte.ecriture_id),
+    )
+
+
+PREFIXE_ANOMALIE = "anomalie:"
+
+
+def _sujets_du_portefeuille(
+    portefeuille: Sequence[Dossier],
+    sources: tuple[LedgerService, DecisionRepository, JustificatifRepository],
+    agregats: AgregatsRepository,
+    cache: CacheFileExpert,
+) -> list[SujetExpertVue]:
+    """Sujets gardés quand la version du dossier n'a pas bougé, recalculés
+    sinon (AXE-824). La version est lue **avant** le calcul : une écriture
+    arrivée pendant le calcul la fait monter, le prochain affichage refait."""
+    base, decisions, justificatifs = sources
+    ids = [dossier.id for dossier in portefeuille]
+    versions = {d: ligne.version for d, ligne in agregats.lire(ids).items()}
+    gardes = cache.lire(ids)
+    sujets: list[SujetExpertVue] = []
+    for dossier in portefeuille:
+        version = versions.get(dossier.id, 0)
+        garde = gardes.get(dossier.id)
+        if garde is not None and garde.valables(version):
+            sujets.extend(SujetExpertVue.model_validate(s) for s in garde.sujets)
+            continue
+        calcules = _sujets_expert(dossier, base, decisions, justificatifs, None)
+        cache.enregistrer(dossier.id, version, [s.model_dump() for s in calcules])
+        sujets.extend(calcules)
     return sujets
 
 
@@ -3551,17 +4254,23 @@ def _sujets_expert(
     base: LedgerService,
     decisions: DecisionRepository,
     justificatifs: JustificatifRepository,
-    registre: RegistreInstructions,
+    registre: InstructionsRepository | None,
+    avec_anomalies: bool = True,
 ) -> list[SujetExpertVue]:
     ledger = _ledger_avec_decisions(dossier, base, decisions)
     exclues = annulees(ledger.grand_livre(dossier.id))
     sujets = [
         sujet
-        for vue in _vues_dossier(dossier, ledger, justificatifs)
+        for vue in _avec_categories(
+            _vues_dossier(dossier, ledger, justificatifs), decisions.lister_decisions(dossier.id)
+        )
         if EcritureId(vue.ecriture_id) not in exclues
         if (sujet := _sujet_depuis_vue(dossier, vue)) is not None
     ]
-    sujets.extend(_sujets_anomalies(dossier, ledger, decisions, justificatifs, registre, exclues))
+    if avec_anomalies:
+        sujets.extend(
+            _sujets_anomalies(dossier, ledger, decisions, justificatifs, registre, exclues)
+        )
     return sujets
 
 
@@ -3612,11 +4321,22 @@ def imputer_ecriture(
     ecriture = connus.get(EcritureId(entree.ecriture_id))
     if ecriture is None:
         raise HTTPException(status_code=404, detail="Écriture inconnue.")
-    try:
-        inverse, nouvelle = preparer_imputation(ecriture, entree.compte, set(connus))
-    except ImputationRefusee as erreur:
-        raise HTTPException(status_code=400, detail=str(erreur)) from erreur
+    inverse, nouvelle = preparer_imputation(
+        ecriture,
+        entree.compte,
+        set(connus),
+        base.periodes_closes(dossier.id),
+        dossier.exercice_debut,
+    )
     base.enregistrer(inverse)
+    # AXE-420 : la décision du chauffeur ne doit pas rester chargée en plus.
+    for annulation in annuler_reclassements(
+        ecriture.id,
+        list(connus.values()),
+        base.periodes_closes(dossier.id),
+        dossier.exercice_debut,
+    ):
+        base.enregistrer(annulation)
     base.enregistrer(nouvelle)
     sujets = _sujets_expert(dossier, base, decisions, justificatifs, registre)
     return ImputationVue(
@@ -3640,14 +4360,68 @@ def annuler_imputation(
     if dossier is None or dossier.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Dossier inconnu.")
     connus = {ecriture.id: ecriture for ecriture in base.grand_livre(dossier.id)}
+    periodes = base.periodes_closes(dossier.id)
     for identifiant in (entree.ecriture_id, entree.contrepassation_id):
         ecriture = connus.get(EcritureId(identifiant))
         if ecriture is None:
             raise HTTPException(status_code=404, detail="Écriture inconnue.")
-        inverse = contrepasser(ecriture)
+        inverse = contrepasser(ecriture, periodes, dossier.exercice_debut)
         if inverse.id not in connus:
             base.enregistrer(inverse)
             connus[inverse.id] = inverse
+
+
+def _sujets_qualifies(
+    sujets: list[SujetExpertVue],
+    portefeuille: Sequence[Dossier],
+    etat: EtatTags,
+    registre: InstructionsRepository,
+    sources: tuple[LedgerService, DecisionRepository, JustificatifRepository],
+) -> list[SujetExpertVue]:
+    """Le cache garde toutes les alertes. Tags d'anomalies et qualifications
+    s'appliquent à la lecture (AXE-814, AXE-829)."""
+    par_dossier = {dossier.id: dossier for dossier in portefeuille}
+    concernes = {DossierId(sujet.dossier_id) for sujet in sujets if sujet.nature == "anomalie"}
+    etats = {dossier_id: registre.etats(dossier_id) for dossier_id in concernes}
+    a_refaire = {
+        dossier_id
+        for dossier_id, courant in etats.items()
+        if "usage_personnel" in courant.values() and not etat.exclu(dossier_id, "anomalies")
+    }
+    gardes = [sujet for sujet in sujets if _sujet_visible(sujet, etat, etats, a_refaire)]
+    for dossier_id in a_refaire:
+        gardes.extend(_anomalies_fraiches(par_dossier[dossier_id], registre, sources))
+    return gardes
+
+
+def _sujet_visible(
+    sujet: SujetExpertVue,
+    etat: EtatTags,
+    etats: dict[DossierId, dict[str, str]],
+    a_refaire: set[DossierId],
+) -> bool:
+    if sujet.nature != "anomalie":
+        return True
+    dossier_id = DossierId(sujet.dossier_id)
+    if etat.exclu(dossier_id, "anomalies") or dossier_id in a_refaire:
+        return False
+    if not sujet.id.startswith(PREFIXE_ANOMALIE):
+        return True
+    courant = etats[dossier_id].get(sujet.id.removeprefix(PREFIXE_ANOMALIE), "ouverte")
+    return courant in ("ouverte", "en_instruction")
+
+
+def _anomalies_fraiches(
+    dossier: Dossier,
+    registre: InstructionsRepository,
+    sources: tuple[LedgerService, DecisionRepository, JustificatifRepository],
+) -> list[SujetExpertVue]:
+    """Reconstruit les anomalies d'un dossier qualifié en usage personnel :
+    le cache ne contient pas la proposition de reclassement."""
+    base, decisions, justificatifs = sources
+    ledger = _ledger_avec_decisions(dossier, base, decisions)
+    exclues = annulees(ledger.grand_livre(dossier.id))
+    return _sujets_anomalies(dossier, ledger, decisions, justificatifs, registre, exclues)
 
 
 def _enregistrer_routes_expert(app: FastAPI) -> None:
@@ -3658,36 +4432,553 @@ def _enregistrer_routes_expert(app: FastAPI) -> None:
         decisions: DecisionsDep,
         justificatifs: JustificatifsDep,
         registre: RegistreAnomaliesDep,
+        tags: TagsDep,
+        agregats: AgregatsDep,
+        cache: CacheFileExpertDep,
         identite: IdentiteDep,
     ) -> FileExpertVue:
-        """File de l'expert-comptable : sujets chauffeur et gestionnaire,
-        tous dossiers du portefeuille. Le portefeuille agrégé ne change pas."""
+        """File de l'expert-comptable. Seuls les dossiers changés sont
+        recalculés (AXE-824). Un tag peut exclure un dossier du mode expert
+        ou de ses anomalies (AXE-829)."""
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
-        sujets: list[SujetExpertVue] = []
-        for dossier in dossiers.lister_par_tenant(tenant_id):
-            sujets.extend(_sujets_expert(dossier, base, decisions, justificatifs, registre))
-        return FileExpertVue(sujets=sujets, comptes=_comptes_expert())
+        etat = etat_du_portefeuille(tags, tenant_id)
+        portefeuille = tuple(
+            d for d in dossiers.lister_par_tenant(tenant_id) if not etat.exclu(d.id, "expert")
+        )
+        sources = (base, decisions, justificatifs)
+        sujets = _sujets_qualifies(
+            _sujets_du_portefeuille(portefeuille, sources, agregats, cache),
+            portefeuille,
+            etat,
+            registre,
+            sources,
+        )
+        presents = {sujet.dossier_id for sujet in sujets}
+        return FileExpertVue(
+            sujets=sujets,
+            comptes=_comptes_expert(),
+            tags_par_dossier={
+                str(d): sorted(t) for d, t in etat.par_dossier.items() if str(d) in presents and t
+            },
+        )
 
     app.post("/expert/imputations", response_model=ImputationVue)(imputer_ecriture)
     app.post("/expert/imputations/annuler", status_code=204)(annuler_imputation)
+    _enregistrer_routes_classees(app)
+    _enregistrer_route_verdict(app)
+
+
+PAR_PAGE_CLASSEES = 50
+
+
+class OperationClasseeVue(BaseModel):
+    dossier_id: str
+    dossier_nom: str
+    ecriture_id: str
+    date: str
+    libelle: str
+    montant_cts: int
+    compte: str
+    categorie: str | None
+    origine: str
+    confiance: float | None
+    statut: str
+    sens: str
+    verdict: str | None
+
+
+class CompteursClasseesVue(BaseModel):
+    auto: int
+    chauffeur: int
+    expert: int
+    justes: int
+    fausses: int
+
+
+class OperationsClasseesVue(BaseModel):
+    operations: list[OperationClasseeVue]
+    total: int
+    page: int
+    pages: int
+    compteurs: CompteursClasseesVue
+    categories: list[str]
+
+
+class VerdictEntree(BaseModel):
+    dossier_id: str
+    ecriture_id: str
+    verdict: Literal["juste", "faux"]
+
+
+def _operations_du_dossier(
+    dossier: Dossier,
+    base: LedgerService,
+    decisions: DecisionRepository,
+    propositions: PropositionRepository,
+) -> list[OperationClassee]:
+    """Une lecture par source et par dossier : grand livre, décisions,
+    propositions. Aucune proposition recalculée. Le verdict n'est pas ici :
+    il se pose à la lecture, sans périmer ce calcul."""
+    ledger = _ledger_avec_decisions(dossier, base, decisions)
+    en_vigueur: dict[EcritureId, str] = {}
+    for decision in decisions.lister_decisions(dossier.id):
+        if decision.categorie == CATEGORIE_ANNULATION:
+            en_vigueur.pop(decision.ecriture_id, None)
+        else:
+            en_vigueur[decision.ecriture_id] = decision.categorie
+    return classer_operations(
+        ledger.grand_livre(dossier.id),
+        propositions.lister(dossier.id),
+        en_vigueur,
+        {},
+    )
+
+
+def _vue_classee(operation: OperationClassee, noms: dict[DossierId, str]) -> OperationClasseeVue:
+    return OperationClasseeVue(
+        dossier_id=str(operation.dossier_id),
+        dossier_nom=noms.get(operation.dossier_id, str(operation.dossier_id)),
+        ecriture_id=str(operation.ecriture_id),
+        date=operation.date.isoformat(),
+        libelle=operation.libelle,
+        montant_cts=operation.montant_cts,
+        compte=operation.compte,
+        categorie=operation.categorie,
+        origine=operation.origine,
+        confiance=operation.confiance,
+        statut=operation.statut,
+        sens=operation.sens,
+        verdict=operation.verdict,
+    )
+
+
+def _page_classees(
+    operations: list[OperationClassee], filtres: Filtres, tri: str, page: int
+) -> tuple[list[OperationClassee], int, int]:
+    """(tranche de la page, total filtré, nombre de pages)."""
+    gardees = trier((o for o in operations if filtres.garde(o)), tri)
+    pages = max(1, -(-len(gardees) // PAR_PAGE_CLASSEES))
+    courante = min(max(1, page), pages)
+    debut = (courante - 1) * PAR_PAGE_CLASSEES
+    return gardees[debut : debut + PAR_PAGE_CLASSEES], len(gardees), pages
+
+
+def _operations_gardees(
+    portefeuille: Sequence[Dossier],
+    base: LedgerService,
+    decisions: DecisionRepository,
+    propositions: PropositionRepository,
+    agregats: AgregatsRepository,
+    cache: CacheFileExpert,
+) -> list[OperationClassee]:
+    """Gardées tant que la version du dossier n'a pas bougé (AXE-824).
+    La version est lue avant le calcul : une écriture arrivée pendant le
+    calcul la fait monter, le prochain affichage refait."""
+    ids = [dossier.id for dossier in portefeuille]
+    versions = {dossier_id: ligne.version for dossier_id, ligne in agregats.lire(ids).items()}
+    gardes = cache.lire(ids)
+    operations: list[OperationClassee] = []
+    for dossier in portefeuille:
+        version = versions.get(dossier.id, 0)
+        garde = gardes.get(dossier.id)
+        if garde is not None and garde.valables(version, VERSION_CLASSEES):
+            operations.extend(_operation_depuis_json(ligne) for ligne in garde.sujets)
+            continue
+        calcules = _operations_du_dossier(dossier, base, decisions, propositions)
+        cache.enregistrer(
+            dossier.id, version, [_operation_json(operation) for operation in calcules]
+        )
+        operations.extend(calcules)
+    return operations
+
+
+def _poser_verdicts(
+    operations: list[OperationClassee],
+    verdicts: VerdictsRepository,
+    dossier_ids: Sequence[DossierId],
+) -> list[OperationClassee]:
+    """Le verdict change sans écriture : une lecture, pas un recalcul."""
+    par_dossier = verdicts.derniers_de(dossier_ids)
+    return [
+        dataclasses.replace(
+            operation,
+            verdict=par_dossier.get(operation.dossier_id, {}).get(operation.ecriture_id),
+        )
+        for operation in operations
+    ]
+
+
+def _operation_json(operation: OperationClassee) -> dict[str, Any]:
+    return {
+        "dossier_id": str(operation.dossier_id),
+        "ecriture_id": str(operation.ecriture_id),
+        "date": operation.date.isoformat(),
+        "libelle": operation.libelle,
+        "montant_cts": operation.montant_cts,
+        "compte": operation.compte,
+        "categorie": operation.categorie,
+        "origine": operation.origine,
+        "confiance": operation.confiance,
+        "statut": operation.statut,
+    }
+
+
+def _operation_depuis_json(ligne: dict[str, Any]) -> OperationClassee:
+    confiance = ligne["confiance"]
+    return OperationClassee(
+        dossier_id=DossierId(str(ligne["dossier_id"])),
+        ecriture_id=EcritureId(str(ligne["ecriture_id"])),
+        date=date.fromisoformat(str(ligne["date"])),
+        libelle=str(ligne["libelle"]),
+        montant_cts=int(ligne["montant_cts"]),
+        compte=str(ligne["compte"]),
+        categorie=None if ligne["categorie"] is None else str(ligne["categorie"]),
+        origine=str(ligne["origine"]),
+        confiance=None if confiance is None else float(confiance),
+        statut=cast(Statut, str(ligne["statut"])),
+    )
+
+
+def _enregistrer_routes_classees(app: FastAPI) -> None:
+    @app.get("/expert/classees", response_model=OperationsClasseesVue)
+    def lire_classees(  # noqa: PLR0913 — un paramètre par filtre de l'URL
+        dossiers: DossiersDep,
+        base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        propositions: PropositionsDep,
+        verdicts: VerdictsDep,
+        agregats: AgregatsDep,
+        cache: CacheClasseesDep,
+        identite: IdentiteDep,
+        statut: Statut | None = None,
+        origine: str | None = None,
+        categorie: str | None = None,
+        tranche: str | None = None,
+        sens: str | None = None,
+        dossier: str | None = None,
+        tri: str = "recentes",
+        page: int = 1,
+    ) -> OperationsClasseesVue:
+        """Opérations déjà classées du portefeuille (AXE-823), filtrées et
+        paginées côté serveur. Seuls les dossiers dont la version a bougé
+        sont recalculés (AXE-824). Les compteurs portent sur tout le
+        portefeuille. Les verdicts sont relus à chaque affichage."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        portefeuille = [
+            d for d in dossiers.lister_par_tenant(tenant_id) if dossier in (None, str(d.id))
+        ]
+        noms = {d.id: d.nom for d in portefeuille}
+        operations = _poser_verdicts(
+            _operations_gardees(portefeuille, base, decisions, propositions, agregats, cache),
+            verdicts,
+            [d.id for d in portefeuille],
+        )
+        filtres = Filtres(statut, origine, categorie, tranche, sens)
+        tranche_page, total, pages = _page_classees(operations, filtres, tri, page)
+        compteurs = compter(operations)
+        return OperationsClasseesVue(
+            operations=[_vue_classee(o, noms) for o in tranche_page],
+            total=total,
+            page=min(max(1, page), pages),
+            pages=pages,
+            compteurs=CompteursClasseesVue(**dataclasses.asdict(compteurs)),
+            categories=sorted({o.categorie for o in operations if o.categorie}),
+        )
+
+
+def _enregistrer_route_verdict(app: FastAPI) -> None:
+    @app.post("/expert/classees/verdict", status_code=204)
+    def noter_verdict(
+        entree: VerdictEntree,
+        dossiers: DossiersDep,
+        verdicts: VerdictsDep,
+        role: RoleMembreDep,
+        identite: IdentiteDep,
+    ) -> None:
+        """« Juste » ou « faux », sans écriture. « Faux » ne corrige rien :
+        l'imputation reste un geste à part (mode expert)."""
+        tenant_id, identite_ok = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, "La lecture ne note pas un classement.")
+        dossier = dossiers.obtenir(DossierId(entree.dossier_id))
+        if dossier is None or dossier.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Dossier inconnu.")
+        verdicts.noter(
+            dossier.id,
+            EcritureId(entree.ecriture_id),
+            entree.verdict,
+            identite_ok.user_id,
+            datetime.now(UTC),
+        )
+
+
+class EntreeQuarantaineVue(BaseModel):
+    id: str
+    motif: str
+    libelle_motif: str
+    date: str | None
+    libelle: str | None
+    montant_cts: int | None
+    resoluble: bool
+    decision: str | None
+    resolue_par: str | None
+    resolue_le: str | None
+
+
+class ResolutionEntree(BaseModel):
+    decision: Literal["accepter", "ignorer"]
+
+
+def _entree_vue(
+    dossier: Dossier, entree: EntreeQuarantaine, resolution: Resolution | None
+) -> EntreeQuarantaineVue:
+    famille = famille_du_motif(entree.motif)
+    try:
+        transaction = normaliser_payload(dict(entree.payload), dossier.id)
+    except ValueError:
+        transaction = None
+    return EntreeQuarantaineVue(
+        id=entree.id,
+        motif=famille,
+        libelle_motif=LIBELLES_MOTIF.get(famille, "Ligne bancaire illisible"),
+        date=transaction.date.isoformat() if transaction else None,
+        libelle=transaction.libelle if transaction else None,
+        montant_cts=transaction.montant_cts if transaction else None,
+        resoluble=famille in LIBELLES_MOTIF,
+        decision=resolution.decision if resolution else None,
+        resolue_par=resolution.par if resolution else None,
+        resolue_le=resolution.le.isoformat() if resolution else None,
+    )
+
+
+def _resoudre_quarantaine(
+    dossier: Dossier,
+    entree: EntreeQuarantaine,
+    decision: Literal["accepter", "ignorer"],
+    base: LedgerService,
+    resolutions: ResolutionsRepository,
+    par: str,
+) -> Resolution:
+    """La résolution d'abord (une seule par entrée, l'unicité tranche deux
+    clics simultanés), puis les écritures."""
+    ecritures = base.grand_livre(dossier.id)
+    origine_id = id_ecriture(dossier, entree.source, entree.transaction_id or "")
+    a_ecrire = ecritures_de_resolution(
+        entree,
+        decision,
+        origine_id,
+        ecritures,
+        lambda payload, d: normaliser_payload(dict(payload), d),
+        base.periodes_closes(dossier.id),
+    )
+    resolution = Resolution(
+        dossier.id, entree.id, decision, tuple(e.id for e in a_ecrire), par, datetime.now(UTC)
+    )
+    resolutions.enregistrer(resolution)
+    for ecriture in a_ecrire:
+        base.enregistrer(ecriture)
+    return resolution
+
+
+def _enregistrer_routes_quarantaine(app: FastAPI) -> None:
+    @app.get("/dossiers/{dossier_id}/quarantaine", response_model=list[EntreeQuarantaineVue])
+    def lister_quarantaine(
+        dossier: DossierPortefeuilleDep,
+        journal: JournalIngestionDep,
+        resolutions: ResolutionsDep,
+    ) -> list[EntreeQuarantaineVue]:
+        """Opérations bancaires que la synchro n'a pas pu écrire seule (AXE-424)."""
+        resolues = resolutions.lister(dossier.id)
+        return [
+            _entree_vue(dossier, entree, resolues.get(entree.id))
+            for entree in journal.lister_quarantaine(dossier.id)
+        ]
+
+    @app.post("/dossiers/{dossier_id}/quarantaine/{entree_id}", response_model=EntreeQuarantaineVue)
+    def resoudre_quarantaine(
+        entree_id: str,
+        corps: ResolutionEntree,
+        dossier: DossierPortefeuilleDep,
+        journal: JournalIngestionDep,
+        resolutions: ResolutionsDep,
+        base: LedgerBaseDep,
+        role: RoleMembreDep,
+        identite: IdentiteDep,
+    ) -> EntreeQuarantaineVue:
+        """Accepter passe le nouveau montant (ou l'opération datée d'un
+        exercice clos) ; ignorer laisse le grand livre tel quel."""
+        _, identite_ok = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, "La lecture ne traite pas une opération bancaire.")
+        entree = next(
+            (e for e in journal.lister_quarantaine(dossier.id) if e.id == entree_id), None
+        )
+        if entree is None:
+            raise HTTPException(status_code=404, detail="Opération introuvable.")
+        try:
+            resolution = _resoudre_quarantaine(
+                dossier,
+                entree,
+                corps.decision,
+                base,
+                resolutions,
+                identite_ok.email or identite_ok.user_id,
+            )
+        except ResolutionRefusee as erreur:
+            raise HTTPException(status_code=409, detail=str(erreur)) from erreur
+        return _entree_vue(dossier, entree, resolution)
+
+
+def get_contacts_proposes() -> ContactsProposesRepository:
+    return PostgresContactsProposes(_engine())
+
+
+ContactsProposesDep = Annotated[ContactsProposesRepository, Depends(get_contacts_proposes)]
+
+
+def get_demandes_jobs() -> DemandesDeJobs:
+    """Le gestionnaire dépose et suit ses demandes ; le worker les exécute."""
+    return FilePostgres(_engine())
+
+
+DemandesJobsDep = Annotated[DemandesDeJobs, Depends(get_demandes_jobs)]
+
+
+class NouveauChauffeurVue(BaseModel):
+    contact_nr: str
+    nom: str
+    siren: str | None
+    forme: str | None
+    exercice_debut: str | None
+    code_naf: str | None
+    avertissements: list[str]
+    cessee: bool
+    decision: str | None  # None : à valider ; "ajouter" : création en attente
+
+
+class DecisionContactsEntree(BaseModel):
+    contact_nrs: list[str]
+    decision: Literal["ajouter", "ignorer", "reprendre"]
+
+
+class SynchronisationVue(BaseModel):
+    statut: str  # en_attente | en_cours | fait | echec
+    resultat: str | None
+    erreur: str | None
+    demandee_le: str | None
+    terminee_le: str | None
+
+
+def _synchronisation_vue(job: Job | None) -> SynchronisationVue | None:
+    if job is None:
+        return None
+    return SynchronisationVue(
+        statut=job.statut,
+        resultat=job.resultat,
+        erreur=job.derniere_erreur if job.statut == "echec" else None,
+        demandee_le=job.cree_le.isoformat() if job.cree_le else None,
+        terminee_le=job.termine_le.isoformat() if job.termine_le else None,
+    )
+
+
+def _nouveaux_chauffeurs(
+    tenant_id: TenantId, contacts: ContactsProposesRepository
+) -> list[NouveauChauffeurVue]:
+    decisions = contacts.decisions(tenant_id)
+    return [
+        NouveauChauffeurVue(
+            contact_nr=p.contact_nr,
+            nom=p.nom,
+            siren=p.siren,
+            forme=p.forme,
+            exercice_debut=p.exercice_debut.isoformat() if p.exercice_debut else None,
+            code_naf=p.code_naf,
+            avertissements=list(p.avertissements),
+            cessee=p.cessee,
+            decision=None
+            if decisions.get(p.contact_nr) == "reprendre"
+            else decisions.get(p.contact_nr),
+        )
+        for p in contacts.propositions(tenant_id)
+    ]
+
+
+def _enregistrer_routes_synchronisation(app: FastAPI) -> None:
+    @app.get("/portefeuille/nouveaux-chauffeurs", response_model=list[NouveauChauffeurVue])
+    def lister_nouveaux_chauffeurs(
+        contacts: ContactsProposesDep, identite: IdentiteDep
+    ) -> list[NouveauChauffeurVue]:
+        """Contacts Digifactory sans dossier, préparés depuis Sirene (AXE-845)."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _nouveaux_chauffeurs(tenant_id, contacts)
+
+    @app.post("/portefeuille/nouveaux-chauffeurs", response_model=list[NouveauChauffeurVue])
+    def decider_nouveaux_chauffeurs(
+        corps: DecisionContactsEntree,
+        contacts: ContactsProposesDep,
+        demandes: DemandesJobsDep,
+        role: RoleMembreDep,
+        identite: IdentiteDep,
+    ) -> list[NouveauChauffeurVue]:
+        """« Ajouter » : le dossier est créé par la synchro qui suit (demandée
+        ici). « Ignorer » le retire de la liste ; « reprendre » l'y remet."""
+        tenant_id, identite_ok = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, "La lecture n'ajoute pas de chauffeur.")
+        proposes = {p.contact_nr for p in contacts.propositions(tenant_id)}
+        inconnus = set(corps.contact_nrs) - proposes
+        if inconnus:
+            raise HTTPException(status_code=404, detail="Contact inconnu.")
+        maintenant = datetime.now(UTC)
+        for numero in corps.contact_nrs:
+            contacts.decider(
+                tenant_id,
+                numero,
+                corps.decision,
+                identite_ok.email or identite_ok.user_id,
+                maintenant,
+            )
+        if corps.decision == "ajouter":
+            demandes.demander(tenant_id, TYPE_SYNCHRO)
+        return _nouveaux_chauffeurs(tenant_id, contacts)
+
+    @app.post("/portefeuille/synchroniser", response_model=SynchronisationVue)
+    def synchroniser(
+        demandes: DemandesJobsDep, role: RoleMembreDep, identite: IdentiteDep
+    ) -> SynchronisationVue | None:
+        """Lance la synchro tout de suite. Pendant qu'une synchro est en
+        attente ou en cours, rend celle-ci sans en lancer une seconde."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, "La lecture ne lance pas de synchronisation.")
+        return _synchronisation_vue(demandes.demander(tenant_id, TYPE_SYNCHRO))
+
+    @app.get("/portefeuille/synchronisation", response_model=SynchronisationVue | None)
+    def lire_synchronisation(
+        demandes: DemandesJobsDep, identite: IdentiteDep
+    ) -> SynchronisationVue | None:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _synchronisation_vue(demandes.dernier(tenant_id, TYPE_SYNCHRO))
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="AxeLCompta — démo produit (API)", version="0.0.1")
+    app = FastAPI(title="AxeLCompta — API", version="0.0.1")
     from axelcompta.api.observabilite import brancher
 
     brancher(app)
     app.state.digifactory_branche = True
     _configurer_cors(app)
+    brancher_erreurs(app)
     _configurer_contexte_rls(app)
     _enregistrer_routes_dossiers(app)
     _enregistrer_routes_transactions(app)
     _enregistrer_route_correction(app)
     _enregistrer_routes_annulation(app)
     _enregistrer_routes_anomalies(app)
+    _enregistrer_route_historique_anomalie(app)
     _enregistrer_routes_expert(app)
+    _enregistrer_routes_quarantaine(app)
+    _enregistrer_routes_synchronisation(app)
+    _enregistrer_routes_tags(app)
     _enregistrer_routes_revue(app)
     _enregistrer_routes_portefeuille(app)
+    _enregistrer_route_categorisation(app)
     _enregistrer_routes_connexions(app)
     _enregistrer_routes_rappels(app)
     _enregistrer_routes_regles(app)
@@ -3695,12 +4986,14 @@ def create_app() -> FastAPI:
     _enregistrer_routes_invitation(app)
     _enregistrer_routes_cloture(app)
     _enregistrer_routes_exports(app)
+    _enregistrer_routes_comptes_bancaires(app)
     _enregistrer_routes_provisions(app)
     _enregistrer_routes_declarations(app)
     _enregistrer_routes_pieces_greffe(app)
     _enregistrer_routes_greffe_inpi(app)
     _enregistrer_routes_notifications(app)
     _enregistrer_routes_cloture_exercice(app)
+    _enregistrer_routes_configuration(app)
     _enregistrer_routes_affectation(app)
     _enregistrer_routes_dividendes_paie(app)
     _enregistrer_routes_paie(app)

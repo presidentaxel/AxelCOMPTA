@@ -19,6 +19,7 @@ from axelcompta.core.pcg import nature_depuis_compte as nature_depuis_compte
 RACINE_PACKS_VTC = Path(__file__).resolve().parents[3] / "_AUDIT_DONNEES" / "packs_vtc"
 CHEMIN_REGLES_PAR_DEFAUT = RACINE_PACKS_VTC / "regles_regex.csv"
 CHEMIN_MAPPING_PAR_DEFAUT = RACINE_PACKS_VTC / "mapping_pcg_categorie.csv"
+CHEMIN_CATEGORIES_BANQUE_PAR_DEFAUT = RACINE_PACKS_VTC / "categories_bridge.csv"
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +29,13 @@ class RegleCategorisation:
     motif: re.Pattern[str]
     categorie: str
     confiance: str
+    # Plancher en centimes (AXE-837), réglable dans le pack : sous ce montant,
+    # la règle propose sa catégorie sans l'imputer seule (un café chez Total
+    # n'est pas un plein ; un vrai plein peut, par hasard, passer en dessous).
+    montant_min_cts: int | None = None
+
+    def sous_le_plancher(self, montant_cts: int) -> bool:
+        return self.montant_min_cts is not None and abs(montant_cts) < self.montant_min_cts
 
 
 def charger_regles(chemin: Path | None = None) -> tuple[RegleCategorisation, ...]:
@@ -44,10 +52,27 @@ def charger_regles(chemin: Path | None = None) -> tuple[RegleCategorisation, ...
     with chemin.open(newline="", encoding="utf-8") as fichier:
         return tuple(
             RegleCategorisation(
-                re.compile(ligne["regex"], re.IGNORECASE), ligne["categorie"], ligne["confiance"]
+                re.compile(ligne["regex"], re.IGNORECASE),
+                ligne["categorie"],
+                ligne["confiance"],
+                _plancher(ligne.get("montant_min_cts")),
             )
             for ligne in csv.DictReader(fichier)
         )
+
+
+def _plancher(valeur: str | None) -> int | None:
+    texte = (valeur or "").strip()
+    return int(texte) if texte else None
+
+
+def plancher_de(categorie: str, regles: tuple[RegleCategorisation, ...]) -> int | None:
+    """Le plancher d'une catégorie dans le pack (le plus haut de ses règles),
+    lu aussi par les détecteurs d'anomalies (AXE-836)."""
+    planchers = [
+        r.montant_min_cts for r in regles if r.categorie == categorie and r.montant_min_cts
+    ]
+    return max(planchers) if planchers else None
 
 
 # Corrections explicites au "premier compte listé" — trouvées en testant sur
@@ -87,3 +112,16 @@ def charger_compte_par_categorie(chemin: Path | None = None) -> dict[str, str]:
             comptes.setdefault(ligne["categorie"], ligne["prefixe_compte_pcg_normalise"])
     comptes.update(CORRECTIONS_COMPTE_PAR_CATEGORIE)
     return comptes
+
+
+def charger_categories_banque(chemin: Path | None = None) -> dict[str, str]:
+    """`{category_id Bridge: catégorie du pack}` (AXE-826). Une catégorie de
+    la banque absente de la table ne propose rien. Indice seulement : le
+    pipeline n'impute jamais sur cette seule base."""
+    chemin = chemin or CHEMIN_CATEGORIES_BANQUE_PAR_DEFAUT
+    with chemin.open(newline="", encoding="utf-8") as fichier:
+        return {
+            ligne["category_id"].strip(): ligne["categorie"].strip()
+            for ligne in csv.DictReader(fichier)
+            if ligne["category_id"].strip() and ligne["categorie"].strip()
+        }

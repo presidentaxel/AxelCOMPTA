@@ -11,6 +11,8 @@ const LIBELLES: Record<string, string> = {
   assurance_personnelle_sante: "Mutuelle",
   assurance_vehicule: "Assurance",
   carburant: "Carburant",
+  retrait_especes: "Retrait d'espèces",
+  a_preciser_expert: "À préciser par le comptable",
   charges_sociales_impots: "Cotisations et impôts",
   commissions_plateformes: "Commission de plateforme",
   compte_courant_associe: "Apport ou remboursement",
@@ -75,9 +77,11 @@ export function questionSelonSigne(montantCts: number, sansProposition: boolean)
 /** D'où vient la proposition, sans parler du modèle ni d'un pourcentage. */
 export function intituleProposition(
   libelle: string,
-  origine: "appris" | "regle" | "modele" | null,
+  origine: "appris" | "regle" | "modele" | "banque" | null,
 ): string {
   if (origine === "appris") return `Comme une opération déjà classée : ${libelle}`;
+  // AXE-826 : la catégorie vient de la banque, pas de nous. On le dit.
+  if (origine === "banque") return `D'après votre banque : ${libelle}`;
   return `Proposition : ${libelle}`;
 }
 

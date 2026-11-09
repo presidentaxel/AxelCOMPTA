@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 
-from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.core.ids import DossierId, TenantId, UserId
 
 from .models import Dossier, Tenant, verifier_mode_relance
 from .repository import DossierRepository
@@ -17,6 +17,8 @@ class InMemoryDossierRepository(DossierRepository):
     def __init__(self) -> None:
         self._tenants: dict[str, Tenant] = {}
         self._dossiers: dict[str, Dossier] = {}
+        # Confirmations du dirigeant (AXE-730), comme le journal d'audit.
+        self.confirmations: list[tuple[DossierId, UserId, datetime]] = []
 
     def enregistrer_tenant(self, tenant: Tenant) -> None:
         self._tenants.setdefault(tenant.id, tenant)
@@ -52,6 +54,16 @@ class InMemoryDossierRepository(DossierRepository):
         nouveau = replace(dossier, forme_juridique=forme)
         configuration_de(nouveau)
         self._dossiers[dossier_id] = nouveau
+
+    def reconfigurer_depuis_sirene(self, dossier: Dossier) -> None:
+        if dossier.id not in self._dossiers:
+            raise ValueError(f"dossier inconnu : {dossier.id}")
+        configuration_de(dossier)
+        self._dossiers[dossier.id] = dossier
+
+    def confirmer_configuration(self, dossier: Dossier, par: UserId, le: datetime) -> None:
+        self.reconfigurer_depuis_sirene(dossier)
+        self.confirmations.append((dossier.id, par, le))
 
     def ouvrir_exercice(self, dossier: Dossier) -> None:
         if dossier.id not in self._dossiers:

@@ -19,11 +19,14 @@ from __future__ import annotations
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     Column,
     DateTime,
     Float,
     ForeignKey,
+    Identity,
+    Integer,
     LargeBinary,
     String,
     Table,
@@ -35,7 +38,7 @@ decisions_humaines = Table(
     "decisions_humaines",
     metadata,
     Column("id", String, primary_key=True),
-    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
     Column("ecriture_id", String, ForeignKey("ecritures.id"), nullable=False),
     Column("categorie", String, nullable=False),
     Column("etage_origine", String, nullable=False),
@@ -69,10 +72,12 @@ propositions_categorisation = Table(
     # proposition AVANT l'écriture (une proposition orpheline est sans effet,
     # une écriture à trancher sans proposition casserait la file de revue).
     Column("ecriture_id", String, primary_key=True),
-    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
     Column("categorie", String, nullable=False),
     Column("etage", String, nullable=False),
     Column("confiance", Float, nullable=False),
+    # Carte, virement, prélèvement… (AXE-836, migration d1e7a3c9f264).
+    Column("moyen_paiement", String, nullable=True),
 )
 
 # Notifications internes de l'indiv (cloche de l'espace chauffeur). On
@@ -117,4 +122,67 @@ journal_audit = Table(
     Column("reference", String, nullable=False),
     Column("acteur", String, nullable=False),
     Column("acte_le", DateTime(timezone=True), nullable=False),
+)
+
+# Verdicts « juste » / « faux » sur un classement (AXE-823), sans écriture.
+# Append-only : le dernier par écriture fait foi.
+verdicts_classement = Table(
+    "verdicts_classement",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("rang", BigInteger, Identity(), nullable=False),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("ecriture_id", String, nullable=False),
+    Column("verdict", String, nullable=False),
+    Column("par", String, nullable=False),
+    Column("le", DateTime(timezone=True), nullable=False),
+)
+
+# Sujets de la file expert gardés par dossier (AXE-824). Valables tant que
+# `version_source` égale `agregats_dossier.version` du dossier.
+file_expert_dossier = Table(
+    "file_expert_dossier",
+    metadata,
+    Column(
+        "dossier_id",
+        String,
+        ForeignKey("dossiers.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("version_source", Integer, nullable=False),
+    Column("version_calcul", Integer, nullable=False),
+    Column("sujets", JSON, nullable=False),
+    Column("calcule_le", DateTime(timezone=True), nullable=False),
+)
+
+# Opérations déjà classées gardées par dossier (AXE-824). Même version que
+# `agregats_dossier`. Le verdict « juste » / « faux » n'y est pas : il change
+# sans écriture et se pose à la lecture.
+classees_dossier = Table(
+    "classees_dossier",
+    metadata,
+    Column(
+        "dossier_id",
+        String,
+        ForeignKey("dossiers.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("version_source", Integer, nullable=False),
+    Column("version_calcul", Integer, nullable=False),
+    Column("operations", JSON, nullable=False),
+    Column("calcule_le", DateTime(timezone=True), nullable=False),
+)
+
+# Résolution d'une entrée de quarantaine d'ingestion (AXE-424) : une seule
+# par entrée (unicité), jamais modifiée.
+resolutions_quarantaine = Table(
+    "resolutions_quarantaine",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("entree_id", String, nullable=False, unique=True),
+    Column("decision", String, nullable=False),
+    Column("ecritures", JSON, nullable=False),
+    Column("par", String, nullable=False),
+    Column("le", DateTime(timezone=True), nullable=False),
 )

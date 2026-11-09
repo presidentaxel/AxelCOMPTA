@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 
+from axelcompta.core.errors import Conflit
 from axelcompta.core.ids import DossierId
 
 
@@ -25,7 +26,7 @@ class DecisionAffectation:
     decide_par: str
 
 
-class AffectationDejaDecidee(ValueError):
+class AffectationDejaDecidee(Conflit, ValueError):
     pass
 
 

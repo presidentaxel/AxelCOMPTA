@@ -84,6 +84,28 @@ export type DossierAgregat = {
   etape_precedente: string;
   alerte_regime: string | null;
   alerte_tva: string | null;
+  /** AXE-834 : configuration proposée sans certitude, à confirmer par le dirigeant. */
+  a_confirmer: string[];
+  /** AXE-829 : tags du dossier ; exclu des compteurs, il reste listé, grisé. */
+  tags: string[];
+  exclu_compteurs: boolean;
+};
+
+export type TagPortefeuille = { nom: string; description: string };
+
+/** Tags du portefeuille et, par traitement, ceux qui en excluent un dossier. */
+export type ReglageTags = {
+  tags: TagPortefeuille[];
+  traitements: Record<string, string>;
+  exclusions: Record<string, string[]>;
+};
+
+/** AXE-814 : un changement d'état d'une alerte, avec son auteur. */
+export type EvenementAnomalie = {
+  etat: string;
+  acteur: string;
+  commentaire: string;
+  le: string;
 };
 
 export type AlerteAnomalie = {
@@ -95,6 +117,8 @@ export type AlerteAnomalie = {
   libelle_mouvement: string;
   montant_centimes: number;
   date: string;
+  /** AXE-836 : carte, virement, prélèvement, retrait (code de la banque). */
+  moyen_paiement?: string | null;
 };
 
 export type SujetExpert = {
@@ -128,6 +152,8 @@ export type ImputationFaite = {
 export type FileExpert = {
   sujets: SujetExpert[];
   comptes: { compte: string; libelle: string }[];
+  /** AXE-829 : tags des dossiers de la file. */
+  tags_par_dossier?: Record<string, string[]>;
 };
 
 // doc 17 §9 Semaine 4 + AXE-417/418 : exports de clôture (PDF + CSV),
@@ -177,7 +203,7 @@ export type TransactionVue = {
   // une opération semblable déjà classée par le chauffeur (« appris »), sinon
   // les règles (« regle ») ou le modèle (« modele »). null : pas de proposition.
   proposition: string | null;
-  origine_proposition: "appris" | "regle" | "modele" | null;
+  origine_proposition: "appris" | "regle" | "modele" | "banque" | null;
   confiance_proposition: number | null;
   // Décision humaine en vigueur, quand il y en a une. Absente des réponses
   // antérieures à AXE-686 : le client la traite comme nulle.
@@ -253,4 +279,99 @@ export type BulletinVue = {
   mois: string;
   brut_cts: number;
   net_a_payer_cts: number;
+};
+
+/** AXE-832 : un compte bancaire du dossier, son sous-compte 512x et ses
+ * deux soldes. `solde_banque_cts` est celui du dernier relevé Digifactory ;
+ * `null` si le compte n'a jamais été relevé (et l'écart aussi). */
+export type CompteBancaireVue = {
+  compte: string;
+  nom: string | null;
+  solde_comptable_cts: number;
+  solde_banque_cts: number | null;
+  releve_le: string | null;
+  ecart_cts: number | null;
+  /** AXE-729 : true comptabilisé, false écarté (personnel), null à décider. */
+  retenu?: boolean | null;
+};
+
+/** AXE-823 : une opération déjà classée, et par qui ou quoi. */
+export type OperationClassee = {
+  dossier_id: string;
+  dossier_nom: string;
+  ecriture_id: string;
+  date: string;
+  libelle: string;
+  montant_cts: number;
+  compte: string;
+  categorie: string | null;
+  origine: string;
+  confiance: number | null;
+  statut: string;
+  sens: string;
+  verdict: "juste" | "faux" | null;
+};
+
+export type OperationsClassees = {
+  operations: OperationClassee[];
+  total: number;
+  page: number;
+  pages: number;
+  compteurs: { auto: number; chauffeur: number; expert: number; justes: number; fausses: number };
+  categories: string[];
+};
+
+/** AXE-424 : une opération bancaire que la synchro n'a pas pu écrire seule. */
+export type EntreeQuarantaine = {
+  id: string;
+  motif: string;
+  libelle_motif: string;
+  date: string | null;
+  libelle: string | null;
+  montant_cts: number | null;
+  resoluble: boolean;
+  decision: "accepter" | "ignorer" | null;
+  resolue_par: string | null;
+  resolue_le: string | null;
+};
+
+/** AXE-845 : suivi de la dernière demande de synchro du portefeuille. */
+export type Synchronisation = {
+  statut: "en_attente" | "en_cours" | "fait" | "echec";
+  resultat: string | null;
+  erreur: string | null;
+  demandee_le: string | null;
+  terminee_le: string | null;
+};
+
+/** AXE-845 : un contact Digifactory sans dossier, préparé depuis Sirene. */
+export type NouveauChauffeur = {
+  contact_nr: string;
+  nom: string;
+  siren: string | null;
+  forme: string | null;
+  exercice_debut: string | null;
+  code_naf: string | null;
+  avertissements: string[];
+  cessee: boolean;
+  decision: "ajouter" | "ignorer" | null;
+};
+
+/** AXE-730 : ce que le dirigeant confirme, et ce qui reste à saisir. */
+export type ConfigurationDossier = {
+  forme_juridique: string;
+  formes_proposees: string[];
+  regime_imposition: string;
+  regime_tva: string;
+  exercice_debut: string;
+  exercice_fin: string;
+  a_confirmer: string[];
+  identite_manquante: string[];
+  raison_blocage: string | null;
+};
+
+/** AXE-825 : sans modèle, la synchro s'arrête et la catégorisation est dégradée. */
+export type EtatCategorisation = {
+  modele_charge: boolean;
+  raison: string | null;
 };

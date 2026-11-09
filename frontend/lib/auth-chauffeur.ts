@@ -26,6 +26,8 @@ import {
 } from "./messages-auth";
 import { appelAuthentifie, erreurApi, lireCorps } from "./session";
 import type {
+  ConfigurationDossier,
+  CompteBancaireVue,
   AffectationVue,
   BulletinVue,
   DividendesVue,
@@ -434,6 +436,22 @@ export async function joindreJustificatifChauffeur(
   return corps as TransactionVue;
 }
 
+/** AXE-832 : les comptes bancaires du dossier et leurs deux soldes. */
+export async function listerComptesBancairesChauffeur(
+  dossierId: string,
+): Promise<CompteBancaireVue[]> {
+  return fetchAvecAuthChauffeur<CompteBancaireVue[]>(`/dossiers/${dossierId}/comptes-bancaires`);
+}
+
+/** AXE-729 : comptabiliser ce compte (pro) ou l'écarter (personnel). */
+export function deciderCompteBancaireChauffeur(
+  dossierId: string,
+  compte: string,
+  retenu: boolean,
+): Promise<CompteBancaireVue[]> {
+  return envoyerChauffeur(`/dossiers/${dossierId}/comptes-bancaires/${compte}/decision`, { retenu });
+}
+
 /** Notifications internes du chauffeur, les plus récentes d'abord. */
 export async function listerNotificationsChauffeur(dossierId: string): Promise<NotificationVue[]> {
   return fetchAvecAuthChauffeur<NotificationVue[]>(`/dossiers/${dossierId}/notifications`);
@@ -580,4 +598,15 @@ export function saisirBulletinChauffeur(
   },
 ): Promise<BulletinVue> {
   return envoyerChauffeur(`/dossiers/${dossierId}/bulletins`, bulletin);
+}
+
+/** AXE-730 : le dirigeant confirme sa configuration, en choisissant la forme
+ * quand Sirene ne la tranche pas. */
+export function confirmerConfigurationChauffeur(
+  dossierId: string,
+  formeJuridique: string,
+): Promise<ConfigurationDossier> {
+  return envoyerChauffeur(`/dossiers/${dossierId}/configuration/confirmer`, {
+    forme_juridique: formeJuridique,
+  });
 }

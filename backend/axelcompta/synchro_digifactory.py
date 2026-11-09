@@ -19,33 +19,54 @@ import asyncio
 import sys
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
+from typing import Any, Protocol
 
 from sqlalchemy.engine import Engine
 
-from axelcompta.categorize.ml_fallback import (
-    ModeleMlIndisponible,
-    charger_calibration,
-    charger_modele,
-)
-from axelcompta.categorize.pipeline import CategorizationPipeline
+from axelcompta.categorize.ml_fallback import charger_calibration
+from axelcompta.categorize.modele_requis import SynchroSansModele, modele_pour_synchro
+from axelcompta.categorize.pipeline import CategorizationPipeline, SansClassement
 from axelcompta.categorize.rules_and_ml import RulesAndMlPipeline
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.ingestion.consentement import classer, expiration_la_plus_proche, relever_sante
+from axelcompta.ingestion.comptes_bancaires import (
+    CompteBancaireRepository,
+    comptes_releves,
+    relever_comptes,
+)
+from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
+from axelcompta.ingestion.consentement import (
+    ConsentementRepository,
+    classer,
+    expiration_la_plus_proche,
+    relever_sante,
+)
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
 from axelcompta.ingestion.journal import JournalIngestion
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ingestion.providers.digifactory import DigifactoryHttpClient, DigifactoryProvider
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
-from axelcompta.packs.vtc_demo import charger_compte_par_categorie, charger_regles
+from axelcompta.packs.vtc_demo import (
+    charger_categories_banque,
+    charger_compte_par_categorie,
+    charger_regles,
+)
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
+from axelcompta.tenants.tags import etat_du_portefeuille, exclus, retenus
+from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.workflow.propositions import PropositionRepository
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
 from axelcompta.workflow.synchro import RapportSynchro, SourceTransactions, synchroniser_dossier
 
 SOURCE = "digifactory"
+
+
+class ClientComptes(Protocol):
+    """Ce que le relevé des consentements lit chez Digifactory."""
+
+    async def accounts(self, contact_nr: str | int) -> dict[str, Any] | list[Any]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,15 +87,28 @@ async def synchroniser_dossiers(
     propositions: PropositionRepository,
     pipeline: CategorizationPipeline,
     comptes: dict[str, str],
+    comptes_bancaires: CompteBancaireRepository | None = None,
+    sans_classement: frozenset[DossierId] = frozenset(),
 ) -> list[ResultatDossier]:
+    """`sans_classement` : dossiers dont les opérations entrent sans
+    classement automatique (tag exclu du traitement, AXE-829)."""
     resultats: list[ResultatDossier] = []
     for dossier in dossiers:
         if dossier.contact_nr is None:
             resultats.append(ResultatDossier(dossier.id, ignore="pas de contact Digifactory"))
             continue
+        etages = SansClassement() if dossier.id in sans_classement else pipeline
         try:
             rapport = await synchroniser_dossier(
-                dossier, source, SOURCE, journal, ledger, propositions, pipeline, comptes
+                dossier,
+                source,
+                SOURCE,
+                journal,
+                ledger,
+                propositions,
+                etages,
+                comptes,
+                comptes_bancaires,
             )
         except Exception as exc:  # noqa: BLE001 — un dossier en échec ne bloque pas les autres
             resultats.append(ResultatDossier(dossier.id, erreur=f"{type(exc).__name__}: {exc}"))
@@ -100,14 +134,16 @@ def _afficher(resultat: ResultatDossier) -> None:
 
 
 async def _relever_consentements(
-    client: DigifactoryHttpClient,
+    client: ClientComptes,
     dossiers: tuple[Dossier, ...],
     resultats: list[ResultatDossier],
-    depot: PostgresConsentementRepository,
+    depots: tuple[ConsentementRepository, CompteBancaireRepository],
     aujourd_hui: date,
 ) -> list[ResultatDossier]:
-    """Après la synchro des transactions : lit `/accounts` et mémorise le
-    statut. Un échec ici n'annule pas les écritures déjà posées."""
+    """Après la synchro des transactions : lit `/accounts`, mémorise le
+    statut du consentement, et le nom et le solde de chaque compte bancaire
+    (AXE-832). Un échec ici n'annule pas les écritures déjà posées."""
+    depot, comptes_bancaires = depots
     releves: list[ResultatDossier] = []
     for dossier, resultat in zip(dossiers, resultats, strict=True):
         if dossier.contact_nr is None:
@@ -122,25 +158,31 @@ async def _relever_consentements(
         expire_le = expiration_la_plus_proche(payload)
         statut = classer(expire_le, aujourd_hui)
         sante = relever_sante(payload)
-        depot.enregistrer(dossier.id, expire_le, statut, datetime.now(UTC), sante)
+        maintenant = datetime.now(UTC)
+        depot.enregistrer(dossier.id, expire_le, statut, maintenant, sante)
+        relever_comptes(comptes_bancaires, dossier.id, comptes_releves(payload), maintenant)
         releves.append(replace(resultat, consentement=statut.value, sante=sante.statut.value))
     return releves
 
 
 def synchroniser_portefeuille(
-    engine: Engine, dossiers: tuple[Dossier, ...]
+    engine: Engine,
+    dossiers: tuple[Dossier, ...],
+    sans_classement: frozenset[DossierId] = frozenset(),
 ) -> list[ResultatDossier]:
     """Synchro + relevé des consentements, pour un lot de dossiers. Point
     d'entrée partagé par la ligne de commande et les tâches planifiées
     (`axelcompta.taches`)."""
     try:
-        modele = charger_modele()
-    except ModeleMlIndisponible:
-        modele = None
+        modele = modele_pour_synchro()
+    except SynchroSansModele as refus:
+        # AXE-825 : aucun dossier rempli de 471 en silence.
+        return [ResultatDossier(d.id, erreur=str(refus)) for d in dossiers]
     pipeline = RulesAndMlPipeline(
         regles=charger_regles(),
         modele=modele,
         calibration=charger_calibration() if modele is not None else None,
+        categories_banque=charger_categories_banque(),
     )
 
     async def lancer() -> list[ResultatDossier]:
@@ -150,6 +192,7 @@ def synchroniser_portefeuille(
             if not sante.ok:
                 print(f"Digifactory indisponible : {sante.message}", file=sys.stderr)
                 return [ResultatDossier(d.id, erreur=sante.message) for d in dossiers]
+            comptes_bancaires = PostgresCompteBancaireRepository(engine)
             resultats = await synchroniser_dossiers(
                 dossiers,
                 DigifactoryProvider(client_reel=client),
@@ -158,9 +201,15 @@ def synchroniser_portefeuille(
                 PostgresPropositionRepository(engine),
                 pipeline,
                 charger_compte_par_categorie(),
+                comptes_bancaires,
+                sans_classement,
             )
             return await _relever_consentements(
-                client, dossiers, resultats, PostgresConsentementRepository(engine), date.today()
+                client,
+                dossiers,
+                resultats,
+                (PostgresConsentementRepository(engine), comptes_bancaires),
+                date.today(),
             )
         finally:
             await client.aclose()
@@ -183,10 +232,17 @@ def main() -> int:
             print(f"Dossier inconnu : {args.dossier}", file=sys.stderr)
             return 1
         dossiers: tuple[Dossier, ...] = (dossier,)
+        sans_classement: frozenset[DossierId] = frozenset()
     else:
-        dossiers = depot.lister_par_tenant(TenantId(args.tenant))
+        # Un dossier demandé nommément passe toujours ; un portefeuille suit
+        # ses tags (AXE-829).
+        tenant_id = TenantId(args.tenant)
+        etat = etat_du_portefeuille(PostgresTagsRepository(engine), tenant_id)
+        tous = depot.lister_par_tenant(tenant_id)
+        dossiers = retenus(tous, etat, "synchro")
+        sans_classement = exclus(tous, etat, "categorisation")
 
-    resultats = synchroniser_portefeuille(engine, dossiers)
+    resultats = synchroniser_portefeuille(engine, dossiers, sans_classement)
     for resultat in resultats:
         _afficher(resultat)
     return 1 if any(r.erreur for r in resultats) else 0

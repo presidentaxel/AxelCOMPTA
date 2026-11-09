@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { lireMontantEuros } from "./montant.ts";
+import { lireMontantEuros } from "./montant";
 
 test("une saisie vide est refusée", () => {
   assert.deepEqual(lireMontantEuros(""), {

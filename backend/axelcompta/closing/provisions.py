@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from axelcompta.core.errors import DomaineError
+from axelcompta.core.errors import SaisieInvalide
 from axelcompta.core.ids import DossierId, EcritureId
 from axelcompta.core.money import Money
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
@@ -20,7 +20,7 @@ COMPTE_CCA = "486"
 COMPTE_FNP = "408"
 
 
-class ProvisionInvalide(DomaineError):
+class ProvisionInvalide(SaisieInvalide):
     """Estimation refusée : compte, montant ou nature inutilisable."""
 
 

@@ -24,7 +24,19 @@ import {
   extraireErreurSupabase,
   URL_SUPABASE,
 } from "./auth-chauffeur";
-import type { AlerteAnomalie, DossierAgregat, FileExpert, ImputationFaite } from "./types";
+import type {
+  AlerteAnomalie,
+  EtatCategorisation,
+  DossierAgregat,
+  EntreeQuarantaine,
+  EvenementAnomalie,
+  FileExpert,
+  ImputationFaite,
+  NouveauChauffeur,
+  OperationsClassees,
+  ReglageTags,
+  Synchronisation,
+} from "./types";
 
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
@@ -270,6 +282,19 @@ export async function listerAnomalies(dossierId: string): Promise<AlerteAnomalie
   return (await reponse.json()) as AlerteAnomalie[];
 }
 
+export async function lireHistoriqueAlerte(
+  dossierId: string,
+  alerteId: string,
+): Promise<EvenementAnomalie[]> {
+  const reponse = await requeteGestionnaire(
+    `/dossiers/${dossierId}/anomalies/${encodeURIComponent(alerteId)}/historique`,
+  );
+  if (!reponse.ok) {
+    throw new ApiError("Impossible de lire l'historique.", reponse.status);
+  }
+  return (await reponse.json()) as EvenementAnomalie[];
+}
+
 export async function instruireAlerte(
   dossierId: string,
   alerteId: string,
@@ -367,6 +392,14 @@ export async function inviterMembre(email: string, role: RoleMembre): Promise<Me
     throw new ApiError(corps.detail ?? `HTTP ${reponse.status}`, reponse.status);
   }
   return (await reponse.json()) as MembrePortefeuille;
+}
+
+/** AXE-825 : le modèle de catégorisation est-il chargé côté serveur ?
+ * `null` si l'état n'a pas pu être lu (on n'affiche alors rien). */
+export async function lireCategorisation(): Promise<EtatCategorisation | null> {
+  const reponse = await requeteGestionnaire("/portefeuille/categorisation");
+  if (!reponse.ok) return null;
+  return (await reponse.json()) as EtatCategorisation;
 }
 
 export async function lireNomPortefeuille(): Promise<string> {
@@ -635,3 +668,148 @@ export async function reglerRelanceDossier(dossierId: string, mode: ModeRelance 
     throw new ApiError(corps.detail ?? "Réglage refusé.", reponse.status);
   }
 }
+
+// --- Tags d'entreprises et exclusions (AXE-829) ---
+
+async function lireReglageTags(reponse: Response, message: string): Promise<ReglageTags> {
+  if (!reponse.ok) {
+    const corps = (await reponse.json().catch(() => null)) as { detail?: string } | null;
+    throw new ApiError(corps?.detail ?? message, reponse.status);
+  }
+  return (await reponse.json()) as ReglageTags;
+}
+
+export async function lireTags(): Promise<ReglageTags> {
+  return lireReglageTags(await requeteGestionnaire("/tags"), "Impossible de lire les tags.");
+}
+
+export async function creerTag(nom: string, description = ""): Promise<ReglageTags> {
+  const reponse = await requeteGestionnaire("/tags", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nom, description }),
+  });
+  return lireReglageTags(reponse, "Impossible de créer ce tag.");
+}
+
+/** Pose (ou retire, `pose` à false) un tag sur un ou plusieurs dossiers. */
+export async function poserTag(tag: string, dossierIds: string[], pose = true): Promise<void> {
+  const reponse = await requeteGestionnaire(`/tags/${encodeURIComponent(tag)}/dossiers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dossier_ids: dossierIds, pose }),
+  });
+  if (!reponse.ok) {
+    const corps = (await reponse.json().catch(() => null)) as { detail?: string } | null;
+    throw new ApiError(corps?.detail ?? "Le tag n'a pas été posé.", reponse.status);
+  }
+}
+
+export async function reglerExclusion(traitement: string, tags: string[]): Promise<ReglageTags> {
+  const reponse = await requeteGestionnaire(`/tags/exclusions/${encodeURIComponent(traitement)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tags }),
+  });
+  return lireReglageTags(reponse, "Le réglage n'a pas été enregistré.");
+}
+
+// --- Opérations déjà classées (AXE-823) ---
+
+export async function lireClassees(params: URLSearchParams): Promise<OperationsClassees> {
+  const reponse = await requeteGestionnaire(`/expert/classees?${params.toString()}`);
+  if (reponse.status === 401) throw new ErreurAuthGestionnaire();
+  if (!reponse.ok) {
+    throw new ApiError("Impossible de charger les opérations classées.", reponse.status);
+  }
+  return (await reponse.json()) as OperationsClassees;
+}
+
+export async function noterVerdict(
+  dossierId: string,
+  ecritureId: string,
+  verdict: "juste" | "faux",
+): Promise<void> {
+  const reponse = await requeteGestionnaire("/expert/classees/verdict", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dossier_id: dossierId, ecriture_id: ecritureId, verdict }),
+  });
+  if (!reponse.ok) {
+    const corps = (await reponse.json().catch(() => null)) as { detail?: string } | null;
+    throw new ApiError(corps?.detail ?? "Le verdict n'a pas été enregistré.", reponse.status);
+  }
+}
+
+// --- Quarantaine d'ingestion (AXE-424) ---
+
+export async function listerQuarantaine(dossierId: string): Promise<EntreeQuarantaine[]> {
+  const reponse = await requeteGestionnaire(`/dossiers/${dossierId}/quarantaine`);
+  if (!reponse.ok) {
+    throw new ApiError("Impossible de lire les opérations à revoir.", reponse.status);
+  }
+  return (await reponse.json()) as EntreeQuarantaine[];
+}
+
+export async function resoudreQuarantaine(
+  dossierId: string,
+  entreeId: string,
+  decision: "accepter" | "ignorer",
+): Promise<EntreeQuarantaine> {
+  const reponse = await requeteGestionnaire(
+    `/dossiers/${dossierId}/quarantaine/${encodeURIComponent(entreeId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision }),
+    },
+  );
+  if (!reponse.ok) {
+    const corps = (await reponse.json().catch(() => null)) as { detail?: string } | null;
+    throw new ApiError(corps?.detail ?? "L'opération n'a pas été traitée.", reponse.status);
+  }
+  return (await reponse.json()) as EntreeQuarantaine;
+}
+
+// --- Synchronisation et nouveaux chauffeurs Digifactory (AXE-845) ---
+
+async function lireJson<T>(reponse: Response, message: string): Promise<T> {
+  if (!reponse.ok) {
+    const corps = (await reponse.json().catch(() => null)) as { detail?: string } | null;
+    throw new ApiError(corps?.detail ?? message, reponse.status);
+  }
+  return (await reponse.json()) as T;
+}
+
+export async function lireSynchronisation(): Promise<Synchronisation | null> {
+  return lireJson(await requeteGestionnaire("/portefeuille/synchronisation"), "Suivi indisponible.");
+}
+
+export async function lancerSynchronisation(): Promise<Synchronisation> {
+  return lireJson(
+    await requeteGestionnaire("/portefeuille/synchroniser", { method: "POST" }),
+    "La synchronisation n'a pas pu être lancée.",
+  );
+}
+
+export async function listerNouveauxChauffeurs(): Promise<NouveauChauffeur[]> {
+  return lireJson(
+    await requeteGestionnaire("/portefeuille/nouveaux-chauffeurs"),
+    "Impossible de lire les nouveaux chauffeurs.",
+  );
+}
+
+export async function deciderNouveauxChauffeurs(
+  contactNrs: string[],
+  decision: "ajouter" | "ignorer" | "reprendre",
+): Promise<NouveauChauffeur[]> {
+  return lireJson(
+    await requeteGestionnaire("/portefeuille/nouveaux-chauffeurs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contact_nrs: contactNrs, decision }),
+    }),
+    "La décision n'a pas été enregistrée.",
+  );
+}
+

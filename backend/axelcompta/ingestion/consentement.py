@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol
 
 from axelcompta.core.ids import DossierId
 
@@ -152,3 +152,17 @@ class ReleveConsentement:
 
     def statut(self, aujourd_hui: date) -> StatutConsentement:
         return classer(self.expire_le, aujourd_hui)
+
+
+class ConsentementRepository(Protocol):
+    """Relevé du consentement bancaire, une ligne par dossier (Postgres :
+    `consentement_postgres.PostgresConsentementRepository`)."""
+
+    def enregistrer(
+        self,
+        dossier_id: DossierId,
+        expire_le: date | None,
+        statut: StatutConsentement,
+        releve_le: datetime,
+        sante: ReleveSante,
+    ) -> None: ...

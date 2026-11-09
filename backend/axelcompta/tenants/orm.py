@@ -14,6 +14,8 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
+    Identity,
     Integer,
     String,
     Table,
@@ -57,6 +59,8 @@ dossiers = Table(
     Column("pack_metier", String, nullable=False, server_default="vtc"),
     Column("option_ir_debut", Integer, nullable=True),
     Column("relance_consentement", String, nullable=True),
+    Column("code_naf", String, nullable=True),
+    Column("a_confirmer", JSON, nullable=False, server_default="[]"),
 )
 
 # Exercices clos, append-only (verrou en base, migration `b8e3f5a1c762`).
@@ -176,4 +180,74 @@ agregats_dossier = Table(
     Column("exercice_fin", Date, nullable=True),
     Column("alerte_tva", Text, nullable=True),
     Column("calcule_le", DateTime(timezone=True), nullable=True),
+)
+
+# Tags d'un portefeuille (AXE-829). Les tags proposés y sont créés au besoin.
+tags = Table(
+    "tags",
+    metadata,
+    Column("tenant_id", String, ForeignKey("tenants.id"), primary_key=True),
+    Column("nom", String, primary_key=True),
+    Column("description", String, nullable=False),
+    Column("cree_le", DateTime(timezone=True), nullable=False),
+)
+
+# Pose et retrait de tags, append-only : l'état d'un tag sur un dossier est
+# le dernier événement. L'historique est la trace (qui, quoi, quand).
+evenements_tags = Table(
+    "evenements_tags",
+    metadata,
+    Column("id", String, primary_key=True),
+    # Ordre d'insertion : à date égale, le dernier inséré fait foi.
+    Column("rang", BigInteger, Identity(), nullable=False),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("tag", String, nullable=False),
+    Column("pose", Boolean, nullable=False),  # True : posé ; False : retiré
+    Column("par", String, nullable=False),
+    Column("le", DateTime(timezone=True), nullable=False),
+    ForeignKeyConstraint(["tenant_id", "tag"], ["tags.tenant_id", "tags.nom"]),
+)
+
+# Réglages d'exclusion, append-only : le dernier par traitement fait foi.
+reglages_exclusion = Table(
+    "reglages_exclusion",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("rang", BigInteger, Identity(), nullable=False),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False, index=True),
+    Column("traitement", String, nullable=False),
+    Column("tags", JSON, nullable=False),
+    Column("par", String, nullable=False),
+    Column("le", DateTime(timezone=True), nullable=False),
+)
+
+# Contacts Digifactory sans dossier, proposés au gestionnaire (AXE-845).
+# Réécrits à chaque détection par le worker (rôle propriétaire).
+contacts_proposes = Table(
+    "contacts_proposes",
+    metadata,
+    Column("tenant_id", String, ForeignKey("tenants.id"), primary_key=True),
+    Column("contact_nr", String, primary_key=True),
+    Column("nom", String, nullable=False),
+    Column("siren", String, nullable=True),
+    Column("forme", String, nullable=True),
+    Column("exercice_debut", Date, nullable=True),
+    Column("code_naf", String, nullable=True),
+    Column("avertissements", JSON, nullable=False),
+    Column("cessee", Boolean, nullable=False),
+    Column("detecte_le", DateTime(timezone=True), nullable=False),
+)
+
+# Décisions du gestionnaire sur ces contacts, append-only : la dernière fait foi.
+decisions_contacts = Table(
+    "decisions_contacts",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("rang", BigInteger, Identity(), nullable=False),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False, index=True),
+    Column("contact_nr", String, nullable=False),
+    Column("decision", String, nullable=False),
+    Column("par", String, nullable=False),
+    Column("le", DateTime(timezone=True), nullable=False),
 )

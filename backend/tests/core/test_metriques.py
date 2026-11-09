@@ -40,10 +40,28 @@ def test_le_journal_est_une_ligne_json() -> None:
 
 def test_la_route_metrics_compte_la_requete(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SENTRY_DSN", raising=False)
+    monkeypatch.setenv("METRICS_TOKEN", "secret")
     app = FastAPI()
     brancher(app)
     client = TestClient(app)
-    client.get("/metrics")
-    reponse = client.get("/metrics")
+    jeton = {"Authorization": "Bearer secret"}
+    client.get("/metrics", headers=jeton)
+    reponse = client.get("/metrics", headers=jeton)
     assert reponse.status_code == 200
     assert 'http_request_count{method="GET",status="200"}' in reponse.text
+
+
+def test_metrics_n_est_pas_public(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AXE-810 : sans jeton configuré, la route n'existe pas ; avec, il faut
+    le présenter."""
+    monkeypatch.delenv("SENTRY_DSN", raising=False)
+    monkeypatch.delenv("METRICS_TOKEN", raising=False)
+    app = FastAPI()
+    brancher(app)
+    client = TestClient(app)
+    assert client.get("/metrics").status_code == 404
+
+    monkeypatch.setenv("METRICS_TOKEN", "secret")
+    assert client.get("/metrics").status_code == 401
+    assert client.get("/metrics", headers={"Authorization": "Bearer faux"}).status_code == 401
+    assert client.get("/metrics", headers={"Authorization": "Bearer secret"}).status_code == 200

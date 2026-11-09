@@ -8,7 +8,9 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "forceConsistentCasingInFileNames": true
   },
   "include": [
@@ -17,6 +19,31 @@
     "lib/activite-url.ts",
     "lib/activite-url.test.ts",
     "lib/saisie-chauffeur.ts",
-    "lib/saisie-chauffeur.test.ts"
+    "lib/saisie-chauffeur.test.ts",
+    "lib/montant.ts",
+    "lib/montant.test.ts",
+    "lib/comptes-bancaires.ts",
+    "lib/comptes-bancaires.test.ts",
+    "lib/langage-chauffeur.ts",
+    "lib/langage-chauffeur.test.ts",
+    "lib/configuration-dossier.ts",
+    "lib/configuration-dossier.test.ts",
+    "lib/tags.ts",
+    "lib/tags.test.ts",
+    "lib/filtres-portefeuille.ts",
+    "lib/filtres-portefeuille.test.ts",
+    "lib/classees.ts",
+    "lib/classees.test.ts",
+    "lib/types.ts",
+    "lib/quarantaine.ts",
+    "lib/quarantaine.test.ts",
+    "lib/synchronisation.ts",
+    "lib/synchronisation.test.ts",
+    "lib/moyens-paiement.ts",
+    "lib/moyens-paiement.test.ts",
+    "lib/retrait-especes.ts",
+    "lib/retrait-especes.test.ts",
+    "lib/confirmation-configuration.ts",
+    "lib/confirmation-configuration.test.ts"
   ]
 }

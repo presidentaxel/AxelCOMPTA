@@ -5,8 +5,8 @@ appliqués ici, seulement documentés.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date
+from dataclasses import dataclass, field
+from datetime import date, datetime
 from enum import Enum, auto
 
 from axelcompta.core.ids import DossierId, EcritureId
@@ -53,3 +53,9 @@ class Ecriture:
     libelle: str
     reference_piece: str | None
     lignes: tuple[LigneEcriture, ...]
+    # Numéro dans la séquence de l'exercice et horodatage de validation,
+    # posés par la base à l'insertion (AXE-807, I3). `None` tant que
+    # l'écriture n'est pas en base (calculée, ou grand livre en mémoire).
+    # Hors comparaison : une écriture relue égale celle qu'on a écrite.
+    numero: int | None = field(default=None, compare=False)
+    valide_le: datetime | None = field(default=None, compare=False)

@@ -25,6 +25,9 @@ from axelcompta.core.ids import DossierId, EcritureId, UserId
 # Une décision plus récente qui annule la précédente : l'écriture redevient
 # « à trancher ». On n'efface jamais la ligne (append-only).
 CATEGORIE_ANNULATION = "annulation_decision"
+# « Je ne sais plus » (AXE-844, retrait d'espèces) : la réponse est gardée,
+# l'opération reste au compte d'attente et passe à l'expert-comptable.
+CATEGORIE_A_PRECISER = "a_preciser_expert"
 
 
 def decision_en_vigueur(decision: DecisionHumaine | None) -> DecisionHumaine | None:

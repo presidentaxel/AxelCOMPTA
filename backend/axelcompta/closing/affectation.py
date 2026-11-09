@@ -20,6 +20,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from functools import cache
 from pathlib import Path
 
+from axelcompta.core.errors import Conflit
 from axelcompta.core.ids import DossierId, EcritureId
 from axelcompta.core.money import Money
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
@@ -43,7 +44,7 @@ class FiscaliteDividendes:
     solidarite: Decimal = Decimal(0)
 
 
-class MillesimeDividendesInconnu(LookupError):
+class MillesimeDividendesInconnu(Conflit, LookupError):
     pass
 
 

@@ -31,6 +31,17 @@ class NormalizedTransaction:
     libelle: str
     source_provider: str
     raw_payload: dict[str, object]
+    # Identifiant du compte bancaire chez le fournisseur (Digifactory :
+    # `account_id`). Sert à choisir le sous-compte 512x (AXE-832). `None`
+    # quand la source ne le donne pas : l'écriture va alors au 512.
+    compte_bancaire: str | None = None
+    # Signaux de la banque (AXE-826), `None` quand la source ne les donne pas.
+    # `type_operation` : « card », « transfer », « direct_debit »… ;
+    # `categorie_banque` : catégorie de l'agrégateur (Bridge, via Digifactory
+    # `category_id`). Un indice, jamais une décision : voir
+    # `categorize/rules_and_ml.py`.
+    type_operation: str | None = None
+    categorie_banque: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -15,6 +15,9 @@ class Etage(Enum):
 
     REGLE = auto()
     ML = auto()
+    # Catégorie donnée par la banque (Bridge) : un indice, qui propose sans
+    # jamais imputer seul (AXE-826).
+    BANQUE = auto()
     LLM = auto()
     REVUE_HUMAINE = auto()
 
@@ -36,3 +39,7 @@ class ProposedEntry:
     # regard humain, propre à sa catégorie (`ml_fallback.Calibration`) ;
     # `inf` : jamais ; `None` : seuils historiques de `workflow/synchro.py`.
     seuil_imputation: float | None = None
+    # Comment l'argent est sorti ou entré (carte, virement, prélèvement,
+    # retrait), tel que la banque le dit (AXE-836). Gardé avec la
+    # proposition : c'est le contexte de l'opération au moment du classement.
+    moyen_paiement: str | None = None

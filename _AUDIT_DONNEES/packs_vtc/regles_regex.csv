@@ -1,16 +1,24 @@
-regex,categorie,confiance,source
-"(?i)\btotal\b|\besso\b|\bbp\b|\bshell\b|\bavia\b|carburant|gazole|\bgo\b\W*\d",carburant,haute,libellés réels échantillon carburant
-"cofiroute|sanef|\basf\b|vinci|effia|aprr|sapn|parkeo|horodat|parking",peage_stationnement,haute,libellés réels échantillon péage
-"norauto|midas|feu vert|speedy|euro.?repar|contr[oô]le tech|entret",entretien_reparation_vehicule,haute,libellés réels échantillon entretien
-"\bmma\b|matmut|\bmaif\b|\baxa\b|allianz|generali|assuran",assurance_vehicule,moyenne,libellés réels échantillon assurance — à affiner (assurance véhicule vs santé)
-"\bsfr\b|bouygues.*telecom|free mobile|\borange\b",telecommunications,haute,libellés réels échantillon télécom
-"\buber\b|\bbolt\b|heetch|freenow|stichting custodian",recettes_plateformes,haute,libellés réels échantillon recettes — distinguer virement reçu (recette) de commission (charge) par le sens du montant
-"amende\.?gouv|\bantai\b",amendes_infractions,haute,libellés réels échantillon amendes
-"expert.?comptable|greffe|infogreffe|avocat|conseil juridique",honoraires_comptable_juridique,moyenne,libellés réels échantillon honoraires
-"carrefour|auchan|franprix|mcdonald|\bquick\b|pizza|\bkfc\b|leclerc(?!.*\bgo\b)",repas_et_receptions,basse,"⚠️ usage personnel probable — signalé pour revue humaine, pas d'auto-validation (confiance basse depuis le 2026-09-27 : en moyenne, 0,75, elle atteignait le seuil d'imputation des règles)"
-"\bzara\b|kiabi|primark|s[ée]phora|\bfnac\b|\bh&m\b|shein|\bnike\b|adidas|decathlon",usage_personnel_suspect,basse,"⚠️ trouvé mélangé dans fournitures_administratives — signalé pour revue humaine, pas d'auto-validation (confiance basse depuis le 2026-09-27)"
-urssaf,charges_sociales_impots,haute,libellés réels échantillon URSSAF
-dgfip,charges_sociales_impots,moyenne,"peut aussi être une subvention (compte 741) — trancher par le compte PCG, pas le libellé seul"
-"\bald\b|arval|leaseplan|\bloa\b|location longue dur[ée]e",loyers_locations,haute,"absente du pack réduit initial — ajoutée pour le financement véhicule en LOA (doc 06 §3.5, doc 17 §4.3 profil Yanis)"
-"virement interne|\binterne\b|transfert entre (vos|mes) comptes|vir(ement)? (de|vers) (mon|votre) compte",virement_interne,basse,"ajoutée le 2026-09-27 : vocabulaire bancaire générique ; le compte d'en face n'est pas toujours connecté, donc proposée, jamais imputée seule"
-"compte courant d.associ|\bcca\b|apport en compte courant",compte_courant_associe,basse,"ajoutée le 2026-09-27 : vocabulaire générique ; compte selon le statut (455 ou 108), donc proposée, jamais imputée seule"
+regex,categorie,confiance,montant_min_cts,source
+(?i)\bretrait\b|\bdab\b|\bgab\b|withdrawal,retrait_especes,haute,,"ajoutée le 2026-11-06 (AXE-844) : retraits au distributeur, à préciser par le chauffeur (activité ou personnel)"
+(?i)\btotal\b|\besso\b|\bbp\b|\bshell\b|\bavia\b|carburant|gazole|\bgo\b\W*\d,carburant,haute,500,libellés réels échantillon carburant
+cofiroute|sanef|\basf\b|vinci|effia|aprr|sapn|parkeo|horodat|parking,peage_stationnement,haute,,libellés réels échantillon péage
+norauto|midas|feu vert|speedy|euro.?repar|contr[oô]le tech|entret,entretien_reparation_vehicule,haute,,libellés réels échantillon entretien
+\bmma\b|matmut|\bmaif\b|\baxa\b|allianz|generali|assuran,assurance_vehicule,moyenne,,libellés réels échantillon assurance — à affiner (assurance véhicule vs santé)
+\bsfr\b|bouygues.*telecom|free mobile|\borange\b,telecommunications,haute,,libellés réels échantillon télécom
+\buber\b|\bbolt\b|heetch|freenow|stichting custodian,recettes_plateformes,haute,,libellés réels échantillon recettes — distinguer virement reçu (recette) de commission (charge) par le sens du montant
+amende\.?gouv|\bantai\b,amendes_infractions,haute,,libellés réels échantillon amendes
+expert.?comptable|greffe|infogreffe|avocat|conseil juridique|abo(nnement)? compta,honoraires_comptable_juridique,moyenne,,libellés réels échantillon honoraires
+ionity|electra|freshmile|allego|izivia|fastned|chargemap|power ?dot|totalenergies charg|superchar|borne de recharge|recharge [ée]lectrique,carburant,haute,,ajoutée le 2026-11-05 (AXE-826) : réseaux de recharge électrique
+"\btesla,? inc\b",carburant,moyenne,,"ajoutée le 2026-11-05 (AXE-826) : recharges Superchargeur facturées par Tesla Inc. (91 chez B'CARS). « Tesla France » (achat, location) n'est pas visé"
+\badp\b|roissy|\borly\b|\bory\b|indigo|saemes|onepark|zenpark|q-?park|interparking,peage_stationnement,haute,,"ajoutée le 2026-11-05 (AXE-826) : parkings, dont aéroports (ADP Roissy P1/P3/PEF, Orly)"
+arcour|escota|\batmb\b|sftrf|\balis\b,peage_stationnement,haute,,ajoutée le 2026-11-05 (AXE-826) : sociétés d'autoroute absentes de la première liste
+r[ée]mun[ée]ration,remuneration_dirigeant,basse,,"ajoutée le 2026-11-05 (AXE-826) : le compte dépend du statut (641, 644, 108) ; proposée, jamais imputée seule"
+direct debit rejection|frais (de )?rejet|commission d.intervention,frais_bancaires,haute,,ajoutée le 2026-11-05 (AXE-826) : frais de rejet de prélèvement
+swiss ?life|pr[ée]voyance|mutuelle,assurance_personnelle_sante,basse,,"ajoutée le 2026-11-05 (AXE-826) : prévoyance et santé du dirigeant ; pro ou perso selon le contrat, donc proposée"
+carrefour|auchan|franprix|mcdonald|\bquick\b|pizza|\bkfc\b|leclerc(?!.*\bgo\b),repas_et_receptions,basse,,"⚠️ usage personnel probable — signalé pour revue humaine, pas d'auto-validation (confiance basse depuis le 2026-09-27 : en moyenne, 0,75, elle atteignait le seuil d'imputation des règles)"
+\bzara\b|kiabi|primark|s[ée]phora|\bfnac\b|\bh&m\b|shein|\bnike\b|adidas|decathlon,usage_personnel_suspect,basse,,"⚠️ trouvé mélangé dans fournitures_administratives — signalé pour revue humaine, pas d'auto-validation (confiance basse depuis le 2026-09-27)"
+urssaf,charges_sociales_impots,haute,,libellés réels échantillon URSSAF
+dgfip,charges_sociales_impots,moyenne,,"peut aussi être une subvention (compte 741) — trancher par le compte PCG, pas le libellé seul"
+\bald\b|arval|leaseplan|\bloa\b|location longue dur[ée]e,loyers_locations,haute,,"absente du pack réduit initial — ajoutée pour le financement véhicule en LOA (doc 06 §3.5, doc 17 §4.3 profil Yanis)"
+virement interne|\binterne\b|transfert entre (vos|mes) comptes|vir(ement)? (de|vers) (mon|votre) compte,virement_interne,basse,,"ajoutée le 2026-09-27 : vocabulaire bancaire générique ; le compte d'en face n'est pas toujours connecté, donc proposée, jamais imputée seule"
+compte courant d.associ|\bcca\b|apport en compte courant,compte_courant_associe,basse,,"ajoutée le 2026-09-27 : vocabulaire générique ; compte selon le statut (455 ou 108), donc proposée, jamais imputée seule"

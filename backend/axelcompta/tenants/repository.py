@@ -6,8 +6,9 @@ ici, et pas dans chaque route, que l'isolation entre portefeuilles se joue.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 
-from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.core.ids import DossierId, TenantId, UserId
 
 from .models import Dossier, Tenant
 
@@ -57,6 +58,17 @@ class DossierRepository(ABC):
         """Remplace la forme juridique après validation par la matrice.
         Sert au rapprochement Sirene : le code INSEE dit SAS ou SARL, pas
         la valeur posée par défaut à la création."""
+
+    @abstractmethod
+    def reconfigurer_depuis_sirene(self, dossier: Dossier) -> None:
+        """Forme, bornes du premier exercice, activité et éléments à
+        confirmer, tirés de Sirene (AXE-834). Lève `ConfigurationInvalide`
+        avant d'écrire si la configuration n'a pas de sens."""
+
+    @abstractmethod
+    def confirmer_configuration(self, dossier: Dossier, par: UserId, le: datetime) -> None:
+        """Le dirigeant a confirmé la configuration (AXE-730) : forme choisie
+        et plus rien à confirmer. Tracé au journal d'audit."""
 
     @abstractmethod
     def ouvrir_exercice(self, dossier: Dossier) -> None:

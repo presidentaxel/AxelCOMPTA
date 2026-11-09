@@ -53,6 +53,16 @@ seul module autorisé à transformer une `ProposedEntry` (sortie de
 - Journal d'audit des consultations et des exports (doc 10). Décisions et
   signatures sont déjà tracées (`audit.py`).
 
+## Ventilation bancaire (AXE-832)
+
+- `synchro.py` pose chaque opération sur le sous-compte 512x de son compte
+  bancaire quand on lui passe le registre `comptes_bancaires`.
+- `ventilation_bancaire.py` reprend les écritures restées au 512 : une
+  écriture de reclassement par opération (journal OD, `{id}:ventilation-banque`,
+  512x d'un côté, 512 de l'autre), sans toucher l'originale (I2) ni la
+  contre-passer (la synchro y verrait une transaction modifiée). Rejouable.
+  Lancement : `python scripts/ventiler_comptes_bancaires.py --tenant … [--appliquer]`.
+
 ## Statuts
 
 - **Démo (doc 17 §9)** : `auto_accept.py` reste actif pour les cas
@@ -101,3 +111,36 @@ seul module autorisé à transformer une `ProposedEntry` (sortie de
 
 [doc 05 §5](../../../docs/05-pipeline-categorisation.md#5-étage-4--revue-humaine),
 [ADR-004](../../../docs/adr/ADR-004-signature-electronique.md).
+
+## Opérations déjà classées (AXE-823)
+
+`classees.py` (pur) dit, pour chaque écriture classée, qui l'a classée
+(`auto` : règle ou modèle, `chauffeur` : décision, `expert` : imputation),
+avec quelle confiance et sur quel compte ; filtres, tri par confiance
+croissante, compteurs. `verdicts.py` / `verdicts_postgres.py` gardent les
+verdicts « juste » / « faux » (migration `b3d8f1a6c924`, append-only),
+sans écriture : ils servent à mesurer la précision (AXE-816). Route
+`GET /expert/classees`, filtrée et paginée (50) côté serveur.
+
+## Décisions écrites au grand livre (AXE-420)
+
+`reclassement.py` (pur) : une décision du chauffeur écrit l'OD
+`{opération}:decision-{k}`, qui déplace le montant du compte en vigueur vers
+le nouveau. L'opération bancaire ne bouge pas. Une contre-passation de
+l'opération (synchro, imputation de l'expert) contre-passe aussi ses
+reclassements. Les écrans lisent `grand_livre_tranche` (reclassements
+repliés dans l'opération) ; FEC, grand livre et balance lisent
+`grand_livre_comptable` (le brut). Les décisions d'avant AXE-420 restent
+appliquées par-dessus tant que `scripts/materialiser_decisions.py` n'est pas
+passé.
+
+## Quarantaine d'ingestion résolue par le gestionnaire (AXE-424)
+
+`quarantaine.py` (pur) : accepter une opération modifiée par la banque
+passe le nouveau montant (`{opération}:corrige-{k}`) sur la catégorie
+qu'elle avait, après avoir contre-passé une correction précédente ;
+accepter une opération d'un exercice clos la passe au premier jour ouvert ;
+une opération supprimée est déjà contre-passée ; une ligne illisible ne
+s'accepte pas. `resolutions_quarantaine*.py` : une résolution par entrée,
+append-only (migration `b5f2d8a6c413`). Écran : page Anomalies du dossier.
+
