@@ -240,6 +240,11 @@ from axelcompta.workflow.decisions import (
     DecisionRepository,
     decision_en_vigueur,
 )
+from axelcompta.workflow.decisions_et_reclassements import (
+    EcrireDecisions,
+    EnSequence,
+    PostgresDecisionsEtReclassements,
+)
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
 from axelcompta.workflow.expert import preparer_imputation
 from axelcompta.workflow.file_expert_cache import CacheFileExpert, SujetsGardes
@@ -1229,6 +1234,21 @@ def get_ledger() -> LedgerService:
     return PostgresLedgerService(_engine())
 
 
+def get_ecrire_decisions(
+    decisions: Annotated[DecisionRepository, Depends(get_decisions)],
+    base: Annotated[LedgerService, Depends(get_ledger)],
+) -> EcrireDecisions:
+    """AXE-852 : décisions et OD de reclassement dans une seule transaction
+    quand les deux dépôts sont en base. Les tests remplacent les dépôts par
+    des versions en mémoire : ils reçoivent l'écriture en séquence, sur ces
+    mêmes dépôts."""
+    if isinstance(decisions, PostgresDecisionRepository) and isinstance(
+        base, PostgresLedgerService
+    ):
+        return PostgresDecisionsEtReclassements(_engine())
+    return EnSequence(decisions, base)
+
+
 def get_propositions() -> PropositionRepository:
     """Dépendance FastAPI — ce que le pipeline avait proposé par écriture."""
     return PostgresPropositionRepository(_engine())
@@ -1267,6 +1287,7 @@ def get_etat_categorisation() -> EtatCategorisation:
 DecisionsDep = Annotated[DecisionRepository, Depends(get_decisions)]
 DossiersDep = Annotated[DossierRepository, Depends(get_dossiers)]
 LedgerBaseDep = Annotated[LedgerService, Depends(get_ledger)]
+EcrireDecisionsDep = Annotated[EcrireDecisions, Depends(get_ecrire_decisions)]
 PropositionsDep = Annotated[PropositionRepository, Depends(get_propositions)]
 
 
@@ -1529,6 +1550,7 @@ def _trancher(
     decisions: DecisionRepository,
     propositions: PropositionRepository,
     decide_par: UserId,
+    ecrire: EcrireDecisions,
 ) -> Ecriture:
     """doc 17 §9 bloc C : la décision humaine, pour de vrai — déclenche le
     `workflow` testé (doc 05 §5), pas un changement d'état côté React seul.
@@ -1551,8 +1573,8 @@ def _trancher(
         )
     if not any(ligne.compte == COMPTE_ATTENTE for ligne in ecriture.lignes):
         raise HTTPException(status_code=409, detail="Cette opération n'est pas à classer.")
-    _enregistrer_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
-    _ecrire_reclassements(dossier, base, [(ecriture.id, categorie)])
+    decision = _nouvelle_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
+    ecrire.ecrire([decision], _reclassements(dossier, base, [(ecriture.id, categorie)]))
     return _ecriture_decidee(dossier, base, decisions, ecriture_id)
 
 
@@ -1564,6 +1586,7 @@ def _corriger(
     decisions: DecisionRepository,
     propositions: PropositionRepository,
     decide_par: UserId,
+    ecrire: EcrireDecisions,
 ) -> Ecriture:
     """Corriger, c'est enregistrer une nouvelle décision. L'ancienne reste
     (doc 05 §5) : la dernière prévaut, rien n'est modifié en place."""
@@ -1580,20 +1603,21 @@ def _corriger(
             status_code=409,
             detail="Cette opération ne se corrige pas par une nouvelle catégorie.",
         )
-    _enregistrer_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
-    _ecrire_reclassements(dossier, base, [(ecriture.id, categorie)])
+    decision = _nouvelle_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
+    ecrire.ecrire([decision], _reclassements(dossier, base, [(ecriture.id, categorie)]))
     return _ecriture_decidee(dossier, base, decisions, ecriture_id)
 
 
-def _enregistrer_decision(
+def _nouvelle_decision(
     dossier: Dossier,
     ecriture: Ecriture,
     categorie: str,
     decisions: DecisionRepository,
     propositions: PropositionRepository,
     decide_par: UserId,
-) -> None:
-    """Pose la décision si la catégorie a un compte. N'écrit rien sinon."""
+) -> DecisionHumaine:
+    """La décision à écrire, si la catégorie a un compte. N'écrit rien :
+    l'appelant l'écrit avec son OD de reclassement (AXE-852)."""
     proposition = propositions.obtenir(dossier.id, ecriture.id)
     if proposition is None:
         raise HTTPException(
@@ -1608,38 +1632,37 @@ def _enregistrer_decision(
     maintenant = datetime.now(UTC)
     if courante is not None and maintenant <= courante.decide_le:
         maintenant = courante.decide_le + timedelta(microseconds=1)
-    decisions.enregistrer_decision(
-        DecisionHumaine(
-            dossier_id=dossier.id,
-            ecriture_id=ecriture.id,
-            categorie=categorie,
-            etage_origine=proposition.etage,
-            confiance_origine=proposition.confiance,
-            decide_par=decide_par,
-            decide_le=maintenant,
-        )
+    return DecisionHumaine(
+        dossier_id=dossier.id,
+        ecriture_id=ecriture.id,
+        categorie=categorie,
+        etage_origine=proposition.etage,
+        confiance_origine=proposition.confiance,
+        decide_par=decide_par,
+        decide_le=maintenant,
     )
 
 
-def _ecrire_reclassements(
+def _reclassements(
     dossier: Dossier, base: LedgerService, tranchees: Sequence[tuple[EcritureId, str]]
-) -> None:
-    """AXE-420 : chaque décision écrit son OD de reclassement, juste après
-    avoir été enregistrée. Rien n'est écrit si le montant est déjà sur le
-    bon compte. Une décision dont l'écriture échouerait reste appliquée par
-    la couche de reprise (`grand_livre_tranche`) tant que l'opération n'a
-    aucun reclassement."""
+) -> list[Ecriture]:
+    """AXE-420 : l'OD de reclassement de chaque décision, calculée sans rien
+    écrire. Aucune si le montant est déjà sur le bon compte. Les OD d'un
+    même lot se suivent : chacune part du compte laissé par la précédente.
+    L'appelant les écrit avec leurs décisions, tout ou rien (AXE-852)."""
     ecritures = list(base.grand_livre(dossier.id))
     par_id = {e.id: e for e in ecritures}
     periodes = base.periodes_closes(dossier.id)
+    calculees: list[Ecriture] = []
     for ecriture_id, categorie in tranchees:
         source = par_id.get(ecriture_id)
         if source is None:
             continue
         reclassement = reclasser(source, categorie, ecritures, _comptes(dossier), periodes)
         if reclassement is not None:
-            base.enregistrer(reclassement)
+            calculees.append(reclassement)
             ecritures.append(reclassement)
+    return calculees
 
 
 def _ecriture_decidee(
@@ -1657,6 +1680,7 @@ def _decision_suivante(
     decisions: DecisionRepository,
     justificatifs: JustificatifRepository,
     decide_par: UserId,
+    ecrire: EcrireDecisions,
 ) -> TransactionVue:
     """Enregistre une décision qui en remplace une déjà en vigueur."""
     courante = decisions.decision_courante(dossier.id, EcritureId(ecriture_id))
@@ -1674,18 +1698,16 @@ def _decision_suivante(
             configuration_de(dossier).comptes_categories_statut(),
             charger_compte_par_categorie(),
         )
-    decisions.enregistrer_decision(
-        DecisionHumaine(
-            dossier_id=dossier.id,
-            ecriture_id=EcritureId(ecriture_id),
-            categorie=categorie,
-            etage_origine=en_vigueur.etage_origine,
-            confiance_origine=en_vigueur.confiance_origine,
-            decide_par=decide_par,
-            decide_le=datetime.now(UTC),
-        )
+    decision = DecisionHumaine(
+        dossier_id=dossier.id,
+        ecriture_id=EcritureId(ecriture_id),
+        categorie=categorie,
+        etage_origine=en_vigueur.etage_origine,
+        confiance_origine=en_vigueur.confiance_origine,
+        decide_par=decide_par,
+        decide_le=datetime.now(UTC),
     )
-    _ecrire_reclassements(dossier, base, [(EcritureId(ecriture_id), categorie)])
+    ecrire.ecrire([decision], _reclassements(dossier, base, [(EcritureId(ecriture_id), categorie)]))
     ledger = _ledger_avec_decisions(dossier, base, decisions)
     ecritures_vues = ledger.grand_livre(dossier.id)
     ecriture_vue = next(e for e in ecritures_vues if e.id == ecriture_id)
@@ -1716,6 +1738,7 @@ def _trancher_groupe(
     decisions: DecisionRepository,
     propositions: PropositionRepository,
     decide_par: UserId,
+    ecrire: EcrireDecisions,
 ) -> list[Ecriture]:
     """Tout ou rien : une seule opération refusée refuse le lot, avec sa
     raison, et rien n'est écrit."""
@@ -1758,8 +1781,9 @@ def _trancher_groupe(
                 decide_le=maintenant,
             )
         )
-    decisions.enregistrer_decisions(a_ecrire)
-    _ecrire_reclassements(dossier, base, [(d.ecriture_id, d.categorie) for d in a_ecrire])
+    ecrire.ecrire(
+        a_ecrire, _reclassements(dossier, base, [(d.ecriture_id, d.categorie) for d in a_ecrire])
+    )
     ledger_a_jour = _ledger_avec_decisions(dossier, base, decisions)
     voulues = {decision.ecriture_id for decision in a_ecrire}
     return [e for e in ledger_a_jour.grand_livre(dossier.id) if e.id in voulues]
@@ -2015,6 +2039,7 @@ def _enregistrer_routes_revue(app: FastAPI) -> None:
         decisions: DecisionsDep,
         propositions: PropositionsDep,
         justificatifs: JustificatifsDep,
+        ecrire: EcrireDecisionsDep,
         identite: IdentiteDep,
     ) -> list[TransactionVue]:
         """« Tout confirmer » : les mêmes contrôles que pour une décision
@@ -2022,7 +2047,7 @@ def _enregistrer_routes_revue(app: FastAPI) -> None:
         toutes les décisions dans une seule transaction."""
         identite = _verifier_acces_dossier(dossier.id, identite)
         ecritures = _trancher_groupe(
-            dossier, entree, base, decisions, propositions, identite.user_id
+            dossier, entree, base, decisions, propositions, identite.user_id, ecrire
         )
         avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
         return [_vue_tranchee(e, e.id in avec_photo, entree.categorie) for e in ecritures]
@@ -2043,11 +2068,19 @@ def _enregistrer_route_correction(app: FastAPI) -> None:
         decisions: DecisionsDep,
         propositions: PropositionsDep,
         justificatifs: JustificatifsDep,
+        ecrire: EcrireDecisionsDep,
         identite: IdentiteDep,
     ) -> TransactionVue:
         identite = _verifier_acces_dossier(dossier.id, identite)
         ecriture = _corriger(
-            dossier, ecriture_id, entree.categorie, base, decisions, propositions, identite.user_id
+            dossier,
+            ecriture_id,
+            entree.categorie,
+            base,
+            decisions,
+            propositions,
+            identite.user_id,
+            ecrire,
         )
         return _vue_tranchee(
             ecriture,
@@ -2069,6 +2102,7 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
         decisions: DecisionsDep,
         propositions: PropositionsDep,
         justificatifs: JustificatifsDep,
+        ecrire: EcrireDecisionsDep,
         identite: IdentiteDep,
     ) -> TransactionVue:
         """Indiv qui tranche sa propre écriture (doc 19 §5.6, doc 19 §8bis :
@@ -2076,7 +2110,14 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
         l'accès à un autre dossier."""
         identite = _verifier_acces_dossier(dossier.id, identite)
         ecriture = _trancher(
-            dossier, ecriture_id, entree.categorie, base, decisions, propositions, identite.user_id
+            dossier,
+            ecriture_id,
+            entree.categorie,
+            base,
+            decisions,
+            propositions,
+            identite.user_id,
+            ecrire,
         )
         # `_trancher` refuse une écriture contre-passée : celle-ci ne l'est pas.
         return _vue_tranchee(
@@ -2121,6 +2162,7 @@ def _enregistrer_routes_annulation(app: FastAPI) -> None:
         base: LedgerBaseDep,
         decisions: DecisionsDep,
         justificatifs: JustificatifsDep,
+        ecrire: EcrireDecisionsDep,
         identite: IdentiteDep,
     ) -> TransactionVue:
         identite = _verifier_acces_dossier(dossier.id, identite)
@@ -2132,6 +2174,7 @@ def _enregistrer_routes_annulation(app: FastAPI) -> None:
             decisions,
             justificatifs,
             identite.user_id,
+            ecrire,
         )
 
 
