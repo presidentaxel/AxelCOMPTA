@@ -65,6 +65,14 @@ class InMemoryDossierRepository(DossierRepository):
         self.reconfigurer_depuis_sirene(dossier)
         self.confirmations.append((dossier.id, par, le))
 
+    def parametrer_tva(
+        self, dossier_id: DossierId, periodicite: str, jour: int, par: UserId, le: datetime
+    ) -> None:
+        dossier = self._dossiers[dossier_id]
+        self._dossiers[dossier_id] = replace(
+            dossier, tva_periodicite=periodicite, tva_jour_echeance=jour
+        )
+
     def ouvrir_exercice(self, dossier: Dossier) -> None:
         if dossier.id not in self._dossiers:
             raise ValueError(f"dossier inconnu : {dossier.id}")

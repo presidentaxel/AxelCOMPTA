@@ -24,6 +24,8 @@ ACTE_CONFIGURATION = "configuration_confirmee"
 # Compte bancaire retenu (pro) ou écarté (personnel) par le dirigeant (AXE-729).
 ACTE_COMPTE_RETENU = "compte_bancaire_retenu"
 ACTE_COMPTE_ECARTE = "compte_bancaire_ecarte"
+# Périodicité et échéance de la TVA réglées (AXE-805).
+ACTE_PARAMETRES_TVA = "parametres_tva"
 
 
 def noter(

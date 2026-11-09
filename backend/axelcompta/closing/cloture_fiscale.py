@@ -47,6 +47,7 @@ from .liasse_2056 import provisions_2056
 from .liasse_2058 import deficits_2058, resultat_2058
 from .models import LiassePivot, ParametresCloture
 from .provisions import ecritures_provisions, prefixe_provisions
+from .tva_periodique import est_liquidation_periodique
 
 
 def soldes(ecritures: tuple[Ecriture, ...]) -> Balance:
@@ -197,7 +198,12 @@ def cloturer_fiscalement(
         "2033D", releve_2033d(balance_avant, m, fiscal, parametres.deficits_anterieurs)
     )
     cases |= _prefixer("2033E", valeur_ajoutee_2033e(balance, parametres.effectif_moyen))
-    cases |= {f"CA3.{cle}": montant for cle, montant in declaration_ca3(balance_avant).items()}
+    # AXE-805 : hors liquidations périodiques, la CA3 de l'exercice reprend la
+    # somme des périodes déclarées en cours d'année.
+    hors_liquidations = tuple(e for e in ecritures if not est_liquidation_periodique(e))
+    cases |= {
+        f"CA3.{cle}": montant for cle, montant in declaration_ca3(soldes(hors_liquidations)).items()
+    }
     if parametres.regime_liasse == "2050":
         cases |= _liasse_reel_normal(balance, balance_avant, resultat, m, fiscal, parametres)
     elif parametres.regime_liasse != "2033":

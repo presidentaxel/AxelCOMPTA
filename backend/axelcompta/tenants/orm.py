@@ -61,6 +61,8 @@ dossiers = Table(
     Column("relance_consentement", String, nullable=True),
     Column("code_naf", String, nullable=True),
     Column("a_confirmer", JSON, nullable=False, server_default="[]"),
+    Column("tva_periodicite", String, nullable=True),
+    Column("tva_jour_echeance", Integer, nullable=True),
 )
 
 # Exercices clos, append-only (verrou en base, migration `b8e3f5a1c762`).

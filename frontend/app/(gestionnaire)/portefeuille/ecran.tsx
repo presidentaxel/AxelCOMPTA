@@ -26,6 +26,7 @@ import {
   phraseComptesAChoisir,
 } from "@/lib/comptes-a-choisir";
 import { phraseAConfirmer } from "@/lib/configuration-dossier";
+import { phraseTvaADeclarer } from "@/lib/tva";
 import {
   libelleBanque,
   libelleCompte,
@@ -452,6 +453,7 @@ export function EcranEntreprises() {
                     dossier.alerte_tva,
                     phraseAConfirmer(dossier.a_confirmer ?? []),
                     phraseComptesAChoisir(dossier),
+                    phraseTvaADeclarer(dossier.tva_a_declarer, dossier.tva_echeance),
                   ]
                     .filter((alerte): alerte is string => alerte !== null)
                     .map((alerte) => (

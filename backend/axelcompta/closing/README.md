@@ -55,3 +55,15 @@ pivot de liasse (`LiassePivot`) avant rendu par `filings/`.
 ## Doc de référence
 
 [doc 06 §5](../../../docs/06-moteur-comptable.md#5-clôture-dexercice-closing).
+
+## TVA en cours d'année (AXE-805)
+
+`tva_periodique.py` (pur) : périodes mensuelles ou trimestrielles de
+l'exercice, échéance (jour réglé par le dirigeant : `dossiers.tva_periodicite`,
+`tva_jour_echeance`, migration `d4a8f2c6e195`), CA3 de chaque période
+(collectée dont autoliquidée, déductible hors 44567, crédit reporté de la
+période précédente) et écriture de liquidation `{dossier}:tva-periode-{clé}`
+vers 44551 ou 44567. La CA3 annuelle de la liasse relit les mouvements hors
+ces liquidations : elle reprend la somme des périodes. `tva_rappels.py` :
+rappels J-7 et J-2 dans la cloche. La déclaration est prouvée dans
+`documents_signes` (`tva_ca3_{clé}`).

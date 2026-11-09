@@ -86,6 +86,9 @@ export type DossierAgregat = {
   alerte_tva: string | null;
   /** AXE-834 : configuration proposée sans certitude, à confirmer par le dirigeant. */
   a_confirmer: string[];
+  /** AXE-805 : la plus ancienne période de TVA à déclarer, et son échéance. */
+  tva_a_declarer?: string | null;
+  tva_echeance?: string | null;
   /** AXE-829 : tags du dossier ; exclu des compteurs, il reste listé, grisé. */
   tags: string[];
   exclu_compteurs: boolean;

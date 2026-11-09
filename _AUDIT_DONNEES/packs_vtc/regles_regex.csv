@@ -18,6 +18,7 @@ swiss ?life|pr[ée]voyance|mutuelle,assurance_personnelle_sante,basse,,"ajoutée
 carrefour|auchan|franprix|mcdonald|\bquick\b|pizza|\bkfc\b|leclerc(?!.*\bgo\b),repas_et_receptions,basse,,"⚠️ usage personnel probable — signalé pour revue humaine, pas d'auto-validation (confiance basse depuis le 2026-09-27 : en moyenne, 0,75, elle atteignait le seuil d'imputation des règles)"
 \bzara\b|kiabi|primark|s[ée]phora|\bfnac\b|\bh&m\b|shein|\bnike\b|adidas|decathlon,usage_personnel_suspect,basse,,"⚠️ trouvé mélangé dans fournitures_administratives — signalé pour revue humaine, pas d'auto-validation (confiance basse depuis le 2026-09-27)"
 urssaf,charges_sociales_impots,haute,,libellés réels échantillon URSSAF
+(?i)\b(dgfip|impots?|sie)\b.*\btva\b|\btva\b.*\b(dgfip|impots?|sie)\b,tva_payee,haute,,"ajoutée le 2026-11-09 (AXE-805) : paiement de la CA3, solde la TVA à décaisser (44551)"
 dgfip,charges_sociales_impots,moyenne,,"peut aussi être une subvention (compte 741) — trancher par le compte PCG, pas le libellé seul"
 \bald\b|arval|leaseplan|\bloa\b|location longue dur[ée]e,loyers_locations,haute,,"absente du pack réduit initial — ajoutée pour le financement véhicule en LOA (doc 06 §3.5, doc 17 §4.3 profil Yanis)"
 virement interne|\binterne\b|transfert entre (vos|mes) comptes|vir(ement)? (de|vers) (mon|votre) compte,virement_interne,basse,,"ajoutée le 2026-09-27 : vocabulaire bancaire générique ; le compte d'en face n'est pas toujours connecté, donc proposée, jamais imputée seule"

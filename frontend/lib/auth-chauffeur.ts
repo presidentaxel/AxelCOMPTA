@@ -28,6 +28,7 @@ import {
 import { avecDossierDeTest, liensDuJeton } from "./compte-de-test";
 import { coteOuverte } from "./cote-connexion";
 import { appelAuthentifie, erreurApi, lireCorps } from "./session";
+import type { TvaVue } from "./tva";
 import type {
   ConfigurationDossier,
   CompteBancaireVue,
@@ -575,6 +576,36 @@ export async function enregistrerProvisionsCloture(
   }
   const vue = (await reponse.json()) as { lignes: ProvisionClotureVue[] };
   return vue.lignes;
+}
+
+/** AXE-805 : la TVA de l'exercice, période par période. */
+export async function lireTva(dossierId: string): Promise<TvaVue> {
+  return fetchAvecAuthChauffeur<TvaVue>(`/dossiers/${dossierId}/tva`);
+}
+
+async function ecrireTva(chemin: string, methode: string, corps: unknown): Promise<TvaVue> {
+  const reponse = await appelChauffeur(chemin, {
+    method: methode,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(corps),
+  });
+  if (!reponse.ok) {
+    throw erreurApi(await lireCorps(reponse), reponse);
+  }
+  return (await reponse.json()) as TvaVue;
+}
+
+export function parametrerTva(dossierId: string, periodicite: string, jourEcheance: number) {
+  return ecrireTva(`/dossiers/${dossierId}/tva/parametres`, "PUT", {
+    periodicite,
+    jour_echeance: jourEcheance,
+  });
+}
+
+export function declarerTva(dossierId: string, cle: string, deposeeLe: string) {
+  return ecrireTva(`/dossiers/${dossierId}/tva/${cle}/declaration`, "POST", {
+    deposee_le: deposeeLe,
+  });
 }
 
 /** La validation de clôture : le texte d'attestation présenté, renvoyé tel

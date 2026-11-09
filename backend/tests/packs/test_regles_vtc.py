@@ -25,6 +25,8 @@ from axelcompta.workflow.synchro import COMPTE_ATTENTE, choisir_compte
 # (libellé, catégorie attendue de la première règle qui matche)
 EXEMPLES: tuple[tuple[str, str], ...] = (
     ("RETRAIT DAB 12/03 PARIS 11", "retrait_especes"),
+    ("PRLV SEPA DGFIP TVA 03/2026", "tva_payee"),
+    ("IMPOTS TVA CA3 MARS", "tva_payee"),
     ("Retrait GAB", "retrait_especes"),
     ("TOTAL", "carburant"),
     ("CB TOTAL ACCESS A6", "carburant"),

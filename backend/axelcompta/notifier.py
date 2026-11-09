@@ -23,6 +23,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy.engine import Engine
 
+from axelcompta.closing.tva_periodique import periodes_du_dossier, type_preuve
+from axelcompta.closing.tva_rappels import notifier_tva
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.ingestion.comptes_bancaires import CompteBancaireRepository, nombre_a_choisir
@@ -46,6 +48,8 @@ from axelcompta.workflow.notifications import (
 )
 from axelcompta.workflow.notifications_postgres import PostgresNotificationRepository
 from axelcompta.workflow.relances_consentement import notifier_consentement
+from axelcompta.workflow.signature import SignatureRepository
+from axelcompta.workflow.signature_postgres import PostgresSignatureRepository
 
 
 def notifier_portefeuille(
@@ -57,9 +61,11 @@ def notifier_portefeuille(
     tenant: Tenant | None = None,
     consentements: Mapping[DossierId, ReleveConsentement] | None = None,
     comptes_bancaires: CompteBancaireRepository | None = None,
+    tva_declarees: Mapping[DossierId, set[str]] | None = None,
 ) -> list[ResultatNotification]:
     """`consentements` à None saute les relances de connexion bancaire ;
-    `comptes_bancaires` à None, les comptes à choisir (AXE-851)."""
+    `comptes_bancaires` à None, les comptes à choisir (AXE-851) ;
+    `tva_declarees` à None, les rappels de TVA (AXE-805)."""
     resultats: list[ResultatNotification] = []
     for dossier in dossiers:
         try:
@@ -84,6 +90,12 @@ def notifier_portefeuille(
                         nombre_a_choisir(comptes_bancaires.lister(dossier.id)),
                         notifications,
                         maintenant,
+                    )
+                )
+            if tva_declarees is not None:
+                resultats.append(
+                    notifier_tva(
+                        dossier, tva_declarees.get(dossier.id, set()), notifications, maintenant
                     )
                 )
         except Exception as exc:  # noqa: BLE001 — un dossier en échec ne bloque pas les autres
@@ -112,7 +124,18 @@ def notifier_depuis_base(
         tenant,
         PostgresConsentementRepository(engine).lister([d.id for d in dossiers]),
         PostgresCompteBancaireRepository(engine),
+        _tva_declarees(PostgresSignatureRepository(engine), dossiers),
     )
+
+
+def _tva_declarees(
+    signatures: SignatureRepository, dossiers: tuple[Dossier, ...]
+) -> dict[DossierId, set[str]]:
+    """Les périodes de TVA déjà déclarées, en une lecture pour le portefeuille."""
+    types = sorted({type_preuve(p) for d in dossiers for p in periodes_du_dossier(d)})
+    if not types:
+        return {}
+    return signatures.types_presents([d.id for d in dossiers], types)
 
 
 def main() -> int:

@@ -84,6 +84,13 @@ class DossierRepository(ABC):
         et plus rien à confirmer. Tracé au journal d'audit."""
 
     @abstractmethod
+    def parametrer_tva(
+        self, dossier_id: DossierId, periodicite: str, jour: int, par: UserId, le: datetime
+    ) -> None:
+        """Périodicité et jour d'échéance de la CA3 (AXE-805), tracés au
+        journal d'audit. Valeurs déjà vérifiées par l'appelant."""
+
+    @abstractmethod
     def ouvrir_exercice(self, dossier: Dossier) -> None:
         """Seule mise à jour de configuration admise : à l'ouverture de
         l'exercice suivant (`axelcompta.exercices`), les bornes et les

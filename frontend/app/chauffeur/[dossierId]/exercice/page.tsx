@@ -49,6 +49,14 @@ export default function ExerciceChauffeurPage({
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Exercice</h1>
       {dossier.statut === "en_cours" && <Squelette className="mt-2 h-4 w-56" />}
       {periode && <p className="mt-2 text-sm text-subtle">{periode}</p>}
+      {fiche && fiche.tva_recettes_regime !== "franchise" && (
+        <Link
+          href={`/chauffeur/${dossierId}/tva`}
+          className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-primary"
+        >
+          Ma TVA : déclaration de la période →
+        </Link>
+      )}
       {dossier.statut === "erreur" && (
         <Etat type="erreur" message={dossier.message} onReessayer={reessayer} />
       )}
