@@ -23,11 +23,13 @@ const QUAND = new Intl.DateTimeFormat("fr-FR", {
 /** Sous le bandeau, au-dessus de la barre du bas, avec une marge. */
 const HAUTEUR_PANNEAU = "calc(100dvh - 8rem - env(safe-area-inset-bottom, 0px))";
 
-/** La clôture se valide dans Exercice, la banque se confirme dans Compte.
+/** La clôture se valide dans Exercice, la banque se confirme dans Compte,
+ * où se choisissent aussi les comptes bancaires (AXE-851).
  * Les opérations à traiter s'ouvrent sur Activité. */
 export function lienNotification(dossierId: string, type: string): string {
   if (type === "cloture_a_valider") return `/chauffeur/${dossierId}/exercice`;
   if (type.startsWith("connexion")) return "/chauffeur/compte";
+  if (type === "comptes_a_choisir") return "/chauffeur/compte";
   return `/chauffeur/${dossierId}`;
 }
 

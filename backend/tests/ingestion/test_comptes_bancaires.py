@@ -13,6 +13,7 @@ from axelcompta.ingestion.comptes_bancaires import (
     compte_comptable_suivant,
     compte_de,
     comptes_releves,
+    nombre_a_choisir,
     relever_comptes,
 )
 
@@ -113,3 +114,21 @@ def test_relever_un_compte_inconnu_ne_fait_rien() -> None:
     depot = CompteBancaireMemoire()
     depot.relever(DOSSIER, CompteReleve("absent", "x", 1), LE)
     assert depot.lister(DOSSIER) == ()
+
+
+def test_les_comptes_a_choisir_se_comptent_par_dossier() -> None:
+    """AXE-851 : seuls les comptes « à décider » comptent ; un dossier sans
+    compte en attente est absent."""
+    depot = CompteBancaireMemoire()
+    releves = [CompteReleve("pro", None, None), CompteReleve("perso", None, None)]
+    relever_comptes(depot, DOSSIER, releves, LE)
+    compte_de(depot, AUTRE, "seul")  # premier compte : retenu d'office
+    depot.operations[(DOSSIER, "perso")] = 4
+
+    a_choisir = depot.a_choisir([DOSSIER, AUTRE])
+
+    assert set(a_choisir) == {DOSSIER}
+    assert (a_choisir[DOSSIER].nombre, a_choisir[DOSSIER].operations) == (2, 4)
+    assert nombre_a_choisir(depot.lister(DOSSIER)) == 2
+    assert nombre_a_choisir(depot.lister(AUTRE)) == 0
+    assert depot.a_choisir([]) == {}

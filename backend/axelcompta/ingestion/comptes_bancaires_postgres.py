@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from sqlalchemy import and_, literal, or_, select, update
+from sqlalchemy import and_, literal, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Connection, Engine, Row
 
@@ -18,6 +19,7 @@ from .comptes_bancaires import (
     CompteBancaire,
     CompteInconnu,
     CompteReleve,
+    ComptesAChoisir,
     TropDeComptesBancaires,
     compte_comptable_suivant,
 )
@@ -129,6 +131,25 @@ class PostgresCompteBancaireRepository:
                 .where(comptes_bancaires.c.dossier_id == dossier_id, comptes_bancaires.c.a_relire)
                 .values(a_relire=False)
             )
+
+    def a_choisir(self, dossier_ids: Sequence[DossierId]) -> dict[DossierId, ComptesAChoisir]:
+        """Par la fonction `axelcompta_comptes_a_choisir` (migration
+        `a7d3e5c1b904`) : des comptages seulement, l'archive brute reste
+        fermée au rôle web. Sans contexte RLS posé, elle ne voit rien."""
+        if not dossier_ids:
+            return {}
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            lignes = connexion.execute(
+                text("SELECT * FROM axelcompta_comptes_a_choisir(:ids)"),
+                {"ids": list(dossier_ids)},
+            ).all()
+        return {
+            DossierId(str(ligne.dossier_id)): ComptesAChoisir(
+                nombre=int(ligne.nombre), depuis=ligne.depuis, operations=int(ligne.operations)
+            )
+            for ligne in lignes
+        }
 
     @staticmethod
     def _lister(connexion: Connection, dossier_id: DossierId) -> tuple[CompteBancaire, ...]:

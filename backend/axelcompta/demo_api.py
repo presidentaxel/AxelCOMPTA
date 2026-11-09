@@ -138,6 +138,8 @@ from axelcompta.ingestion.comptes_bancaires import (
     CompteBancaireRepository,
     CompteDejaComptabilise,
     CompteInconnu,
+    ComptesAChoisir,
+    nombre_a_choisir,
     verifier_ecartable,
 )
 from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
@@ -421,6 +423,12 @@ class DossierAgregat(BaseModel):
     # Configuration proposée sans certitude (AXE-834) : « forme_juridique »,
     # « exercice ». Une information de configuration, pas un détail comptable.
     a_confirmer: list[str] = []
+    # AXE-851 : comptes bancaires qui attendent le choix du dirigeant. Leurs
+    # opérations sont écartées par la synchro tant qu'il n'a pas choisi. Des
+    # nombres et une date, jamais les comptes ni les opérations (doc 19 §2.4).
+    comptes_a_choisir: int = 0
+    comptes_a_choisir_depuis: str | None = None
+    operations_en_attente_de_choix: int = 0
 
 
 class AlerteAnomalieVue(BaseModel):
@@ -885,6 +893,7 @@ def _agregat(
     dossier: Dossier,
     statut_invitation: str | None,
     preuves: set[str],
+    comptes_a_choisir: ComptesAChoisir | None = None,
 ) -> DossierAgregat:
     """Ce que le gestionnaire voit : les montants gardés en base, et tout ce
     qui change sans écriture lu à l'affichage (le dossier, l'invitation, les
@@ -914,6 +923,11 @@ def _agregat(
         alerte_regime=alerte_option_ir(dossier),
         alerte_tva=stocke.alerte_tva,
         a_confirmer=list(dossier.a_confirmer),
+        comptes_a_choisir=comptes_a_choisir.nombre if comptes_a_choisir else 0,
+        comptes_a_choisir_depuis=(
+            comptes_a_choisir.depuis.date().isoformat() if comptes_a_choisir else None
+        ),
+        operations_en_attente_de_choix=comptes_a_choisir.operations if comptes_a_choisir else 0,
     )
 
 
@@ -1890,14 +1904,17 @@ def _agregats_portefeuille(
     signatures: SignatureRepository,
     provisions: ProvisionsClotureRepository,
     agregats: AgregatsRepository,
+    comptes_bancaires: CompteBancaireRepository,
 ) -> list[DossierAgregat]:
     """Une lecture des agrégats gardés, une lecture des comptes (Supabase,
-    tous les dossiers d'un coup), puis par dossier ce qui change sans
-    écriture : les preuves de l'exercice et la date du jour."""
+    tous les dossiers d'un coup), une des comptes bancaires à choisir, puis
+    par dossier ce qui change sans écriture : les preuves de l'exercice et la
+    date du jour."""
     ids = [dossier.id for dossier in dossiers]
     lignes = agregats.lire(ids)
     invitations = comptes.statuts(ids)
     preuves = _preuves_exercice(signatures, ids)
+    a_choisir = comptes_bancaires.a_choisir(ids)
     resultat: list[DossierAgregat] = []
     for dossier in dossiers:
         invitation = invitations.get(dossier.id)
@@ -1909,6 +1926,7 @@ def _agregats_portefeuille(
                 dossier,
                 _statut_invitation_vue(invitation.statut) if invitation else None,
                 preuves.get(dossier.id, set()),
+                a_choisir.get(dossier.id),
             )
         )
     return resultat
@@ -1925,6 +1943,7 @@ def _enregistrer_routes_dossiers(app: FastAPI) -> None:
         provisions: ProvisionsDep,
         agregats: AgregatsDep,
         tags: TagsDep,
+        comptes_bancaires: ComptesBancairesDep,
         identite: IdentiteDep,
     ) -> list[DossierAgregat]:
         """Vue gestionnaire (doc 19 §2.1) : agrégats des dossiers **de son
@@ -1941,6 +1960,7 @@ def _enregistrer_routes_dossiers(app: FastAPI) -> None:
             signatures,
             provisions,
             agregats,
+            comptes_bancaires,
         )
         return _avec_tags(vues, etat_du_portefeuille(tags, tenant_id))
 
@@ -3532,12 +3552,14 @@ def _enregistrer_routes_notifications(app: FastAPI) -> None:
         notifications: NotificationsDep,
         ledger: LedgerBaseDep,
         decisions: DecisionsDep,
+        comptes_bancaires: ComptesBancairesDep,
     ) -> list[NotificationVue]:
         nb = len(ecritures_a_trancher(ledger, decisions, dossier.id))
         visibles = pour_la_cloche(
             notifications.lister(dossier.id, _HISTORIQUE_AVANT_REGROUPEMENT),
             nb,
             _NOTIFICATIONS_AFFICHEES,
+            nombre_a_choisir(comptes_bancaires.lister(dossier.id)),
         )
         return [
             NotificationVue(
