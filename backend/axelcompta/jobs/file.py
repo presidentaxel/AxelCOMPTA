@@ -14,7 +14,9 @@ from typing import Protocol
 TYPE_SYNCHRO = "synchro_digifactory"
 # Création des dossiers d'un fichier validé (AXE-809).
 TYPE_IMPORT_DOSSIERS = "import_dossiers"
-TYPES = frozenset({TYPE_SYNCHRO, TYPE_IMPORT_DOSSIERS, "notifier", "ml"})
+# Envoi des rappels par l'e-mail ou le SMS du gestionnaire (AXE-808).
+TYPE_RAPPELS = "rappels"
+TYPES = frozenset({TYPE_SYNCHRO, TYPE_IMPORT_DOSSIERS, TYPE_RAPPELS, "notifier", "ml"})
 TENTATIVES_MAX = 3
 
 

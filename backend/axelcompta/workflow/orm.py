@@ -235,3 +235,39 @@ decisions_expert = Table(
     Column("decide_le", DateTime(timezone=True), nullable=False),
     Column("ecritures", JSON, nullable=False),  # écrites avec la décision (I6)
 )
+
+# AXE-808 (migration `e6b2d9f4a371`) : intégrations e-mail et SMS du
+# gestionnaire (paramètres chiffrés), envois des rappels, désinscriptions.
+integrations_envoi = Table(
+    "integrations_envoi",
+    metadata,
+    Column("tenant_id", String, ForeignKey("tenants.id"), primary_key=True),
+    Column("canal", String, primary_key=True),  # mail | sms
+    Column("fournisseur", String, nullable=False),  # smtp | http
+    Column("parametres_chiffres", String, nullable=False),
+    Column("maj_par", String, nullable=False),
+    Column("maj_le", DateTime(timezone=True), nullable=False),
+)
+
+envois_rappel = Table(
+    "envois_rappel",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("rappel_id", String, nullable=False),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False, index=True),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("canal", String, nullable=False),
+    Column("message", String, nullable=False),  # celui de la règle, au déclenchement
+    Column("statut", String, nullable=False),  # en_attente | envoye | echec | ignore
+    Column("tentatives", Integer, nullable=False, server_default="0"),
+    Column("raison", String, nullable=True),
+    Column("maj_le", DateTime(timezone=True), nullable=False),
+)
+
+desinscriptions = Table(
+    "desinscriptions",
+    metadata,
+    Column("dossier_id", String, ForeignKey("dossiers.id"), primary_key=True),
+    Column("canal", String, primary_key=True),
+    Column("le", DateTime(timezone=True), nullable=False),
+)

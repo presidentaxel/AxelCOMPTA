@@ -4,7 +4,9 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { Aide, POURQUOI_RIEN_N_EST_ENVOYE } from "@/components/Aide";
+import { Aide, pourquoiEnvoi } from "@/components/Aide";
+import { useCanauxEnvoi } from "@/lib/use-canaux-envoi";
+import { SuiviEnvois } from "@/components/SuiviEnvois";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -64,6 +66,7 @@ export function EcranEntreprises() {
   const pathname = usePathname();
   const params = useSearchParams();
   const droit = useDroitGestionnaire();
+  const canauxEnvoi = useCanauxEnvoi();
   const [dossiers, setDossiers] = useState<DossierAgregat[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const recherche = params.get("q") ?? "";
@@ -574,7 +577,7 @@ export function EcranEntreprises() {
           <div className="mt-8">
             <p className="text-sm font-medium text-ink">
               Rappels
-              <Aide texte={POURQUOI_RIEN_N_EST_ENVOYE} />
+              <Aide texte={pourquoiEnvoi(canauxEnvoi)} />
             </p>
             {regles.length === 0 && (
               <p className="mt-2 text-sm text-subtle">
@@ -618,6 +621,7 @@ export function EcranEntreprises() {
               ))}
             </div>
             {infoRappel && <p className="mt-2 text-sm text-subtle">{infoRappel}</p>}
+            <SuiviEnvois dossierId={choisi.dossier_id} />
           </div>
           {confirmerRetrait && (
             <div className="mt-6 rounded-lg border border-border bg-canvas-app p-4">

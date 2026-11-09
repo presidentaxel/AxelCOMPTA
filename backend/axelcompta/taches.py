@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy.engine import Engine
+
 from axelcompta.api.observabilite import installer_sentry
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
@@ -37,6 +39,7 @@ from axelcompta.demo_api import prechauffer_caches
 from axelcompta.ledger.balance import SoldeJournal, ecarts
 from axelcompta.ledger.repository import soldes_par_journal
 from axelcompta.notifier import notifier_depuis_base
+from axelcompta.rappels import envoyer, planifier
 from axelcompta.synchro_digifactory import ResultatDossier, synchroniser_portefeuille
 from axelcompta.tenants.avenants import programmer_bascules
 from axelcompta.tenants.avenants_postgres import PostgresAvenantRegimeRepository
@@ -45,7 +48,7 @@ from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.repository import DossierRepository
 from axelcompta.tenants.tags import SANS_TAGS, EtatTags, etat_du_portefeuille, exclus, retenus
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
-from axelcompta.worker import dependances_reelles, detecter_portefeuilles
+from axelcompta.worker import dependances_reelles, detecter_portefeuilles, resume_envois
 from axelcompta.workflow.notifications import ResultatNotification
 
 # Reçoit aussi les dossiers à synchroniser sans classement automatique.
@@ -196,6 +199,17 @@ def _ecrire_metriques() -> None:
         Path(chemin).write_text(METRIQUES.texte(), encoding="utf-8")
 
 
+def _rappels(engine: Engine, maintenant: datetime) -> list[str]:
+    """AXE-808 : règles automatiques puis une passe d'envoi. Un échec est dit,
+    il n'arrête pas les autres tâches."""
+    try:
+        crees = planifier(engine, maintenant)
+        bilan = envoyer(engine, maintenant)
+    except Exception as exc:  # noqa: BLE001 — la passe suivante réessaiera
+        return [f"rappels : échec ({type(exc).__name__})"]
+    return [f"rappels : {crees} créé(s) ; {resume_envois(bilan)}"]
+
+
 def main() -> int:
     parseur = argparse.ArgumentParser(description=__doc__)
     parseur.add_argument("--sans-synchro", action="store_true")
@@ -217,6 +231,7 @@ def main() -> int:
         lambda tenant_id: etat_du_portefeuille(PostgresTagsRepository(engine), tenant_id),
         lambda d: prechauffer_caches(engine, d),
     )
+    bilan.lignes += _rappels(engine, debut)
     try:
         bilan.lignes += detecter_portefeuilles(dependances_reelles(), debut.date())
     except Exception as exc:  # noqa: BLE001 — la détection n'arrête pas le passage

@@ -14,7 +14,11 @@
 
 import { ApiError } from "./api";
 import { coteOuverte } from "./cote-connexion";
-import { MESSAGE_ESPACE_CHAUFFEUR, MESSAGE_SANS_PORTEFEUILLE, MESSAGE_SESSION } from "./messages-auth";
+import {
+  MESSAGE_ESPACE_CHAUFFEUR,
+  MESSAGE_SANS_PORTEFEUILLE,
+  MESSAGE_SESSION,
+} from "./messages-auth";
 import { appelAuthentifie, erreurApi, lireCorps } from "./session";
 import {
   changerEmailAvecJeton,
@@ -264,6 +268,42 @@ export async function habiliterExpert(entree: HabilitationExpert): Promise<Habil
   });
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
   return (await reponse.json()) as HabilitationExpert;
+}
+
+/** AXE-808 : canal branché → date du réglage. Jamais un identifiant. */
+export async function lireIntegrationsEnvoi(): Promise<Record<string, string>> {
+  const reponse = await requeteGestionnaire("/portefeuille/integrations/envoi");
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return ((await reponse.json()) as { canaux: Record<string, string> }).canaux;
+}
+
+export async function brancherIntegrationEnvoi(
+  canal: "mail" | "sms",
+  fournisseur: string,
+  parametres: Record<string, string>,
+): Promise<Record<string, string>> {
+  const reponse = await requeteGestionnaire(`/portefeuille/integrations/envoi/${canal}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fournisseur, parametres }),
+  });
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return ((await reponse.json()) as { canaux: Record<string, string> }).canaux;
+}
+
+export type EnvoiRappel = {
+  canal: string;
+  statut: "en_attente" | "envoye" | "echec" | "ignore";
+  tentatives: number;
+  raison: string | null;
+  le: string | null;
+};
+
+/** AXE-808 : suivi des rappels envoyés à une entreprise. */
+export async function lireEnvois(dossierId: string): Promise<EnvoiRappel[]> {
+  const reponse = await requeteGestionnaire(`/dossiers/${dossierId}/envois`);
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as EnvoiRappel[];
 }
 
 const ESPACE_GESTIONNAIRE = {

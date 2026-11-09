@@ -3,6 +3,13 @@
 import { useState } from "react";
 
 /** Pourquoi une relance n'envoie rien. Les canaux sont prévus, pas reliés. */
+/** AXE-808 : le texte suit ce qui est branché dans Intégrations. */
+export function pourquoiEnvoi(canaux: readonly string[] | null): string {
+  if (!canaux || canaux.length === 0) return POURQUOI_RIEN_N_EST_ENVOYE;
+  const noms = canaux.map((c) => (c === "mail" ? "e-mail" : "SMS")).join(" et ");
+  return `Les rappels partent par ${noms}, branché(s) dans Intégrations. L'appel n'est pas encore relié. Chaque envoi se suit sur la fiche de l'entreprise.`;
+}
+
 export const POURQUOI_RIEN_N_EST_ENVOYE =
   "Les canaux SMS, e-mail et appel sont prévus. Ils ne sont pas encore reliés : Intégrations les marque « Prévu ». La relance est enregistrée. L'entreprise ne reçoit rien pour l'instant.";
 

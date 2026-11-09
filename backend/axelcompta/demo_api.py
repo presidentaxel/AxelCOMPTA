@@ -160,7 +160,13 @@ from axelcompta.ingestion.journal import EntreeQuarantaine, JournalIngestion
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ingestion.providers.digifactory import normaliser_payload
-from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, TYPE_SYNCHRO, DemandesDeJobs, Job
+from axelcompta.jobs.file import (
+    TYPE_IMPORT_DOSSIERS,
+    TYPE_RAPPELS,
+    TYPE_SYNCHRO,
+    DemandesDeJobs,
+    Job,
+)
 from axelcompta.jobs.postgres import FilePostgres
 from axelcompta.ledger.banque import (
     comptes_hors_banque,
@@ -298,6 +304,14 @@ from axelcompta.workflow.quarantaine import (
     ecritures_de_resolution,
     famille_du_motif,
 )
+from axelcompta.workflow.rappels_auto import DECLENCHEURS_AUTO
+from axelcompta.workflow.rappels_envoi import (
+    EnvoisRepository,
+    desinscription_valide,
+    envois_du_rappel,
+    preparer_integration,
+)
+from axelcompta.workflow.rappels_envoi_postgres import PostgresEnvois
 from axelcompta.workflow.reclassement import (
     annuler_reclassements,
     grand_livre_comptable,
@@ -2419,6 +2433,9 @@ def _enregistrer_routes_annulation(app: FastAPI) -> None:
 
 
 _ROLES = frozenset({"admin", "membre", "lecture"})
+# manuel : bouton sur la fiche. avant_cloture : N jours avant la fin.
+# a_traiter : une opération attend depuis N jours (AXE-808).
+_DECLENCHEURS = frozenset({"manuel", *DECLENCHEURS_AUTO})
 _CANAUX = frozenset({"sms", "mail", "appel"})
 
 
@@ -2929,12 +2946,20 @@ def _enregistrer_routes_rappels(app: FastAPI) -> None:
             ).all()
         return [_rappel_vue(ligne) for ligne in lignes]
 
+
+def _enregistrer_route_declencher_rappel(app: FastAPI) -> None:
+    """Un rappel déclenché depuis la fiche d'une entreprise (AXE-808)."""
+
     @app.post("/rappels", response_model=RappelVue)
     def declencher_rappel(
-        entree: RappelEntree, identite: IdentiteDep, role: RoleMembreDep
+        entree: RappelEntree,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        envois: EnvoisDep,
+        file: DemandesJobsDep,
     ) -> RappelVue:
-        """Enregistre un envoi à partir d'une règle. Le canal n'est pas
-        branché : SMS, e-mail et appel restent à connecter."""
+        """Enregistre le rappel, et un envoi par canal branché (AXE-808) que
+        le worker envoie. L'appel téléphonique reste à brancher."""
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, "La lecture seule ne déclenche pas de rappel.")
         with _engine().connect() as connexion:
@@ -2968,6 +2993,18 @@ def _enregistrer_routes_rappels(app: FastAPI) -> None:
                     cree_le=datetime.now(UTC),
                 )
             )
+        a_envoyer = envois_du_rappel(
+            vue.id,
+            tenant_id,
+            DossierId(entree.dossier_id),
+            regle.message,
+            list(regle.canaux),
+            list(envois.canaux_branches(tenant_id)),
+            datetime.now(UTC),
+        )
+        if a_envoyer:
+            envois.creer(a_envoyer)
+            file.demander(str(tenant_id), TYPE_RAPPELS)
         return vue
 
 
@@ -3048,12 +3085,12 @@ def creer_regle(entree: RegleEntree, identite: IdentiteDep) -> RegleVue:
     message = entree.message.strip()
     if not libelle or not message or not canaux:
         raise HTTPException(status_code=400, detail="Libellé, message et au moins un canal.")
-    if entree.declencheur not in {"manuel", "avant_cloture"} or entree.portee not in {
+    if entree.declencheur not in _DECLENCHEURS or entree.portee not in {
         "tous",
         "selection",
     }:
         raise HTTPException(status_code=400, detail="Déclencheur ou portée inconnue.")
-    if entree.declencheur == "avant_cloture" and not entree.jours_avant:
+    if entree.declencheur in DECLENCHEURS_AUTO and not entree.jours_avant:
         raise HTTPException(status_code=400, detail="Indique le nombre de jours.")
     if entree.portee == "selection" and not entree.dossier_ids:
         raise HTTPException(status_code=400, detail="Choisissez au moins une entreprise.")
@@ -3065,7 +3102,7 @@ def creer_regle(entree: RegleEntree, identite: IdentiteDep) -> RegleVue:
         portee=entree.portee,
         dossier_ids=entree.dossier_ids if entree.portee == "selection" else [],
         declencheur=entree.declencheur,
-        jours_avant=entree.jours_avant if entree.declencheur == "avant_cloture" else None,
+        jours_avant=entree.jours_avant if entree.declencheur in DECLENCHEURS_AUTO else None,
     )
     try:
         with _engine().begin() as connexion:
@@ -3120,11 +3157,11 @@ def _valeur_portee(portee: str, dossier_ids: list[str]) -> dict[str, object]:
 
 
 def _valeur_declencheur(declencheur: str, jours_avant: int | None) -> dict[str, object]:
-    if declencheur not in {"manuel", "avant_cloture"}:
+    if declencheur not in _DECLENCHEURS:
         raise HTTPException(status_code=400, detail="Déclencheur inconnu.")
-    if declencheur == "avant_cloture" and not jours_avant:
+    if declencheur in DECLENCHEURS_AUTO and not jours_avant:
         raise HTTPException(status_code=400, detail="Indique le nombre de jours.")
-    jours = jours_avant if declencheur == "avant_cloture" else None
+    jours = jours_avant if declencheur in DECLENCHEURS_AUTO else None
     return {"declencheur": declencheur, "jours_avant": jours}
 
 
@@ -5451,6 +5488,92 @@ def get_demandes_jobs() -> DemandesDeJobs:
 DemandesJobsDep = Annotated[DemandesDeJobs, Depends(get_demandes_jobs)]
 
 
+def get_envois() -> EnvoisRepository:
+    """Intégrations d'envoi et envois des rappels (AXE-808)."""
+    return PostgresEnvois(_engine())
+
+
+EnvoisDep = Annotated[EnvoisRepository, Depends(get_envois)]
+
+
+class IntegrationEnvoiEntree(BaseModel):
+    fournisseur: str
+    parametres: dict[str, str]
+
+
+class IntegrationsEnvoiVue(BaseModel):
+    """Canal branché → date du dernier réglage. Jamais un identifiant."""
+
+    canaux: dict[str, str]
+
+
+class EnvoiVue(BaseModel):
+    canal: str
+    statut: str
+    tentatives: int
+    raison: str | None
+    le: str | None
+
+
+class DesinscriptionVue(BaseModel):
+    message: str
+
+
+def _integrations_vue(envois: EnvoisRepository, tenant_id: TenantId) -> IntegrationsEnvoiVue:
+    return IntegrationsEnvoiVue(
+        canaux={c: le.isoformat() for c, le in envois.canaux_branches(tenant_id).items()}
+    )
+
+
+def _enregistrer_routes_envoi(app: FastAPI) -> None:
+    """AXE-808 : brancher l'e-mail et le SMS du gestionnaire, suivre les envois."""
+
+    @app.get("/portefeuille/integrations/envoi", response_model=IntegrationsEnvoiVue)
+    def lire_integrations_envoi(identite: IdentiteDep, envois: EnvoisDep) -> IntegrationsEnvoiVue:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _integrations_vue(envois, tenant_id)
+
+    @app.put("/portefeuille/integrations/envoi/{canal}", response_model=IntegrationsEnvoiVue)
+    def brancher_integration_envoi(
+        canal: str,
+        entree: IntegrationEnvoiEntree,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        envois: EnvoisDep,
+    ) -> IntegrationsEnvoiVue:
+        """Admin seulement. Les identifiants sont chiffrés avant d'être
+        écrits, et ne reviennent jamais à l'écran."""
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        if role != "admin":
+            raise HTTPException(status_code=403, detail="Réservé à un administrateur.")
+        integration = preparer_integration(tenant_id, canal, entree.fournisseur, entree.parametres)
+        envois.brancher(integration, str(identite.user_id), datetime.now(UTC))
+        return _integrations_vue(envois, tenant_id)
+
+    @app.get("/dossiers/{dossier_id}/envois", response_model=list[EnvoiVue])
+    def lire_envois(dossier: DossierPortefeuilleDep, envois: EnvoisDep) -> list[EnvoiVue]:
+        """Suivi des rappels envoyés à cette entreprise : un statut, pas un contenu."""
+        return [
+            EnvoiVue(
+                canal=e.canal,
+                statut=e.statut,
+                tentatives=e.tentatives,
+                raison=e.raison,
+                le=e.maj_le.isoformat() if e.maj_le else None,
+            )
+            for e in envois.du_dossier(dossier.id, 50)
+        ]
+
+    @app.get("/desinscription", response_model=DesinscriptionVue)
+    def se_desinscrire(d: str, c: str, j: str, envois: EnvoisDep) -> DesinscriptionVue:
+        """Lien public, en bas de chaque rappel : sa signature suffit."""
+        if c not in ("mail", "sms") or not desinscription_valide(d, c, j):
+            raise HTTPException(status_code=404, detail="Ce lien n'est pas valable.")
+        envois.desinscrire(DossierId(d), c)
+        canal = "par e-mail" if c == "mail" else "par SMS"
+        return DesinscriptionVue(message=f"Vous ne recevrez plus de rappels {canal}.")
+
+
 class NouveauChauffeurVue(BaseModel):
     contact_nr: str
     nom: str
@@ -6106,6 +6229,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_engagement(app)
     _enregistrer_routes_tva(app)
     _enregistrer_route_declaration_tva(app)
+    _enregistrer_routes_envoi(app)
     _enregistrer_routes_transactions(app)
     _enregistrer_route_correction(app)
     _enregistrer_routes_annulation(app)
@@ -6120,6 +6244,7 @@ def create_app() -> FastAPI:
     _enregistrer_route_categorisation(app)
     _enregistrer_routes_connexions(app)
     _enregistrer_routes_rappels(app)
+    _enregistrer_route_declencher_rappel(app)
     _enregistrer_routes_regles(app)
     _enregistrer_routes_membres(app)
     _enregistrer_routes_invitation(app)

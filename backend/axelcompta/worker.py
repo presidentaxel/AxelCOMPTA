@@ -27,7 +27,7 @@ from datetime import UTC, date, datetime
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.ingestion.providers.digifactory import DigifactoryHttpClient
-from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, TYPE_SYNCHRO, Job
+from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, TYPE_RAPPELS, TYPE_SYNCHRO, Job
 from axelcompta.jobs.postgres import FilePostgres
 from axelcompta.nouveaux_contacts import (
     LireFiche,
@@ -36,6 +36,7 @@ from axelcompta.nouveaux_contacts import (
     fiche_sirene,
     proposer,
 )
+from axelcompta.rappels import envoyer
 from axelcompta.synchro_digifactory import ResultatDossier, synchroniser_portefeuille
 from axelcompta.tenants.contacts_proposes import ContactsProposesRepository, PropositionStockee
 from axelcompta.tenants.contacts_proposes_postgres import PostgresContactsProposes
@@ -67,6 +68,8 @@ class Dependances:
     lire_fiche: LireFiche
     synchroniser: Synchroniser
     prechauffer: Callable[[tuple[Dossier, ...]], int]
+    # AXE-808 : une passe d'envoi des rappels ; bilan par statut.
+    envoyer_rappels: Callable[[], dict[str, int]] | None = None
 
 
 def _stockee(proposition: Proposition, maintenant: datetime) -> PropositionStockee:
@@ -191,9 +194,22 @@ def importer_dossiers(job: Job, dossiers: DossierRepository) -> str:
     return ", ".join(morceaux)
 
 
+def resume_envois(bilan: dict[str, int]) -> str:
+    """« 2 rappels envoyés, 1 en échec » : ce qui s'affiche au gestionnaire."""
+    envoyes, echecs = bilan.get("envoye", 0), bilan.get("echec", 0)
+    morceaux = [_quantite(envoyes, "rappel envoyé", "rappels envoyés")]
+    if echecs:
+        morceaux.append(_quantite(echecs, "en échec", "en échec"))
+    if bilan.get("en_attente", 0):
+        morceaux.append(_quantite(bilan["en_attente"], "à réessayer", "à réessayer"))
+    return ", ".join(morceaux)
+
+
 def executer_job(job: Job, deps: Dependances, aujourd_hui: date) -> str:
     if job.type == TYPE_IMPORT_DOSSIERS:
         return importer_dossiers(job, deps.dossiers)
+    if job.type == TYPE_RAPPELS and deps.envoyer_rappels is not None:
+        return resume_envois(deps.envoyer_rappels())
     if job.type != TYPE_SYNCHRO:
         raise ValueError(f"type de job non pris en charge : {job.type}")
     return synchroniser_portefeuille_suivi(TenantId(job.tenant_id), deps, aujourd_hui)
@@ -219,6 +235,7 @@ def dependances_reelles() -> Dependances:
         lire_fiche=fiche_sirene,
         synchroniser=lambda d, s: synchroniser_portefeuille(engine, d, s),
         prechauffer=lambda d: prechauffer_caches(engine, d),
+        envoyer_rappels=lambda: envoyer(engine, datetime.now(UTC)),
     )
 
 

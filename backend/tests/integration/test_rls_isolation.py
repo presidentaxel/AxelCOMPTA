@@ -55,6 +55,8 @@ from axelcompta.workflow.expert_comptable import DecisionExpert, Habilitation
 from axelcompta.workflow.expert_comptable_postgres import PostgresExpertRepository
 from axelcompta.workflow.notifications import NotificationEnvoyee
 from axelcompta.workflow.notifications_postgres import PostgresNotificationRepository
+from axelcompta.workflow.rappels_envoi import envois_du_rappel
+from axelcompta.workflow.rappels_envoi_postgres import PostgresEnvois
 from axelcompta.workflow.signature import DocumentSigne
 from axelcompta.workflow.signature_postgres import PostgresSignatureRepository
 
@@ -686,3 +688,29 @@ def test_le_dirigeant_regle_sa_tva_et_rien_d_autre(
     assert sophie is not None and karim is not None
     assert (sophie.tva_periodicite, sophie.tva_jour_echeance) == ("mensuelle", 19)
     assert karim.tva_periodicite is None
+
+
+def test_les_envois_sont_isoles_et_la_desinscription_publique_n_ecrit_qu_elle(
+    engine: Engine, engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """AXE-808 (migration `e6b2d9f4a371`) : un portefeuille ne lit pas les
+    envois d'un autre ; le lien de désinscription, sans compte, passe par
+    la fonction `axelcompta_desinscrire`, qui refuse un canal inconnu."""
+    le = datetime(2026, 11, 9, 10, 0, tzinfo=UTC)
+    PostgresEnvois(engine).creer(
+        envois_du_rappel(
+            "r1", TenantId("tenant-a"), DossierId("karim"), "M", ["mail"], ["mail"], le
+        )
+    )
+    web = PostgresEnvois(engine_web)
+    with contexte_identite(dossier_id=None, tenant_id="tenant-b"):
+        assert web.du_dossier(DossierId("karim"), 10) == []
+    with contexte_identite(dossier_id=None, tenant_id="tenant-a"):
+        assert [e.statut for e in web.du_dossier(DossierId("karim"), 10)] == ["en_attente"]
+
+    with contexte_identite(dossier_id=None, tenant_id=None):
+        web.desinscrire(DossierId("karim"), "mail")
+        web.desinscrire(DossierId("karim"), "pigeon")
+    assert PostgresEnvois(engine).desinscrits([DossierId("karim")]) == {("karim", "mail")}
+    (attente,) = PostgresEnvois(engine).en_attente(10)
+    assert attente.message == "M"

@@ -67,7 +67,7 @@ export default function RappelsPage() {
     portee?: string;
     dossier_ids?: string[];
   }) {
-    if (regle.declencheur === "avant_cloture" && (!regle.jours_avant || regle.jours_avant < 1)) {
+    if (regle.declencheur !== "manuel" && (!regle.jours_avant || regle.jours_avant < 1)) {
       setErreur("Indiquez un nombre de jours supérieur à zéro.");
       return;
     }
@@ -108,7 +108,7 @@ export default function RappelsPage() {
             message: message.trim(),
             canaux,
             declencheur,
-            jours_avant: declencheur === "avant_cloture" ? Number(jours) : null,
+            jours_avant: declencheur !== "manuel" ? Number(jours) : null,
             portee,
             dossier_ids: choisis,
           });
@@ -167,6 +167,15 @@ export default function RappelsPage() {
           </button>
           <button
             type="button"
+            aria-pressed={declencheur === "a_traiter"}
+            disabled={!droit.admin}
+            onClick={() => setDeclencheur("a_traiter")}
+            className={`rounded-full border px-3 py-1.5 ${declencheur === "a_traiter" ? "border-primary bg-primary-subtle text-primary" : "border-border text-subtle"}`}
+          >
+            Opérations en attente
+          </button>
+          <button
+            type="button"
             aria-pressed={declencheur === "manuel"}
             disabled={!droit.admin}
             onClick={() => setDeclencheur("manuel")}
@@ -174,16 +183,17 @@ export default function RappelsPage() {
           >
             Bouton sur la fiche
           </button>
-          {declencheur === "avant_cloture" && (
+          {declencheur !== "manuel" && (
             <label className="flex items-center gap-2 text-subtle">
+              {declencheur === "a_traiter" && "depuis"}
               <Input
                 value={jours}
                 onChange={(e) => setJours(e.target.value)}
                 inputMode="numeric"
                 className="w-16"
-                aria-label="Jours avant la clôture"
+                aria-label={declencheur === "a_traiter" ? "Jours d'attente" : "Jours avant la clôture"}
               />
-              jours avant
+              {declencheur === "a_traiter" ? "jours" : "jours avant"}
             </label>
           )}
         </div>
@@ -285,7 +295,9 @@ export default function RappelsPage() {
             <p className="mt-1 text-xs text-subtle">
               {regle.declencheur === "avant_cloture"
                 ? `${regle.jours_avant} jours avant la clôture`
-                : "Bouton sur la fiche"}
+                : regle.declencheur === "a_traiter"
+                  ? `Opérations en attente depuis ${regle.jours_avant} jours`
+                  : "Bouton sur la fiche"}
               {" · "}
               {regle.portee === "selection" ? `${regle.dossier_ids.length} entreprise(s)` : "Toutes"}
               {" · "}
