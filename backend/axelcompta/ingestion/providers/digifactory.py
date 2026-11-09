@@ -149,6 +149,12 @@ def _normaliser(tx: dict[str, Any], dossier_id: DossierId) -> NormalizedTransact
     )
 
 
+def normaliser_payload(tx: dict[str, Any], dossier_id: DossierId) -> NormalizedTransaction:
+    """Une ligne Digifactory brute (celle gardée en quarantaine) relue comme
+    à la synchro. Lève `ValueError` si elle est inexploitable (AXE-424)."""
+    return _normaliser(tx, dossier_id)
+
+
 def _type_operation(valeur: object) -> str | None:
     """`operation_type` Digifactory ; « unknown » ne dit rien, donc `None`."""
     if not isinstance(valeur, str):

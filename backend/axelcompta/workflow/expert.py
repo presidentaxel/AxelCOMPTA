@@ -11,6 +11,7 @@ import dataclasses
 import re
 from collections.abc import Sequence
 from collections.abc import Set as AbstractSet
+from datetime import date
 
 from axelcompta.core.errors import DomaineError
 from axelcompta.core.ids import EcritureId
@@ -35,6 +36,7 @@ def preparer_imputation(
     compte: str,
     connus: AbstractSet[EcritureId],
     periodes_closes: Sequence[Periode] = (),
+    debut_ouvert: date | None = None,
 ) -> tuple[Ecriture, Ecriture]:
     """Retourne (contre-passation, nouvelle écriture), sans les enregistrer.
     Sur une écriture d'un exercice clos, les deux sont datées du premier jour
@@ -43,7 +45,7 @@ def preparer_imputation(
         raise ImputationRefusee(f"Compte refusé : {compte}")
     if origine(ecriture.id) is not None:
         raise ImputationRefusee("Une contre-passation ne s'impute pas.")
-    inverse = contrepasser(ecriture, periodes_closes)
+    inverse = contrepasser(ecriture, periodes_closes, debut_ouvert)
     if inverse.id in connus:
         raise ImputationRefusee("Cette écriture est déjà contre-passée.")
     lignes = []

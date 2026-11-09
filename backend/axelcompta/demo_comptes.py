@@ -31,6 +31,7 @@ from typing import Any
 
 import httpx
 
+from axelcompta.core.errors import Conflit, Introuvable
 from axelcompta.core.ids import DossierId
 
 
@@ -55,16 +56,16 @@ class MembreCompte:
     accepte: bool
 
 
-class CompteDejaInviteError(ValueError):
+class CompteDejaInviteError(Conflit, ValueError):
     """Un compte existe déjà pour ce dossier — pas de double invitation
     silencieuse (doc 08 §2.7)."""
 
 
-class InvitationAbsente(LookupError):
+class InvitationAbsente(Introuvable, LookupError):
     """Aucune invitation à renvoyer ou à annuler pour ce dossier."""
 
 
-class InvitationFermee(ValueError):
+class InvitationFermee(Conflit, ValueError):
     """Le compte est déjà ouvert : on ne renvoie ni n'annule l'invitation."""
 
 

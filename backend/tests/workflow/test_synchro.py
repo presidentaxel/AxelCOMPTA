@@ -26,9 +26,11 @@ from axelcompta.ingestion.providers.digifactory import (
 )
 from axelcompta.ledger.invariants import verifier_equilibre
 from axelcompta.ledger.memory import InMemoryLedgerService
+from axelcompta.ledger.models import Sens
 from axelcompta.packs.vtc_demo import charger_compte_par_categorie, charger_regles
 from axelcompta.tenants.models import Dossier
 from axelcompta.workflow.propositions import InMemoryPropositionRepository
+from axelcompta.workflow.reclassement import reclasser
 from axelcompta.workflow.synchro import (
     MOTIF_PERIODE_CLOSE,
     RapportSynchro,
@@ -79,7 +81,8 @@ def _modifiee() -> dict[str, Any]:
 
 
 class Env:
-    def __init__(self, payload: dict[str, Any] | None = None) -> None:
+    def __init__(self, payload: dict[str, Any] | None = None, dossier: Dossier = DOSSIER) -> None:
+        self.dossier = dossier
         self.payload = deepcopy(payload if payload is not None else PAYLOAD)
         self.ledger = InMemoryLedgerService()
         self.journal = InMemoryJournalIngestion()
@@ -88,7 +91,7 @@ class Env:
     def synchroniser(self) -> RapportSynchro:
         return asyncio.run(
             synchroniser_dossier(
-                DOSSIER,
+                self.dossier,
                 DigifactoryProvider(payload=self.payload),
                 "digifactory",
                 self.journal,
@@ -548,3 +551,51 @@ def test_une_operation_modifiee_d_un_exercice_clos_est_contre_passee_en_ouvert()
         e for e in env.ledger.grand_livre(DOSSIER.id) if e.id.endswith(":contrepassation")
     ]
     assert inverse.date == date(2026, 1, 1)
+
+
+def test_une_operation_modifiee_contre_passe_aussi_son_reclassement() -> None:
+    """AXE-420 : la décision du chauffeur (un reclassement) ne reste pas
+    chargée quand l'opération bancaire change."""
+    env = Env(
+        {"acc": [_tx("t3", "PAIEMENT MYSTERE XYZ", -12.5, "2026-03-03", "2026-03-03 10:00:00")]}
+    )
+    env.synchroniser()
+    (source,) = env.ledger.grand_livre(DOSSIER.id)
+    reclassement = reclasser(source, "repas", [source], ({}, {"repas": "6257"}))
+    assert reclassement is not None
+    env.ledger.enregistrer(reclassement)
+    env.payload["acc"][0] = _tx(
+        "t3", "PAIEMENT MYSTERE XYZ", -15.0, "2026-03-03", "2026-03-04 10:00:00"
+    )
+
+    env.synchroniser()
+
+    ids = {e.id for e in env.ledger.grand_livre(DOSSIER.id)}
+    assert f"{reclassement.id}:contrepassation" in ids
+    soldes: dict[str, int] = {}
+    for ecriture in env.ledger.grand_livre(DOSSIER.id):
+        for ligne in ecriture.lignes:
+            signe = 1 if ligne.sens is Sens.DEBIT else -1
+            soldes[ligne.compte] = soldes.get(ligne.compte, 0) + signe * ligne.montant.centimes
+    assert soldes.get("6257", 0) == 0
+
+
+def test_la_contre_passation_va_au_debut_de_l_exercice_ouvert_du_dossier() -> None:
+    """AXE-838 : 2025 clos, exercice ouvert au 01/03/2026 (clôture décalée)."""
+    decale = dataclasses.replace(DOSSIER, exercice_debut=date(2026, 3, 1))
+    env = Env(
+        {"acc": [_tx("t1", "CARTE TOTAL STATION", -60.0, "2025-12-28", "2025-12-28 10:00:00")]},
+        dossier=decale,
+    )
+    env.synchroniser()
+    env.ledger.clore(DOSSIER.id, date(2025, 1, 1), date(2025, 12, 31))
+    env.payload["acc"][0] = _tx(
+        "t1", "CARTE TOTAL STATION", -75.0, "2025-12-28", "2026-03-05 08:00:00"
+    )
+
+    env.synchroniser()
+
+    (inverse,) = [
+        e for e in env.ledger.grand_livre(DOSSIER.id) if e.id.endswith(":contrepassation")
+    ]
+    assert inverse.date == date(2026, 3, 1)

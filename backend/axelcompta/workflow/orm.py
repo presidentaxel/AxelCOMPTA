@@ -170,3 +170,17 @@ classees_dossier = Table(
     Column("operations", JSON, nullable=False),
     Column("calcule_le", DateTime(timezone=True), nullable=False),
 )
+
+# Résolution d'une entrée de quarantaine d'ingestion (AXE-424) : une seule
+# par entrée (unicité), jamais modifiée.
+resolutions_quarantaine = Table(
+    "resolutions_quarantaine",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("entree_id", String, nullable=False, unique=True),
+    Column("decision", String, nullable=False),
+    Column("ecritures", JSON, nullable=False),
+    Column("par", String, nullable=False),
+    Column("le", DateTime(timezone=True), nullable=False),
+)

@@ -16,13 +16,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import date, timedelta
 
-from axelcompta.core.errors import DomaineError
+from axelcompta.core.errors import Conflit
 
 # (début, fin) inclus, d'un exercice clos.
 Periode = tuple[date, date]
 
 
-class PeriodeClose(DomaineError):
+class PeriodeClose(Conflit):
     """Écriture datée dans un exercice déjà clos."""
 
     def __init__(self, jour: date, periode: Periode) -> None:
@@ -45,11 +45,18 @@ def verifier_hors_periode_close(jour: date, periodes: Sequence[Periode]) -> None
         raise PeriodeClose(jour, periode)
 
 
-def date_de_report(jour: date, periodes: Sequence[Periode]) -> date:
-    """`jour` s'il est ouvert ; sinon le lendemain de la fin des exercices
-    clos qui le couvrent (premier jour de l'exercice ouvert)."""
-    periode = periode_close_de(jour, periodes)
-    while periode is not None:
-        jour = periode[1] + timedelta(days=1)
-        periode = periode_close_de(jour, periodes)
-    return jour
+def date_de_report(
+    jour: date, periodes: Sequence[Periode], debut_ouvert: date | None = None
+) -> date:
+    """`jour` s'il est ouvert. Sinon, le premier jour de l'exercice ouvert :
+    `debut_ouvert` (le début d'exercice du dossier) quand il vient après les
+    exercices clos qui couvrent `jour`, sinon le lendemain de leur fin
+    (AXE-838 : premier exercice long, date de clôture changée, trou)."""
+    if periode_close_de(jour, periodes) is None:
+        return jour
+    lendemain = jour
+    while (periode := periode_close_de(lendemain, periodes)) is not None:
+        lendemain = periode[1] + timedelta(days=1)
+    if debut_ouvert is not None and debut_ouvert > lendemain:
+        return debut_ouvert
+    return lendemain

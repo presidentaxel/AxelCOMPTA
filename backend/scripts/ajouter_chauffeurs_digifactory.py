@@ -32,7 +32,6 @@ import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-import httpx
 from dotenv import load_dotenv
 
 from axelcompta.core.db import engine_depuis_env
@@ -45,10 +44,11 @@ from axelcompta.demo_digifactory import (
     siren_contact,
 )
 from axelcompta.ingestion.providers.digifactory import DigifactoryHttpClient
+from axelcompta.nouveaux_contacts import fiche_sirene
 from axelcompta.synchro_digifactory import synchroniser_portefeuille
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.postgres import PostgresDossierRepository
-from axelcompta.tenants.sirene import FicheSirene, configurer_depuis_sirene, fiche_depuis_reponse
+from axelcompta.tenants.sirene import FicheSirene, configurer_depuis_sirene
 from axelcompta.tenants.tags import POSE_PAR_IMPORT, TAG_CHAUFFEUR, a_taguer_chauffeur
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 
@@ -63,18 +63,8 @@ async def _contacts_bruts() -> dict[str, dict[str, object]]:
 
 
 def _fiche_sirene(siren: str | None) -> FicheSirene | None:
-    """Recherche d'entreprises (data.gouv, sans clé)."""
-    if siren is None:
-        return None
-    reponse = httpx.get(
-        "https://recherche-entreprises.api.gouv.fr/search",
-        params={"q": siren, "per_page": 1},
-        headers={"accept": "application/json"},
-        timeout=15.0,
-    )
-    reponse.raise_for_status()
-    corps = reponse.json()
-    return fiche_depuis_reponse(corps, siren) if isinstance(corps, dict) else None
+    """Même lecture que la détection automatique (AXE-845)."""
+    return fiche_sirene(siren)
 
 
 def _aligner_sirene(depot: PostgresDossierRepository) -> None:

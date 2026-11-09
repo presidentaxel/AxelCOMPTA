@@ -22,14 +22,20 @@ DIGIFACTORY_TOKEN définis) :
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 
+from axelcompta.api.observabilite import installer_sentry
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.core.metriques import METRIQUES
 from axelcompta.demo_api import prechauffer_caches
+from axelcompta.ledger.balance import SoldeJournal, ecarts
+from axelcompta.ledger.repository import soldes_par_journal
 from axelcompta.notifier import notifier_depuis_base
 from axelcompta.synchro_digifactory import ResultatDossier, synchroniser_portefeuille
 from axelcompta.tenants.avenants import programmer_bascules
@@ -39,6 +45,7 @@ from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.repository import DossierRepository
 from axelcompta.tenants.tags import SANS_TAGS, EtatTags, etat_du_portefeuille, exclus, retenus
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
+from axelcompta.worker import dependances_reelles, detecter_portefeuilles
 from axelcompta.workflow.notifications import ResultatNotification
 
 # Reçoit aussi les dossiers à synchroniser sans classement automatique.
@@ -149,6 +156,46 @@ def _prechauffer(
         bilan.lignes.append(f"{tenant_id} caches : {nombre} dossiers recalculés")
 
 
+# Une fois par jour : le planificateur passe toutes les heures (I7, AXE-807).
+HEURE_CONTROLE_BALANCE = 3
+VARIABLE_FICHIER_METRIQUES = "AXELCOMPTA_METRIQUES_FICHIER"
+
+
+def controler_balance(
+    bilan: BilanTaches,
+    lire_soldes: Callable[[], list[SoldeJournal]],
+    alerter: Callable[[str], None],
+) -> None:
+    """Invariant I7 : chaque écart est alerté (Sentry), écrit dans le journal
+    des tâches et compté (`balance_desequilibree_total`). Rien n'est corrigé
+    automatiquement. Le passage est en échec tant qu'un écart existe."""
+    trouves = ecarts(lire_soldes())
+    METRIQUES.jauger("balance_desequilibree_total", len(trouves))
+    if not trouves:
+        bilan.lignes.append("balance : équilibrée")
+        return
+    bilan.echec = True
+    for ecart in trouves:
+        bilan.lignes.append(f"ALERTE {ecart.message}")
+        alerter(ecart.message)
+
+
+def _alerter_sentry(message: str) -> None:
+    try:
+        import sentry_sdk
+    except ImportError:
+        return
+    sentry_sdk.capture_message(message, level="error")
+
+
+def _ecrire_metriques() -> None:
+    """Le planificateur n'est pas l'API : ses métriques passent par un
+    fichier lu par le collecteur (format texte Prometheus), si configuré."""
+    chemin = os.environ.get(VARIABLE_FICHIER_METRIQUES)
+    if chemin:
+        Path(chemin).write_text(METRIQUES.texte(), encoding="utf-8")
+
+
 def main() -> int:
     parseur = argparse.ArgumentParser(description=__doc__)
     parseur.add_argument("--sans-synchro", action="store_true")
@@ -170,6 +217,14 @@ def main() -> int:
         lambda tenant_id: etat_du_portefeuille(PostgresTagsRepository(engine), tenant_id),
         lambda d: prechauffer_caches(engine, d),
     )
+    try:
+        bilan.lignes += detecter_portefeuilles(dependances_reelles(), debut.date())
+    except Exception as exc:  # noqa: BLE001 — la détection n'arrête pas le passage
+        bilan.lignes.append(f"nouveaux chauffeurs : échec ({type(exc).__name__})")
+    if debut.hour == HEURE_CONTROLE_BALANCE:
+        installer_sentry()
+        controler_balance(bilan, lambda: soldes_par_journal(engine), _alerter_sentry)
+        _ecrire_metriques()
     print(f"[{debut.isoformat(timespec='seconds')}] tâches planifiées")
     for ligne in bilan.lignes:
         print(f"  {ligne}")

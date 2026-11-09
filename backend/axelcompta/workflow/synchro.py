@@ -38,6 +38,7 @@ from axelcompta.tenants.models import Dossier
 
 from .auto_accept import construire_ecriture_categorisee
 from .propositions import PropositionRepository
+from .reclassement import annuler_reclassements
 
 COMPTE_ATTENTE = "471"
 # Motif de quarantaine montré au chauffeur : une opération bancaire datée dans
@@ -101,17 +102,28 @@ def _signature(ecriture: Ecriture) -> tuple[int, object]:
 
 
 def _annuler(
-    ledger: LedgerService, comptabilisees: dict[EcritureId, Ecriture], existante: Ecriture
+    ledger: LedgerService,
+    comptabilisees: dict[EcritureId, Ecriture],
+    existante: Ecriture,
+    dossier: Dossier,
 ) -> None:
     """Pose l'écriture inverse une seule fois. L'originale reste en place."""
-    inverse = contrepasser(existante, ledger.periodes_closes(existante.dossier_id))
+    periodes = ledger.periodes_closes(existante.dossier_id)
+    inverse = contrepasser(existante, periodes, dossier.exercice_debut)
     if inverse.id in comptabilisees:
         return
     ledger.enregistrer(inverse)
     comptabilisees[inverse.id] = inverse
+    # AXE-420 : les reclassements des décisions sur cette opération aussi.
+    for annulation in annuler_reclassements(
+        existante.id, list(comptabilisees.values()), periodes, dossier.exercice_debut
+    ):
+        ledger.enregistrer(annulation)
+        comptabilisees[annulation.id] = annulation
 
 
-def _id_ecriture(dossier: Dossier, source_nom: str, transaction_id: str) -> EcritureId:
+def id_ecriture(dossier: Dossier, source_nom: str, transaction_id: str) -> EcritureId:
+    """L'écriture d'une opération bancaire : stable d'une synchro à l'autre."""
     return EcritureId(f"{dossier.id}:{source_nom}-{transaction_id}")
 
 
@@ -160,7 +172,7 @@ def _traiter_transactions(
         dossier, source_nom, lot, comptabilisees, periodes, pipeline
     )
     for transaction in lot.transactions:
-        ecriture_id = _id_ecriture(dossier, source_nom, transaction.id)
+        ecriture_id = id_ecriture(dossier, source_nom, transaction.id)
         existante = comptabilisees.get(ecriture_id)
         if existante is not None:
             _relever_existante(
@@ -213,7 +225,7 @@ def _propositions_des_ouvertes(
     nouvelles = [
         t
         for t in lot.transactions
-        if _id_ecriture(dossier, source_nom, t.id) not in comptabilisees
+        if id_ecriture(dossier, source_nom, t.id) not in comptabilisees
         and periode_close_de(t.date, periodes) is None
     ]
     return {p.transaction_id: p for p in pipeline.categoriser_lot(dossier.id, nouvelles)}
@@ -239,7 +251,7 @@ def _relever_existante(
         compteurs.connues += 1
         return
     compteurs.modifiees += 1
-    _annuler(ledger, comptabilisees, existante)
+    _annuler(ledger, comptabilisees, existante, dossier)
     journal.mettre_en_quarantaine(
         dossier.id,
         source_nom,
@@ -259,11 +271,11 @@ def _signaler_supprimees(
 ) -> int:
     signalees = 0
     for transaction_id in lot.supprimees:
-        existante = comptabilisees.get(_id_ecriture(dossier, source_nom, transaction_id))
+        existante = comptabilisees.get(id_ecriture(dossier, source_nom, transaction_id))
         if existante is None:
             continue
         signalees += 1
-        _annuler(ledger, comptabilisees, existante)
+        _annuler(ledger, comptabilisees, existante, dossier)
         journal.mettre_en_quarantaine(
             dossier.id,
             source_nom,

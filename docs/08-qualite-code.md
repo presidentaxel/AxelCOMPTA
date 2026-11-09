@@ -119,6 +119,13 @@ de le remettre au vert, pas de contourner.
 - **Idempotence des jobs** : tout job de fond peut être rejoué sans effet de bord
   (déduplication par clé naturelle, upserts contrôlés).
 
+**API (AXE-839)** : une `DomaineError` répond 4xx avec son message, par un
+seul gestionnaire (`axelcompta/api/erreurs.py`). Le code vient de la famille
+de l'erreur (`core/errors.py`) : `Conflit` → 409, `Introuvable` → 404,
+`SaisieInvalide` → 422, sinon 400. Une route ne rattrape une erreur métier
+que pour changer la réponse (message différent, autre forme). Un bug
+(`InvariantViole`, toute autre exception) reste un 500.
+
 ## 6. Dépendances
 
 - Toute nouvelle dépendance = mini-revue : maintenance, licence, surface d'attaque.
@@ -137,3 +144,19 @@ de le remettre au vert, pas de contourner.
 - [ ] Doc module ou ADR mise à jour si une décision a été prise.
 - [ ] Revue par l'autre dev.
 - [ ] Démo possible sur staging avec données synthétiques.
+
+## Migrations Alembic (AXE-841, 6 nov. 2026)
+
+* **Une seule tête.** `tests/core/test_schema.py` échoue en CI si deux
+  migrations partent de la même révision, et dit laquelle rebrancher.
+* **Rebaser juste avant le merge.** Une PR qui ajoute une migration se
+  rebase sur `main` juste avant d'être mergée ; son `down_revision` pointe
+  sur la tête de `main` à ce moment-là.
+* **Supabase après le merge, jamais avant.** `alembic upgrade head` se lance
+  sur la base du portefeuille une fois la PR mergée. Pas de `stamp` pour
+  rattraper un schéma posé à la main.
+* **L'API vérifie au démarrage** que la base est à la tête du code
+  (`axelcompta/core/schema.py`) et refuse de démarrer sinon, avec la
+  commande à lancer. `AXELCOMPTA_SCHEMA_NON_VERIFIE=1` saute la vérification
+  sur un poste de dev, jamais en production.
+

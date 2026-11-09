@@ -41,6 +41,7 @@ from axelcompta.closing.cloture_fiscale import (
 from axelcompta.closing.models import ParametresCloture, ProvisionCloture
 from axelcompta.closing.ouverture import ecriture_a_nouveaux
 from axelcompta.core.db import engine_depuis_env
+from axelcompta.core.errors import Conflit
 from axelcompta.core.ids import DossierId
 from axelcompta.ledger.models import Ecriture
 from axelcompta.ledger.repository import PostgresLedgerService
@@ -57,10 +58,10 @@ from axelcompta.tenants.statuts import RegimeTva, configuration_de
 from axelcompta.workflow.decisions import DecisionRepository
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
 from axelcompta.workflow.notifications import ecritures_a_trancher
-from axelcompta.workflow.revue import appliquer_decisions
+from axelcompta.workflow.reclassement import grand_livre_tranche
 
 
-class PassageRefuse(ValueError):
+class PassageRefuse(Conflit, ValueError):
     """L'exercice ne peut pas être clos maintenant ; le message dit pourquoi."""
 
     def __init__(self, message: str, *, code: str = "autre") -> None:
@@ -97,11 +98,10 @@ def preparer_passage(
         raise PassageRefuse(f"{sujet} encore une décision.", code="operations")
     configuration = configuration_de(dossier)
     colonne = configuration.colonne
-    tranchees = appliquer_decisions(
+    tranchees = grand_livre_tranche(
         ledger.grand_livre(dossier.id),
         decisions.lister_decisions(dossier.id),
-        configuration.comptes_categories_statut(),
-        charger_compte_par_categorie(),
+        (configuration.comptes_categories_statut(), charger_compte_par_categorie()),
     )
     parametres = ParametresCloture(
         exercice_debut=dossier.exercice_debut,
