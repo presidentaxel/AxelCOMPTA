@@ -138,6 +138,8 @@ export type SujetExpert = {
   imputable: boolean;
   compte_actuel?: string | null;
   compte_suggere?: string | null;
+  /** AXE-855 : comment l'argent est sorti (code de la banque), comme sous les alertes. */
+  moyen_paiement?: string | null;
 };
 
 export type LigneImputation = {

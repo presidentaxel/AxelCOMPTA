@@ -4,6 +4,7 @@ doc 07 §3.1). Voir le commentaire de `orm.propositions_categorisation`."""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 
 from axelcompta.categorize.models import ProposedEntry
 from axelcompta.core.ids import DossierId, EcritureId
@@ -24,6 +25,12 @@ class PropositionRepository(ABC):
     def lister(self, dossier_id: DossierId) -> dict[EcritureId, ProposedEntry]:
         """Toutes les propositions d'un dossier, en une lecture (AXE-823)."""
 
+    @abstractmethod
+    def moyens_de_paiement(self, ecriture_ids: Sequence[EcritureId]) -> dict[EcritureId, str]:
+        """Le moyen de paiement connu de ces écritures (AXE-855), tous
+        dossiers confondus, en une lecture. Une écriture sans moyen connu est
+        absente."""
+
 
 class InMemoryPropositionRepository(PropositionRepository):
     def __init__(self) -> None:
@@ -40,3 +47,11 @@ class InMemoryPropositionRepository(PropositionRepository):
 
     def lister(self, dossier_id: DossierId) -> dict[EcritureId, ProposedEntry]:
         return {e: p for e, p in self._propositions.items() if p.dossier_id == dossier_id}
+
+    def moyens_de_paiement(self, ecriture_ids: Sequence[EcritureId]) -> dict[EcritureId, str]:
+        voulues = set(ecriture_ids)
+        return {
+            e: p.moyen_paiement
+            for e, p in self._propositions.items()
+            if e in voulues and p.moyen_paiement
+        }

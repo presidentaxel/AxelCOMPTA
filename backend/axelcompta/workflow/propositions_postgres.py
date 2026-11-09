@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import select
@@ -51,6 +52,19 @@ class PostgresPropositionRepository(PropositionRepository):
             appliquer_rls(connexion)
             lignes = connexion.execute(select(table).where(table.c.dossier_id == dossier_id)).all()
         return {EcritureId(ligne.ecriture_id): _proposition(ligne) for ligne in lignes}
+
+    def moyens_de_paiement(self, ecriture_ids: Sequence[EcritureId]) -> dict[EcritureId, str]:
+        if not ecriture_ids:
+            return {}
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            lignes = connexion.execute(
+                select(table.c.ecriture_id, table.c.moyen_paiement).where(
+                    table.c.ecriture_id.in_(list(ecriture_ids)),
+                    table.c.moyen_paiement.is_not(None),
+                )
+            ).all()
+        return {EcritureId(ligne.ecriture_id): str(ligne.moyen_paiement) for ligne in lignes}
 
 
 def _proposition(ligne: Row[Any]) -> ProposedEntry:

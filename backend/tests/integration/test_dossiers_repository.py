@@ -274,3 +274,29 @@ def test_un_lot_de_dossiers_est_cree_tout_ou_rien(
 
     assert depot.enregistrer_lot(bons) == 3
     assert depot.enregistrer_lot(bons) == 0
+
+
+def test_les_moyens_de_paiement_se_lisent_en_une_fois(
+    engine: Engine, creer_dossier: Callable[[str], None]
+) -> None:
+    """AXE-855 : la file expert lit le moyen de paiement de tous ses sujets
+    d'un coup ; une écriture sans moyen connu est absente."""
+    creer_dossier("d1")
+    repo = PostgresPropositionRepository(engine)
+    for numero, moyen in ((1, "card"), (2, None), (3, "transfer")):
+        repo.enregistrer(
+            EcritureId(f"d1:e{numero}"),
+            ProposedEntry(
+                dossier_id=DossierId("d1"),
+                transaction_id=TransactionId(f"tx{numero}"),
+                categorie="carburant",
+                etage=Etage.REGLE,
+                confiance=0.9,
+                moyen_paiement=moyen,
+            ),
+        )
+
+    moyens = repo.moyens_de_paiement([EcritureId("d1:e1"), EcritureId("d1:e2")])
+
+    assert moyens == {"d1:e1": "card"}
+    assert repo.moyens_de_paiement([]) == {}
