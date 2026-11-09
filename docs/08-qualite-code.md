@@ -155,6 +155,11 @@ que pour changer la réponse (message différent, autre forme). Un bug
 * **Supabase après le merge, jamais avant.** `alembic upgrade head` se lance
   sur la base du portefeuille une fois la PR mergée. Pas de `stamp` pour
   rattraper un schéma posé à la main.
+* **Le schéma suit le modèle** (AXE-854). `tests/integration/test_migrations.py`
+  compare, après `upgrade head`, le schéma des migrations au modèle ORM
+  (tables, colonnes, contraintes), vérifie la RLS sur toute table qui porte
+  `dossier_id` ou `tenant_id`, et qu'un `downgrade base` ne laisse rien. Un
+  écart voulu s'ajoute à `ECARTS_VOULUS`, avec sa raison.
 * **L'API vérifie au démarrage** que la base est à la tête du code
   (`axelcompta/core/schema.py`) et refuse de démarrer sinon, avec la
   commande à lancer. `AXELCOMPTA_SCHEMA_NON_VERIFIE=1` saute la vérification
