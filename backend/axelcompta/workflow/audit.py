@@ -26,6 +26,8 @@ ACTE_COMPTE_RETENU = "compte_bancaire_retenu"
 ACTE_COMPTE_ECARTE = "compte_bancaire_ecarte"
 # Périodicité et échéance de la TVA réglées (AXE-805).
 ACTE_PARAMETRES_TVA = "parametres_tva"
+# Siège, capital et associés saisis par le dirigeant (AXE-846).
+ACTE_IDENTITE = "identite_saisie"
 
 
 def noter(
