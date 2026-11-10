@@ -49,6 +49,16 @@ d'héritage implicite (doc 03 §3bis, doc 06 §7).
   (`identite_saisie`). La migration `a3f8c2d71e46` donne au rôle web
   l'UPDATE de `identite`, `forme_juridique` et `a_confirmer` : sans elle,
   la confirmation d'AXE-730 échouait en production.
+- `registres.py` (AXE-849) — ce que disent l'INSEE (Sirene) et le RNE
+  (INPI) : lecture des réponses, fusion (le RNE fait foi pour la forme, le
+  capital et les dirigeants ; l'INSEE pour l'état et l'activité), écarts
+  champ par champ avec la déclaration (`Dossier.ecarts_registre`), et
+  `trancher`. Les écarts bloquent la clôture et la liasse
+  (`confirmation.raison_ambiguite`) ; une société cessée passe en premier.
+  Lectures et résolutions en ajout seul (`registres_depot.py`, migration
+  `c7e4a9d2f518`). Appels HTTP et relecture hebdomadaire :
+  `axelcompta/registres_officiels.py`. Sirene 3.11 et le RNE ont été lus
+  sur un SIREN réel le 2026-11-11.
 
 - `models.py` — domaine pur (`Tenant`, `Dossier`).
 - `agregats.py` / `agregats_postgres.py` (**fait, AXE-566**) : les agrégats de

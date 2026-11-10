@@ -232,6 +232,12 @@ from axelcompta.tenants.orm import droits_membre, rappels, regles_rappel
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.provisions_cloture import ProvisionsClotureRepository
 from axelcompta.tenants.provisions_cloture_postgres import PostgresProvisionsClotureRepository
+from axelcompta.tenants.registres import phrase, phrase_gestionnaire, trancher
+from axelcompta.tenants.registres_depot import (
+    RegistresPostgres,
+    RegistresRepository,
+    ResolutionEcart,
+)
 from axelcompta.tenants.repository import DossierRepository
 from axelcompta.tenants.statuts import (
     ColonneMatrice,
@@ -478,6 +484,8 @@ class DossierAgregat(BaseModel):
     # Configuration proposée sans certitude (AXE-834) : « forme_juridique »,
     # « exercice ». Une information de configuration, pas un détail comptable.
     a_confirmer: list[str] = []
+    # AXE-849 : écarts non tranchés avec les registres officiels, en phrases.
+    ecarts_registre: list[str] = []
     # AXE-851 : comptes bancaires qui attendent le choix du dirigeant. Leurs
     # opérations sont écartées par la synchro tant qu'il n'a pas choisi. Des
     # nombres et une date, jamais les comptes ni les opérations (doc 19 §2.4).
@@ -1002,6 +1010,7 @@ def _agregat(
         alerte_regime=alerte_option_ir(dossier),
         alerte_tva=stocke.alerte_tva,
         a_confirmer=list(dossier.a_confirmer),
+        ecarts_registre=[phrase_gestionnaire(e) for e in dossier.ecarts_registre],
         comptes_a_choisir=comptes_a_choisir.nombre if comptes_a_choisir else 0,
         comptes_a_choisir_depuis=(
             comptes_a_choisir.depuis.date().isoformat() if comptes_a_choisir else None
@@ -4146,6 +4155,96 @@ def _enregistrer_routes_identite(app: FastAPI) -> None:
         return _vue_configuration(dataclasses.replace(dossier, identite=saisie))
 
 
+class EcartRegistreVue(BaseModel):
+    champ: str
+    declare: str
+    officiel: str
+    phrase: str
+
+
+class RegistreDossierVue(BaseModel):
+    """Ce que disent les registres officiels du dossier (AXE-849)."""
+
+    siren: str | None
+    lu_le: str | None
+    sources: list[str]
+    denomination: str | None
+    forme_juridique: str | None
+    siege: str | None
+    capital_cts: int | None
+    dirigeants: list[str]
+    cessee: bool | None
+    ecarts: list[EcartRegistreVue]
+
+
+class TrancherEcartEntree(BaseModel):
+    retenue: Literal["declaree", "officielle"]
+
+
+def get_registres() -> RegistresRepository:
+    """Dépendance FastAPI : lectures des registres et écarts tranchés."""
+    return RegistresPostgres(_engine())
+
+
+RegistresDep = Annotated[RegistresRepository, Depends(get_registres)]
+
+
+def _vue_registre(dossier: Dossier, registres: RegistresRepository) -> RegistreDossierVue:
+    lue = registres.derniere_lecture(dossier.id)
+    fiche = lue[0] if lue else None
+    return RegistreDossierVue(
+        siren=dossier.siren,
+        lu_le=lue[1].isoformat() if lue else None,
+        sources=list(fiche.sources) if fiche else [],
+        denomination=fiche.denomination if fiche else None,
+        forme_juridique=fiche.forme_juridique if fiche else None,
+        siege=fiche.siege.sur_une_ligne() if fiche and fiche.siege else None,
+        capital_cts=fiche.capital_cts if fiche else None,
+        dirigeants=list(fiche.dirigeants) if fiche else [],
+        cessee=fiche.cessee if fiche else None,
+        ecarts=[
+            EcartRegistreVue(
+                champ=e.champ, declare=e.declare, officiel=e.officiel, phrase=phrase(e)
+            )
+            for e in dossier.ecarts_registre
+        ],
+    )
+
+
+def _enregistrer_routes_registre(app: FastAPI) -> None:
+    """Le dirigeant voit ce que disent les registres et tranche chaque écart
+    (AXE-849). Tracé au journal d'audit."""
+
+    @app.get("/dossiers/{dossier_id}/registre", response_model=RegistreDossierVue)
+    def lire_registre_officiel(
+        dossier: DossierDep, registres: RegistresDep, identite: IdentiteDep
+    ) -> RegistreDossierVue:
+        _verifier_acces_dossier(dossier.id, identite)
+        return _vue_registre(dossier, registres)
+
+    @app.post(
+        "/dossiers/{dossier_id}/registre/ecarts/{champ}", response_model=ConfigurationDossierVue
+    )
+    def trancher_ecart(
+        champ: str,
+        corps: TrancherEcartEntree,
+        dossier: DossierDep,
+        registres: RegistresDep,
+        identite: IdentiteDep,
+    ) -> ConfigurationDossierVue:
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        ecart, reste, forme = trancher(dossier, champ, corps.retenue)
+        apres = dataclasses.replace(
+            dossier, ecarts_registre=reste, forme_juridique=forme or dossier.forme_juridique
+        )
+        configuration_de(apres)  # une forme du registre hors matrice est refusée (422)
+        tranche = ResolutionEcart(
+            dossier.id, ecart, corps.retenue, identite.user_id, datetime.now(UTC)
+        )
+        registres.resoudre(tranche, reste, forme)
+        return _vue_configuration(apres)
+
+
 def _signataire(dossier: Dossier, identite: IdentiteAuthentifiee) -> str:
     if dossier.identite is not None:
         dirigeant = dossier.identite.dirigeant
@@ -6408,6 +6507,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_cloture_exercice(app)
     _enregistrer_routes_configuration(app)
     _enregistrer_routes_identite(app)
+    _enregistrer_routes_registre(app)
     _enregistrer_routes_affectation(app)
     _enregistrer_routes_dividendes_paie(app)
     _enregistrer_routes_paie(app)

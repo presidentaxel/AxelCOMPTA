@@ -10,6 +10,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     DateTime,
@@ -63,6 +64,36 @@ dossiers = Table(
     Column("a_confirmer", JSON, nullable=False, server_default="[]"),
     Column("tva_periodicite", String, nullable=True),
     Column("tva_jour_echeance", Integer, nullable=True),
+    # AXE-849 : SIREN (relecture des registres) et écarts non tranchés.
+    Column("siren", String, nullable=True),
+    Column("ecarts_registre", JSON, nullable=False, server_default="[]"),
+)
+
+# Lectures des registres officiels (INSEE, RNE), append-only (AXE-849).
+lectures_registre = Table(
+    "lectures_registre",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("siren", String, nullable=False),
+    Column("sources", JSON, nullable=False),
+    Column("fiche", JSON, nullable=False),
+    Column("lu_le", DateTime(timezone=True), nullable=False),
+)
+
+# Écarts tranchés : qui, quand, quelle valeur retenue. Append-only (AXE-849).
+resolutions_ecart = Table(
+    "resolutions_ecart",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("champ", String, nullable=False),
+    Column("declare", String, nullable=False),
+    Column("officiel", String, nullable=False),
+    Column("retenue", String, nullable=False),
+    Column("par", String, nullable=False),
+    Column("le", DateTime(timezone=True), nullable=False),
+    CheckConstraint("retenue IN ('declaree', 'officielle')", name="resolutions_ecart_retenue"),
 )
 
 # Exercices clos, append-only (verrou en base, migration `b8e3f5a1c762`).

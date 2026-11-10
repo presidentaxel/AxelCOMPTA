@@ -29,6 +29,7 @@ import { avecDossierDeTest, liensDuJeton } from "./compte-de-test";
 import { coteOuverte } from "./cote-connexion";
 import { appelAuthentifie, erreurApi, lireCorps } from "./session";
 import type { Identite, IdentiteDossierVue, PreRemplissage } from "./identite-entreprise";
+import type { RegistreVue } from "./registre";
 import type { TvaVue } from "./tva";
 import type {
   ConfigurationDossier,
@@ -716,6 +717,19 @@ export function saisirBulletinChauffeur(
 
 /** AXE-730 : le dirigeant confirme sa configuration, en choisissant la forme
  * quand Sirene ne la tranche pas. */
+/** AXE-849 : ce que disent les registres officiels, et trancher un écart. */
+export function lireRegistreOfficiel(dossierId: string): Promise<RegistreVue> {
+  return fetchAvecAuthChauffeur<RegistreVue>(`/dossiers/${dossierId}/registre`);
+}
+
+export function trancherEcartRegistre(
+  dossierId: string,
+  champ: string,
+  retenue: "declaree" | "officielle",
+): Promise<ConfigurationDossier> {
+  return envoyerChauffeur(`/dossiers/${dossierId}/registre/ecarts/${champ}`, { retenue });
+}
+
 export function confirmerConfigurationChauffeur(
   dossierId: string,
   formeJuridique: string,

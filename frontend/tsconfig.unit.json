@@ -58,6 +58,8 @@
     "lib/identite-entreprise.ts",
     "lib/identite-entreprise.test.ts",
     "lib/juridique.ts",
-    "lib/juridique.test.ts"
+    "lib/juridique.test.ts",
+    "lib/registre.ts",
+    "lib/registre.test.ts"
   ]
 }
