@@ -3,7 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { lireCategorisation, obtenirSessionGestionnaire } from "@/lib/auth-gestionnaire";
+import { IntegrationEnvoi } from "@/components/IntegrationEnvoi";
+import {
+  lireCategorisation,
+  lireIntegrationsEnvoi,
+  obtenirSessionGestionnaire,
+} from "@/lib/auth-gestionnaire";
+import { useDroitGestionnaire } from "@/lib/use-droit";
 import type { EtatCategorisation } from "@/lib/types";
 
 const PREVUES = [
@@ -19,14 +25,6 @@ const PREVUES = [
     nom: "Volubile",
     detail: "Passerait les appels des relances configurées dans Rappels.",
   },
-  {
-    nom: "SMS",
-    detail: "Enverrait les relances par SMS.",
-  },
-  {
-    nom: "E-mail",
-    detail: "Enverrait les relances par e-mail, à part de l'invitation de compte.",
-  },
 ];
 
 /** Digifactory est le canal bancaire du portefeuille : les comptes des
@@ -35,6 +33,8 @@ const PREVUES = [
 export default function IntegrationsPage() {
   const router = useRouter();
   const [categorisation, setCategorisation] = useState<EtatCategorisation | null>(null);
+  const [envoi, setEnvoi] = useState<Record<string, string>>({});
+  const droit = useDroitGestionnaire();
 
   useEffect(() => {
     if (obtenirSessionGestionnaire() === null) {
@@ -42,6 +42,13 @@ export default function IntegrationsPage() {
       return;
     }
     let actif = true;
+    lireIntegrationsEnvoi()
+      .then((canaux) => {
+        if (actif) setEnvoi(canaux);
+      })
+      .catch(() => {
+        // Non lu : les deux canaux s'affichent « À brancher ».
+      });
     lireCategorisation()
       .then((etat) => {
         if (actif) setCategorisation(etat);
@@ -90,6 +97,15 @@ export default function IntegrationsPage() {
             </span>
           </li>
         )}
+        {(["mail", "sms"] as const).map((canal) => (
+          <IntegrationEnvoi
+            key={canal}
+            canal={canal}
+            branche={envoi[canal]}
+            admin={droit.admin}
+            onBranche={setEnvoi}
+          />
+        ))}
         {PREVUES.map((integration) => (
           <li
             key={integration.nom}

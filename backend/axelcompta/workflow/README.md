@@ -151,3 +151,14 @@ une opération supprimée est déjà contre-passée ; une ligne illisible ne
 s'accepte pas. `resolutions_quarantaine*.py` : une résolution par entrée,
 append-only (migration `b5f2d8a6c413`). Écran : page Anomalies du dossier.
 
+
+## Rappels envoyés par l'e-mail et le SMS du gestionnaire (AXE-808)
+
+`rappels_envoi.py` : l'intégration du gestionnaire (SMTP, ou fournisseur de
+SMS par HTTP), ses paramètres chiffrés (`core/chiffrement.py`, clé
+`AXELCOMPTA_CLE_INTEGRATIONS` hors base), un envoi par rappel et par canal
+branché, trois essais puis « échec » avec la raison, désinscription par lien
+signé. Le contenu ne porte que le nombre d'opérations et un lien.
+`rappels_auto.py` : les règles `avant_cloture` et `a_traiter` partent seules,
+une fois par raison. Câblage : `axelcompta/rappels.py` (tâches planifiées,
+et worker sur le job `rappels`).

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { Aide, POURQUOI_RIEN_N_EST_ENVOYE } from "@/components/Aide";
+import { Aide, pourquoiEnvoi } from "@/components/Aide";
+import { useCanauxEnvoi } from "@/lib/use-canaux-envoi";
 import {
   type ConnexionDossier,
   type ConnexionsBancaires,
@@ -50,6 +51,7 @@ const MODES: { mode: ModeRelance; titre: string; detail: string }[] = [
 export default function ConnexionsBancairesPage() {
   const router = useRouter();
   const droit = useDroitGestionnaire();
+  const canauxEnvoi = useCanauxEnvoi();
   const [donnees, setDonnees] = useState<ConnexionsBancaires | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
@@ -84,9 +86,8 @@ export default function ConnexionsBancairesPage() {
     <div className="mx-auto max-w-5xl">
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Connexions bancaires</h1>
       <p className="mt-2 text-sm text-subtle">
-        Sans connexion valide, les opérations d&apos;une entreprise n&apos;arrivent plus. L&apos;envoi
-        d&apos;une relance par SMS ou e-mail n&apos;est pas branché.
-        <Aide texte={POURQUOI_RIEN_N_EST_ENVOYE} />
+        Sans connexion valide, les opérations d&apos;une entreprise n&apos;arrivent plus.
+        <Aide texte={pourquoiEnvoi(canauxEnvoi)} />
       </p>
       {erreur && <p className="mt-4 text-sm text-danger">{erreur}</p>}
       {donnees && (
@@ -102,7 +103,7 @@ export default function ConnexionsBancairesPage() {
           <section className="mt-10">
             <h2 className="text-sm font-medium text-ink">
               Relances des entreprises
-              <Aide texte={POURQUOI_RIEN_N_EST_ENVOYE} />
+              <Aide texte={pourquoiEnvoi(canauxEnvoi)} />
             </h2>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {MODES.map(({ mode, titre, detail }) => {
