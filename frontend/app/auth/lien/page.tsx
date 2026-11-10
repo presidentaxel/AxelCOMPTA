@@ -14,11 +14,18 @@ import {
 } from "@/lib/auth-chauffeur";
 import { connexionGestionnaire } from "@/lib/auth-gestionnaire";
 import {
+  cheminApresChauffeur,
   lireFragmentAuth,
   ouvrirSessionDepuisJetons,
   pageInvitation,
   type FragmentAuth,
 } from "@/lib/auth-lien";
+import { coteDemandee, coteOuverte, type Cote } from "@/lib/cote-connexion";
+import {
+  MESSAGE_ESPACE_CHAUFFEUR,
+  MESSAGE_ESPACE_GESTIONNAIRE,
+  MESSAGE_SANS_LIEN,
+} from "@/lib/messages-auth";
 import {
   INDICATION_MOT_DE_PASSE,
   LONGUEUR_MIN_MOT_DE_PASSE,
@@ -41,12 +48,15 @@ export default function LienAuthPage() {
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [premiereConnexion, setPremiereConnexion] = useState(false);
+  const [cote, setCote] = useState<Cote | null>(null);
 
   useEffect(() => {
     // Le fragment `#access_token` n'existe que dans le navigateur.
     /* eslint-disable react-hooks/set-state-in-effect */
     try {
       const recherche = new URLSearchParams(window.location.search);
+      const demandee = coteDemandee(recherche.toString());
+      setCote(demandee);
       const messageRecherche = messageParametresAuth(recherche);
       if (messageRecherche) throw new ErreurAuthChauffeur(messageRecherche);
       const code = recherche.get("code");
@@ -69,7 +79,7 @@ export default function LienAuthPage() {
         setEtape("mot_de_passe");
         return;
       }
-      const chemin = ouvrirSessionDepuisJetons(recu.accessToken, recu.refreshToken);
+      const chemin = ouvrirSessionDepuisJetons(recu.accessToken, recu.refreshToken, demandee);
       if (recu.type === "email_change") {
         setDestination(chemin);
         setEtape("email_confirme");
@@ -92,13 +102,21 @@ export default function LienAuthPage() {
       await definirMotDePasseAvecJeton(fragment.accessToken, motDePasse);
       const charge = decoderChargeUtileJwt(fragment.accessToken);
       const email = typeof charge.email === "string" ? charge.email : "";
-      const meta = (charge.app_metadata ?? {}) as { dossier_id?: string };
-      if (meta.dossier_id) {
+      const decision = coteOuverte(charge.app_metadata, cote);
+      if (decision === "chauffeur") {
         const session = await connexionParMotDePasse(email, motDePasse);
-        router.replace(`/chauffeur/${session.dossierId}`);
-      } else {
+        router.replace(cheminApresChauffeur(session.accessToken, session));
+      } else if (decision === "gestionnaire") {
         await connexionGestionnaire(email, motDePasse);
         router.replace("/");
+      } else {
+        throw new ErreurAuthChauffeur(
+          decision === "interdit"
+            ? cote === "gestionnaire"
+              ? MESSAGE_ESPACE_CHAUFFEUR
+              : MESSAGE_ESPACE_GESTIONNAIRE
+            : MESSAGE_SANS_LIEN,
+        );
       }
     } catch (exception) {
       setErreur(traduireExceptionAuth(exception));

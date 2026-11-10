@@ -5,6 +5,8 @@ import { useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { demanderReinitialisation, envoyerLienMagique } from "@/lib/auth-chauffeur";
+import type { Cote } from "@/lib/cote-connexion";
+import { prendreMessageConnexion } from "@/lib/message-connexion";
 import { traduireExceptionAuth } from "@/lib/messages-auth";
 import { sessionAExpire } from "@/lib/session";
 
@@ -15,10 +17,12 @@ type Mode = "mot_de_passe" | "lien" | "oubli";
 export function FormulaireConnexion({
   titre,
   sousTitre,
+  cote,
   onConnecte,
 }: {
   titre: string;
   sousTitre: string;
+  cote: Cote;
   onConnecte: (email: string, motDePasse: string) => Promise<void>;
 }) {
   const idEmail = useId();
@@ -38,7 +42,10 @@ export function FormulaireConnexion({
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setMode(demande);
     }
-    if (sessionAExpire(window.location.search)) {
+    const refus = prendreMessageConnexion();
+    if (refus) {
+      setInfo(refus);
+    } else if (sessionAExpire(window.location.search)) {
       setInfo("Votre session a expiré. Reconnectez-vous pour reprendre où vous en étiez.");
     }
   }, []);
@@ -51,10 +58,10 @@ export function FormulaireConnexion({
     try {
       const adresse = email.trim();
       if (mode === "lien") {
-        await envoyerLienMagique(adresse);
+        await envoyerLienMagique(adresse, cote);
         setInfo("Si un compte existe pour cette adresse, le lien de connexion est envoyé.");
       } else if (mode === "oubli") {
-        await demanderReinitialisation(adresse);
+        await demanderReinitialisation(adresse, cote);
         setInfo("Si un compte existe pour cette adresse, le lien de réinitialisation est envoyé.");
       } else {
         await onConnecte(adresse, motDePasse);

@@ -21,6 +21,7 @@ export default function ConnexionGestionnairePage() {
       <FormulaireConnexion
         titre="Connexion gestionnaire"
         sousTitre="Accédez à l'état de votre portefeuille."
+        cote="gestionnaire"
         onConnecte={async (email, motDePasse) => {
           await connexionGestionnaire(email, motDePasse);
           await tracerConnexionGestionnaire();

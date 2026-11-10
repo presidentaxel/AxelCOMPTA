@@ -24,12 +24,15 @@ from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
 DEMAIN = (datetime.now(UTC).date() + timedelta(days=1)).isoformat()
 
 
-def _jeton_test(expire_le: str = DEMAIN, role: str = "lecteur_tous_dossiers") -> str:
+def _jeton_test(
+    expire_le: str = DEMAIN, role: str = "lecteur_tous_dossiers", aal: str = "aal2"
+) -> str:
     charge_utile = {
         "sub": "louis-test",
         "email": "test@axelcompta.fr",
         "aud": "authenticated",
         "exp": datetime.now(UTC) + timedelta(hours=1),
+        "aal": aal,
         "app_metadata": {"role_test": role, "tenant_id": "TENANT_DEMO", "expire_le": expire_le},
     }
     return jwt.encode(charge_utile, _CLE_PRIVEE_TEST, algorithm="ES256")
@@ -149,3 +152,21 @@ def test_un_role_de_test_inconnu_est_refuse() -> None:
     client = _client()
     reponse = client.get("/lecteur-test/dossiers", headers=_en_tete_test(role="admin_tous"))
     assert reponse.status_code == 401
+
+
+def test_le_compte_de_test_sans_code_ne_lit_aucun_dossier() -> None:
+    client = _client()
+    reponse = client.get("/lecteur-test/dossiers", headers=_en_tete_test(aal="aal1"))
+    assert reponse.status_code == 403
+    assert reponse.json()["detail"] == "Activez la double authentification pour continuer."
+
+
+def test_le_cote_gestionnaire_ouvre_le_portefeuille_une_fois_le_code_saisi() -> None:
+    client = _client()
+    sans_code = {**_en_tete_test(aal="aal1"), "X-Cote": "gestionnaire"}
+    avec_code = {**_en_tete_test(), "X-Cote": "gestionnaire"}
+
+    assert client.get("/dossiers", headers=sans_code).status_code == 403
+    assert client.get("/portefeuille/moi", headers=sans_code).status_code == 200
+    assert client.get("/dossiers", headers=avec_code).status_code == 200
+    assert client.get("/dossiers", headers=_en_tete_test()).status_code == 403

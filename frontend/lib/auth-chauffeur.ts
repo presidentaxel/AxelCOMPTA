@@ -19,12 +19,14 @@ import {
   absenceDeCompte,
   messageMotDePasseCourt,
   MESSAGE_LIEN_EXPIRE,
+  MESSAGE_ESPACE_GESTIONNAIRE,
   MESSAGE_SANS_DOSSIER,
   MESSAGE_SESSION,
   traduireCorpsAuth,
   traduireExceptionAuth,
 } from "./messages-auth";
 import { avecDossierDeTest, liensDuJeton } from "./compte-de-test";
+import { coteOuverte } from "./cote-connexion";
 import { appelAuthentifie, erreurApi, lireCorps } from "./session";
 import type {
   ConfigurationDossier,
@@ -90,7 +92,10 @@ function liensDepuisJeton(accessToken: string): { dossierId: string; lecteurTest
   // par l'utilisateur) : voir demo_auth.py.
   const liens = liensDuJeton(charge.app_metadata);
   if (!liens) {
-    throw new ErreurAuthChauffeur(MESSAGE_SANS_DOSSIER);
+    const cote = coteOuverte(charge.app_metadata, "chauffeur");
+    throw new ErreurAuthChauffeur(
+      cote === "interdit" ? MESSAGE_ESPACE_GESTIONNAIRE : MESSAGE_SANS_DOSSIER,
+    );
   }
   return liens;
 }
@@ -112,6 +117,13 @@ export function enregistrerSessionChauffeur(session: SessionChauffeur): void {
     // session reste utilisable pour la requête en cours, juste pas
     // persistée. Pas une erreur fatale (doc artefacts : dégrader, pas casser).
   }
+}
+
+/** AXE-812 : les jetons `aal2` obtenus après le code, côté chauffeur. */
+export function remplacerJetonsChauffeur(accessToken: string, refreshToken: string): void {
+  const session = obtenirSession();
+  if (!session) return;
+  enregistrerSessionChauffeur({ ...session, accessToken, refreshToken });
 }
 
 export function deconnecter(): void {
@@ -148,14 +160,20 @@ async function ignorerAbsenceDeCompte(reponse: Response): Promise<void> {
 
 /** Page qui reçoit les jetons Supabase (fragment `#access_token`), pour le
  * lien magique, la réinitialisation et la confirmation de changement
- * d'adresse. L'invitation chauffeur garde sa page dédiée. */
-export function urlRetourAuth(): string {
-  return `${window.location.origin}/auth/lien`;
+ * d'adresse. `cote` est le formulaire qui a demandé le lien : le retour
+ * n'ouvre que ce côté. L'invitation chauffeur garde sa page dédiée. */
+export function urlRetourAuth(cote?: "chauffeur" | "gestionnaire"): string {
+  const url = new URL(`${window.location.origin}/auth/lien`);
+  if (cote) url.searchParams.set("cote", cote);
+  return url.toString();
 }
 
-export async function envoyerLienMagique(email: string): Promise<void> {
+export async function envoyerLienMagique(
+  email: string,
+  cote: "chauffeur" | "gestionnaire",
+): Promise<void> {
   const reponse = await appelSupabase(
-    `${SUPABASE_URL}/auth/v1/otp?redirect_to=${encodeURIComponent(urlRetourAuth())}`,
+    `${SUPABASE_URL}/auth/v1/otp?redirect_to=${encodeURIComponent(urlRetourAuth(cote))}`,
     {
       method: "POST",
       headers: enTetesSupabase(),
@@ -165,9 +183,12 @@ export async function envoyerLienMagique(email: string): Promise<void> {
   await ignorerAbsenceDeCompte(reponse);
 }
 
-export async function demanderReinitialisation(email: string): Promise<void> {
+export async function demanderReinitialisation(
+  email: string,
+  cote: "chauffeur" | "gestionnaire",
+): Promise<void> {
   const reponse = await appelSupabase(
-    `${SUPABASE_URL}/auth/v1/recover?redirect_to=${encodeURIComponent(urlRetourAuth())}`,
+    `${SUPABASE_URL}/auth/v1/recover?redirect_to=${encodeURIComponent(urlRetourAuth(cote))}`,
     {
       method: "POST",
       headers: enTetesSupabase(),

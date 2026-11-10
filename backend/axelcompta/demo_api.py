@@ -1354,11 +1354,19 @@ def get_identite(
     dossiers: DossiersDep,
     x_dossier: Annotated[str | None, Header(alias="X-Dossier")] = None,
 ) -> IdentiteAuthentifiee | None:
-    """L'identité de l'appelant. Pour le compte de test (AXE-822) seulement,
-    le dossier vient de l'en-tête `X-Dossier`, vérifié ici ; pour tout autre
-    compte, cet en-tête n'est jamais lu."""
+    """L'identité de l'appelant. Le compte de test (AXE-822) lit un dossier
+    via `X-Dossier`, ou ouvre le portefeuille si l'appel vient du formulaire
+    gestionnaire (`X-Cote`). Tout autre compte ignore ces en-têtes."""
     if identite is None or identite.lecteur_test_tenant is None:
         return identite
+    if request.headers.get("x-cote") == "gestionnaire":
+        return dataclasses.replace(
+            identite,
+            tenant_id=identite.lecteur_test_tenant,
+            lecteur_test_tenant=None,
+        )
+    if identite.aal != "aal2":
+        raise HTTPException(status_code=403, detail=MESSAGE_MFA_REQUISE)
     return _dossier_du_lecteur_test(identite, request.method, x_dossier, dossiers)
 
 

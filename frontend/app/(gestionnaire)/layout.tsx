@@ -1,3 +1,4 @@
+import { GardeEspaceGestionnaire } from "@/components/GardeEspaceGestionnaire";
 import { GardeMfa } from "@/components/GardeMfa";
 import { Sidebar } from "@/components/Sidebar";
 
@@ -10,6 +11,7 @@ import { Sidebar } from "@/components/Sidebar";
 export default function GestionnaireLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden">
+      <GardeEspaceGestionnaire />
       <GardeMfa />
       <Sidebar />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-canvas-app">

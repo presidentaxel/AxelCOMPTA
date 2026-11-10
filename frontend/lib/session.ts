@@ -11,6 +11,7 @@
  */
 
 import { ApiError } from "./api";
+import { messageConnexionEnAttente } from "./message-connexion";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -114,7 +115,12 @@ export async function appelAuthentifie<S extends Jetons>(
   init: RequestInit = {},
 ): Promise<Response> {
   let session = espace.lire();
-  if (!session) renvoyerVersConnexion(espace);
+  if (!session) {
+    // La garde a déjà envoyé vers la connexion : un second renvoi écraserait
+    // le message qui dit pourquoi.
+    if (messageConnexionEnAttente()) throw new SessionExpiree(messageConnexionEnAttente() ?? "");
+    renvoyerVersConnexion(espace);
+  }
   if (expireBientot(session.accessToken) && (await renouveler(espace))) {
     session = espace.lire() ?? session;
   }

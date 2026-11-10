@@ -75,8 +75,9 @@ class IdentiteAuthentifiee:
     # code TOTP vérifié dans cette session, « aal1 » avec le mot de passe seul.
     aal: str = "aal1"
     # AXE-822 : portefeuille que le compte de test peut lire, dossier par
-    # dossier. Jamais un `tenant_id` : il n'ouvre aucune route gestionnaire.
-    # Son `dossier_id` vient de l'en-tête `X-Dossier`, vérifié par l'API.
+    # dossier. Ce n'est pas un `tenant_id` : sans l'en-tête `X-Cote:
+    # gestionnaire`, aucune route du portefeuille ne s'ouvre. Le dossier lu
+    # vient de `X-Dossier`, vérifié par l'API.
     lecteur_test_tenant: TenantId | None = None
 
 
@@ -145,8 +146,8 @@ def _lecteur_test(
     charge_utile: dict[str, Any], app_metadata: dict[str, Any], aujourd_hui: date | None
 ) -> IdentiteAuthentifiee:
     """AXE-822. Rôle, portefeuille et date de fin obligatoires ; passé la
-    date, le compte ne voit plus rien. Aucun lien `dossier_id` ni `tenant_id`
-    n'est repris du jeton : le compte n'est ni chauffeur ni gestionnaire."""
+    date, le compte ne voit plus rien. Le jeton ne porte pas `tenant_id` :
+    le côté gestionnaire ne s'ouvre que si l'appel le demande (`X-Cote`)."""
     if app_metadata.get("role_test") != ROLE_LECTEUR_TEST:
         raise JetonInvalideError("rôle de test inconnu")
     tenant_id = app_metadata.get("tenant_id")
@@ -161,6 +162,7 @@ def _lecteur_test(
     return IdentiteAuthentifiee(
         user_id=UserId(charge_utile["sub"]),
         email=charge_utile.get("email", ""),
+        aal=str(charge_utile.get("aal", "aal1")),
         lecteur_test_tenant=TenantId(tenant_id),
     )
 

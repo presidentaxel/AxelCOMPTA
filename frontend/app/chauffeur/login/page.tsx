@@ -6,10 +6,13 @@ import { useEffect, useState } from "react";
 import { FormulaireConnexion } from "@/components/FormulaireConnexion";
 import {
   connexionParMotDePasse,
+  decoderChargeUtileJwt,
   obtenirSession,
   tracerConnexionChauffeur,
 } from "@/lib/auth-chauffeur";
-import { cheminDuDossier } from "@/lib/compte-de-test";
+import { cheminApresChauffeur } from "@/lib/auth-lien";
+import { deconnecterGestionnaire } from "@/lib/auth-gestionnaire";
+import { coteOuverte } from "@/lib/cote-connexion";
 import { cheminDeRetour, sessionAExpire } from "@/lib/session";
 
 /** doc 19 §5.2 : e-mail + mot de passe, ou lien magique. Pas de
@@ -22,7 +25,7 @@ export default function ConnexionChauffeurPage() {
     const recherche = window.location.search;
     const session = obtenirSession();
     if (session && !sessionAExpire(recherche)) {
-      router.replace(cheminDeRetour(recherche, cheminDuDossier(session)));
+      router.replace(cheminDeRetour(recherche, cheminApresChauffeur(session.accessToken, session)));
       return;
     }
     // La session n'existe que dans le navigateur : on attend pour ne pas
@@ -37,13 +40,20 @@ export default function ConnexionChauffeurPage() {
     <FormulaireConnexion
       titre="Connexion"
       sousTitre="Retrouvez vos transactions et vos justificatifs."
+      cote="chauffeur"
       onConnecte={async (email, motDePasse) => {
         const session = await connexionParMotDePasse(email, motDePasse);
+        const charge = decoderChargeUtileJwt(session.accessToken);
+        if (
+          session.lecteurTest ||
+          coteOuverte(charge.app_metadata, "gestionnaire") !== "gestionnaire"
+        ) {
+          deconnecterGestionnaire();
+        }
         void tracerConnexionChauffeur();
-        // Un retour vers le dossier d'un autre renvoie de toute façon vers le
-        // sien (`use-dossier.ts`). `replace` : le bouton retour ne ramène pas
-        // au formulaire.
-        router.replace(cheminDeRetour(window.location.search, cheminDuDossier(session)));
+        router.replace(
+          cheminDeRetour(window.location.search, cheminApresChauffeur(session.accessToken, session)),
+        );
       }}
     />
   );
