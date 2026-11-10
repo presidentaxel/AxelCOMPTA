@@ -29,6 +29,7 @@ import { avecDossierDeTest, liensDuJeton } from "./compte-de-test";
 import { coteOuverte } from "./cote-connexion";
 import { appelAuthentifie, erreurApi, lireCorps } from "./session";
 import type { Identite, IdentiteDossierVue, PreRemplissage } from "./identite-entreprise";
+import type { AnalyseFec, OuvertureVue } from "./ouverture";
 import type { RegistreVue } from "./registre";
 import type { TvaVue } from "./tva";
 import type {
@@ -715,8 +716,6 @@ export function saisirBulletinChauffeur(
   return envoyerChauffeur(`/dossiers/${dossierId}/bulletins`, bulletin);
 }
 
-/** AXE-730 : le dirigeant confirme sa configuration, en choisissant la forme
- * quand Sirene ne la tranche pas. */
 /** AXE-849 : ce que disent les registres officiels, et trancher un écart. */
 export function lireRegistreOfficiel(dossierId: string): Promise<RegistreVue> {
   return fetchAvecAuthChauffeur<RegistreVue>(`/dossiers/${dossierId}/registre`);
@@ -730,6 +729,35 @@ export function trancherEcartRegistre(
   return envoyerChauffeur(`/dossiers/${dossierId}/registre/ecarts/${champ}`, { retenue });
 }
 
+/** AXE-804 : reprise du bilan d'ouverture depuis le FEC de l'outil précédent. */
+export function lireOuvertureChauffeur(dossierId: string): Promise<OuvertureVue> {
+  return fetchAvecAuthChauffeur<OuvertureVue>(`/dossiers/${dossierId}/ouverture`);
+}
+
+async function envoyerFecChauffeur<T>(chemin: string, champs: Record<string, string>, fichier: File): Promise<T> {
+  const corps = new FormData();
+  corps.append("fichier", fichier);
+  for (const [nom, valeur] of Object.entries(champs)) corps.append(nom, valeur);
+  const reponse = await appelChauffeur(chemin, { method: "POST", body: corps });
+  const donnees = await lireCorps(reponse);
+  if (!reponse.ok) throw erreurApi(donnees, reponse);
+  return donnees as T;
+}
+
+export function analyserFecChauffeur(dossierId: string, fichier: File, correspondance: string): Promise<AnalyseFec> {
+  return envoyerFecChauffeur(`/dossiers/${dossierId}/ouverture/fec/analyse`, { correspondance }, fichier);
+}
+
+export function reprendreFecChauffeur(
+  dossierId: string,
+  fichier: File,
+  champs: { correspondance: string; attestation: string; deficits_euros: string },
+): Promise<OuvertureVue> {
+  return envoyerFecChauffeur(`/dossiers/${dossierId}/ouverture/fec`, champs, fichier);
+}
+
+/** AXE-730 : le dirigeant confirme sa configuration, en choisissant la forme
+ * quand Sirene ne la tranche pas. */
 export function confirmerConfigurationChauffeur(
   dossierId: string,
   formeJuridique: string,

@@ -43,6 +43,7 @@ import type {
   Synchronisation,
 } from "./types";
 
+import type { AnalyseFec, OuvertureVue } from "./ouverture";
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
 export type SessionGestionnaire = {
@@ -1033,3 +1034,47 @@ export async function telechargerModeleImport(): Promise<Blob> {
   if (!reponse.ok) throw new ApiError("Modèle indisponible.", reponse.status);
   return reponse.blob();
 }
+
+/** AXE-804 : l'expert-comptable habilité reprend le bilan d'ouverture d'un
+ * dossier de sa lettre de mission, avec un motif. */
+export async function lireOuvertureExpert(dossierId: string): Promise<OuvertureVue> {
+  return lireJson(
+    await requeteGestionnaire(`/expert/dossiers/${dossierId}/ouverture`),
+    "Le bilan d'ouverture n'a pas pu être lu.",
+  );
+}
+
+function corpsFec(fichier: File, champs: Record<string, string>): FormData {
+  const corps = corpsFichier(fichier);
+  for (const [nom, valeur] of Object.entries(champs)) corps.append(nom, valeur);
+  return corps;
+}
+
+export async function analyserFecExpert(
+  dossierId: string,
+  fichier: File,
+  correspondance: string,
+): Promise<AnalyseFec> {
+  return lireJson(
+    await requeteGestionnaire(`/expert/dossiers/${dossierId}/ouverture/fec/analyse`, {
+      method: "POST",
+      body: corpsFec(fichier, { correspondance }),
+    }),
+    "Le FEC n'a pas pu être analysé.",
+  );
+}
+
+export async function reprendreFecExpert(
+  dossierId: string,
+  fichier: File,
+  champs: { correspondance: string; attestation: string; deficits_euros: string; motif: string },
+): Promise<OuvertureVue> {
+  return lireJson(
+    await requeteGestionnaire(`/expert/dossiers/${dossierId}/ouverture/fec`, {
+      method: "POST",
+      body: corpsFec(fichier, champs),
+    }),
+    "Le bilan d'ouverture n'a pas pu être repris.",
+  );
+}
+

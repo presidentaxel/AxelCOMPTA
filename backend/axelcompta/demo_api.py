@@ -43,7 +43,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol, cast
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, insert, select, update
@@ -95,6 +95,16 @@ from axelcompta.closing.bilan_simplifie import ClotureSimplifieeService
 from axelcompta.closing.cloture_fiscale import chiffre_affaires_ht
 from axelcompta.closing.dividendes import RetenuesDividendes, retenues
 from axelcompta.closing.models import LiassePivot, ParametresCloture, ProvisionCloture
+from axelcompta.closing.ouverture import id_a_nouveaux
+from axelcompta.closing.ouverture_depot import (
+    ROLE_DIRIGEANT,
+    OuvertureDejaFaite,
+    OuvertureImportee,
+    OuverturesPostgres,
+    OuverturesRepository,
+)
+from axelcompta.closing.ouverture_fec import Analyse, FecRefuse
+from axelcompta.closing.ouverture_fec import analyser as analyser_fec
 from axelcompta.closing.paie import Bulletin
 from axelcompta.closing.provisions import valider_provision
 from axelcompta.closing.tva_periodique import (
@@ -757,6 +767,7 @@ def _parametres(
         soumis_is=_colonne(dossier).soumis_is,
         associes=_colonne(dossier).associes,
         provisions=provisions,
+        deficits_anterieurs=dossier.deficits_anterieurs_euros,
     )
 
 
@@ -4106,6 +4117,61 @@ def _siren_connu(dossier: Dossier) -> str | None:
     return None
 
 
+class LigneOuvertureVue(BaseModel):
+    compte: str
+    debit_cts: int
+    credit_cts: int
+
+
+class AnalyseFecVue(BaseModel):
+    """Ce que voit la personne qui reprend le bilan d'ouverture, avant de
+    valider (AXE-804). Rien n'est écrit."""
+
+    possible: bool
+    siren: str
+    cloture: str
+    ouverture: str
+    nb_lignes: int
+    nb_ecritures: int
+    total_debit_cts: int
+    resultat_cts: int
+    solde_banque_cts: int
+    capital_cts: int
+    comptes_inconnus: list[str]
+    refus: list[str]
+    alertes: list[str]
+    attestation: str  # à renvoyer telle quelle pour valider
+    a_nouveaux: list[LigneOuvertureVue]
+
+
+class OuvertureVue(BaseModel):
+    faite: bool
+    nom_fichier: str | None = None
+    cloture: str | None = None
+    role: str | None = None
+    auteur: str | None = None
+    le: str | None = None
+    deficits_euros: int = 0
+
+
+def get_ouvertures() -> OuverturesRepository:
+    """Dépendance FastAPI : bilans d'ouverture repris d'un FEC (AXE-804)."""
+    return OuverturesPostgres(_engine())
+
+
+OuverturesDep = Annotated[OuverturesRepository, Depends(get_ouvertures)]
+
+
+def _siren_du_dossier(dossier: Dossier) -> str | None:
+    if dossier.identite is not None:
+        return dossier.identite.siren
+    if dossier.siren:
+        return dossier.siren
+    if dossier.id.startswith("SIREN_"):
+        return dossier.id.removeprefix("SIREN_")
+    return None
+
+
 def _vue_identite(dossier: Dossier) -> IdentiteDossierVue:
     actuelle = identite_vers_json(dossier.identite)
     return IdentiteDossierVue(
@@ -4247,6 +4313,73 @@ def _vue_registre(dossier: Dossier, registres: RegistresRepository) -> RegistreD
     )
 
 
+def _correspondance(brute: str) -> dict[str, str]:
+    try:
+        lue = json.loads(brute or "{}")
+    except json.JSONDecodeError as erreur:
+        raise FecRefuse("Correspondance des comptes illisible.") from erreur
+    if not isinstance(lue, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in lue.items()
+    ):
+        raise FecRefuse("Correspondance des comptes illisible.")
+    return {k.strip(): v.strip() for k, v in lue.items() if v.strip()}
+
+
+def _analyser_fec(
+    dossier: Dossier,
+    contenu: bytes,
+    nom_fichier: str,
+    correspondance: str,
+    ouvertures: OuverturesRepository,
+    ledger: LedgerService,
+) -> Analyse:
+    analyse = analyser_fec(
+        contenu,
+        nom_fichier,
+        dossier.id,
+        _siren_du_dossier(dossier),
+        dossier.exercice_debut,
+        _correspondance(correspondance),
+        date.today(),
+    )
+    deja = ouvertures.obtenir(dossier.id) is not None or any(
+        e.id == id_a_nouveaux(dossier.id, dossier.exercice_debut.year)
+        for e in ledger.grand_livre(dossier.id)
+    )
+    if deja:
+        refus = (*analyse.refus, str(OuvertureDejaFaite()))
+        return dataclasses.replace(analyse, refus=refus, a_nouveaux=None)
+    return analyse
+
+
+def _vue_analyse(analyse: Analyse) -> AnalyseFecVue:
+    lignes = analyse.a_nouveaux.lignes if analyse.a_nouveaux else ()
+    return AnalyseFecVue(
+        possible=analyse.a_nouveaux is not None,
+        siren=analyse.siren,
+        cloture=analyse.cloture.isoformat(),
+        ouverture=analyse.ouverture.isoformat(),
+        nb_lignes=analyse.nb_lignes,
+        nb_ecritures=analyse.nb_ecritures,
+        total_debit_cts=analyse.total_debit,
+        resultat_cts=analyse.resultat,
+        solde_banque_cts=analyse.solde_banque,
+        capital_cts=analyse.capital,
+        comptes_inconnus=list(analyse.comptes_inconnus),
+        refus=list(analyse.refus),
+        alertes=list(analyse.alertes),
+        attestation=analyse.attestation,
+        a_nouveaux=[
+            LigneOuvertureVue(
+                compte=ligne.compte,
+                debit_cts=ligne.montant.centimes if ligne.sens is Sens.DEBIT else 0,
+                credit_cts=ligne.montant.centimes if ligne.sens is Sens.CREDIT else 0,
+            )
+            for ligne in lignes
+        ],
+    )
+
+
 def _enregistrer_routes_registre(app: FastAPI) -> None:
     """Le dirigeant voit ce que disent les registres et tranche chaque écart
     (AXE-849). Tracé au journal d'audit."""
@@ -4279,6 +4412,168 @@ def _enregistrer_routes_registre(app: FastAPI) -> None:
         )
         registres.resoudre(tranche, reste, forme)
         return _vue_configuration(apres)
+
+
+def _vue_ouverture(ouverture: OuvertureImportee | None) -> OuvertureVue:
+    if ouverture is None:
+        return OuvertureVue(faite=False)
+    return OuvertureVue(
+        faite=True,
+        nom_fichier=ouverture.nom_fichier,
+        cloture=ouverture.cloture.isoformat(),
+        role=ouverture.role,
+        auteur=ouverture.auteur_nom,
+        le=ouverture.le.isoformat(),
+        deficits_euros=ouverture.deficits_euros,
+    )
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _Importeur:
+    role: str
+    par: UserId
+    nom: str | None
+    motif: str | None
+
+
+def _importer_fec(
+    dossier: Dossier,
+    contenu: bytes,
+    nom_fichier: str,
+    formulaire: tuple[str, str, int],
+    importeur: _Importeur,
+    depots: tuple[OuverturesRepository, LedgerService],
+) -> OuvertureVue:
+    """`formulaire` : (correspondance, attestation, déficits en euros). Tout
+    refus de l'analyse empêche l'import ; l'attestation doit être celle
+    présentée, mot pour mot."""
+    correspondance, attestation, deficits = formulaire
+    ouvertures, ledger = depots
+    analyse = _analyser_fec(dossier, contenu, nom_fichier, correspondance, ouvertures, ledger)
+    if analyse.a_nouveaux is None:
+        raise FecRefuse(" ".join(analyse.refus) or "Rien à reprendre.")
+    if attestation.strip() != analyse.attestation:
+        raise FecRefuse("Cochez l'attestation présentée avant de valider.")
+    if deficits < 0:
+        raise FecRefuse("Les déficits reportables ne peuvent pas être négatifs.")
+    ouverture = OuvertureImportee(
+        dossier_id=dossier.id,
+        nom_fichier=nom_fichier,
+        empreinte=analyse.empreinte,
+        cloture=analyse.cloture,
+        ouverture=analyse.ouverture,
+        role=importeur.role,
+        par=importeur.par,
+        auteur_nom=importeur.nom,
+        motif=importeur.motif,
+        attestation=analyse.attestation,
+        correspondance=_correspondance(correspondance),
+        deficits_euros=deficits,
+        ecriture_id=analyse.a_nouveaux.id,
+        le=datetime.now(UTC),
+    )
+    ouvertures.importer(ouverture, analyse.a_nouveaux)
+    return _vue_ouverture(ouverture)
+
+
+def _enregistrer_routes_ouverture(app: FastAPI) -> None:
+    """Bilan d'ouverture d'une société existante, repris du FEC de l'outil
+    précédent (AXE-804) : par le dirigeant, ou par l'expert-comptable
+    habilité, jamais par le logiciel seul."""
+
+    @app.get("/dossiers/{dossier_id}/ouverture", response_model=OuvertureVue)
+    def lire_ouverture(
+        dossier: DossierDep, ouvertures: OuverturesDep, identite: IdentiteDep
+    ) -> OuvertureVue:
+        _verifier_acces_dossier(dossier.id, identite)
+        return _vue_ouverture(ouvertures.obtenir(dossier.id))
+
+    @app.post("/dossiers/{dossier_id}/ouverture/fec/analyse", response_model=AnalyseFecVue)
+    async def analyser_ouverture(
+        fichier: UploadFile,
+        dossier: DossierDep,
+        ouvertures: OuverturesDep,
+        ledger: LedgerBaseDep,
+        identite: IdentiteDep,
+        correspondance: Annotated[str, Form()] = "{}",
+    ) -> AnalyseFecVue:
+        _verifier_acces_dossier(dossier.id, identite)
+        contenu = await fichier.read()
+        nom = fichier.filename or ""
+        return _vue_analyse(
+            _analyser_fec(dossier, contenu, nom, correspondance, ouvertures, ledger)
+        )
+
+    @app.post("/dossiers/{dossier_id}/ouverture/fec", response_model=OuvertureVue)
+    async def importer_ouverture(
+        fichier: UploadFile,
+        dossier: DossierDep,
+        ouvertures: OuverturesDep,
+        ledger: LedgerBaseDep,
+        identite: IdentiteDep,
+        attestation: Annotated[str, Form()],
+        correspondance: Annotated[str, Form()] = "{}",
+        deficits_euros: Annotated[int, Form()] = 0,
+    ) -> OuvertureVue:
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        importeur = _Importeur(ROLE_DIRIGEANT, identite.user_id, None, None)
+        return _importer_fec(
+            dossier,
+            await fichier.read(),
+            fichier.filename or "",
+            (correspondance, attestation, deficits_euros),
+            importeur,
+            (ouvertures, ledger),
+        )
+
+    _enregistrer_routes_ouverture_expert(app)
+
+
+def _enregistrer_routes_ouverture_expert(app: FastAPI) -> None:
+    @app.get("/expert/dossiers/{dossier_id}/ouverture", response_model=OuvertureVue)
+    def lire_ouverture_expert(dossier: DossierExpertDep, ouvertures: OuverturesDep) -> OuvertureVue:
+        return _vue_ouverture(ouvertures.obtenir(dossier.id))
+
+    @app.post("/expert/dossiers/{dossier_id}/ouverture/fec/analyse", response_model=AnalyseFecVue)
+    async def analyser_ouverture_expert(
+        fichier: UploadFile,
+        dossier: DossierExpertDep,
+        ouvertures: OuverturesDep,
+        ledger: LedgerBaseDep,
+        correspondance: Annotated[str, Form()] = "{}",
+    ) -> AnalyseFecVue:
+        contenu = await fichier.read()
+        nom = fichier.filename or ""
+        return _vue_analyse(
+            _analyser_fec(dossier, contenu, nom, correspondance, ouvertures, ledger)
+        )
+
+    @app.post("/expert/dossiers/{dossier_id}/ouverture/fec", response_model=OuvertureVue)
+    async def importer_ouverture_expert(
+        fichier: UploadFile,
+        dossier: DossierExpertDep,
+        ouvertures: OuverturesDep,
+        ledger: LedgerBaseDep,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        experts: ExpertsDep,
+        attestation: Annotated[str, Form()],
+        motif: Annotated[str, Form()],
+        correspondance: Annotated[str, Form()] = "{}",
+        deficits_euros: Annotated[int, Form()] = 0,
+    ) -> OuvertureVue:
+        _tenant, identite, actif = _expert(identite, role, experts)
+        importeur = _Importeur(
+            ROLE_EXPERT, identite.user_id, actif.habilitation.nom, motif_valide(motif)
+        )
+        return _importer_fec(
+            dossier,
+            await fichier.read(),
+            fichier.filename or "",
+            (correspondance, attestation, deficits_euros),
+            importeur,
+            (ouvertures, ledger),
+        )
 
 
 def _signataire(dossier: Dossier, identite: IdentiteAuthentifiee) -> str:
@@ -6567,6 +6862,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_configuration(app)
     _enregistrer_routes_identite(app)
     _enregistrer_routes_registre(app)
+    _enregistrer_routes_ouverture(app)
     _enregistrer_routes_affectation(app)
     _enregistrer_routes_dividendes_paie(app)
     _enregistrer_routes_paie(app)
