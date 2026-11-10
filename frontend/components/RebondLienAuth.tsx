@@ -20,15 +20,16 @@ export function RebondLienAuth() {
     if (!fragment.includes("access_token=")) {
       return;
     }
-    const cible = destinationDuFragment(fragment);
+    const cible = destinationDuFragment(fragment, window.location.search);
     window.location.replace(cible);
   }, [chemin]);
 
   return null;
 }
 
-function destinationDuFragment(fragment: string): string {
-  if (!estLienInvitation(fragment)) return `/auth/lien${fragment}`;
+function destinationDuFragment(fragment: string, recherche: string): string {
+  const cote = recherche.includes("cote=") ? recherche : "";
+  if (!estLienInvitation(fragment)) return `/auth/lien${cote}${fragment}`;
   try {
     const recu = lireFragmentAuth(fragment);
     if (pageInvitation(recu.accessToken) === "chauffeur") {
@@ -37,5 +38,5 @@ function destinationDuFragment(fragment: string): string {
   } catch {
     // Jeton illisible : la page du lien affiche l'erreur.
   }
-  return `/auth/lien${fragment}`;
+  return `/auth/lien${cote}${fragment}`;
 }

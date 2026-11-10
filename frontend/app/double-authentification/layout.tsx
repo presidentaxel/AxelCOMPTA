@@ -1,3 +1,4 @@
+import { GardeEspaceGestionnaire } from "@/components/GardeEspaceGestionnaire";
 import { Marque } from "@/components/Marque";
 
 /** Écran à part : ni barre latérale, ni pages du portefeuille. Il couvre
@@ -9,6 +10,7 @@ export default function LayoutDoubleAuthentification({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-canvas-app">
+      <GardeEspaceGestionnaire />
       <header className="border-b border-border bg-canvas">
         <div className="mx-auto flex h-14 max-w-md items-center px-4">
           <Marque />

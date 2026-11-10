@@ -13,7 +13,8 @@
  */
 
 import { ApiError } from "./api";
-import { MESSAGE_SANS_PORTEFEUILLE, MESSAGE_SESSION } from "./messages-auth";
+import { coteOuverte } from "./cote-connexion";
+import { MESSAGE_ESPACE_CHAUFFEUR, MESSAGE_SANS_PORTEFEUILLE, MESSAGE_SESSION } from "./messages-auth";
 import { appelAuthentifie, erreurApi, lireCorps } from "./session";
 import {
   changerEmailAvecJeton,
@@ -79,6 +80,13 @@ export function ouvrirSessionGestionnaire(
   refreshToken: string,
   email: string,
 ): SessionGestionnaire {
+  const charge = decoderChargeUtileJwt(accessToken);
+  const cote = coteOuverte(charge.app_metadata, "gestionnaire");
+  if (cote !== "gestionnaire") {
+    throw new ErreurAuthGestionnaire(
+      cote === "interdit" ? MESSAGE_ESPACE_CHAUFFEUR : MESSAGE_SANS_PORTEFEUILLE,
+    );
+  }
   const session: SessionGestionnaire = {
     accessToken,
     refreshToken,
@@ -157,7 +165,12 @@ export async function changerEmailGestionnaire(email: string): Promise<void> {
  * 403 est un refus de rôle (membre, lecture) : la session reste, l'appelant
  * reçoit la réponse et affiche le refus. */
 async function requeteGestionnaire(path: string, init: RequestInit = {}): Promise<Response> {
-  return appelAuthentifie(ESPACE_GESTIONNAIRE, `${baseUrlApi()}${path}`, init);
+  const entetes = new Headers(init.headers);
+  entetes.set("X-Cote", "gestionnaire");
+  return appelAuthentifie(ESPACE_GESTIONNAIRE, `${baseUrlApi()}${path}`, {
+    ...init,
+    headers: entetes,
+  });
 }
 
 function enregistrerSessionGestionnaire(session: SessionGestionnaire): void {

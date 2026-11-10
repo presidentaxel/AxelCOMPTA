@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { FileText, List, UserRound } from "lucide-react";
 
 import { Cloche } from "@/components/Cloche";
+import { GardeCodeCompteDeTest } from "@/components/GardeCodeCompteDeTest";
 import { Marque } from "@/components/Marque";
 import { EVENEMENT_ACTIVITE, relireActivite } from "@/lib/activite-url";
 import { obtenirSession, type SessionChauffeur } from "@/lib/auth-chauffeur";
@@ -84,6 +85,7 @@ export default function ChauffeurLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="chauffeur bg-canvas-app">
+      <GardeCodeCompteDeTest />
       <header className="shrink-0 border-b border-border bg-canvas pt-[env(safe-area-inset-top)]">
         <div className="mx-auto flex h-14 max-w-md items-center px-4">
           <Marque />

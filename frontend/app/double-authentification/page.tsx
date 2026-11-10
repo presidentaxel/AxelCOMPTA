@@ -8,6 +8,10 @@ import { Squelette } from "@/components/Squelette";
 import { SaisieCode } from "@/components/SaisieCode";
 import { Button } from "@/components/ui/button";
 import {
+  obtenirSession,
+  remplacerJetonsChauffeur,
+} from "@/lib/auth-chauffeur";
+import {
   obtenirSessionGestionnaire,
   remplacerJetonsGestionnaire,
 } from "@/lib/auth-gestionnaire";
@@ -27,9 +31,9 @@ type Etape =
   | { statut: "code"; facteurId: string }
   | { statut: "enrolement"; enrolement: Enrolement };
 
-/** AXE-812 : double authentification du gestionnaire, seule à cette adresse.
- * Sans facteur, il enrôle un (QR code à scanner) ; avec, il saisit le code.
- * Le code vérifié donne une session `aal2`, que l'API exige pour un admin. */
+/** AXE-812 : double authentification. Le gestionnaire et le compte de test
+ * s'arrêtent ici. Sans facteur, enrôlement (QR) ; avec, saisie du code.
+ * Le code vérifié donne une session `aal2`. */
 export default function DoubleAuthentificationPage() {
   const router = useRouter();
   const [etape, setEtape] = useState<Etape>({ statut: "chargement" });
@@ -39,9 +43,10 @@ export default function DoubleAuthentificationPage() {
 
   const preparer = useCallback(async () => {
     setEtape({ statut: "chargement" });
-    const session = obtenirSessionGestionnaire();
+    const cote = new URLSearchParams(window.location.search).get("cote");
+    const session = cote === "chauffeur" ? obtenirSession() : obtenirSessionGestionnaire();
     if (!session) {
-      router.replace("/connexion");
+      router.replace(cote === "chauffeur" ? "/chauffeur/login" : "/connexion");
       return;
     }
     try {
@@ -69,7 +74,8 @@ export default function DoubleAuthentificationPage() {
   async function valider(evenement: React.FormEvent) {
     evenement.preventDefault();
     const code = codeNormalise(saisie);
-    const session = obtenirSessionGestionnaire();
+    const cote = new URLSearchParams(window.location.search).get("cote");
+    const session = cote === "chauffeur" ? obtenirSession() : obtenirSessionGestionnaire();
     if (!code || !session || (etape.statut !== "code" && etape.statut !== "enrolement")) {
       setRefus("Saisissez les 6 chiffres affichés par votre application.");
       return;
@@ -79,8 +85,15 @@ export default function DoubleAuthentificationPage() {
     setRefus(null);
     try {
       const jetons = await verifierCode(session.accessToken, facteurId, code);
-      remplacerJetonsGestionnaire(jetons.accessToken, jetons.refreshToken);
-      const retour = cheminDeRetour(window.location.search, "/");
+      if (cote === "chauffeur") {
+        remplacerJetonsChauffeur(jetons.accessToken, jetons.refreshToken);
+      } else {
+        remplacerJetonsGestionnaire(jetons.accessToken, jetons.refreshToken);
+      }
+      const retour = cheminDeRetour(
+        window.location.search,
+        cote === "chauffeur" ? "/chauffeur/test" : "/",
+      );
       router.replace(retour === "/securite" || retour.startsWith("/securite?") ? "/" : retour);
     } catch (exception) {
       setRefus(exception instanceof Error ? exception.message : "Code refusé.");

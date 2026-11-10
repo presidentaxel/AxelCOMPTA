@@ -60,6 +60,12 @@ export const MESSAGE_SANS_LIEN =
 export const MESSAGE_SANS_PORTEFEUILLE =
   "Ce compte n'est lié à aucun portefeuille. Reconnectez-vous avec le compte du cabinet, ou demandez un accès.";
 
+export const MESSAGE_ESPACE_CHAUFFEUR =
+  "Ce compte ouvre l'espace chauffeur, pas le côté gestionnaire.";
+
+export const MESSAGE_ESPACE_GESTIONNAIRE =
+  "Ce compte ouvre l'espace gestionnaire. Utilisez la connexion gestionnaire.";
+
 export const MESSAGE_LIEN_INCOMPLET =
   "Ce lien ne peut pas être terminé ici. Demandez un nouveau lien, ou réinitialisez votre mot de passe.";
 
