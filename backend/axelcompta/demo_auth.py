@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from functools import lru_cache
 from typing import Annotated, Any
 
@@ -47,6 +48,11 @@ from axelcompta.core.ids import DossierId, TenantId, UserId
 _ALGORITHMES_SUPABASE = ["ES256", "RS256"]
 _AUDIENCE_SUPABASE = "authenticated"
 _SUFFIXE_JWKS = "/auth/v1/.well-known/jwks.json"
+# AXE-822 : compte de test qui lit l'espace chauffeur de n'importe quel
+# dossier de son portefeuille, en lecture seule, jusqu'à une date. Exception
+# de la période de test (Louis seulement), à retirer avant que les chauffeurs
+# se connectent.
+ROLE_LECTEUR_TEST = "lecteur_tous_dossiers"
 
 
 class JetonInvalideError(ValueError):
@@ -68,6 +74,10 @@ class IdentiteAuthentifiee:
     # Niveau d'authentification Supabase (AXE-812) : « aal2 » une fois le
     # code TOTP vérifié dans cette session, « aal1 » avec le mot de passe seul.
     aal: str = "aal1"
+    # AXE-822 : portefeuille que le compte de test peut lire, dossier par
+    # dossier. Jamais un `tenant_id` : il n'ouvre aucune route gestionnaire.
+    # Son `dossier_id` vient de l'en-tête `X-Dossier`, vérifié par l'API.
+    lecteur_test_tenant: TenantId | None = None
 
 
 @lru_cache(maxsize=1)
@@ -87,7 +97,9 @@ def _url_supabase_depuis_env() -> str:
     return url
 
 
-def verifier_jwt(jeton: str, cle_verification: Any) -> IdentiteAuthentifiee:
+def verifier_jwt(
+    jeton: str, cle_verification: Any, aujourd_hui: date | None = None
+) -> IdentiteAuthentifiee:
     """Vérifie un jeton d'accès Supabase et en extrait l'identité chauffeur.
     `cle_verification` est la clé publique déjà résolue (production : via
     `_jwks_client`, tests : une clé EC de test) — séparé de la résolution
@@ -111,6 +123,8 @@ def verifier_jwt(jeton: str, cle_verification: Any) -> IdentiteAuthentifiee:
     # faille (voir scripts/migrer_liens_vers_app_metadata.py pour les
     # comptes existants).
     app_metadata = charge_utile.get("app_metadata", {})
+    if "role_test" in app_metadata:
+        return _lecteur_test(charge_utile, app_metadata, aujourd_hui)
     dossier_id = app_metadata.get("dossier_id")
     tenant_id = app_metadata.get("tenant_id")
     if not dossier_id and not tenant_id:
@@ -124,6 +138,30 @@ def verifier_jwt(jeton: str, cle_verification: Any) -> IdentiteAuthentifiee:
         dossier_id=DossierId(dossier_id) if dossier_id else None,
         tenant_id=TenantId(tenant_id) if tenant_id else None,
         aal=str(charge_utile.get("aal", "aal1")),
+    )
+
+
+def _lecteur_test(
+    charge_utile: dict[str, Any], app_metadata: dict[str, Any], aujourd_hui: date | None
+) -> IdentiteAuthentifiee:
+    """AXE-822. Rôle, portefeuille et date de fin obligatoires ; passé la
+    date, le compte ne voit plus rien. Aucun lien `dossier_id` ni `tenant_id`
+    n'est repris du jeton : le compte n'est ni chauffeur ni gestionnaire."""
+    if app_metadata.get("role_test") != ROLE_LECTEUR_TEST:
+        raise JetonInvalideError("rôle de test inconnu")
+    tenant_id = app_metadata.get("tenant_id")
+    if not tenant_id:
+        raise JetonInvalideError("compte de test sans portefeuille")
+    try:
+        expire_le = date.fromisoformat(str(app_metadata.get("expire_le")))
+    except ValueError as exc:
+        raise JetonInvalideError("compte de test sans date de fin lisible") from exc
+    if expire_le < (aujourd_hui or datetime.now(UTC).date()):
+        raise JetonInvalideError("compte de test expiré")
+    return IdentiteAuthentifiee(
+        user_id=UserId(charge_utile["sub"]),
+        email=charge_utile.get("email", ""),
+        lecteur_test_tenant=TenantId(tenant_id),
     )
 
 

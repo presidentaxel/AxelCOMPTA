@@ -9,6 +9,7 @@ import {
   obtenirSession,
   tracerConnexionChauffeur,
 } from "@/lib/auth-chauffeur";
+import { cheminDuDossier } from "@/lib/compte-de-test";
 import { cheminDeRetour, sessionAExpire } from "@/lib/session";
 
 /** doc 19 §5.2 : e-mail + mot de passe, ou lien magique. Pas de
@@ -21,7 +22,7 @@ export default function ConnexionChauffeurPage() {
     const recherche = window.location.search;
     const session = obtenirSession();
     if (session && !sessionAExpire(recherche)) {
-      router.replace(cheminDeRetour(recherche, `/chauffeur/${session.dossierId}`));
+      router.replace(cheminDeRetour(recherche, cheminDuDossier(session)));
       return;
     }
     // La session n'existe que dans le navigateur : on attend pour ne pas
@@ -42,7 +43,7 @@ export default function ConnexionChauffeurPage() {
         // Un retour vers le dossier d'un autre renvoie de toute façon vers le
         // sien (`use-dossier.ts`). `replace` : le bouton retour ne ramène pas
         // au formulaire.
-        router.replace(cheminDeRetour(window.location.search, `/chauffeur/${session.dossierId}`));
+        router.replace(cheminDeRetour(window.location.search, cheminDuDossier(session)));
       }}
     />
   );

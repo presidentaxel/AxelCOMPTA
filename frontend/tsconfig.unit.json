@@ -30,6 +30,8 @@
     "lib/langage-chauffeur.test.ts",
     "lib/comptes-a-choisir.ts",
     "lib/comptes-a-choisir.test.ts",
+    "lib/compte-de-test.ts",
+    "lib/compte-de-test.test.ts",
     "lib/configuration-dossier.ts",
     "lib/configuration-dossier.test.ts",
     "lib/tags.ts",

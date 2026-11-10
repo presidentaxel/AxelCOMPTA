@@ -24,6 +24,7 @@ import {
   traduireCorpsAuth,
   traduireExceptionAuth,
 } from "./messages-auth";
+import { avecDossierDeTest, liensDuJeton } from "./compte-de-test";
 import { appelAuthentifie, erreurApi, lireCorps } from "./session";
 import type {
   ConfigurationDossier,
@@ -45,8 +46,12 @@ const CLE_SESSION = "axelcompta_session_chauffeur";
 export type SessionChauffeur = {
   accessToken: string;
   refreshToken: string;
+  /** Vide tant que le compte de test n'a pas choisi de dossier (AXE-822). */
   dossierId: string;
   email: string;
+  /** AXE-822 : compte de test, lecture seule, dossier choisi à l'écran. */
+  lecteurTest?: boolean;
+  dossierNom?: string;
 };
 
 export class ErreurAuthChauffeur extends Error {
@@ -79,16 +84,15 @@ export function decoderChargeUtileJwt(jeton: string): Record<string, unknown> {
   }
 }
 
-function dossierIdDepuisJeton(accessToken: string): string {
+function liensDepuisJeton(accessToken: string): { dossierId: string; lecteurTest: boolean } {
   const charge = decoderChargeUtileJwt(accessToken);
   // `app_metadata` (écrit côté serveur), jamais `user_metadata` (modifiable
   // par l'utilisateur) : voir demo_auth.py.
-  const metadata = charge.app_metadata as { dossier_id?: string } | undefined;
-  const dossierId = metadata?.dossier_id;
-  if (!dossierId) {
+  const liens = liensDuJeton(charge.app_metadata);
+  if (!liens) {
     throw new ErreurAuthChauffeur(MESSAGE_SANS_DOSSIER);
   }
-  return dossierId;
+  return liens;
 }
 
 export function obtenirSession(): SessionChauffeur | null {
@@ -219,7 +223,7 @@ export async function connexionParMotDePasse(
   const session: SessionChauffeur = {
     accessToken: corps.access_token,
     refreshToken: corps.refresh_token,
-    dossierId: dossierIdDepuisJeton(corps.access_token),
+    ...liensDepuisJeton(corps.access_token),
     email,
   };
   enregistrerSessionChauffeur(session);
@@ -245,7 +249,7 @@ export async function accepterInvitation(fragmentUrl: string): Promise<SessionCh
   const session: SessionChauffeur = {
     accessToken,
     refreshToken,
-    dossierId: dossierIdDepuisJeton(accessToken),
+    ...liensDepuisJeton(accessToken),
     email: utilisateur.email,
   };
   enregistrerSessionChauffeur(session);
@@ -274,7 +278,31 @@ const ESPACE_CHAUFFEUR = {
 /** Toute requête chauffeur vers l'API : jeton renouvelé au besoin, retour à
  * la connexion si la session ne peut plus l'être (`lib/session.ts`). */
 function appelChauffeur(path: string, init: RequestInit = {}): Promise<Response> {
-  return appelAuthentifie(ESPACE_CHAUFFEUR, `${baseUrlApi()}${path}`, init);
+  const avecDossier = avecDossierDeTest(init, obtenirSession());
+  return appelAuthentifie(ESPACE_CHAUFFEUR, `${baseUrlApi()}${path}`, avecDossier);
+}
+
+export type DossierDeTest = {
+  dossier_id: string;
+  nom: string;
+  forme_juridique: string;
+  nb_operations: number;
+};
+
+/** AXE-822 : les dossiers que le compte de test peut ouvrir. */
+export async function listerDossiersDeTest(): Promise<DossierDeTest[]> {
+  const reponse = await appelChauffeur("/lecteur-test/dossiers");
+  if (!reponse.ok) {
+    throw erreurApi(await lireCorps(reponse), reponse);
+  }
+  return (await reponse.json()) as DossierDeTest[];
+}
+
+/** AXE-822 : le dossier ouvert par le compte de test, gardé dans la session. */
+export function choisirDossierDeTest(dossierId: string, nom: string): void {
+  const session = obtenirSession();
+  if (!session?.lecteurTest) return;
+  enregistrerSessionChauffeur({ ...session, dossierId, dossierNom: nom });
 }
 
 /** AXE-812 : trace la connexion au journal du dossier. Une trace manquée
