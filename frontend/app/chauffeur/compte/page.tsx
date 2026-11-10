@@ -16,6 +16,7 @@ import {
   obtenirSession,
 } from "@/lib/auth-chauffeur";
 
+import { LiensJuridiques } from "@/components/LiensJuridiques";
 export default function CompteChauffeurPage() {
   const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
@@ -66,6 +67,7 @@ export default function CompteChauffeurPage() {
       >
         Se déconnecter
       </button>
+      <LiensJuridiques className="mt-6" />
     </div>
   );
 }
