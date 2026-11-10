@@ -13,7 +13,7 @@ le premier.
 
 **Où lire l'état du projet :** dans le repo, un seul endroit, le
 [doc 12](docs/12-roadmap-todo.md) (fait, en cours, prévu ; à jour au
-2026-11-05). Le suivi au jour le jour est dans Linear, projet
+2026-11-10). Le suivi au jour le jour est dans Linear, projet
 [Axel Compta — V1 prod](https://linear.app/axel-project/project/axel-compta-v1-prod-api-ingestion-fiabilite-899778ce7b41),
 cible le 31/12/2026. Le passage en
 mode réel est dans le [doc 17](docs/17-plan-demo-backend.md), la carte du code le

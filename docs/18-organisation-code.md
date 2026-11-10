@@ -2,7 +2,7 @@
 
 > Carte du code : où vit chaque module et quelles dépendances il a le droit
 > d'avoir. L'état d'avancement n'est pas ici, il est dans le
-> [doc 12](12-roadmap-todo.md). Dernière mise à jour : 2026-11-05.
+> [doc 12](12-roadmap-todo.md). Dernière mise à jour : 2026-11-10.
 
 Ce doc fait le lien entre l'arborescence réelle du repo (`backend/`,
 `frontend/`) et le découpage en modules défini en [doc 03 §3](03-architecture.md#3--découpage-en-modules-monolithe-modulaire).
@@ -37,7 +37,7 @@ AxeLCompta/
 │   ├── workflow/      # décisions humaines, signatures démo, journal d'audit, notifications internes
 │   ├── api/           # point d'entrée api.app (+ /sante, /metrics) ; les routes vivent encore dans demo_api.py
 │   ├── pseudonymize/  # seule porte vers un LLM : prompt pseudonymisé, LLMProvider (aucun fournisseur branché)
-│   ├── jobs/          # file de jobs Postgres (ADR-002), posée, pas encore utilisée par le cron
+│   ├── jobs/          # file de jobs Postgres (ADR-002), exécutée par worker.py depuis le 2026-11-09
 │   └── ml/            # V1 ; le modèle (v2) s'entraîne dans _AUDIT_DONNEES/entrainer_modele.py
 ├── frontend/          # Next.js : écrans gestionnaire (web) et chauffeur (mobile), auth Supabase
 └── _AUDIT_DONNEES/    # audit du dataset historique, source pour packs/ et categorize/
@@ -120,7 +120,12 @@ passage d'un dossier à l'exercice suivant) et `affectations.py`
 (l'affectation du résultat décidée par le chauffeur), et depuis le
 2026-11-04 `agregats_portefeuille.py` (`--recalculer` remplit la table
 `agregats_dossier` de la page Entreprises, `--verifier` la compare au
-calcul complet).
+calcul complet). Depuis le 2026-11-09 : `worker.py` (le worker de la file
+de jobs : import des dossiers, bouton « Synchroniser », rappels ; lancé
+par `scripts/worker_planifie.sh`), `nouveaux_contacts.py` (les contacts
+Digifactory sans dossier, proposés au gestionnaire, AXE-845) et
+`rappels.py` (règles automatiques et envoi des rappels par e-mail et SMS,
+AXE-808).
 
 `api/app.py` est le point d'entrée HTTP depuis le 2026-10-25
 (`uvicorn axelcompta.api.app:app`). Il sert l'app construite par
