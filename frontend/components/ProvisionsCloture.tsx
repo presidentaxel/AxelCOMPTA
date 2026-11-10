@@ -24,7 +24,7 @@ import { messageEchecChargement } from "@/lib/session";
 import type { ProvisionClotureVue } from "@/lib/types";
 
 const CHAMP =
-  "h-11 w-full rounded-md border border-border bg-canvas px-3 text-base text-ink outline-none placeholder:text-muted focus-visible:border-border-focus focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)]";
+  "h-11 w-full rounded-md border border-border bg-canvas px-3 text-base text-ink outline-none placeholder:text-muted focus-visible:border-border-focus focus-visible:shadow-focus";
 
 export function ProvisionsCloture({
   dossierId,
@@ -151,7 +151,7 @@ export function ProvisionsCloture({
               </span>
               <button
                 type="button"
-                className="inline-flex h-11 shrink-0 items-center justify-center rounded-md px-3 text-sm font-semibold text-danger outline-none focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)] disabled:opacity-50"
+                className="inline-flex h-11 shrink-0 items-center justify-center rounded-md px-3 text-sm font-semibold text-danger outline-none focus-visible:shadow-focus disabled:opacity-50"
                 disabled={enCours}
                 aria-label={`Retirer ${ligne.libelle}`}
                 onClick={() => void retirer(index)}

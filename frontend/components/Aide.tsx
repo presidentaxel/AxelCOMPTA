@@ -25,8 +25,8 @@ export function Aide({ texte, tactile = false }: { texte: string; tactile?: bool
         onClick={() => setOuvert((actuel) => !actuel)}
         className={
           tactile
-            ? "ml-1 inline-flex h-11 w-11 items-center justify-center rounded-full border border-border text-xs leading-none text-subtle outline-none hover:border-ink hover:text-ink focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)]"
-            : "ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-border text-xs leading-none text-subtle outline-none hover:border-ink hover:text-ink focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)]"
+            ? "ml-1 inline-flex h-11 w-11 items-center justify-center rounded-full border border-border text-xs leading-none text-subtle outline-none hover:border-ink hover:text-ink focus-visible:shadow-focus"
+            : "ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-border text-xs leading-none text-subtle outline-none hover:border-ink hover:text-ink focus-visible:shadow-focus"
         }
       >
         ?

@@ -4,12 +4,13 @@ import { cn } from "cn"
 import { Slot } from "radix-ui"
 
 /** Implémente DESIGN.md § Composants clés › Boutons — 4 variantes, pas plus
- * (`primary`/`secondary`/`ghost`/`danger`), deux tailles (`default` = 36px/
- * button-md, `sm` = 28px/button-sm). Un seul `button-primary` par écran au
+ * (`primary`/`secondary`/`ghost`/`danger`), trois tailles (`default` = 36px/
+ * button-md, `sm` = 28px/button-sm, `lg` = 44px/button-lg, cible tactile du
+ * chauffeur). Un seul `button-primary` par écran au
  * maximum (règle DESIGN.md, pas imposée ici — au développeur de l'écran de
  * la respecter). */
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap font-semibold transition-colors duration-150 ease-out outline-none disabled:pointer-events-none disabled:opacity-50 focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)] focus-visible:border-border-focus [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap font-semibold transition-colors duration-150 ease-out outline-none disabled:pointer-events-none disabled:opacity-50 focus-visible:shadow-focus focus-visible:border-border-focus [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -22,6 +23,8 @@ const buttonVariants = cva(
       size: {
         default: "h-9 rounded-md px-4 text-sm",
         sm: "h-7 rounded-sm px-3 text-[13px]",
+        // button-lg : cible tactile de 44 px (habillage chauffeur, AXE-692).
+        lg: "h-11 rounded-md px-4 text-sm",
       },
     },
     defaultVariants: {
