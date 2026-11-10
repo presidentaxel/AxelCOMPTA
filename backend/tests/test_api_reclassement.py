@@ -11,6 +11,7 @@ from axelcompta.ledger.models import Ecriture, Sens
 from axelcompta.workflow.reclassement import source_du_reclassement
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client,
+    _client_expert,
     _en_tete,
     _en_tete_gestionnaire,
     _jwks_factice,
@@ -88,14 +89,19 @@ def test_une_correction_ecrit_un_second_reclassement() -> None:
 
 
 def test_l_imputation_de_l_expert_contre_passe_aussi_le_reclassement() -> None:
-    client = _client()
+    client = _client_expert()
     ecriture_id = _premiere_a_trancher(client, SOPHIE)
     _decider(client, ecriture_id, "usage_personnel")
     avant = _soldes(_ledger_du_client(client).grand_livre(DossierId(SOPHIE)))
 
     reponse = client.post(
         "/expert/imputations",
-        json={"dossier_id": SOPHIE, "ecriture_id": ecriture_id, "compte": "6061"},
+        json={
+            "dossier_id": SOPHIE,
+            "ecriture_id": ecriture_id,
+            "compte": "6061",
+            "motif": "Plein de la flotte",
+        },
         headers=_en_tete_gestionnaire(),
     )
 

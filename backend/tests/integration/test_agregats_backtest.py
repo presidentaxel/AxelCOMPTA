@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import random
 from collections.abc import Callable, Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from itertools import count
 from pathlib import Path
 from types import SimpleNamespace
@@ -33,7 +33,7 @@ from sqlalchemy.engine import Engine, make_url
 
 import axelcompta.demo_api as demo_api
 import axelcompta.demo_auth as demo_auth
-from axelcompta.core.ids import DossierId, EcritureId
+from axelcompta.core.ids import DossierId, EcritureId, UserId
 from axelcompta.core.money import Money
 from axelcompta.demo_comptes_memory import InMemoryCompteRepository
 from axelcompta.demo_justificatifs import InMemoryJustificatifRepository
@@ -42,9 +42,18 @@ from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.tenants.agregats import AgregatStocke
 from axelcompta.tenants.models import Dossier
+from axelcompta.tenants.orm import droits_membre
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.provisions_cloture_postgres import PostgresProvisionsClotureRepository
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
+from axelcompta.workflow.expert_comptable import (
+    ROLE_EXPERT,
+    TEXTE_ENGAGEMENT,
+    VERSION_ENGAGEMENT,
+    Engagement,
+    Habilitation,
+)
+from axelcompta.workflow.expert_comptable_postgres import PostgresExpertRepository
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
 from axelcompta.workflow.signature_postgres import PostgresSignatureRepository
 
@@ -119,7 +128,46 @@ def api(engine: Engine, engine_web: Engine, monkeypatch: pytest.MonkeyPatch) -> 
         PostgresLedgerService(engine),
         PostgresPropositionRepository(engine),
     )
+    _habiliter_l_expert(engine)
     return _application(engine_web, monkeypatch)
+
+
+def _habiliter_l_expert(engine: Engine) -> None:
+    """AXE-800 : l'imputation est à l'expert-comptable habilité et engagé.
+    Le compte du jeton (`x@example.com`) l'est sur les dossiers de démo."""
+    le = datetime(2026, 11, 9, 9, 0, tzinfo=UTC)
+    with engine.begin() as connexion:
+        connexion.execute(
+            droits_membre.insert().values(
+                tenant_id=TENANT_DEMO, email="x@example.com", role=ROLE_EXPERT
+            )
+        )
+    experts = PostgresExpertRepository(engine)
+    experts.habiliter(
+        Habilitation(
+            tenant_id=TENANT_DEMO,
+            email="x@example.com",
+            nom="Claire Expert",
+            cabinet="Cabinet",
+            numero_ordre="13-1",
+            lettre_mission="LM",
+            date_lettre=date(2026, 1, 1),
+            dossiers=tuple(d.id for d in _dossiers(engine)),
+            accordee_par=UserId("admin"),
+            accordee_le=le,
+        )
+    )
+    experts.accepter(
+        Engagement(
+            tenant_id=TENANT_DEMO,
+            email="x@example.com",
+            version=VERSION_ENGAGEMENT,
+            texte=TEXTE_ENGAGEMENT,
+            adresse="test",
+            acteur=UserId("u-1"),
+            accepte_le=le,
+        )
+    )
 
 
 # --- référence : le calcul d'avant, lu avec le propriétaire -----------------
@@ -209,7 +257,12 @@ def _imputer(api: TestClient, engine: Engine, _numero: int) -> str:
     ecriture_id = _a_trancher(api)[0]
     reponse = api.post(
         "/expert/imputations",
-        json={"dossier_id": "DEMO_sophie", "ecriture_id": ecriture_id, "compte": "6061"},
+        json={
+            "dossier_id": "DEMO_sophie",
+            "ecriture_id": ecriture_id,
+            "compte": "6061",
+            "motif": "Plein de la flotte",
+        },
         headers=GESTIONNAIRE,
     )
     # 204 avant AXE-567, 200 (les sujets du dossier) après : sans importance ici.

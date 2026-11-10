@@ -22,6 +22,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -185,4 +186,52 @@ resolutions_quarantaine = Table(
     Column("ecritures", JSON, nullable=False),
     Column("par", String, nullable=False),
     Column("le", DateTime(timezone=True), nullable=False),
+)
+
+# AXE-800 (migration `c9f3a1e6d248`) : l'expert-comptable prend la charge
+# juridique de ses changements. Trois tables en ajout seul (trigger) : la
+# plus récente habilitation et le plus récent engagement font foi.
+habilitations_expert = Table(
+    "habilitations_expert",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False, index=True),
+    Column("email", String, nullable=False),
+    Column("nom", String, nullable=False),
+    Column("cabinet", String, nullable=False),
+    Column("numero_ordre", String, nullable=False),
+    Column("lettre_mission", String, nullable=False),
+    Column("date_lettre", Date, nullable=False),
+    Column("dossiers", JSON, nullable=False),  # identifiants des dossiers couverts
+    Column("accordee_par", String, nullable=False),
+    Column("accordee_le", DateTime(timezone=True), nullable=False),
+)
+
+engagements_expert = Table(
+    "engagements_expert",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False, index=True),
+    Column("email", String, nullable=False),
+    Column("version", String, nullable=False),
+    Column("texte", String, nullable=False),  # mot pour mot
+    Column("adresse", String, nullable=False),
+    Column("acteur", String, nullable=False),
+    Column("accepte_le", DateTime(timezone=True), nullable=False),
+)
+
+decisions_expert = Table(
+    "decisions_expert",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("ecriture_id", String, nullable=True),
+    Column("nature", String, nullable=False),
+    Column("motif", String, nullable=False),
+    Column("auteur", String, nullable=False),
+    Column("auteur_nom", String, nullable=False),
+    Column("version_engagement", String, nullable=False),
+    Column("decide_le", DateTime(timezone=True), nullable=False),
+    Column("ecritures", JSON, nullable=False),  # écrites avec la décision (I6)
 )

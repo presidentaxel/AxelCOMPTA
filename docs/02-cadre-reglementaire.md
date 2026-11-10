@@ -85,8 +85,16 @@ Conséquences concrètes, à implémenter dans le produit :
 >   reclassé son opération et pourquoi ;
 > - sans ce rôle et cet engagement, l'API refuse l'écriture (403).
 >
-> Tant qu'AXE-800 n'est pas livré, le mode expert existe dans le code
-> (AXE-560) sans cette garde : il ne doit pas être ouvert à un client réel.
+> **Livré le 2026-11-09 (AXE-800).** Un admin habilite l'expert dans Équipe
+> (`habilitations_expert`) ; l'expert accepte l'engagement à sa première
+> visite du mode expert (`engagements_expert`, texte, date et adresse) ;
+> chaque imputation, annulation ou qualification s'écrit dans
+> `decisions_expert` avec ses écritures, dans la même transaction. Les trois
+> tables sont en ajout seul. Le mode expert, les anomalies, les opérations
+> classées et la quarantaine répondent 403 à tout autre rôle. **Le texte de
+> l'engagement (`workflow/expert_comptable.py`) reste à faire relire par un
+> juriste (AXE-813)** : toute modification change sa version, et chaque
+> expert l'accepte de nouveau.
 
 ### 2.4 Piste complémentaire
 

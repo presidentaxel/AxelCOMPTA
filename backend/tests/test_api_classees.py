@@ -7,8 +7,8 @@ from axelcompta.demo_api import get_cache_classees
 from axelcompta.workflow.classees_cache import VERSION_CLASSEES
 from axelcompta.workflow.file_expert_cache import SujetsGardes
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
-    _client,
     _client_et_stubs,
+    _client_expert,
     _en_tete_gestionnaire,
     _jwks_factice,
     _ledger_calcule_une_seule_fois,
@@ -18,7 +18,7 @@ EN_TETE = _en_tete_gestionnaire()
 
 
 def test_les_classees_sont_filtrees_paginees_et_comptees() -> None:
-    client = _client()
+    client = _client_expert()
     corps = client.get("/expert/classees", headers=EN_TETE).json()
     assert corps["total"] > 0 and corps["operations"]
     assert len(corps["operations"]) <= 50
@@ -34,7 +34,7 @@ def test_les_classees_sont_filtrees_paginees_et_comptees() -> None:
 
 def test_le_tri_par_confiance_met_les_plus_fragiles_en_premier() -> None:
     corps = (
-        _client()
+        _client_expert()
         .get("/expert/classees", params={"statut": "auto", "tri": "confiance"}, headers=EN_TETE)
         .json()
     )
@@ -43,7 +43,7 @@ def test_le_tri_par_confiance_met_les_plus_fragiles_en_premier() -> None:
 
 
 def test_un_verdict_juste_est_garde_et_compte() -> None:
-    client = _client()
+    client = _client_expert()
     premiere = client.get("/expert/classees", headers=EN_TETE).json()["operations"][0]
     reponse = client.post(
         "/expert/classees/verdict",
@@ -65,7 +65,11 @@ def test_la_lecture_ne_note_pas_et_un_autre_portefeuille_est_introuvable() -> No
     entree = {"dossier_id": "DEMO_karim", "ecriture_id": "x", "verdict": "faux"}
     assert lecture.post("/expert/classees/verdict", json=entree, headers=EN_TETE).status_code == 403
     autre = _en_tete_gestionnaire(tenant_id="AUTRE_TENANT")
-    assert _client().post("/expert/classees/verdict", json=entree, headers=autre).status_code == 404
+    # AXE-800 : l'expert n'est habilité que sur son portefeuille.
+    assert (
+        _client_expert().post("/expert/classees/verdict", json=entree, headers=autre).status_code
+        == 403
+    )
 
 
 class _CacheCompte:
@@ -92,7 +96,7 @@ class _CacheCompte:
 def test_changer_de_filtre_ne_recalcule_pas_et_le_verdict_est_relu() -> None:
     """AXE-824 : un filtre relit le cache. Un verdict, qui n'écrit pas,
     apparaît quand même au prochain affichage."""
-    client = _client()
+    client = _client_expert()
     cache = _CacheCompte()
     client.app.dependency_overrides[get_cache_classees] = lambda: cache  # type: ignore[attr-defined]
     premiere = client.get("/expert/classees", headers=EN_TETE).json()["operations"][0]

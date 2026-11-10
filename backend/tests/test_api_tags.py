@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client_et_stubs,
+    _client_expert,
     _en_tete_gestionnaire,
     _jwks_factice,
     _ledger_calcule_une_seule_fois,
@@ -37,7 +38,7 @@ def test_les_tags_proposes_et_les_traitements_sont_lus() -> None:
 
 
 def test_une_societe_du_gestionnaire_sort_du_mode_expert_et_revient() -> None:
-    client = _client()
+    client = _client_expert()
     dossier = _un_dossier(client)
     assert dossier in _dossiers_de_la_file(client)
     route = "/tags/societe_du_gestionnaire/dossiers"
@@ -56,7 +57,7 @@ def test_une_societe_du_gestionnaire_sort_du_mode_expert_et_revient() -> None:
 
 
 def test_un_reglage_peut_garder_un_tag_dans_le_mode_expert() -> None:
-    client = _client()
+    client = _client_expert()
     dossier = _un_dossier(client)
     client.post(
         "/tags/societe_du_gestionnaire/dossiers", json={"dossier_ids": [dossier]}, headers=EN_TETE
@@ -113,7 +114,7 @@ def test_un_dossier_d_un_autre_portefeuille_est_introuvable() -> None:
 
 
 def test_la_file_expert_porte_les_tags_de_ses_dossiers() -> None:
-    client = _client()
+    client = _client_expert()
     dossier = _un_dossier(client)
     client.post("/tags/chauffeur/dossiers", json={"dossier_ids": [dossier]}, headers=EN_TETE)
     corps = client.get("/expert/file", headers=EN_TETE).json()

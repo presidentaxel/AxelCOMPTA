@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
-    _client,
+    _client_expert,
     _en_tete_gestionnaire,
     _jwks_factice,
     _ledger_calcule_une_seule_fois,
@@ -23,7 +23,11 @@ def _premiere_alerte(client: TestClient) -> tuple[str, dict[str, object]]:
 
 
 def _qualifier(
-    client: TestClient, dossier: str, alerte: str, decision: str, commentaire: str = ""
+    client: TestClient,
+    dossier: str,
+    alerte: str,
+    decision: str,
+    commentaire: str = "Vérifié sur pièce",
 ) -> int:
     reponse = client.post(
         f"/dossiers/{dossier}/anomalies/{alerte}",
@@ -39,7 +43,7 @@ def _etat(client: TestClient, dossier: str, alerte: str) -> str:
 
 
 def test_une_alerte_justifiee_ne_repasse_pas_a_ouverte_au_recalcul() -> None:
-    client = _client()
+    client = _client_expert()
     dossier, alerte = _premiere_alerte(client)
     alerte_id = str(alerte["id"])
     assert _qualifier(client, dossier, alerte_id, "en_instruction") == 200
@@ -53,7 +57,7 @@ def test_une_alerte_justifiee_ne_repasse_pas_a_ouverte_au_recalcul() -> None:
 
 
 def test_l_historique_montre_chaque_changement_avec_son_auteur() -> None:
-    client = _client()
+    client = _client_expert()
     dossier, alerte = _premiere_alerte(client)
     alerte_id = str(alerte["id"])
     _qualifier(client, dossier, alerte_id, "en_instruction")
@@ -68,7 +72,7 @@ def test_l_historique_montre_chaque_changement_avec_son_auteur() -> None:
 
 
 def test_l_usage_personnel_propose_un_reclassement_sans_l_ecrire() -> None:
-    client = _client()
+    client = _client_expert()
     dossier, alerte = _premiere_alerte(client)
     alerte_id = str(alerte["id"])
     _qualifier(client, dossier, alerte_id, "en_instruction")

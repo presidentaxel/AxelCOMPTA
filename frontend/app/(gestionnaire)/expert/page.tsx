@@ -4,14 +4,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { EngagementExpert } from "@/components/EngagementExpert";
 import { OperationsClassees } from "@/components/OperationsClassees";
 import { Squelette } from "@/components/Squelette";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   annulerImputation,
   ErreurAuthGestionnaire,
   imputerExpert,
   lireFileExpert,
+  ModeExpertRefuse,
 } from "@/lib/auth-gestionnaire";
 import {
   type EtatClassees,
@@ -59,6 +62,10 @@ export default function ModeExpertPage() {
   const [compte, setCompte] = useState<Record<string, string>>({});
   const [enCours, setEnCours] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<SujetExpert | null>(null);
+  // AXE-800 : motif obligatoire de chaque imputation, et de son annulation.
+  const [motifs, setMotifs] = useState<Record<string, string>>({});
+  const [motifAnnulation, setMotifAnnulation] = useState("");
+  const [refus, setRefus] = useState<string | null>(null);
   const [succes, setSucces] = useState<{
     dossierId: string;
     libelle: string;
@@ -102,11 +109,15 @@ export default function ModeExpertPage() {
       .then((donnees) => {
         setFile(donnees);
         setErreur(null);
+        setRefus(null);
         retenirSuggestions(donnees.sujets);
       })
       .catch((exception) => {
         if (exception instanceof ErreurAuthGestionnaire) {
           router.replace("/connexion");
+        } else if (exception instanceof ModeExpertRefuse) {
+          setFile(null);
+          setRefus(exception.message);
         } else {
           setFile(null);
           setErreur("Impossible de charger la file.");
@@ -137,7 +148,12 @@ export default function ModeExpertPage() {
 
   async function imputer(sujet: SujetExpert) {
     const choisi = compte[sujet.id];
+    const motif = (motifs[sujet.id] ?? "").trim();
     if (!choisi || !sujet.ecriture_id) return;
+    if (motif.length < 3) {
+      setErreurs((actuel) => ({ ...actuel, [sujet.id]: "Indiquez le motif de ce changement." }));
+      return;
+    }
     setEnCours(sujet.id);
     setConfirmation(null);
     setErreurs((actuel) => {
@@ -146,7 +162,7 @@ export default function ModeExpertPage() {
       return suite;
     });
     try {
-      const imputation = await imputerExpert(sujet.dossier_id, sujet.ecriture_id, choisi);
+      const imputation = await imputerExpert(sujet.dossier_id, sujet.ecriture_id, choisi, motif);
       setSucces({ dossierId: sujet.dossier_id, libelle: sujet.libelle, imputation });
       setFile((actuelle) =>
         actuelle && {
@@ -171,14 +187,20 @@ export default function ModeExpertPage() {
 
   async function annuler() {
     if (!succes) return;
+    if (motifAnnulation.trim().length < 3) {
+      setErreur("Indiquez le motif de l'annulation.");
+      return;
+    }
     setEnCours("annuler");
     try {
       await annulerImputation(
         succes.dossierId,
         succes.imputation.ecriture_id,
         succes.imputation.contrepassation_id,
+        motifAnnulation.trim(),
       );
       setSucces(null);
+      setMotifAnnulation("");
       charger();
     } catch (exception) {
       if (exception instanceof ErreurAuthGestionnaire) {
@@ -211,6 +233,7 @@ export default function ModeExpertPage() {
         comptabilité de l&apos;entreprise : une contre-passation, puis une nouvelle écriture.
         Le tableau de bord du portefeuille, lui, ne change pas.
       </p>
+      {refus && <EngagementExpert raison={refus} onAccepte={charger} />}
       {erreur && (
         <div className="mt-6 flex items-center gap-3">
           <p className="text-sm text-danger">{erreur}</p>
@@ -240,16 +263,24 @@ export default function ModeExpertPage() {
               </li>
             ))}
           </ul>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="mt-3"
-            disabled={enCours === "annuler"}
-            onClick={() => void annuler()}
-          >
-            Annuler
-          </Button>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Input
+              value={motifAnnulation}
+              onChange={(e) => setMotifAnnulation(e.target.value)}
+              placeholder="Motif de l'annulation"
+              aria-label="Motif de l'annulation"
+              className="max-w-sm"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={enCours === "annuler"}
+              onClick={() => void annuler()}
+            >
+              Annuler
+            </Button>
+          </div>
         </div>
       )}
       {chargement && !file && (
@@ -402,10 +433,23 @@ export default function ModeExpertPage() {
                         </option>
                       ))}
                     </select>
+                    <Input
+                      value={motifs[sujet.id] ?? ""}
+                      onChange={(e) =>
+                        setMotifs((actuel) => ({ ...actuel, [sujet.id]: e.target.value }))
+                      }
+                      placeholder="Motif (obligatoire)"
+                      aria-label={`Motif pour ${sujet.libelle}`}
+                      className="max-w-xs"
+                    />
                     <Button
                       type="button"
                       size="sm"
-                      disabled={!compte[sujet.id] || enCours === sujet.id}
+                      disabled={
+                        !compte[sujet.id] ||
+                        (motifs[sujet.id] ?? "").trim().length < 3 ||
+                        enCours === sujet.id
+                      }
                       onClick={() => setConfirmation(sujet)}
                     >
                       Imputer

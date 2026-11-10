@@ -57,7 +57,7 @@ def test_la_migration_reprend_le_moyen_de_paiement(
             )
 
     # Jusqu'à cette migration seulement : les suivantes recréeraient des
-    # tables déjà posées par create_all (journal_portefeuille, AXE-812).
+    # tables déjà posées par create_all (journal du portefeuille, expert).
     command.upgrade(cfg, "d1e7a3c9f264")
 
     with engine.connect() as connexion:

@@ -15,7 +15,7 @@ from axelcompta.demo_api import get_propositions
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.workflow.propositions import InMemoryPropositionRepository
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
-    _client,
+    _client_expert,
     _en_tete_gestionnaire,
     _jwks_factice,
     _ledger_calcule_une_seule_fois,
@@ -26,7 +26,7 @@ KARIM = DossierId("DEMO_karim")
 
 
 def test_un_cafe_chez_total_ressort_avec_son_moyen_de_paiement() -> None:
-    client = _client()
+    client = _client_expert()
     cafe = Ecriture(
         id=EcritureId("DEMO_karim:digifactory-cafe"),
         dossier_id=KARIM,

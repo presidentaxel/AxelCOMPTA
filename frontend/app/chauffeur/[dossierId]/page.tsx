@@ -40,7 +40,7 @@ import {
   corrigerTransactionChauffeur,
   joindreJustificatifChauffeur,
 } from "@/lib/auth-chauffeur";
-import { formatMontant } from "@/lib/format";
+import { formatDate, formatMontant } from "@/lib/format";
 import { libelleCategorie, phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import { estRetrait } from "@/lib/retrait-especes";
 import { ticketPrioritaire } from "@/lib/tickets";
@@ -652,6 +652,11 @@ function Mouvements({
                 return (
                   <li key={transaction.ecriture_id} className="border-b border-hairline py-3">
                     <LigneMontant nom={nom} detail={detail} transaction={transaction} />
+                    {transaction.reclassee_par && (
+                      <p className="mt-1 text-sm text-subtle">
+                        {phraseReclassement(transaction)}
+                      </p>
+                    )}
                     {sens === "sorties" && (
                       <AjouterTicketSortie
                         dossierId={dossierId}
@@ -755,6 +760,14 @@ function AjouterTicketSortie({
       {erreur && <p className="mt-1 text-xs text-danger">{erreur}</p>}
     </div>
   );
+}
+
+/** AXE-800 : l'expert-comptable a reclassé l'opération ; le chauffeur voit
+ * qui, quand et pourquoi. */
+function phraseReclassement(transaction: TransactionVue): string {
+  const quand = transaction.reclassee_le ? ` le ${formatDate(transaction.reclassee_le)}` : "";
+  const pourquoi = transaction.motif_reclassement ? ` : ${transaction.motif_reclassement}` : "";
+  return `Reclassée par ${transaction.reclassee_par}${quand}${pourquoi}`;
 }
 
 function LigneMontant({

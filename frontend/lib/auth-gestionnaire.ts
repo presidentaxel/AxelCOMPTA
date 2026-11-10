@@ -221,6 +221,51 @@ export async function reinitialiserMfaMembre(email: string): Promise<number> {
   return ((await reponse.json()) as { facteurs_retires: number }).facteurs_retires;
 }
 
+export type HabilitationExpert = {
+  email: string;
+  nom: string;
+  cabinet: string;
+  numero_ordre: string;
+  lettre_mission: string;
+  date_lettre: string;
+  dossiers: string[];
+};
+
+export type EngagementExpert = {
+  version: string;
+  texte: string;
+  accepte: boolean;
+  habilitation: HabilitationExpert | null;
+};
+
+/** AXE-800 : le texte d'engagement en vigueur, et s'il est déjà accepté. */
+export async function lireEngagementExpert(): Promise<EngagementExpert> {
+  const reponse = await requeteGestionnaire("/expert/engagement");
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as EngagementExpert;
+}
+
+/** AXE-800 : l'expert accepte le texte affiché, mot pour mot. */
+export async function accepterEngagementExpert(version: string, texte: string): Promise<void> {
+  const reponse = await requeteGestionnaire("/expert/engagement", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version, texte }),
+  });
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+}
+
+/** AXE-800 : un admin déclare l'expert-comptable du portefeuille. */
+export async function habiliterExpert(entree: HabilitationExpert): Promise<HabilitationExpert> {
+  const reponse = await requeteGestionnaire("/portefeuille/experts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entree),
+  });
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as HabilitationExpert;
+}
+
 const ESPACE_GESTIONNAIRE = {
   lire: obtenirSessionGestionnaire,
   enregistrer: enregistrerSessionGestionnaire,
@@ -257,10 +302,25 @@ export async function listerDossiers(): Promise<DossierAgregat[]> {
   return dossiers;
 }
 
+/** AXE-800 : le mode expert est à l'expert-comptable habilité, engagement
+ * accepté. Un autre rôle reçoit 403 avec la raison : ce n'est pas une
+ * session expirée, l'écran l'explique (et propose l'engagement). */
+export class ModeExpertRefuse extends Error {
+  override name = "ModeExpertRefuse";
+}
+
+async function refusExpert(reponse: Response): Promise<never> {
+  const corps = (await reponse.json().catch(() => ({}))) as { detail?: string };
+  throw new ModeExpertRefuse(corps.detail ?? "Réservé à l'expert-comptable du portefeuille.");
+}
+
 export async function lireFileExpert(): Promise<FileExpert> {
   const reponse = await requeteGestionnaire("/expert/file");
-  if (reponse.status === 401 || reponse.status === 403) {
+  if (reponse.status === 401) {
     throw new ErreurAuthGestionnaire();
+  }
+  if (reponse.status === 403) {
+    await refusExpert(reponse);
   }
   if (!reponse.ok) {
     throw new ApiError(`API démo (/expert/file) : HTTP ${reponse.status}`, reponse.status);
@@ -273,14 +333,18 @@ export async function imputerExpert(
   dossierId: string,
   ecritureId: string,
   compte: string,
+  motif: string,
 ): Promise<ImputationFaite> {
   const reponse = await requeteGestionnaire("/expert/imputations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dossier_id: dossierId, ecriture_id: ecritureId, compte }),
+    body: JSON.stringify({ dossier_id: dossierId, ecriture_id: ecritureId, compte, motif }),
   });
-  if (reponse.status === 401 || reponse.status === 403) {
+  if (reponse.status === 401) {
     throw new ErreurAuthGestionnaire("Session expirée.");
+  }
+  if (reponse.status === 403) {
+    await refusExpert(reponse);
   }
   if (!reponse.ok) {
     let detail = `HTTP ${reponse.status}`;
@@ -299,6 +363,7 @@ export async function annulerImputation(
   dossierId: string,
   ecritureId: string,
   contrepassationId: string,
+  motif: string,
 ): Promise<void> {
   const reponse = await requeteGestionnaire("/expert/imputations/annuler", {
     method: "POST",
@@ -307,10 +372,14 @@ export async function annulerImputation(
       dossier_id: dossierId,
       ecriture_id: ecritureId,
       contrepassation_id: contrepassationId,
+      motif,
     }),
   });
-  if (reponse.status === 401 || reponse.status === 403) {
+  if (reponse.status === 401) {
     throw new ErreurAuthGestionnaire("Session expirée.");
+  }
+  if (reponse.status === 403) {
+    await refusExpert(reponse);
   }
   if (!reponse.ok) {
     let detail = "Impossible d'annuler l'imputation.";
@@ -326,8 +395,11 @@ export async function annulerImputation(
 
 export async function listerAnomalies(dossierId: string): Promise<AlerteAnomalie[]> {
   const reponse = await requeteGestionnaire(`/dossiers/${dossierId}/anomalies`);
-  if (reponse.status === 401 || reponse.status === 403) {
+  if (reponse.status === 401) {
     throw new ErreurAuthGestionnaire();
+  }
+  if (reponse.status === 403) {
+    await refusExpert(reponse);
   }
   if (!reponse.ok) {
     throw new ApiError(`API démo (/anomalies) : HTTP ${reponse.status}`, reponse.status);
@@ -366,7 +438,7 @@ export async function instruireAlerte(
   return (await reponse.json()) as AlerteAnomalie;
 }
 
-export type RoleMembre = "admin" | "membre" | "lecture";
+export type RoleMembre = "admin" | "membre" | "lecture" | "expert_comptable";
 
 export type StatutMembre = "invité" | "actif";
 

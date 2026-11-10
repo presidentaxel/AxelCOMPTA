@@ -12,7 +12,7 @@ from axelcompta.core.money import Money
 from axelcompta.demo_api import get_propositions
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
-    _client,
+    _client_expert,
     _en_tete_gestionnaire,
     _jwks_factice,
     _ledger_calcule_une_seule_fois,
@@ -54,7 +54,7 @@ def _a_trancher(client: TestClient, ecriture_id: EcritureId, moyen: str | None) 
 
 
 def test_un_sujet_d_operation_bancaire_dit_comment_l_argent_est_sorti() -> None:
-    client = _client()
+    client = _client_expert()
     _a_trancher(client, PLEIN, "card")
     _a_trancher(client, VIREMENT, None)
 

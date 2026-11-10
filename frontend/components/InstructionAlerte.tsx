@@ -78,7 +78,8 @@ function Qualification({
   const [commentaire, setCommentaire] = useState("");
   const [manque, setManque] = useState(false);
   function decider(decision: "justifiee" | "usage_personnel" | "faux_positif") {
-    if (decision === "justifiee" && !commentaire.trim()) {
+    // AXE-800 : chaque qualification porte le motif de l'expert.
+    if (commentaire.trim().length < 3) {
       setManque(true);
       return;
     }
@@ -94,7 +95,7 @@ function Qualification({
       }}
     >
       <label className="text-sm text-ink" htmlFor={champ}>
-        Commentaire
+        Motif (obligatoire)
       </label>
       <textarea
         id={champ}
@@ -104,7 +105,7 @@ function Qualification({
         onChange={(evenement) => setCommentaire(evenement.target.value)}
         className="rounded-md border border-hairline px-3 py-2 text-sm text-ink"
       />
-      {manque && <p className="text-sm text-danger">Un commentaire est nécessaire pour justifier.</p>}
+      {manque && <p className="text-sm text-danger">Indiquez le motif de votre décision.</p>}
       <Button type="submit" disabled={envoi}>
         Justifier
       </Button>

@@ -9,6 +9,7 @@ import { QuarantaineDossier } from "@/components/QuarantaineDossier";
 import { Squelette } from "@/components/Squelette";
 import {
   ErreurAuthGestionnaire,
+  ModeExpertRefuse,
   instruireAlerte,
   listerAnomalies,
   listerDossiers,
@@ -32,6 +33,9 @@ export default function AnomaliesPage() {
       .catch((exception) => {
         if (exception instanceof ErreurAuthGestionnaire) {
           router.replace("/connexion");
+        } else if (exception instanceof ModeExpertRefuse) {
+          // AXE-800 : le détail d'un dossier est à l'expert-comptable.
+          setErreur(exception.message);
         } else {
           setErreur("Impossible de charger les anomalies.");
         }

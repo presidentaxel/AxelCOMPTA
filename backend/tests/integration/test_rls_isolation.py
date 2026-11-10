@@ -51,6 +51,8 @@ from axelcompta.tenants.statuts import RegimeImposition
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.workflow.decisions import DecisionHumaine
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
+from axelcompta.workflow.expert_comptable import DecisionExpert, Habilitation
+from axelcompta.workflow.expert_comptable_postgres import PostgresExpertRepository
 from axelcompta.workflow.notifications import NotificationEnvoyee
 from axelcompta.workflow.notifications_postgres import PostgresNotificationRepository
 from axelcompta.workflow.signature import DocumentSigne
@@ -615,3 +617,48 @@ def test_comptes_a_choisir_ne_donne_que_des_nombres_du_portefeuille(
         assert set(depot_web.a_choisir(tous)) == {DossierId("yanis")}
     with contexte_identite(dossier_id=None, tenant_id=None):
         assert depot_web.a_choisir(tous) == {}
+
+
+def test_les_traces_d_expert_sont_isolees_et_en_ajout_seul(
+    engine: Engine, engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """AXE-800 (migration `c9f3a1e6d248`) : un portefeuille ne lit pas les
+    habilitations d'un autre ; une décision d'expert ne se modifie pas."""
+    le = datetime(2026, 11, 9, 9, 0, tzinfo=UTC)
+    PostgresExpertRepository(engine).habiliter(
+        Habilitation(
+            tenant_id=TenantId("tenant-a"),
+            email="expert@a.fr",
+            nom="Claire",
+            cabinet="A",
+            numero_ordre="1",
+            lettre_mission="LM",
+            date_lettre=date(2026, 1, 1),
+            dossiers=(DossierId("karim"),),
+            accordee_par=UserId("admin"),
+            accordee_le=le,
+        )
+    )
+    PostgresExpertRepository(engine).decider(
+        DecisionExpert(
+            id="q-1",
+            tenant_id=TenantId("tenant-a"),
+            dossier_id=DossierId("karim"),
+            ecriture_id=None,
+            nature="qualification",
+            motif="Vérifié",
+            auteur=UserId("expert"),
+            auteur_nom="Claire",
+            version_engagement="v",
+            le=le,
+        ),
+        [],
+    )
+    depot_web = PostgresExpertRepository(engine_web)
+    with contexte_identite(dossier_id=None, tenant_id="tenant-b"):
+        assert depot_web.habilitation(TenantId("tenant-a"), "expert@a.fr") is None
+        assert depot_web.decisions(DossierId("karim")) == ()
+    with contexte_identite(dossier_id=None, tenant_id="tenant-a"):
+        assert depot_web.habilitation(TenantId("tenant-a"), "expert@a.fr") is not None
+    with engine.begin() as connexion, pytest.raises((ProgrammingError, DBAPIError)):
+        connexion.execute(text("UPDATE decisions_expert SET motif = 'effacé'"))

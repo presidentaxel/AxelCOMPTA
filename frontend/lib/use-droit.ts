@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { listerMembres, obtenirSessionGestionnaire } from "@/lib/auth-gestionnaire";
 
 export type DroitGestionnaire = {
-  role: "admin" | "membre" | "lecture" | null;
+  role: "admin" | "membre" | "lecture" | "expert_comptable" | null;
   /** Lecture consulte. Membre et admin écrivent. */
   ecriture: boolean;
   admin: boolean;

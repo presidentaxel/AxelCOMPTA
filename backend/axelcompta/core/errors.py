@@ -25,6 +25,10 @@ class SaisieInvalide(DomaineError):
     """La saisie est lue mais ses valeurs ne tiennent pas."""
 
 
+class Interdit(DomaineError):
+    """L'appelant est identifié mais n'a pas ce droit (rôle, habilitation)."""
+
+
 class InvariantViole(Exception):
     """Un invariant du domaine (ex. doc 06 §1) a été violé — fail-fast, jamais
     rattrapé en silence (doc 08 §5)."""

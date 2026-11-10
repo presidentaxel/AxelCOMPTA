@@ -18,7 +18,7 @@ from axelcompta.packs.vtc_demo import charger_compte_par_categorie, charger_regl
 from axelcompta.workflow.decisions import CATEGORIE_A_PRECISER
 from axelcompta.workflow.synchro import COMPTE_ATTENTE, choisir_compte
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
-    _client,
+    _client_expert,
     _en_tete,
     _en_tete_gestionnaire,
     _jwks_factice,
@@ -58,7 +58,8 @@ def test_un_retrait_reste_a_trancher_avec_sa_categorie(
 
 
 def _client_avec_retrait() -> TestClient:
-    client = _client()
+    # La file expert est lue par l'expert-comptable habilité (AXE-800).
+    client = _client_expert()
     _ledger_du_client(client).enregistrer(
         Ecriture(
             id=RETRAIT,
@@ -120,7 +121,7 @@ def test_sans_suffixe_le_ticket_est_demande_d_apres_la_proposition() -> None:
     """AXE-848 : la synchro n'écrit plus « (retrait_especes) » dans le
     libellé. La catégorie d'origine se lit dans la proposition enregistrée,
     et le ticket reste demandé ; le libellé affiché est celui de la banque."""
-    client = _client()
+    client = _client_expert()
     nouveau = EcritureId("DEMO_karim:digifactory-dab2")
     _ledger_du_client(client).enregistrer(
         Ecriture(

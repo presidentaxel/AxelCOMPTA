@@ -37,7 +37,7 @@ import functools
 import json
 import re
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from collections.abc import Set as AbstractSet
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -249,6 +249,21 @@ from axelcompta.workflow.decisions_et_reclassements import (
 )
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
 from axelcompta.workflow.expert import preparer_imputation
+from axelcompta.workflow.expert_comptable import (
+    ROLE_EXPERT,
+    TEXTE_ENGAGEMENT,
+    VERSION_ENGAGEMENT,
+    DecisionExpert,
+    Engagement,
+    ExpertActif,
+    ExpertRepository,
+    Habilitation,
+    exiger_dossier,
+    expert_actif,
+    motif_valide,
+    verifier_engagement,
+)
+from axelcompta.workflow.expert_comptable_postgres import PostgresExpertRepository
 from axelcompta.workflow.file_expert_cache import CacheFileExpert, SujetsGardes
 from axelcompta.workflow.file_expert_cache_postgres import (
     PostgresCacheFileExpert,
@@ -507,6 +522,11 @@ class TransactionVue(BaseModel):
     confiance_proposition: float | None = None
     # Décision humaine en vigueur. None : classée par une règle, ou pas encore.
     categorie: str | None = None
+    # AXE-800 : l'opération a été reclassée par l'expert-comptable du
+    # portefeuille. Le chauffeur voit qui, quand et pourquoi.
+    reclassee_par: str | None = None
+    reclassee_le: str | None = None
+    motif_reclassement: str | None = None
 
 
 class DecisionEntree(BaseModel):
@@ -553,6 +573,7 @@ class AnnulationImputationEntree(BaseModel):
     dossier_id: str
     ecriture_id: str
     contrepassation_id: str
+    motif: str = ""  # obligatoire (AXE-800) : vérifié par `motif_valide`
 
 
 class FileExpertVue(BaseModel):
@@ -566,6 +587,7 @@ class ImputationEntree(BaseModel):
     dossier_id: str
     ecriture_id: str
     compte: str
+    motif: str = ""  # obligatoire (AXE-800) : vérifié par `motif_valide`
 
 
 MAX_DECISIONS_GROUPEES = 1000
@@ -988,6 +1010,37 @@ def _vues_dossier(
         _transaction_vue(e, e.id in avec_photo, e.id in exclues)
         for e in ecritures
         if not est_reclassement_bancaire(e)
+    ]
+
+
+def _avec_reclassements_expert(
+    vues: list[TransactionVue], decisions: Sequence[DecisionExpert]
+) -> list[TransactionVue]:
+    """AXE-800 : la dernière imputation d'expert sur une opération, ou sur
+    l'écriture qu'elle a posée, s'affiche au chauffeur avec son auteur et
+    son motif. Une annulation efface l'affichage (la dernière décision
+    fait foi)."""
+    par_ecriture: dict[str, DecisionExpert | None] = {}
+    for decision in sorted(decisions, key=lambda d: d.le):
+        if decision.nature == "qualification":
+            continue
+        retenue = decision if decision.nature == "imputation" else None
+        cibles = {str(e) for e in decision.ecritures}
+        if decision.ecriture_id is not None:
+            cibles.add(str(decision.ecriture_id))
+        for cible in cibles:
+            par_ecriture[cible] = retenue
+    return [
+        vue.model_copy(
+            update={
+                "reclassee_par": f"{d.auteur_nom}, expert-comptable",
+                "reclassee_le": d.le.date().isoformat(),
+                "motif_reclassement": d.motif,
+            }
+        )
+        if (d := par_ecriture.get(vue.ecriture_id)) is not None
+        else vue
+        for vue in vues
     ]
 
 
@@ -1454,6 +1507,44 @@ def get_dossier_du_portefeuille(
 
 
 DossierPortefeuilleDep = Annotated[Dossier, Depends(get_dossier_du_portefeuille)]
+
+
+def get_experts() -> ExpertRepository:
+    """Dépendance FastAPI — voir `_engine` (AXE-800)."""
+    return PostgresExpertRepository(_engine())
+
+
+ExpertsDep = Annotated[ExpertRepository, Depends(get_experts)]
+
+
+def _expert(
+    identite: IdentiteAuthentifiee | None, role: str, experts: ExpertRepository
+) -> tuple[TenantId, IdentiteAuthentifiee, ExpertActif]:
+    """AXE-800 : seul l'expert-comptable habilité, engagement accepté, voit
+    le détail des dossiers et y écrit. Le gestionnaire garde les agrégats."""
+    tenant_id, identite = _verifier_acces_gestionnaire(identite)
+    actif = expert_actif(
+        role,
+        experts.habilitation(tenant_id, identite.email),
+        experts.engagement(tenant_id, identite.email),
+    )
+    return tenant_id, identite, actif
+
+
+def get_dossier_de_l_expert(
+    dossier: DossierPortefeuilleDep,
+    identite: IdentiteDep,
+    role: RoleMembreDep,
+    experts: ExpertsDep,
+) -> Dossier:
+    """Un dossier du portefeuille, couvert par la lettre de mission de
+    l'expert qui le demande (AXE-800)."""
+    _tenant, _identite, actif = _expert(identite, role, experts)
+    exiger_dossier(actif, dossier.id)
+    return dossier
+
+
+DossierExpertDep = Annotated[Dossier, Depends(get_dossier_de_l_expert)]
 
 
 def get_journal_ingestion() -> JournalIngestion:
@@ -2133,10 +2224,12 @@ def _enregistrer_routes_revue(app: FastAPI) -> None:
         justificatifs: JustificatifsDep,
         decisions: DecisionsDep,
         pipeline: PipelineDep,
+        experts: ExpertsDep,
     ) -> list[TransactionVue]:
-        return _transactions_dossier(
+        vues = _transactions_dossier(
             dossier, ledger, justificatifs, decisions.lister_decisions(dossier.id), pipeline
         )
+        return _avec_reclassements_expert(vues, experts.decisions(dossier.id))
 
     @app.post("/dossiers/{dossier_id}/decisions-groupees", response_model=list[TransactionVue])
     def trancher_en_groupe(
@@ -2471,6 +2564,15 @@ def _ecrire_role(tenant_id: TenantId, email: str, role: str) -> None:
                 set_={"role": role},
             )
         )
+
+
+def get_ecrire_role() -> Callable[[TenantId, str, str], None]:
+    """Dépendance : écrire un rôle dans `droits_membre` (Postgres). La suite
+    rapide la remplace pour ne pas ouvrir de base."""
+    return _ecrire_role
+
+
+EcrireRoleDep = Annotated[Callable[[TenantId, str, str], None], Depends(get_ecrire_role)]
 
 
 def _rappel_vue(ligne: Row[Any]) -> RappelVue:
@@ -4346,7 +4448,7 @@ def _enregistrer_route_historique_anomalie(app: FastAPI) -> None:
         response_model=list[EvenementAnomalieVue],
     )
     def historique_anomalie(
-        alerte_id: str, dossier: DossierPortefeuilleDep, registre: RegistreAnomaliesDep
+        alerte_id: str, dossier: DossierExpertDep, registre: RegistreAnomaliesDep
     ) -> list[EvenementAnomalieVue]:
         """Chaque changement d'état, avec son auteur et sa date (AXE-814)."""
         return [
@@ -4360,7 +4462,7 @@ def _enregistrer_route_historique_anomalie(app: FastAPI) -> None:
 def _enregistrer_routes_anomalies(app: FastAPI) -> None:
     @app.get("/dossiers/{dossier_id}/anomalies", response_model=list[AlerteAnomalieVue])
     def lister_anomalies(
-        dossier: DossierPortefeuilleDep,
+        dossier: DossierExpertDep,
         base: LedgerBaseDep,
         decisions: DecisionsDep,
         justificatifs: JustificatifsDep,
@@ -4378,18 +4480,25 @@ def _enregistrer_routes_anomalies(app: FastAPI) -> None:
     def instruire_anomalie(
         alerte_id: str,
         entree: InstructionAnomalieEntree,
-        dossier: DossierPortefeuilleDep,
+        dossier: DossierExpertDep,
         base: LedgerBaseDep,
         decisions: DecisionsDep,
         justificatifs: JustificatifsDep,
         propositions: PropositionsDep,
         registre: RegistreAnomaliesDep,
+        experts: ExpertsDep,
         identite: IdentiteDep,
         role: RoleMembreDep,
     ) -> AlerteAnomalieVue:
-        """Le gestionnaire qualifie. Lecture consulte, ne qualifie pas."""
-        _exiger_ecriture(role, "La lecture ne qualifie pas une alerte.")
-        _, identite = _verifier_acces_gestionnaire(identite)
+        """L'expert qualifie, avec un motif (AXE-800) : la qualification est
+        une décision d'expert, tracée avec son auteur."""
+        _, identite, actif = _expert(identite, role, experts)
+        # Mettre en instruction n'est pas une décision : le motif y est libre.
+        motif = (
+            entree.commentaire.strip() or "Mise en instruction"
+            if entree.decision == "en_instruction"
+            else motif_valide(entree.commentaire)
+        )
         alertes = _alertes_du_dossier(dossier, base, decisions, justificatifs, propositions)
         alerte = alertes.get(alerte_id)
         if alerte is None:
@@ -4400,8 +4509,12 @@ def _enregistrer_routes_anomalies(app: FastAPI) -> None:
             entree.decision,
             # L'auteur se lit dans l'historique (AXE-800) : l'e-mail, pas l'uuid.
             identite.email or identite.user_id,
-            entree.commentaire,
+            motif,
             datetime.now(UTC),
+        )
+        experts.decider(
+            _decision_expert(actif, identite, dossier, alerte.ecriture_id, "qualification", motif),
+            [],
         )
         return _alerte_vue(alerte, etat)
 
@@ -4694,35 +4807,33 @@ def imputer_ecriture(
     justificatifs: JustificatifsDep,
     registre: RegistreAnomaliesDep,
     propositions: PropositionsDep,
+    experts: ExpertsDep,
+    role: RoleMembreDep,
     identite: IdentiteDep,
 ) -> ImputationVue:
     """Pose la contre-passation et la nouvelle écriture. L'originale reste.
+    AXE-800 : réservé à l'expert habilité sur ce dossier ; la décision (auteur,
+    motif, version de l'engagement) s'écrit avec ses écritures, tout ou rien.
     La réponse dit ce qui a été écrit, et les sujets à jour de ce dossier seul."""
-    tenant_id, _identite = _verifier_acces_gestionnaire(identite)
-    dossier = dossiers.obtenir(DossierId(entree.dossier_id))
-    if dossier is None or dossier.tenant_id != tenant_id:
-        raise HTTPException(status_code=404, detail="Dossier inconnu.")
+    tenant_id, identite, actif = _expert(identite, role, experts)
+    motif = motif_valide(entree.motif)
+    dossier = _dossier_de_l_expert(dossiers, tenant_id, actif, entree.dossier_id)
     connus = {ecriture.id: ecriture for ecriture in base.grand_livre(dossier.id)}
     ecriture = connus.get(EcritureId(entree.ecriture_id))
     if ecriture is None:
         raise HTTPException(status_code=404, detail="Écriture inconnue.")
+    periodes = base.periodes_closes(dossier.id)
     inverse, nouvelle = preparer_imputation(
-        ecriture,
-        entree.compte,
-        set(connus),
-        base.periodes_closes(dossier.id),
-        dossier.exercice_debut,
+        ecriture, entree.compte, set(connus), periodes, dossier.exercice_debut
     )
-    base.enregistrer(inverse)
     # AXE-420 : la décision du chauffeur ne doit pas rester chargée en plus.
-    for annulation in annuler_reclassements(
-        ecriture.id,
-        list(connus.values()),
-        base.periodes_closes(dossier.id),
-        dossier.exercice_debut,
-    ):
-        base.enregistrer(annulation)
-    base.enregistrer(nouvelle)
+    annulations = annuler_reclassements(
+        ecriture.id, list(connus.values()), periodes, dossier.exercice_debut
+    )
+    experts.decider(
+        _decision_expert(actif, identite, dossier, ecriture.id, "imputation", motif),
+        [inverse, *annulations, nouvelle],
+    )
     sujets = _avec_moyens_de_paiement(
         _sujets_expert(
             dossier, base, decisions, justificatifs, registre, propositions=propositions
@@ -4741,24 +4852,65 @@ def annuler_imputation(
     entree: AnnulationImputationEntree,
     dossiers: DossiersDep,
     base: LedgerBaseDep,
+    experts: ExpertsDep,
+    role: RoleMembreDep,
     identite: IdentiteDep,
 ) -> None:
     """Contre-passe la nouvelle écriture et l'inverse posé par l'imputation.
-    Le solde revient à l'écriture d'origine."""
-    tenant_id, _identite = _verifier_acces_gestionnaire(identite)
-    dossier = dossiers.obtenir(DossierId(entree.dossier_id))
-    if dossier is None or dossier.tenant_id != tenant_id:
-        raise HTTPException(status_code=404, detail="Dossier inconnu.")
+    Le solde revient à l'écriture d'origine. AXE-800 : par l'expert, avec un
+    motif, tout ou rien."""
+    tenant_id, identite, actif = _expert(identite, role, experts)
+    motif = motif_valide(entree.motif)
+    dossier = _dossier_de_l_expert(dossiers, tenant_id, actif, entree.dossier_id)
     connus = {ecriture.id: ecriture for ecriture in base.grand_livre(dossier.id)}
     periodes = base.periodes_closes(dossier.id)
+    inverses: list[Ecriture] = []
     for identifiant in (entree.ecriture_id, entree.contrepassation_id):
         ecriture = connus.get(EcritureId(identifiant))
         if ecriture is None:
             raise HTTPException(status_code=404, detail="Écriture inconnue.")
         inverse = contrepasser(ecriture, periodes, dossier.exercice_debut)
         if inverse.id not in connus:
-            base.enregistrer(inverse)
+            inverses.append(inverse)
             connus[inverse.id] = inverse
+    experts.decider(
+        _decision_expert(
+            actif, identite, dossier, EcritureId(entree.ecriture_id), "annulation", motif
+        ),
+        inverses,
+    )
+
+
+def _dossier_de_l_expert(
+    dossiers: DossierRepository, tenant_id: TenantId, actif: ExpertActif, dossier_id: str
+) -> Dossier:
+    dossier = dossiers.obtenir(DossierId(dossier_id))
+    if dossier is None or dossier.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Dossier inconnu.")
+    exiger_dossier(actif, dossier.id)
+    return dossier
+
+
+def _decision_expert(
+    actif: ExpertActif,
+    identite: IdentiteAuthentifiee,
+    dossier: Dossier,
+    ecriture_id: EcritureId | None,
+    nature: Literal["imputation", "annulation", "qualification"],
+    motif: str,
+) -> DecisionExpert:
+    return DecisionExpert(
+        id=uuid.uuid4().hex,
+        tenant_id=dossier.tenant_id,
+        dossier_id=dossier.id,
+        ecriture_id=ecriture_id,
+        nature=nature,
+        motif=motif,
+        auteur=identite.user_id,
+        auteur_nom=actif.habilitation.nom,
+        version_engagement=actif.engagement.version,
+        le=datetime.now(UTC),
+    )
 
 
 def _avec_moyens_de_paiement(
@@ -4842,15 +4994,20 @@ def _enregistrer_routes_expert(app: FastAPI) -> None:
         agregats: AgregatsDep,
         cache: CacheFileExpertDep,
         propositions: PropositionsDep,
+        experts: ExpertsDep,
+        role: RoleMembreDep,
         identite: IdentiteDep,
     ) -> FileExpertVue:
         """File de l'expert-comptable. Seuls les dossiers changés sont
         recalculés (AXE-824). Un tag peut exclure un dossier du mode expert
-        ou de ses anomalies (AXE-829)."""
-        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        ou de ses anomalies (AXE-829). AXE-800 : réservée à l'expert habilité,
+        sur les dossiers de sa lettre de mission."""
+        tenant_id, _identite, actif = _expert(identite, role, experts)
         etat = etat_du_portefeuille(tags, tenant_id)
         portefeuille = tuple(
-            d for d in dossiers.lister_par_tenant(tenant_id) if not etat.exclu(d.id, "expert")
+            d
+            for d in dossiers.lister_par_tenant(tenant_id)
+            if not etat.exclu(d.id, "expert") and actif.couvre(d.id)
         )
         sources = (base, decisions, justificatifs, propositions)
         sujets = _avec_moyens_de_paiement(
@@ -5059,6 +5216,8 @@ def _enregistrer_routes_classees(app: FastAPI) -> None:
         verdicts: VerdictsDep,
         agregats: AgregatsDep,
         cache: CacheClasseesDep,
+        experts: ExpertsDep,
+        role: RoleMembreDep,
         identite: IdentiteDep,
         statut: Statut | None = None,
         origine: str | None = None,
@@ -5073,9 +5232,11 @@ def _enregistrer_routes_classees(app: FastAPI) -> None:
         paginées côté serveur. Seuls les dossiers dont la version a bougé
         sont recalculés (AXE-824). Les compteurs portent sur tout le
         portefeuille. Les verdicts sont relus à chaque affichage."""
-        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        tenant_id, _identite, actif = _expert(identite, role, experts)
         portefeuille = [
-            d for d in dossiers.lister_par_tenant(tenant_id) if dossier in (None, str(d.id))
+            d
+            for d in dossiers.lister_par_tenant(tenant_id)
+            if dossier in (None, str(d.id)) and actif.couvre(d.id)
         ]
         noms = {d.id: d.nom for d in portefeuille}
         operations = _poser_verdicts(
@@ -5102,16 +5263,14 @@ def _enregistrer_route_verdict(app: FastAPI) -> None:
         entree: VerdictEntree,
         dossiers: DossiersDep,
         verdicts: VerdictsDep,
+        experts: ExpertsDep,
         role: RoleMembreDep,
         identite: IdentiteDep,
     ) -> None:
         """« Juste » ou « faux », sans écriture. « Faux » ne corrige rien :
         l'imputation reste un geste à part (mode expert)."""
-        tenant_id, identite_ok = _verifier_acces_gestionnaire(identite)
-        _exiger_ecriture(role, "La lecture ne note pas un classement.")
-        dossier = dossiers.obtenir(DossierId(entree.dossier_id))
-        if dossier is None or dossier.tenant_id != tenant_id:
-            raise HTTPException(status_code=404, detail="Dossier inconnu.")
+        tenant_id, identite_ok, actif = _expert(identite, role, experts)
+        dossier = _dossier_de_l_expert(dossiers, tenant_id, actif, entree.dossier_id)
         verdicts.noter(
             dossier.id,
             EcritureId(entree.ecriture_id),
@@ -5192,7 +5351,7 @@ def _resoudre_quarantaine(
 def _enregistrer_routes_quarantaine(app: FastAPI) -> None:
     @app.get("/dossiers/{dossier_id}/quarantaine", response_model=list[EntreeQuarantaineVue])
     def lister_quarantaine(
-        dossier: DossierPortefeuilleDep,
+        dossier: DossierExpertDep,
         journal: JournalIngestionDep,
         resolutions: ResolutionsDep,
     ) -> list[EntreeQuarantaineVue]:
@@ -5207,7 +5366,7 @@ def _enregistrer_routes_quarantaine(app: FastAPI) -> None:
     def resoudre_quarantaine(
         entree_id: str,
         corps: ResolutionEntree,
-        dossier: DossierPortefeuilleDep,
+        dossier: DossierExpertDep,
         journal: JournalIngestionDep,
         resolutions: ResolutionsDep,
         base: LedgerBaseDep,
@@ -5572,6 +5731,152 @@ def _enregistrer_routes_mfa_et_acces(app: FastAPI) -> None:
         ]
 
 
+class HabilitationEntree(BaseModel):
+    email: str
+    nom: str
+    cabinet: str
+    numero_ordre: str
+    lettre_mission: str
+    date_lettre: date
+    dossiers: list[str]
+
+
+class HabilitationVue(BaseModel):
+    email: str
+    nom: str
+    cabinet: str
+    numero_ordre: str
+    lettre_mission: str
+    date_lettre: str
+    dossiers: list[str]
+
+
+class EngagementVue(BaseModel):
+    """Ce que l'écran de l'expert affiche avant de lui ouvrir le mode expert."""
+
+    version: str
+    texte: str
+    accepte: bool
+    habilitation: HabilitationVue | None
+
+
+class AcceptationEntree(BaseModel):
+    version: str
+    texte: str
+
+
+def _habilitation_vue(h: Habilitation) -> HabilitationVue:
+    return HabilitationVue(
+        email=h.email,
+        nom=h.nom,
+        cabinet=h.cabinet,
+        numero_ordre=h.numero_ordre,
+        lettre_mission=h.lettre_mission,
+        date_lettre=h.date_lettre.isoformat(),
+        dossiers=[str(d) for d in h.dossiers],
+    )
+
+
+def _champs_obligatoires(entree: HabilitationEntree) -> None:
+    champs = (entree.email, entree.nom, entree.cabinet, entree.numero_ordre, entree.lettre_mission)
+    if any(not champ.strip() for champ in champs) or not entree.dossiers:
+        raise HTTPException(
+            status_code=422,
+            detail="Nom, cabinet, numéro d'Ordre, lettre de mission et dossiers sont obligatoires.",
+        )
+
+
+def _enregistrer_routes_expert_comptable(app: FastAPI) -> None:
+    """AXE-800 : un admin habilite l'expert ; l'expert accepte l'engagement."""
+
+    @app.post("/portefeuille/experts", response_model=HabilitationVue)
+    def habiliter_expert(
+        entree: HabilitationEntree,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        dossiers: DossiersDep,
+        comptes: ComptesDep,
+        experts: ExpertsDep,
+        ecrire_role: EcrireRoleDep,
+    ) -> HabilitationVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        if role != "admin":
+            raise HTTPException(status_code=403, detail="Réservé à un administrateur.")
+        _champs_obligatoires(entree)
+        du_portefeuille = {d.id for d in dossiers.lister_par_tenant(tenant_id)}
+        couverts = tuple(DossierId(d) for d in dict.fromkeys(entree.dossiers))
+        if not set(couverts) <= du_portefeuille:
+            raise HTTPException(status_code=404, detail="Un dossier n'est pas du portefeuille.")
+        email = entree.email.strip().lower()
+        ecrire_role(tenant_id, email, ROLE_EXPERT)
+        if all(m.email.lower() != email for m in comptes.membres(str(tenant_id))):
+            comptes.inviter_membre(str(tenant_id), email, ROLE_EXPERT)
+        habilitation = Habilitation(
+            tenant_id=tenant_id,
+            email=email,
+            nom=entree.nom.strip(),
+            cabinet=entree.cabinet.strip(),
+            numero_ordre=entree.numero_ordre.strip(),
+            lettre_mission=entree.lettre_mission.strip(),
+            date_lettre=entree.date_lettre,
+            dossiers=couverts,
+            accordee_par=identite.user_id,
+            accordee_le=datetime.now(UTC),
+        )
+        experts.habiliter(habilitation)
+        return _habilitation_vue(habilitation)
+
+
+def _enregistrer_routes_engagement(app: FastAPI) -> None:
+    """AXE-800 : l'expert lit puis accepte l'engagement de responsabilité."""
+
+    @app.get("/expert/engagement", response_model=EngagementVue)
+    def lire_engagement(identite: IdentiteDep, experts: ExpertsDep) -> EngagementVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        habilitation = experts.habilitation(tenant_id, identite.email)
+        engagement = experts.engagement(tenant_id, identite.email)
+        return EngagementVue(
+            version=VERSION_ENGAGEMENT,
+            texte=TEXTE_ENGAGEMENT,
+            accepte=engagement is not None and engagement.version == VERSION_ENGAGEMENT,
+            habilitation=_habilitation_vue(habilitation) if habilitation else None,
+        )
+
+    @app.post("/expert/engagement", response_model=EngagementVue)
+    def accepter_engagement(
+        entree: AcceptationEntree,
+        request: Request,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        experts: ExpertsDep,
+    ) -> EngagementVue:
+        """Le texte est gardé mot pour mot, avec la date et l'adresse."""
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        habilitation = experts.habilitation(tenant_id, identite.email)
+        if role != ROLE_EXPERT or habilitation is None:
+            raise HTTPException(status_code=403, detail="Réservé à l'expert-comptable habilité.")
+        verifier_engagement(entree.texte, entree.version)
+        adresse = request.client.host if request.client else "?"
+        agent = (request.headers.get("user-agent") or "?")[:160]
+        experts.accepter(
+            Engagement(
+                tenant_id=tenant_id,
+                email=identite.email,
+                version=entree.version,
+                texte=entree.texte,
+                adresse=f"{adresse} · {agent}",
+                acteur=identite.user_id,
+                accepte_le=datetime.now(UTC),
+            )
+        )
+        return EngagementVue(
+            version=VERSION_ENGAGEMENT,
+            texte=TEXTE_ENGAGEMENT,
+            accepte=True,
+            habilitation=_habilitation_vue(habilitation),
+        )
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="AxeLCompta — API",
@@ -5591,6 +5896,8 @@ def create_app() -> FastAPI:
     _enregistrer_routes_securite(app)
     _enregistrer_routes_mfa_et_acces(app)
     _enregistrer_route_compte_de_test(app)
+    _enregistrer_routes_expert_comptable(app)
+    _enregistrer_routes_engagement(app)
     _enregistrer_routes_transactions(app)
     _enregistrer_route_correction(app)
     _enregistrer_routes_annulation(app)

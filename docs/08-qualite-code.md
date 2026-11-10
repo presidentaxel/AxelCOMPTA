@@ -122,7 +122,7 @@ de le remettre au vert, pas de contourner.
 **API (AXE-839)** : une `DomaineError` répond 4xx avec son message, par un
 seul gestionnaire (`axelcompta/api/erreurs.py`). Le code vient de la famille
 de l'erreur (`core/errors.py`) : `Conflit` → 409, `Introuvable` → 404,
-`SaisieInvalide` → 422, sinon 400. Une route ne rattrape une erreur métier
+`SaisieInvalide` → 422, `Interdit` → 403 (AXE-800), sinon 400. Une route ne rattrape une erreur métier
 que pour changer la réponse (message différent, autre forme). Un bug
 (`InvariantViole`, toute autre exception) reste un 500.
 
