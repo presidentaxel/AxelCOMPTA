@@ -393,3 +393,24 @@ AXE-842) :
 5. Compte de test, si besoin (AXE-822, à supprimer avant que les
    chauffeurs se connectent) :
    `python scripts/compte_de_test.py creer <e-mail> --jusqu-au <date>`.
+
+## Modèle de catégorisation hors du poste (AXE-847)
+
+Le `.joblib` est gitignoré. Il vit dans un bucket S3 **privé**
+(`MODELES_BUCKET`, `modeles` par défaut ; Supabase Storage en mode S3), un
+dossier par version : modèle, empreinte `.sha256`, calibration, rapport.
+Au démarrage du worker, de la synchro, des tâches planifiées et de l'API,
+la version `AXELCOMPTA_MODELE_VERSION` est téléchargée si elle manque sur le
+poste (ou si le fichier local ne respecte plus son empreinte), empreinte
+vérifiée avant d'écrire. Sans stockage configuré, rien n'est tenté : la
+synchro s'arrête d'elle-même sans modèle (AXE-825).
+
+Publier une version, après accord sur le rapport d'entraînement
+(simulation par défaut ; une version publiée ne se remplace pas) :
+
+    python scripts/publier_modele.py tfidf_logreg_v2 \
+        --rapport ../_AUDIT_DONNEES/resultats/rapport_modele_v2.txt --publier
+
+Mise en route : créer le bucket privé `modeles` dans Supabase Storage, et
+des clés d'accès S3 (Storage > S3 Connection) posées en `S3_ENDPOINT`,
+`S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION` sur le poste et le serveur.
