@@ -14,7 +14,7 @@ from sqlalchemy.engine import Connection, Engine
 
 from axelcompta.core.ids import DossierId, TenantId, UserId
 from axelcompta.core.rls import appliquer_rls
-from axelcompta.workflow.audit import ACTE_CONFIGURATION, noter
+from axelcompta.workflow.audit import ACTE_CONFIGURATION, ACTE_PARAMETRES_TVA, noter
 
 from .identite_json import identite_depuis_json, identite_vers_json
 from .models import Dossier, Tenant, verifier_mode_relance
@@ -120,6 +120,18 @@ class PostgresDossierRepository(DossierRepository):
             )
             noter(connexion, dossier.id, ACTE_CONFIGURATION, reference, par, le)
 
+    def parametrer_tva(
+        self, dossier_id: DossierId, periodicite: str, jour: int, par: UserId, le: datetime
+    ) -> None:
+        with self._engine.begin() as connexion:
+            appliquer_rls(connexion)
+            connexion.execute(
+                update(dossiers)
+                .where(dossiers.c.id == dossier_id)
+                .values(tva_periodicite=periodicite, tva_jour_echeance=jour)
+            )
+            noter(connexion, dossier_id, ACTE_PARAMETRES_TVA, f"{periodicite}/{jour}", par, le)
+
     def ouvrir_exercice(self, dossier: Dossier) -> None:
         configuration_de(dossier)
         with self._engine.begin() as connexion:
@@ -204,6 +216,14 @@ class PostgresDossierRepository(DossierRepository):
         return _vers_dossier(ligne) if ligne is not None else None
 
 
+def _parametres_tva(dossier: Dossier) -> dict[str, object]:
+    valeurs = {
+        "tva_periodicite": dossier.tva_periodicite,
+        "tva_jour_echeance": dossier.tva_jour_echeance,
+    }
+    return {colonne: valeur for colonne, valeur in valeurs.items() if valeur is not None}
+
+
 def _vers_dossier(ligne: Any) -> Dossier:
     return Dossier(
         id=DossierId(ligne.id),
@@ -225,6 +245,8 @@ def _vers_dossier(ligne: Any) -> Dossier:
         relance_consentement=ligne.relance_consentement,
         code_naf=ligne.code_naf,
         a_confirmer=tuple(ligne.a_confirmer or ()),
+        tva_periodicite=ligne.tva_periodicite,
+        tva_jour_echeance=ligne.tva_jour_echeance,
     )
 
 
@@ -258,6 +280,9 @@ def _inserer(connexion: Connection, dossier: Dossier) -> int:
             relance_consentement=dossier.relance_consentement,
             code_naf=dossier.code_naf,
             a_confirmer=list(dossier.a_confirmer),
+            # Vides à la création (AXE-805) : nommées seulement si posées,
+            # l'insertion reste valable avant leur migration.
+            **_parametres_tva(dossier),
         )
         .on_conflict_do_nothing(index_elements=[dossiers.c.id])
     )

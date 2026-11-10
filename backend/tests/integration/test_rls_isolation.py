@@ -662,3 +662,27 @@ def test_les_traces_d_expert_sont_isolees_et_en_ajout_seul(
         assert depot_web.habilitation(TenantId("tenant-a"), "expert@a.fr") is not None
     with engine.begin() as connexion, pytest.raises((ProgrammingError, DBAPIError)):
         connexion.execute(text("UPDATE decisions_expert SET motif = 'effacé'"))
+
+
+def test_le_dirigeant_regle_sa_tva_et_rien_d_autre(
+    engine: Engine, engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """AXE-805 (migration `d4a8f2c6e195`) : périodicité et jour d'échéance,
+    sur son dossier seulement, tracés au journal d'audit."""
+    depot_web = PostgresDossierRepository(engine_web)
+    le = datetime(2026, 11, 9, 10, 0, tzinfo=UTC)
+    with contexte_identite(dossier_id="sophie", tenant_id=None):
+        depot_web.parametrer_tva(DossierId("sophie"), "mensuelle", 19, UserId("sophie"), le)
+        # Le dossier d'un autre : la trace d'audit est refusée, rien n'est écrit.
+        with pytest.raises((ProgrammingError, DBAPIError)):
+            depot_web.parametrer_tva(DossierId("karim"), "trimestrielle", 15, UserId("sophie"), le)
+        with engine_web.begin() as connexion:
+            appliquer_rls(connexion)
+            with pytest.raises((ProgrammingError, DBAPIError)):
+                connexion.execute(text("UPDATE dossiers SET nom = 'autre'"))
+
+    depot = PostgresDossierRepository(engine)
+    sophie, karim = depot.obtenir(DossierId("sophie")), depot.obtenir(DossierId("karim"))
+    assert sophie is not None and karim is not None
+    assert (sophie.tva_periodicite, sophie.tva_jour_echeance) == ("mensuelle", 19)
+    assert karim.tva_periodicite is None

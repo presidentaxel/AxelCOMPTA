@@ -43,7 +43,12 @@ TYPE_CONNEXION_A_REFAIRE = "connexion_a_refaire"
 # AXE-851 : un compte bancaire attend le choix du dirigeant (activité ou
 # personnel). Tant qu'il n'a pas choisi, la synchro écarte ses opérations.
 TYPE_COMPTES_A_CHOISIR = "comptes_a_choisir"
+# TVA en cours d'année (AXE-805) : la CA3 de la période est à déposer.
+TYPE_TVA_J7 = "tva_j7"
+TYPE_TVA_J2 = "tva_j2"
 MESSAGES_FIXES = {
+    TYPE_TVA_J7: "Votre déclaration de TVA est à déposer dans une semaine : voyez Ma TVA.",
+    TYPE_TVA_J2: "Votre déclaration de TVA est à déposer dans deux jours : voyez Ma TVA.",
     TYPE_CLOTURE_A_VALIDER: "Votre exercice est terminé : relisez-le et validez sa clôture.",
     TYPE_CONNEXION_J14: (
         "Votre connexion bancaire expire dans deux semaines : renouvelez-la pour que "
@@ -186,6 +191,8 @@ def sujet(type_: str) -> str:
     sujet : le dernier remplace les précédents dans la cloche."""
     if type_.startswith("connexion"):
         return "connexion"
+    if type_.startswith("tva_"):
+        return "tva"
     return type_
 
 

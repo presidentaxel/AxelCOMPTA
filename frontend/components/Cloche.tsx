@@ -28,6 +28,7 @@ const HAUTEUR_PANNEAU = "calc(100dvh - 8rem - env(safe-area-inset-bottom, 0px))"
  * Les opérations à traiter s'ouvrent sur Activité. */
 export function lienNotification(dossierId: string, type: string): string {
   if (type === "cloture_a_valider") return `/chauffeur/${dossierId}/exercice`;
+  if (type.startsWith("tva_")) return `/chauffeur/${dossierId}/tva`;
   if (type.startsWith("connexion")) return "/chauffeur/compte";
   if (type === "comptes_a_choisir") return "/chauffeur/compte";
   return `/chauffeur/${dossierId}`;

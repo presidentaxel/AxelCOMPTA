@@ -97,6 +97,16 @@ from axelcompta.closing.dividendes import RetenuesDividendes, retenues
 from axelcompta.closing.models import LiassePivot, ParametresCloture, ProvisionCloture
 from axelcompta.closing.paie import Bulletin
 from axelcompta.closing.provisions import valider_provision
+from axelcompta.closing.tva_periodique import (
+    EtatPeriode,
+    echeance,
+    ecriture_liquidation,
+    etats_tva,
+    periodes_du_dossier,
+    prochaine_a_declarer,
+    type_preuve,
+    verifier_parametres,
+)
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, UserId
 from axelcompta.core.libelles import categorie_du_suffixe, sans_categorie
@@ -451,6 +461,11 @@ class DossierAgregat(BaseModel):
     comptes_a_choisir: int = 0
     comptes_a_choisir_depuis: str | None = None
     operations_en_attente_de_choix: int = 0
+
+    # AXE-805 : la plus ancienne période de TVA terminée et pas déclarée
+    # (« 2026-10 »), et son échéance. Pas de montant (doc 19 §2.4).
+    tva_a_declarer: str | None = None
+    tva_echeance: str | None = None
 
 
 class DossierDeTestVue(BaseModel):
@@ -2107,6 +2122,7 @@ def _agregats_portefeuille(
     invitations = comptes.statuts(ids)
     preuves = _preuves_exercice(signatures, ids)
     a_choisir = comptes_bancaires.a_choisir(ids)
+    tva = _tva_a_declarer(signatures, dossiers, datetime.now(UTC).date())
     resultat: list[DossierAgregat] = []
     for dossier in dossiers:
         invitation = invitations.get(dossier.id)
@@ -2119,7 +2135,7 @@ def _agregats_portefeuille(
                 _statut_invitation_vue(invitation.statut) if invitation else None,
                 preuves.get(dossier.id, set()),
                 a_choisir.get(dossier.id),
-            )
+            ).model_copy(update=tva.get(dossier.id, {}))
         )
     return resultat
 
@@ -2144,6 +2160,30 @@ def _enregistrer_route_compte_de_test(app: FastAPI) -> None:
             )
             for d in dossiers.lister_par_tenant(identite.lecteur_test_tenant)
         ]
+
+
+def _tva_a_declarer(
+    signatures: SignatureRepository, dossiers: Sequence[Dossier], aujourd_hui: date
+) -> dict[DossierId, dict[str, str | None]]:
+    """AXE-805, pour tout le portefeuille en une lecture des preuves."""
+    par_dossier = {d.id: periodes_du_dossier(d) for d in dossiers}
+    types = sorted({type_preuve(p) for periodes in par_dossier.values() for p in periodes})
+    if not types:
+        return {}
+    declarees = signatures.types_presents(list(par_dossier), types)
+    resultat: dict[DossierId, dict[str, str | None]] = {}
+    for dossier in dossiers:
+        periode = prochaine_a_declarer(
+            par_dossier[dossier.id], declarees.get(dossier.id, set()), aujourd_hui
+        )
+        if periode is None:
+            continue
+        jour = dossier.tva_jour_echeance
+        resultat[dossier.id] = {
+            "tva_a_declarer": periode.cle,
+            "tva_echeance": echeance(periode, jour).isoformat() if jour else None,
+        }
+    return resultat
 
 
 def _enregistrer_routes_dossiers(app: FastAPI) -> None:
@@ -5877,6 +5917,172 @@ def _enregistrer_routes_engagement(app: FastAPI) -> None:
         )
 
 
+class LigneCa3Vue(BaseModel):
+    numero: str
+    libelle: str
+    centimes: int
+
+
+class PeriodeTvaVue(BaseModel):
+    cle: str
+    debut: str
+    fin: str
+    echeance: str | None
+    lignes: list[LigneCa3Vue]
+    due_cts: int
+    credit_cts: int
+    declaree: bool
+    a_traiter: int
+
+
+class TvaVue(BaseModel):
+    """AXE-805 : l'écran « Ma TVA » du chauffeur."""
+
+    periodicite: str | None
+    jour_echeance: int | None
+    periodes: list[PeriodeTvaVue]
+
+
+class ParametresTvaEntree(BaseModel):
+    periodicite: str
+    jour_echeance: int
+
+
+class DeclarationTvaEntree(BaseModel):
+    deposee_le: date
+
+
+def _etats_tva(
+    dossier: Dossier,
+    ledger: InMemoryLedgerService,
+    base: LedgerService,
+    decisions: DecisionRepository,
+    signatures: SignatureRepository,
+) -> tuple[EtatPeriode, ...]:
+    ecritures = ledger.grand_livre(dossier.id)
+    dates = {e.id: e.date for e in ecritures}
+    a_traiter = [dates[i] for i in ecritures_a_trancher(base, decisions, dossier.id) if i in dates]
+    types = [type_preuve(p) for p in periodes_du_dossier(dossier)]
+    declarees = signatures.types_presents([dossier.id], types).get(dossier.id, set())
+    return etats_tva(dossier, ecritures, a_traiter, declarees)
+
+
+def _tva_vue(dossier: Dossier, etats: Sequence[EtatPeriode]) -> TvaVue:
+    return TvaVue(
+        periodicite=dossier.tva_periodicite,
+        jour_echeance=dossier.tva_jour_echeance,
+        periodes=[
+            PeriodeTvaVue(
+                cle=e.ca3.periode.cle,
+                debut=e.ca3.periode.debut.isoformat(),
+                fin=e.ca3.periode.fin.isoformat(),
+                echeance=e.echeance.isoformat() if e.echeance else None,
+                lignes=[
+                    LigneCa3Vue(numero=ligne.numero, libelle=ligne.libelle, centimes=ligne.centimes)
+                    for ligne in e.ca3.lignes
+                ],
+                due_cts=e.ca3.due,
+                credit_cts=e.ca3.credit,
+                declaree=e.declaree,
+                a_traiter=e.a_traiter,
+            )
+            for e in etats
+        ],
+    )
+
+
+def _declarer_tva(
+    dossier: Dossier,
+    etat: EtatPeriode,
+    ledger: InMemoryLedgerService,
+    base: LedgerService,
+    signatures: SignatureRepository,
+    preuve: DocumentSigne,
+) -> None:
+    """L'écriture de liquidation d'abord, puis la preuve : une preuve sans
+    écriture serait fausse ; une écriture sans preuve se complète en
+    redéclarant (l'écriture déjà passée n'est pas réécrite)."""
+    ecritures = ledger.grand_livre(dossier.id)
+    liquidation = ecriture_liquidation(dossier.id, ecritures, etat.ca3)
+    deja = {e.id for e in base.grand_livre(dossier.id)}
+    if liquidation is not None and liquidation.id not in deja:
+        base.enregistrer(liquidation)
+    signatures.enregistrer(dossier.id, type_preuve(etat.ca3.periode), preuve)
+
+
+def _enregistrer_routes_tva(app: FastAPI) -> None:
+    """AXE-805 : la CA3 de chaque période, ses paramètres, sa déclaration."""
+
+    @app.get("/dossiers/{dossier_id}/tva", response_model=TvaVue)
+    def lire_tva(
+        dossier: DossierDep,
+        ledger: LedgerComptableDep,
+        base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        signatures: SignaturesInpiDep,
+    ) -> TvaVue:
+        return _tva_vue(dossier, _etats_tva(dossier, ledger, base, decisions, signatures))
+
+    @app.put("/dossiers/{dossier_id}/tva/parametres", response_model=TvaVue)
+    def parametrer_tva(
+        entree: ParametresTvaEntree,
+        dossier: DossierDep,
+        dossiers: DossiersDep,
+        ledger: LedgerComptableDep,
+        base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        signatures: SignaturesInpiDep,
+        identite: IdentiteDep,
+    ) -> TvaVue:
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        periodicite = verifier_parametres(entree.periodicite, entree.jour_echeance)
+        dossiers.parametrer_tva(
+            dossier.id, periodicite, entree.jour_echeance, identite.user_id, datetime.now(UTC)
+        )
+        a_jour = dataclasses.replace(
+            dossier, tva_periodicite=periodicite, tva_jour_echeance=entree.jour_echeance
+        )
+        return _tva_vue(a_jour, _etats_tva(a_jour, ledger, base, decisions, signatures))
+
+
+def _enregistrer_route_declaration_tva(app: FastAPI) -> None:
+    """AXE-805 : le chauffeur déclare avoir déposé la CA3 d'une période."""
+
+    @app.post("/dossiers/{dossier_id}/tva/{cle}/declaration", response_model=TvaVue)
+    def declarer_tva(
+        cle: str,
+        entree: DeclarationTvaEntree,
+        dossier: DossierDep,
+        ledger: LedgerComptableDep,
+        base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        signatures: SignaturesInpiDep,
+        identite: IdentiteDep,
+    ) -> TvaVue:
+        """Le chauffeur déclare avoir déposé la CA3 sur impots.gouv : la
+        liquidation s'écrit et la preuve est gardée (date de dépôt)."""
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        etats = _etats_tva(dossier, ledger, base, decisions, signatures)
+        etat = next((e for e in etats if e.ca3.periode.cle == cle), None)
+        if etat is None:
+            raise HTTPException(status_code=404, detail="Période de TVA inconnue.")
+        if etat.declaree:
+            raise HTTPException(status_code=409, detail="Cette période est déjà déclarée.")
+        if entree.deposee_le < etat.ca3.periode.fin:
+            raise HTTPException(
+                status_code=422, detail="La déclaration se dépose après la fin de la période."
+            )
+        preuve = DocumentSigne(
+            contenu_pdf=f"CA3 {cle} déposée le {entree.deposee_le.isoformat()}".encode(),
+            signataire=identite.user_id,
+            signe_le=datetime.combine(entree.deposee_le, datetime.min.time(), UTC),
+            provider="declaration",
+            qualifie=False,
+        )
+        _declarer_tva(dossier, etat, ledger, base, signatures, preuve)
+        return _tva_vue(dossier, _etats_tva(dossier, ledger, base, decisions, signatures))
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="AxeLCompta — API",
@@ -5898,6 +6104,8 @@ def create_app() -> FastAPI:
     _enregistrer_route_compte_de_test(app)
     _enregistrer_routes_expert_comptable(app)
     _enregistrer_routes_engagement(app)
+    _enregistrer_routes_tva(app)
+    _enregistrer_route_declaration_tva(app)
     _enregistrer_routes_transactions(app)
     _enregistrer_route_correction(app)
     _enregistrer_routes_annulation(app)

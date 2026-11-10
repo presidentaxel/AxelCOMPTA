@@ -78,6 +78,11 @@ class Dossier:
     # de création) : « forme_juridique », « exercice ». Le dirigeant les
     # confirme (AXE-730) ; le gestionnaire voit « à confirmer ».
     a_confirmer: tuple[str, ...] = ()
+    # TVA en cours d'année (AXE-805) : « mensuelle » ou « trimestrielle », et
+    # le jour du mois suivant où tombe l'échéance (calendrier DGFiP, selon
+    # le SIREN et la forme). `None` : pas encore réglé, rien n'est rappelé.
+    tva_periodicite: str | None = None
+    tva_jour_echeance: int | None = None
 
     def fin_exercice(self) -> date:
         if self.exercice_fin is not None:

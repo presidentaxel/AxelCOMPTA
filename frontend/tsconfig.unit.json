@@ -17,6 +17,8 @@
     "lib/messages-auth.ts",
     "lib/mfa-code.ts",
     "lib/mfa.test.ts",
+    "lib/tva.ts",
+    "lib/tva.test.ts",
     "lib/messages-auth.test.ts",
     "lib/activite-url.ts",
     "lib/activite-url.test.ts",
