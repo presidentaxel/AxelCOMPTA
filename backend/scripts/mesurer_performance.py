@@ -8,7 +8,10 @@ remplacés.
 
     PYTHONPATH=. python scripts/mesurer_performance.py --dossiers 200 --ecritures 300
 
-Imprime un tableau Markdown, à coller dans le ticket.
+Imprime un tableau Markdown, à coller dans le ticket. AXE-843 : toutes les
+routes de lecture appelées par le front, par profil (chauffeur,
+gestionnaire admin, expert-comptable habilité), avec la cible du ticket
+(p95 < 1 s, file expert < 2 s) ; `--route` limite à quelques routes.
 """
 
 from __future__ import annotations
@@ -34,10 +37,19 @@ from sqlalchemy.engine import Engine, make_url
 
 import axelcompta.demo_api as demo_api
 import axelcompta.demo_auth as demo_auth
-from axelcompta.core.ids import TenantId
+from axelcompta.core.ids import DossierId, TenantId, UserId
 from axelcompta.demo_comptes_memory import InMemoryCompteRepository
 from axelcompta.demo_justificatifs import InMemoryJustificatifRepository
+from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.tenants.postgres import PostgresDossierRepository
+from axelcompta.workflow.expert_comptable import (
+    ROLE_EXPERT,
+    TEXTE_ENGAGEMENT,
+    VERSION_ENGAGEMENT,
+    Engagement,
+    ExpertMemoire,
+    Habilitation,
+)
 
 HOTES_LOCAUX = frozenset({"localhost", "127.0.0.1", "::1", "db"})
 TENANT = "TENANT_PERF"
@@ -188,6 +200,7 @@ def _en_tete(**lien: str) -> dict[str, str]:
         "email": "perf@example.com",
         "aud": "authenticated",
         "exp": datetime.now(UTC) + timedelta(hours=1),
+        "aal": "aal2",  # double authentification (AXE-812)
         "app_metadata": lien,
     }
     return {"Authorization": f"Bearer {jwt.encode(charge, _CLE, algorithm='ES256')}"}
@@ -208,6 +221,104 @@ def _chronometrer(appel: Callable[[], object], repetitions: int) -> tuple[float,
     return statistics.median(durees), p95
 
 
+DOSSIER = "PERF_000"
+# (route, profil, chemin) : les lectures appelées par le front (AXE-843).
+ROUTES: tuple[tuple[str, str, str], ...] = (
+    ("/dossiers/{id}", "chauffeur", f"/dossiers/{DOSSIER}"),
+    ("/dossiers/{id}/transactions", "chauffeur", f"/dossiers/{DOSSIER}/transactions"),
+    ("/dossiers/{id}/notifications", "chauffeur", f"/dossiers/{DOSSIER}/notifications"),
+    ("/dossiers/{id}/cloture-exercice", "chauffeur", f"/dossiers/{DOSSIER}/cloture-exercice"),
+    ("/dossiers/{id}/provisions-cloture", "chauffeur", f"/dossiers/{DOSSIER}/provisions-cloture"),
+    ("/dossiers/{id}/tva", "chauffeur", f"/dossiers/{DOSSIER}/tva"),
+    ("/dossiers/{id}/configuration", "chauffeur", f"/dossiers/{DOSSIER}/configuration"),
+    ("/dossiers/{id}/comptes-bancaires", "chauffeur", f"/dossiers/{DOSSIER}/comptes-bancaires"),
+    ("/dossiers/{id}/dividendes", "chauffeur", f"/dossiers/{DOSSIER}/dividendes"),
+    ("/dossiers/{id}/bulletins", "chauffeur", f"/dossiers/{DOSSIER}/bulletins"),
+    ("/dossiers/{id}/acces", "chauffeur", f"/dossiers/{DOSSIER}/acces"),
+    ("/portefeuille/moi", "gestionnaire", "/portefeuille/moi"),
+    ("/dossiers", "gestionnaire", "/dossiers"),
+    ("/portefeuille", "gestionnaire", "/portefeuille"),
+    ("/portefeuille/connexions-bancaires", "gestionnaire", "/portefeuille/connexions-bancaires"),
+    ("/portefeuille/nouveaux-chauffeurs", "gestionnaire", "/portefeuille/nouveaux-chauffeurs"),
+    ("/portefeuille/categorisation", "gestionnaire", "/portefeuille/categorisation"),
+    ("/portefeuille/synchronisation", "gestionnaire", "/portefeuille/synchronisation"),
+    ("/portefeuille/membres", "gestionnaire", "/portefeuille/membres"),
+    ("/portefeuille/retires", "gestionnaire", "/portefeuille/retires"),
+    ("/rappels", "gestionnaire", "/rappels"),
+    ("/regles-rappel", "gestionnaire", "/regles-rappel"),
+    ("/tags", "gestionnaire", "/tags"),
+    ("/dossiers/{id}/envois", "gestionnaire", f"/dossiers/{DOSSIER}/envois"),
+    ("/expert/file", "expert", "/expert/file"),
+    ("/expert/classees", "expert", "/expert/classees"),
+    ("/dossiers/{id}/anomalies", "expert", f"/dossiers/{DOSSIER}/anomalies"),
+    ("/dossiers/{id}/quarantaine", "expert", f"/dossiers/{DOSSIER}/quarantaine"),
+)
+# Cibles du ticket AXE-843 : p95 < 1 s, file expert < 2 s.
+CIBLES_MS = {"/expert/file": 2000}
+CIBLE_PAR_DEFAUT_MS = 1000
+EMAIL = "perf@example.com"
+
+
+def _habiliter_expert(client: TestClient, web: Engine, nb_dossiers: int) -> None:
+    """AXE-800 : l'expert du portefeuille, habilité sur tous ses dossiers,
+    engagement accepté. En mémoire : seule la vérification d'accès change,
+    les lectures passent toujours par Postgres."""
+    le = datetime.now(UTC)
+    experts = ExpertMemoire(PostgresLedgerService(web))
+    experts.habiliter(
+        Habilitation(
+            tenant_id=TenantId(TENANT),
+            email=EMAIL,
+            nom="Expert Perf",
+            cabinet="Cabinet Perf",
+            numero_ordre="00-000000",
+            lettre_mission="LM-PERF",
+            date_lettre=date(2026, 1, 1),
+            dossiers=tuple(DossierId(f"PERF_{n:03d}") for n in range(nb_dossiers)),
+            accordee_par=UserId("u-perf"),
+            accordee_le=le,
+        )
+    )
+    experts.accepter(
+        Engagement(
+            tenant_id=TenantId(TENANT),
+            email=EMAIL,
+            version=VERSION_ENGAGEMENT,
+            texte=TEXTE_ENGAGEMENT,
+            adresse="banc",
+            acteur=UserId("u-perf"),
+            accepte_le=le,
+        )
+    )
+    client.app.dependency_overrides[demo_api.get_experts] = lambda: experts  # type: ignore[attr-defined]
+
+
+def _profil(client: TestClient, profil: str) -> dict[str, str]:
+    """Le rôle du membre est en Postgres (`droits_membre`) : fixé ici."""
+    role = ROLE_EXPERT if profil == "expert" else "admin"
+    client.app.dependency_overrides[demo_api.get_role_membre] = lambda: role  # type: ignore[attr-defined]
+    if profil == "chauffeur":
+        return _en_tete(dossier_id=DOSSIER)
+    return _en_tete(tenant_id=TENANT)
+
+
+def _mesurer(client: TestClient, nom: str, profil: str, chemin: str, repetitions: int) -> None:
+    en_tete = _profil(client, profil)
+    debut = time.perf_counter()
+    reponse = client.get(chemin, headers=en_tete)
+    premier = time.perf_counter() - debut
+    if reponse.status_code != 200:
+        print(f"| `{nom}` | {profil} | HTTP {reponse.status_code} | | | |")
+        return
+    p50, p95 = _chronometrer(_appel(client, chemin, en_tete), repetitions)
+    cible = CIBLES_MS.get(nom, CIBLE_PAR_DEFAUT_MS)
+    verdict = "ok" if p95 * 1000 < cible else f"**> {cible} ms**"
+    print(
+        f"| `{nom}` | {profil} | {premier * 1000:.0f} ms | {p50 * 1000:.0f} ms "
+        f"| {p95 * 1000:.0f} ms | {verdict} |"
+    )
+
+
 def main() -> int:
     parseur = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parseur.add_argument("--dossiers", type=int, default=200)
@@ -217,6 +328,7 @@ def main() -> int:
     parseur.add_argument(
         "--prechauffer", action="store_true", help="comme les tâches planifiées après la synchro"
     )
+    parseur.add_argument("--route", action="append", help="ne mesure que ces routes (morceau)")
     arguments = parseur.parse_args()
 
     proprietaire = _moteur_local("DATABASE_URL")
@@ -234,26 +346,14 @@ def main() -> int:
         recalcules = demo_api.prechauffer_caches(proprietaire, portefeuille)
         print(f"Préchauffage : {recalcules} dossiers en {time.perf_counter() - debut:.1f} s\n")
     client = _client(web)
-    gestionnaire, chauffeur = _en_tete(tenant_id=TENANT), _en_tete(dossier_id="PERF_000")
-    routes = {
-        "/dossiers": ("/dossiers", gestionnaire),
-        "/dossiers/{id}": ("/dossiers/PERF_000", chauffeur),
-        "/dossiers/{id}/transactions": ("/dossiers/PERF_000/transactions", chauffeur),
-        "/dossiers/{id}/anomalies": ("/dossiers/PERF_000/anomalies", gestionnaire),
-        "/expert/file": ("/expert/file", gestionnaire),
-    }
+    _habiliter_expert(client, web, arguments.dossiers)
     print(f"{arguments.dossiers} dossiers × {arguments.ecritures} écritures")
     print(f"{arguments.repetitions} appels par route\n")
-    print("| Route | 1er appel | p50 | p95 |\n|---|---|---|---|")
-    for nom, (chemin, en_tete) in routes.items():
-        debut = time.perf_counter()
-        reponse = client.get(chemin, headers=en_tete)
-        premier = time.perf_counter() - debut
-        if reponse.status_code != 200:
-            print(f"| `{nom}` | HTTP {reponse.status_code} | | |")
+    print("| Route | Profil | 1er appel | p50 | p95 | Cible |\n|---|---|---|---|---|---|")
+    for nom, profil, chemin in ROUTES:
+        if arguments.route and not any(morceau in nom for morceau in arguments.route):
             continue
-        p50, p95 = _chronometrer(_appel(client, chemin, en_tete), arguments.repetitions)
-        print(f"| `{nom}` | {premier * 1000:.0f} ms | {p50 * 1000:.0f} ms | {p95 * 1000:.0f} ms |")
+        _mesurer(client, nom, profil, chemin, arguments.repetitions)
     return 0
 
 
