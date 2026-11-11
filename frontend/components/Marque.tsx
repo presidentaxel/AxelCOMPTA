@@ -1,30 +1,17 @@
-/** Marque du produit : carré d'accent `signal`, lettre en `on-primary` (lisible
- * sur le fond blanc de la barre de navigation comme sur fond sombre). Le badge
- * Alpha dit que le produit commence, sans étiquette de démonstration. */
+import Image from "next/image";
+
+/** Marque du produit : le panda roux dans son hexagone (`public/logo.png`,
+ * 200 px, fond transparent), puis « AxeL » et le badge Alpha. Le badge dit que
+ * le produit commence, sans étiquette de démonstration. Le logo porte ses
+ * propres couleurs : il ne dépend pas des tokens. */
 export function Marque({ surFondSombre = false }: { surFondSombre?: boolean }) {
   const encre = surFondSombre ? "var(--color-on-dark)" : "var(--color-ink)";
   const filet = surFondSombre ? "var(--color-on-dark-mute)" : "var(--color-border-strong)";
   const alpha = surFondSombre ? "var(--color-on-dark-mute)" : "var(--color-subtle)";
 
   return (
-    <div className="flex items-center gap-2.5">
-      <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">
-        <rect width="28" height="28" rx="8" style={{ fill: "var(--color-signal)" }} />
-        <path
-          d="M8 20.5 L14 7.5 L20 20.5"
-          fill="none"
-          style={{ stroke: "var(--color-on-primary)" }}
-          strokeWidth="2.2"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-        />
-        <path
-          d="M10.4 15.6 H17.6"
-          style={{ stroke: "var(--color-on-primary)" }}
-          strokeWidth="2.2"
-          strokeLinecap="round"
-        />
-      </svg>
+    <div className="flex items-center gap-2">
+      <Image src="/logo.png" alt="" width={40} height={40} priority className="size-10 shrink-0" />
       <span className="text-sm font-semibold" style={{ color: encre }}>
         AxeL
       </span>

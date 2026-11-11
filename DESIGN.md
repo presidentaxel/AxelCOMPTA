@@ -1442,6 +1442,11 @@ les colonnes numériques.
   contournements : une taille « grand » sur `FormulaireConnexion` et
   `SuitesAuth` les supprimerait, et `FormulaireCompte` pourrait être factorisé
   avec `FormulaireCompteChauffeur`.
+- **Logo** : le panda roux dans son hexagone (`frontend/public/logo.png`, 200 px,
+  fond transparent) remplace le carré orange à lettre. Il porte ses propres
+  couleurs : le contrat de couleurs de ce document ne s'y applique pas, et il
+  sert aussi d'icône de page (`frontend/app/icon.png`). Une version vectorielle
+  serait préférable à 200 px pour l'affichage sur écran dense.
 - **Confirmations** : `ConfirmationDialogue` (sur `Dialogue`) remplace les
   `window.confirm` ; `BoutonChoix` est la pastille à état pressé.
 - **Remise à jour du 2026-11-10 (AXE-870)** (historique) : code et contrat
