@@ -164,6 +164,7 @@ export function PaieSection({ dossierId }: { dossierId: string }) {
             {libelle}
             <Aide texte={aide} />
             <Input
+              montant
               inputMode="decimal"
               aria-label={libelle}
               placeholder="€"

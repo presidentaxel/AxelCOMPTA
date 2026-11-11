@@ -184,7 +184,7 @@ export function ProvisionsCloture({
           ))}
         </select>
         <input
-          className={CHAMP}
+          className={`${CHAMP} tabular-nums text-right`}
           inputMode="decimal"
           placeholder="Montant"
           aria-label="Montant"

@@ -5,6 +5,10 @@
  * `neutral` est une exception délibérée, hors vocabulaire DESIGN.md : sert de
  * simple tag informatif (régime TVA, nom de plateforme) plutôt qu'un statut
  * d'écriture — usage différent, ne pas le confondre avec les 8 ci-dessus.
+ *
+ * Contraste texte / fond mesuré (WCAG, le texte fait 12 px donc 4,5:1 exigé) :
+ * toutes les paires passent, de 4,79 (`validated`) à 9,75 (`closed`). Le texte
+ * de `missing` (transparent) vaut 5,29 à 5,91 selon la surface qui le porte.
  */
 export type BadgeVariant =
   | "validated"
