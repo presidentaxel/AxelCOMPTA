@@ -285,6 +285,9 @@ transition:
   fast: "100ms ease"
   base: "150ms ease"
   slow: "200ms ease"
+  # Indicateur glissant (onglets, navigation) : 180 ms, freine en fin de course.
+  # Mesuré sur une vidéo de référence : un saut de 350 px en ~170 ms.
+  indicator: "180ms cubic-bezier(0.22, 1, 0.36, 1)"
 
 components:
   # --- Boutons ---
@@ -774,7 +777,9 @@ components:
   tabs:
     textColor: "{colors.muted}"
     activeTextColor: "{colors.ink}"
-    activeBorderBottom: "2px solid {colors.ink}"
+    # Le filet n'est plus sur l'onglet : il glisse de l'un à l'autre.
+    indicator: "2px solid {colors.ink}"
+    indicatorTransition: "{transition.indicator}"
     typography: "{typography.button-md}"
     height: 40px
 ---
@@ -1206,7 +1211,10 @@ desktop-first. Règles distinctes :
   `{shadow.md}` et `{shadow.overlay}` aux menus, popovers et fenêtres.
 - Tout état vide a une action — jamais de page blanche sans invitation.
 - Transitions à 150ms (`{transition.base}`) maximum — l'interface doit sembler
-  réactive, pas animée.
+  réactive, pas animée. Seule exception : le filet qui glisse d'un onglet ou
+  d'une entrée de navigation à l'autre (`{transition.indicator}`, 180 ms, il
+  freine en fin de course). Aucune animation si l'utilisateur réduit le
+  mouvement, ni au premier affichage.
 
 ### Don't
 

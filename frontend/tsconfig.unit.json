@@ -56,6 +56,8 @@
     "lib/confirmation-configuration.ts",
     "lib/confirmation-configuration.test.ts",
     "lib/piege-focus.ts",
-    "lib/piege-focus.test.ts"
+    "lib/piege-focus.test.ts",
+    "lib/indicateur.ts",
+    "lib/indicateur.test.ts"
   ]
 }
