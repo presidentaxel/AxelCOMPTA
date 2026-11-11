@@ -60,6 +60,15 @@
     "lib/indicateur.ts",
     "lib/indicateur.test.ts",
     "lib/navigation.ts",
-    "lib/navigation.test.ts"
+    "lib/navigation.test.ts",
+    "lib/format.ts",
+    "lib/anomalies.ts",
+    "lib/anomalies.test.ts",
+    "lib/ton-montant.ts",
+    "lib/ton-montant.test.ts",
+    "lib/mois.ts",
+    "lib/mois.test.ts",
+    "lib/classees-filtres.ts",
+    "lib/classees-filtres.test.ts"
   ]
 }
