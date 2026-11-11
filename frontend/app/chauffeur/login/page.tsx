@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { EntreeChauffeur } from "@/components/EntreeChauffeur";
 import { FormulaireConnexion } from "@/components/FormulaireConnexion";
 import {
   connexionParMotDePasse,
@@ -37,24 +38,28 @@ export default function ConnexionChauffeurPage() {
   if (!affiche) return null;
 
   return (
-    <FormulaireConnexion
-      titre="Connexion"
-      sousTitre="Retrouvez vos transactions et vos justificatifs."
-      cote="chauffeur"
-      onConnecte={async (email, motDePasse) => {
-        const session = await connexionParMotDePasse(email, motDePasse);
-        const charge = decoderChargeUtileJwt(session.accessToken);
-        if (
-          session.lecteurTest ||
-          coteOuverte(charge.app_metadata, "gestionnaire") !== "gestionnaire"
-        ) {
-          deconnecterGestionnaire();
-        }
-        void tracerConnexionChauffeur();
-        router.replace(
-          cheminDeRetour(window.location.search, cheminApresChauffeur(session.accessToken, session)),
-        );
-      }}
-    />
+    <div className="pt-4">
+      <EntreeChauffeur>
+        <FormulaireConnexion
+          titre="Connexion"
+          sousTitre="Retrouvez vos transactions et vos justificatifs."
+          cote="chauffeur"
+          onConnecte={async (email, motDePasse) => {
+            const session = await connexionParMotDePasse(email, motDePasse);
+            const charge = decoderChargeUtileJwt(session.accessToken);
+            if (
+              session.lecteurTest ||
+              coteOuverte(charge.app_metadata, "gestionnaire") !== "gestionnaire"
+            ) {
+              deconnecterGestionnaire();
+            }
+            void tracerConnexionChauffeur();
+            router.replace(
+              cheminDeRetour(window.location.search, cheminApresChauffeur(session.accessToken, session)),
+            );
+          }}
+        />
+      </EntreeChauffeur>
+    </div>
   );
 }

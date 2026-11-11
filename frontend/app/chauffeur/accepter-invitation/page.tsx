@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 
+import { EntreeChauffeur } from "@/components/EntreeChauffeur";
 import { SuitesAuth } from "@/components/SuitesAuth";
+import { TitreEcran } from "@/components/TitreEcran";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -83,34 +85,39 @@ export default function AccepterInvitationPage() {
   }
 
   if (etape === "verification") {
-    return <p className="text-sm text-subtle">Vérification de votre invitation…</p>;
+    return (
+      <p role="status" className="pt-4 text-base text-subtle">
+        Vérification de votre invitation…
+      </p>
+    );
   }
 
   if (etape === "erreur") {
     return (
-      <div>
-        <h1 className="mb-2 text-xl font-bold text-ink">Invitation inutilisable</h1>
-        <p role="alert" className="text-sm text-danger">
+      <div className="pt-4">
+        <TitreEcran titre="Invitation inutilisable" />
+        <p role="alert" className="text-base text-danger">
           {erreur}
         </p>
-        <SuitesAuth invitation />
+        <EntreeChauffeur>
+          <SuitesAuth invitation />
+        </EntreeChauffeur>
       </div>
     );
   }
 
   const idRegle = `${idMotDePasse}-regle`;
   return (
-    <div>
-      <h1 className="mb-1 text-xl font-bold text-ink">Bienvenue</h1>
-      <p className="mb-6 text-sm text-subtle">
+    <div className="pt-4">
+      <TitreEcran titre="Bienvenue">
         Choisissez un mot de passe pour vos prochaines connexions.
-      </p>
-      <form className="space-y-3" onSubmit={valider}>
-        <div className="space-y-1">
-          <label htmlFor={idMotDePasse} className="block text-sm font-medium text-ink">
+      </TitreEcran>
+      <form className="space-y-4" onSubmit={valider}>
+        <div className="space-y-2">
+          <label htmlFor={idMotDePasse} className="block text-base font-semibold text-ink">
             Nouveau mot de passe
           </label>
-          <p id={idRegle} className="text-sm text-subtle">
+          <p id={idRegle} className="text-base text-subtle">
             {INDICATION_MOT_DE_PASSE}
           </p>
           <Input
@@ -129,11 +136,11 @@ export default function AccepterInvitationPage() {
           />
         </div>
         {erreur && (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="text-base text-danger">
             {erreur}
           </p>
         )}
-        <Button type="submit" disabled={enCours} className="w-full">
+        <Button type="submit" size="lg" disabled={enCours} className="h-12 w-full text-base">
           {enCours ? "Enregistrement…" : "Valider"}
         </Button>
       </form>
