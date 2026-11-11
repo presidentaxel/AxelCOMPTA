@@ -52,7 +52,7 @@ export default function ExerciceChauffeurPage({
       {fiche && fiche.tva_recettes_regime !== "franchise" && (
         <Link
           href={`/chauffeur/${dossierId}/tva`}
-          className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-primary"
+          className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-signal"
         >
           Ma TVA : déclaration de la période →
         </Link>

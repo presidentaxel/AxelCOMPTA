@@ -118,7 +118,7 @@ function BandeauCompteDeTest({ session, chemin }: { session: SessionChauffeur; c
           Mode test, lecture seule{dossier ? ` — ${dossier}` : ""}
         </span>
         {chemin !== PAGE_CHOIX_DOSSIER && (
-          <Link href={PAGE_CHOIX_DOSSIER} className="shrink-0 font-semibold text-primary underline">
+          <Link href={PAGE_CHOIX_DOSSIER} className="shrink-0 font-semibold text-signal underline">
             Changer de dossier
           </Link>
         )}

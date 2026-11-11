@@ -128,7 +128,7 @@ function Periode({
           {periode.a_traiter} opération{periode.a_traiter > 1 ? "s" : ""} de cette période{" "}
           {periode.a_traiter > 1 ? "attendent" : "attend"} encore votre choix : les montants
           ci-dessous peuvent changer.{" "}
-          <Link href={`/chauffeur/${dossierId}`} className="font-semibold text-primary underline">
+          <Link href={`/chauffeur/${dossierId}`} className="font-semibold text-signal underline">
             Les traiter
           </Link>
         </p>

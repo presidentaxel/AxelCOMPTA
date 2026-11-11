@@ -71,7 +71,7 @@ export function Sidebar() {
         <Marque />
       </div>
       <div className="mb-4 flex items-center gap-2 rounded-lg bg-canvas px-2.5 py-2">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-subtle text-xs font-semibold text-primary">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-subtle text-xs font-semibold text-signal">
           {email.slice(0, 2).toUpperCase() || "AX"}
         </span>
         <span className="min-w-0 flex-1">

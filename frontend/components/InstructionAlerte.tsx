@@ -140,7 +140,7 @@ function Historique({ dossierId, alerteId }: { dossierId: string; alerteId: stri
     <div className="mt-2">
       <button
         type="button"
-        className="text-xs font-medium text-primary hover:underline"
+        className="text-xs font-medium text-signal hover:underline"
         aria-expanded={ouvert}
         onClick={basculer}
       >

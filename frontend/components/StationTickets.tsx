@@ -72,7 +72,7 @@ export function StationTickets({
         <button
           type="button"
           onClick={() => setPlafond((valeur) => valeur + TICKETS_PAR_PAGE)}
-          className={`mt-2 min-h-11 rounded-md px-1 text-sm font-medium text-primary ${ANNEAU}`}
+          className={`mt-2 min-h-11 rounded-md px-1 text-sm font-medium text-signal ${ANNEAU}`}
         >
           Voir la suite
         </button>
@@ -145,7 +145,7 @@ function LigneTicket({
         type="button"
         disabled={envoi}
         onClick={() => inputRef.current?.click()}
-        className={`mt-1 inline-flex min-h-11 items-center rounded-md px-1 text-sm font-medium text-primary disabled:opacity-50 ${ANNEAU}`}
+        className={`mt-1 inline-flex min-h-11 items-center rounded-md px-1 text-sm font-medium text-signal disabled:opacity-50 ${ANNEAU}`}
       >
         {envoi ? "Envoi…" : `Ajouter le ticket de ${nom}`}
       </button>
