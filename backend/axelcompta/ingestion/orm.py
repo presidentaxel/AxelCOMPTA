@@ -123,3 +123,18 @@ comptes_rollee = Table(
     Column("relie_le", DateTime(timezone=True), nullable=True),
     Column("maj_le", DateTime(timezone=True), nullable=False),
 )
+
+# AXE-820 : webhooks Rollee reçus, gardés tels quels, traités par la file.
+# Identifiant = empreinte du corps : un webhook rejoué n'est gardé qu'une fois.
+evenements_rollee = Table(
+    "evenements_rollee",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False, index=True),
+    Column("branchement_id", String, nullable=False),
+    Column("type", String, nullable=False),
+    Column("payload", JSON, nullable=False),
+    Column("recu_le", DateTime(timezone=True), nullable=False),
+    Column("traite_le", DateTime(timezone=True), nullable=True),
+    Column("resultat", String, nullable=True),
+)

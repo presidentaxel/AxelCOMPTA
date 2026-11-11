@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol, cast
 
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, insert, select, update
@@ -202,9 +203,12 @@ from axelcompta.packs.vtc_demo import (
     plancher_de,
 )
 from axelcompta.plateformes_rollee import (
+    DepotReception,
+    ReceptionPostgres,
     RolleeNonBranche,
     ServicesRollee,
     ouvrir_session,
+    recevoir,
     relire_comptes,
 )
 from axelcompta.tenants.affectations import AffectationRepository
@@ -6405,6 +6409,32 @@ def _enregistrer_routes_plateformes(app: FastAPI) -> None:
         )
 
 
+def get_reception_rollee() -> DepotReception:
+    """AXE-820 : la route publique du webhook, sans identité."""
+    return ReceptionPostgres(_engine())
+
+
+ReceptionRolleeDep = Annotated[DepotReception, Depends(get_reception_rollee)]
+_STATUT_RECEPTION = {"inconnu": 404, "refuse": 401, "illisible": 400}
+
+
+def _enregistrer_route_webhook_rollee(app: FastAPI) -> None:
+    @app.post("/webhooks/rollee/{branchement_id}", status_code=200)
+    async def webhook_rollee(
+        branchement_id: str, request: Request, depot: ReceptionRolleeDep
+    ) -> dict[str, str]:
+        """Public : la signature `X-Signature` (HMAC SHA-512, secret du
+        branchement) fait foi. Répond tout de suite ; la file traite."""
+        corps = await request.body()
+        signature = request.headers.get("X-Signature")
+        issue = await run_in_threadpool(
+            recevoir, depot, branchement_id, corps, signature, datetime.now(UTC)
+        )
+        if issue in _STATUT_RECEPTION:
+            raise HTTPException(status_code=_STATUT_RECEPTION[issue], detail=issue)
+        return {"statut": issue}
+
+
 def _enregistrer_routes_integrations(app: FastAPI) -> None:
     """Branchements, envois et plateformes Rollee (AXE-872, AXE-808, AXE-819)."""
     _enregistrer_routes_branchements(app)
@@ -6412,6 +6442,7 @@ def _enregistrer_routes_integrations(app: FastAPI) -> None:
     _enregistrer_routes_branchements_dossier(app)
     _enregistrer_routes_envoi(app)
     _enregistrer_routes_plateformes(app)
+    _enregistrer_route_webhook_rollee(app)
 
 
 def _enregistrer_routes_envoi(app: FastAPI) -> None:

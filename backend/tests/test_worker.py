@@ -8,7 +8,7 @@ from dataclasses import replace
 from datetime import UTC, date, datetime
 
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.jobs.file import TYPE_SYNCHRO, FileMemoire
+from axelcompta.jobs.file import TYPE_ROLLEE, TYPE_SYNCHRO, FileMemoire
 from axelcompta.synchro_digifactory import ResultatDossier
 from axelcompta.tenants.contacts_proposes import ContactsProposesMemoire
 from axelcompta.tenants.memory import InMemoryDossierRepository
@@ -177,3 +177,12 @@ def test_un_dossier_cree_depuis_un_second_compte_digifactory_y_est_rattache() ->
 
     assert dossiers.obtenir(DossierId("DIGI_10")) is not None
     assert rattaches == [(T, "DIGI_10", "digi-2")]
+
+
+def test_le_job_rollee_traite_les_webhooks_du_portefeuille() -> None:
+    """AXE-820."""
+    deps, _dossiers, _contacts, _ = _deps()
+    vus: list[str] = []
+    deps = replace(deps, traiter_rollee=lambda t: vus.append(t) or "1 événement Rollee traité")  # type: ignore[func-returns-value]
+    resultat = executer_job(FileMemoire().demander(T, TYPE_ROLLEE), deps, AUJOURD_HUI)
+    assert (resultat, vus) == ("1 événement Rollee traité", [T])

@@ -44,10 +44,12 @@ CHAMPS: dict[str, tuple[str, ...]] = {
 }
 # Valeurs permises, quand un champ n'accepte qu'une liste.
 VALEURS: dict[str, tuple[str, ...]] = {"environnement": ("sandbox", "production")}
-CHAMPS_FACULTATIFS: dict[str, tuple[str, ...]] = {}
+# AXE-820 : le secret de signature est posé par `python -m axelcompta.webhooks_rollee`,
+# jamais saisi. Il reste au changement de jeton.
+CHAMPS_FACULTATIFS: dict[str, tuple[str, ...]] = {"rollee": ("secret_webhook",)}
 # Jamais renvoyés à l'écran. Un champ vide à la mise à jour garde la valeur
 # déjà chiffrée : on retape le jeton seulement pour le remplacer.
-SECRETS = frozenset({"mot_de_passe", "cle_api", "jeton"})
+SECRETS = frozenset({"mot_de_passe", "cle_api", "jeton", "secret_webhook"})
 # Rollee : plusieurs comptes pour une même compta. Aucun n'est « le » compte.
 # Tant qu'un compte pro n'est pas relié à l'un d'eux, on les interroge tous.
 SANS_DEFAUT = frozenset({"rollee"})

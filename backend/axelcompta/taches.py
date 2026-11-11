@@ -1,6 +1,6 @@
 """Tâches planifiées : pour chaque portefeuille, synchro Digifactory, bascules
 de régime dues (fin d'option IR, doc 06 §7), puis notifications internes
-(doc 12, J3 et J5).
+(doc 12, J3 et J5). Une fois par jour, le rattrapage Rollee (AXE-820).
 
 Un seul point d'entrée pour le planificateur, quel qu'il soit : le crontab
 du poste de Louis pour la démo, celui du serveur (ou un timer systemd) en
@@ -40,6 +40,7 @@ from axelcompta.ledger.balance import SoldeJournal, ecarts
 from axelcompta.ledger.repository import soldes_par_journal
 from axelcompta.modeles_distants import assurer_modele
 from axelcompta.notifier import notifier_depuis_base
+from axelcompta.plateformes_rollee import rattraper, suivi_postgres
 from axelcompta.rappels import envoyer, planifier
 from axelcompta.registres_officiels import relire_si_configure
 from axelcompta.synchro_digifactory import ResultatDossier, synchroniser_portefeuille
@@ -163,6 +164,8 @@ def _prechauffer(
 
 # Une fois par jour : le planificateur passe toutes les heures (I7, AXE-807).
 HEURE_CONTROLE_BALANCE = 3
+# AXE-820 : rattrapage Rollee, une fois par jour (webhooks perdus).
+HEURE_RATTRAPAGE_ROLLEE = 4
 VARIABLE_FICHIER_METRIQUES = "AXELCOMPTA_METRIQUES_FICHIER"
 
 
@@ -212,6 +215,15 @@ def _rappels(engine: Engine, maintenant: datetime) -> list[str]:
     return [f"rappels : {crees} créé(s) ; {resume_envois(bilan)}"]
 
 
+def _rollee(rattraper_rollee: Callable[[], list[str]]) -> list[str]:
+    """AXE-820 : chaque dossier relié à Rollee est relu, webhook ou pas."""
+    try:
+        lignes = rattraper_rollee()
+    except Exception as exc:  # noqa: BLE001 — le rattrapage n'arrête pas le passage
+        return [f"rollee : échec ({type(exc).__name__})"]
+    return [f"rollee {ligne}" for ligne in lignes] or ["rollee : aucun dossier relié"]
+
+
 def main() -> int:
     parseur = argparse.ArgumentParser(description=__doc__)
     parseur.add_argument("--sans-synchro", action="store_true")
@@ -246,6 +258,8 @@ def main() -> int:
             bilan.lignes.append(ligne)
     except Exception as exc:  # noqa: BLE001 — la relecture n'arrête pas le passage
         bilan.lignes.append(f"registres : échec ({type(exc).__name__})")
+    if debut.hour == HEURE_RATTRAPAGE_ROLLEE:
+        bilan.lignes += _rollee(lambda: rattraper(suivi_postgres(engine)))
     if debut.hour == HEURE_CONTROLE_BALANCE:
         installer_sentry()
         controler_balance(bilan, lambda: soldes_par_journal(engine), _alerter_sentry)

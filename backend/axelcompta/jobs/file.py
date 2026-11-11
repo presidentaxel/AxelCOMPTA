@@ -16,7 +16,9 @@ TYPE_SYNCHRO = "synchro_digifactory"
 TYPE_IMPORT_DOSSIERS = "import_dossiers"
 # Envoi des rappels par l'e-mail ou le SMS du gestionnaire (AXE-808).
 TYPE_RAPPELS = "rappels"
-TYPES = frozenset({TYPE_SYNCHRO, TYPE_IMPORT_DOSSIERS, TYPE_RAPPELS, "notifier", "ml"})
+# Webhooks Rollee reçus, à traiter (AXE-820).
+TYPE_ROLLEE = "rollee"
+TYPES = frozenset({TYPE_SYNCHRO, TYPE_IMPORT_DOSSIERS, TYPE_RAPPELS, TYPE_ROLLEE, "notifier", "ml"})
 TENTATIVES_MAX = 3
 
 
