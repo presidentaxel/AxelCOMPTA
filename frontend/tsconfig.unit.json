@@ -62,6 +62,10 @@
     "lib/indicateur.ts",
     "lib/indicateur.test.ts",
     "lib/navigation.ts",
-    "lib/navigation.test.ts"
+    "lib/navigation.test.ts",
+    "lib/identite-entreprise.ts",
+    "lib/identite-entreprise.test.ts",
+    "lib/juridique.ts",
+    "lib/juridique.test.ts"
   ]
 }

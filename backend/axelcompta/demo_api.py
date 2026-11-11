@@ -108,6 +108,7 @@ from axelcompta.closing.tva_periodique import (
     verifier_parametres,
 )
 from axelcompta.core.db import engine_depuis_env
+from axelcompta.core.identite import Adresse, Associe, IdentiteEntreprise
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, UserId
 from axelcompta.core.libelles import categorie_du_suffixe, sans_categorie
 from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
@@ -179,7 +180,7 @@ from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.ledger.models import Ecriture, Journal, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
-from axelcompta.nouveaux_contacts import fiche_sirene
+from axelcompta.nouveaux_contacts import fiche_sirene, recherche_entreprises
 from axelcompta.packs.vtc_demo import (
     charger_categories_banque,
     charger_compte_par_categorie,
@@ -210,7 +211,15 @@ from axelcompta.tenants.contacts_proposes_postgres import PostgresContactsPropos
 from axelcompta.tenants.exercices import ExerciceRepository
 from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
 from axelcompta.tenants.franchise_tva import MillesimeInconnu, suivre_franchise
-from axelcompta.tenants.import_dossiers import MODELE_CSV, lire_csv
+from axelcompta.tenants.identite_json import identite_vers_json
+from axelcompta.tenants.identite_saisie import (
+    FORMES_UNIPERSONNELLES,
+    IdentiteInvalide,
+    pre_remplissage,
+    qualite_par_defaut,
+    verifier_identite,
+)
+from axelcompta.tenants.import_dossiers import MODELE_CSV, lire_csv, siren_valide
 from axelcompta.tenants.import_dossiers import rapport as rapport_import
 from axelcompta.tenants.journal_portefeuille import (
     ACTE_CONNEXION_MEMBRE,
@@ -3999,6 +4008,144 @@ def _enregistrer_routes_configuration(app: FastAPI) -> None:
         return _vue_configuration(confirme)
 
 
+class AdresseModele(BaseModel):
+    numero: str = ""
+    voie: str
+    code_postal: str
+    commune: str
+    pays: str = "France"
+
+
+class AssocieModele(BaseModel):
+    civilite: str
+    nom: str
+    prenoms: str
+    date_naissance: date
+    departement_naissance: str = ""
+    commune_naissance: str
+    pays_naissance: str = "France"
+    adresse: AdresseModele
+    nb_titres: int
+    qualite: str
+
+
+class IdentiteModele(BaseModel):
+    """Siège, capital et associés d'une société (AXE-846), montants en
+    centimes. Même forme en lecture et en écriture."""
+
+    denomination: str
+    siren: str
+    nic: str
+    adresse_siege: AdresseModele
+    code_ape: str = ""
+    activite: str = ""
+    email: str = ""
+    capital_social_cts: int
+    associes: list[AssocieModele]
+
+
+class IdentiteDossierVue(BaseModel):
+    identite: IdentiteModele | None
+    forme_juridique: str
+    associe_unique: bool  # SASU, EURL : un seul associé
+    qualite_par_defaut: str
+    siren_connu: str | None  # pour pré-remplir sans le redemander
+
+
+class PreRemplissageVue(BaseModel):
+    siren: str
+    denomination: str
+    nic: str
+    adresse_siege: AdresseModele
+    code_ape: str
+
+
+def _identite_depuis_modele(modele: IdentiteModele) -> IdentiteEntreprise:
+    return IdentiteEntreprise(
+        denomination=modele.denomination.strip(),
+        siren=modele.siren.replace(" ", ""),
+        nic=modele.nic.replace(" ", ""),
+        adresse_siege=Adresse(**modele.adresse_siege.model_dump()),
+        code_ape=modele.code_ape.strip(),
+        activite=modele.activite.strip(),
+        email=modele.email.strip(),
+        capital_social_cts=modele.capital_social_cts,
+        associes=tuple(
+            Associe(**{**a.model_dump(), "adresse": Adresse(**a.adresse.model_dump())})
+            for a in modele.associes
+        ),
+    )
+
+
+def _siren_connu(dossier: Dossier) -> str | None:
+    if dossier.identite is not None:
+        return dossier.identite.siren
+    if dossier.id.startswith("SIREN_"):
+        return dossier.id.removeprefix("SIREN_")
+    return None
+
+
+def _vue_identite(dossier: Dossier) -> IdentiteDossierVue:
+    actuelle = identite_vers_json(dossier.identite)
+    return IdentiteDossierVue(
+        identite=IdentiteModele.model_validate(actuelle) if actuelle else None,
+        forme_juridique=dossier.forme_juridique,
+        associe_unique=dossier.forme_juridique in FORMES_UNIPERSONNELLES,
+        qualite_par_defaut=qualite_par_defaut(dossier.forme_juridique),
+        siren_connu=_siren_connu(dossier),
+    )
+
+
+LireRegistre = Callable[[str], Mapping[str, object]]
+
+
+def get_lire_registre() -> LireRegistre:
+    """Dépendance FastAPI : Recherche d'entreprises (remplacée en test)."""
+    return recherche_entreprises
+
+
+def _enregistrer_routes_identite(app: FastAPI) -> None:
+    """Le dirigeant saisit le siège, le capital et les associés de sa société
+    (AXE-846), pré-remplis depuis le registre public. Le gestionnaire n'y a
+    pas accès (doc 19 : il ne voit que des agrégats)."""
+
+    @app.get("/dossiers/{dossier_id}/identite", response_model=IdentiteDossierVue)
+    def lire_identite(dossier: DossierDep, identite: IdentiteDep) -> IdentiteDossierVue:
+        _verifier_acces_dossier(dossier.id, identite)
+        return _vue_identite(dossier)
+
+    @app.get("/dossiers/{dossier_id}/identite/registre", response_model=PreRemplissageVue)
+    def lire_registre(
+        siren: str,
+        dossier: DossierDep,
+        identite: IdentiteDep,
+        lire: Annotated[LireRegistre, Depends(get_lire_registre)],
+    ) -> PreRemplissageVue:
+        _verifier_acces_dossier(dossier.id, identite)
+        siren = siren.replace(" ", "")
+        if not siren_valide(siren):
+            raise IdentiteInvalide("Le SIREN doit compter 9 chiffres valides.")
+        trouve = pre_remplissage(lire(siren), siren)
+        if trouve is None:
+            raise HTTPException(
+                status_code=404, detail="Aucune société à ce SIREN dans le registre."
+            )
+        return PreRemplissageVue.model_validate(dataclasses.asdict(trouve))
+
+    @app.put("/dossiers/{dossier_id}/identite", response_model=ConfigurationDossierVue)
+    def saisir_identite(
+        corps: IdentiteModele,
+        dossier: DossierDep,
+        dossiers: DossiersDep,
+        identite: IdentiteDep,
+    ) -> ConfigurationDossierVue:
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        saisie = _identite_depuis_modele(corps)
+        verifier_identite(saisie, dossier.forme_juridique, date.today())
+        dossiers.enregistrer_identite(dossier.id, saisie, identite.user_id, datetime.now(UTC))
+        return _vue_configuration(dataclasses.replace(dossier, identite=saisie))
+
+
 def _signataire(dossier: Dossier, identite: IdentiteAuthentifiee) -> str:
     if dossier.identite is not None:
         dirigeant = dossier.identite.dirigeant
@@ -6260,6 +6407,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_notifications(app)
     _enregistrer_routes_cloture_exercice(app)
     _enregistrer_routes_configuration(app)
+    _enregistrer_routes_identite(app)
     _enregistrer_routes_affectation(app)
     _enregistrer_routes_dividendes_paie(app)
     _enregistrer_routes_paie(app)
