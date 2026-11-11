@@ -22,6 +22,15 @@ def verifier_schema_au_demarrage() -> None:
     verifier_schema(demo_api._engine(), tete_unique())
 
 
+def recuperer_modele_au_demarrage() -> None:
+    """Récupère le modèle de catégorisation s'il manque (AXE-847). Au
+    démarrage du serveur, pas à l'import : les tests importent l'app. Ne
+    lève jamais : sans modèle, l'API sert les écrans avec les règles seules."""
+    from axelcompta.modeles_distants import assurer_modele
+
+    assurer_modele()
+
+
 def create_app() -> FastAPI:
     # Import local : demo_api construit son app au chargement, et ne doit
     # pas être tiré par un simple import de ce module.
@@ -30,6 +39,8 @@ def create_app() -> FastAPI:
     app: FastAPI = demo_api.app
     if verifier_schema_au_demarrage not in app.router.on_startup:
         app.router.on_startup.append(verifier_schema_au_demarrage)
+    if recuperer_modele_au_demarrage not in app.router.on_startup:
+        app.router.on_startup.append(recuperer_modele_au_demarrage)
     if not any(getattr(route, "path", "") == "/sante" for route in app.routes):
 
         @app.get("/sante")
