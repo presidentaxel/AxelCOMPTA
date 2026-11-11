@@ -8,7 +8,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Etat } from "@/components/Etat";
+import { TitreSection } from "@/components/TitreSection";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { ApiError } from "@/lib/api";
 import {
   ErreurAuthChauffeur,
@@ -80,7 +82,7 @@ export function ClotureExerciceSection({
   if (succes) {
     return (
       <section className="mt-8">
-        <h2 className="text-sm font-medium text-ink">Clôture de l&apos;exercice</h2>
+        <TitreSection>Clôture de l&apos;exercice</TitreSection>
         <p role="status" className="mt-2 text-sm text-ink">
           {succes}
         </p>
@@ -91,7 +93,7 @@ export function ClotureExerciceSection({
   if (raisonBlocage) {
     return (
       <section className="mt-8">
-        <h2 className="text-sm font-medium text-ink">Clôture de l&apos;exercice</h2>
+        <TitreSection>Clôture de l&apos;exercice</TitreSection>
         <p className="mt-2 text-sm text-ink">{raisonBlocage}</p>
       </section>
     );
@@ -100,9 +102,7 @@ export function ClotureExerciceSection({
   if (echecLecture) {
     return (
       <section className="mt-8" aria-labelledby="titre-cloture">
-        <h2 id="titre-cloture" className="text-sm font-medium text-ink">
-          Clôture de l&apos;exercice
-        </h2>
+        <TitreSection id="titre-cloture">Clôture de l&apos;exercice</TitreSection>
         <Etat type="erreur" message={echecLecture} onReessayer={charger} />
       </section>
     );
@@ -115,7 +115,7 @@ export function ClotureExerciceSection({
     // Exercice en cours : rien à clore, la section reste discrète.
     return apercu.raison && !apercu.raison.includes("pas terminé") ? (
       <section className="mt-8">
-        <h2 className="text-sm font-medium text-ink">Clôture de l&apos;exercice</h2>
+        <TitreSection>Clôture de l&apos;exercice</TitreSection>
         <p className="mt-2 text-sm text-subtle">{phrasePourChauffeur(apercu.raison)}</p>
       </section>
     ) : null;
@@ -143,35 +143,38 @@ export function ClotureExerciceSection({
 
   return (
     <section className="mt-8">
-      <h2 className="text-sm font-medium text-ink">Clôture de l&apos;exercice</h2>
+      <TitreSection>Clôture de l&apos;exercice</TitreSection>
       <p className="mt-2 text-sm text-subtle">
         Exercice du {formatDate(apercu.exercice_debut)} au {formatDate(apercu.exercice_fin)}.
         C&apos;est à vous de le clore : rien n&apos;est fait sans votre validation.
       </p>
-      <ul className="mt-3 space-y-1 text-sm text-ink">
-        {apercu.ecritures.map((libelle) => (
-          <li key={libelle}>{phraseEcritureCloture(libelle)}</li>
-        ))}
-        {apercu.nouvel_exercice_debut && (
-          <li>Ouverture du nouvel exercice le {formatDate(apercu.nouvel_exercice_debut)}</li>
-        )}
-        {apercu.changements.map((changement) => (
-          <li key={changement}>{phraseChangement(changement)}</li>
-        ))}
-      </ul>
+      <Card variant="flat" className="mt-3">
+        <ul className="list-disc space-y-1.5 pl-5 text-sm text-ink marker:text-faint">
+          {apercu.ecritures.map((libelle) => (
+            <li key={libelle}>{phraseEcritureCloture(libelle)}</li>
+          ))}
+          {apercu.nouvel_exercice_debut && (
+            <li>Ouverture du nouvel exercice le {formatDate(apercu.nouvel_exercice_debut)}</li>
+          )}
+          {apercu.changements.map((changement) => (
+            <li key={changement}>{phraseChangement(changement)}</li>
+          ))}
+        </ul>
+      </Card>
       {apercu.attestation && (
         <>
-          <label className="mt-4 flex min-h-11 gap-3 rounded-md border border-border bg-canvas p-3 text-sm text-ink">
+          <label className="mt-4 flex min-h-11 gap-3 rounded-md border border-border-strong bg-canvas p-3 text-sm text-ink">
             <input
               type="checkbox"
-              className="mt-0.5 size-6 shrink-0"
+              className="mt-0.5 size-6 shrink-0 accent-primary"
               checked={accepte}
               onChange={(evenement) => setAccepte(evenement.target.checked)}
             />
             <span>{apercu.attestation}</span>
           </label>
           <Button
-            className="mt-3 h-11"
+            size="lg"
+            className="mt-3"
             disabled={!accepte || enCours}
             onClick={() => apercu.attestation && valider(apercu.attestation)}
           >
@@ -179,7 +182,11 @@ export function ClotureExerciceSection({
           </Button>
         </>
       )}
-      {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}
+      {erreur && (
+        <p role="alert" className="mt-2 text-sm text-danger">
+          {erreur}
+        </p>
+      )}
     </section>
   );
 }

@@ -2,6 +2,10 @@
 
 import { useEffect, useId, useState } from "react";
 
+import { BoutonLien } from "@/components/LienAction";
+import { MessageAcces } from "@/components/MessageAcces";
+import { TitreAcces } from "@/components/PageAcces";
+import { LiensJuridiques } from "@/components/LiensJuridiques";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { demanderReinitialisation, envoyerLienMagique } from "@/lib/auth-chauffeur";
@@ -27,6 +31,7 @@ export function FormulaireConnexion({
 }) {
   const idEmail = useId();
   const idMotDePasse = useId();
+  const idErreur = useId();
   const [mode, setMode] = useState<Mode>("mot_de_passe");
   const [email, setEmail] = useState("");
   const [motDePasse, setMotDePasse] = useState("");
@@ -79,12 +84,14 @@ export function FormulaireConnexion({
     setInfo(null);
   }
 
+  const decritErreur = erreur ? idErreur : undefined;
+
   return (
     <div>
-      <h1 className="mb-1 text-xl font-bold text-ink">{titre}</h1>
-      <p className="mb-6 text-sm text-subtle">{sousTitre}</p>
-      <form className="space-y-3" onSubmit={soumettre}>
-        <div className="space-y-1">
+      <TitreAcces grand>{titre}</TitreAcces>
+      <p className="mt-2 text-base text-subtle">{sousTitre}</p>
+      <form className="mt-8 space-y-4" onSubmit={soumettre}>
+        <div className="space-y-1.5">
           <label htmlFor={idEmail} className="block text-sm font-medium text-ink">
             E-mail
           </label>
@@ -100,10 +107,11 @@ export function FormulaireConnexion({
             required
             disabled={enCours}
             aria-invalid={erreur ? true : undefined}
+            aria-describedby={decritErreur}
           />
         </div>
         {mode === "mot_de_passe" && (
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <label htmlFor={idMotDePasse} className="block text-sm font-medium text-ink">
               Mot de passe
             </label>
@@ -118,19 +126,18 @@ export function FormulaireConnexion({
               required
               disabled={enCours}
               aria-invalid={erreur ? true : undefined}
+              aria-describedby={decritErreur}
             />
           </div>
         )}
         {erreur && (
-          <p role="alert" className="text-sm text-danger">
+          <MessageAcces ton="erreur" id={idErreur}>
             {erreur}
-          </p>
+          </MessageAcces>
         )}
-        {info && (
-          <p role="status" className="text-sm text-subtle">
-            {info}
-          </p>
-        )}
+        {info && <MessageAcces ton="info">{info}</MessageAcces>}
+        {/* Le bouton garde la hauteur du design (36 px) : le chauffeur le
+            passe à 44 px par son habillage (`.chauffeur button`). */}
         <Button type="submit" disabled={enCours} className="w-full">
           {enCours
             ? "Envoi…"
@@ -141,27 +148,14 @@ export function FormulaireConnexion({
                 : "Se connecter"}
         </Button>
       </form>
-      <div className="mt-4 flex flex-col gap-2 text-sm">
-        {mode !== "lien" && (
-          <button type="button" className="inline-flex min-h-11 items-center text-left text-signal hover:underline" onClick={() => basculer("lien")}>
-            Recevoir un lien de connexion
-          </button>
-        )}
-        {mode !== "oubli" && (
-          <button type="button" className="inline-flex min-h-11 items-center text-left text-signal hover:underline" onClick={() => basculer("oubli")}>
-            Mot de passe oublié
-          </button>
-        )}
+      <div className="mt-6 flex flex-col items-start">
+        {mode !== "lien" && <BoutonLien onClick={() => basculer("lien")}>Recevoir un lien de connexion</BoutonLien>}
+        {mode !== "oubli" && <BoutonLien onClick={() => basculer("oubli")}>Mot de passe oublié</BoutonLien>}
         {mode !== "mot_de_passe" && (
-          <button
-            type="button"
-            className="inline-flex min-h-11 items-center text-left text-signal hover:underline"
-            onClick={() => basculer("mot_de_passe")}
-          >
-            Se connecter avec un mot de passe
-          </button>
+          <BoutonLien onClick={() => basculer("mot_de_passe")}>Se connecter avec un mot de passe</BoutonLien>
         )}
       </div>
+      <LiensJuridiques className="mt-6" />
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { ConfirmationDialogue, type Confirmation } from "@/components/ConfirmationDialogue";
 import { FormulaireHabilitationExpert } from "@/components/FormulaireHabilitationExpert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +36,7 @@ export default function EquipePage() {
   const [membres, setMembres] = useState<MembrePortefeuille[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [emailInvite, setEmailInvite] = useState("");
   const [roleInvite, setRoleInvite] = useState<RoleMembre>("membre");
   const [enCours, setEnCours] = useState(false);
@@ -163,13 +165,18 @@ export default function EquipePage() {
                   const phrase = soi
                     ? `Changer votre propre rôle en ${role} ?`
                     : `Donner le rôle ${role} à ${membre.email} ?`;
-                  if (!window.confirm(phrase)) return;
-                  try {
-                    const misAJour = await changerRole(membre.email, role);
-                    retenir(misAJour);
-                  } catch (exception) {
-                    setErreur(exception instanceof Error ? exception.message : "Échec du changement.");
-                  }
+                  setConfirmation({
+                    titre: "Changer le rôle",
+                    phrase,
+                    libelleConfirmer: "Changer le rôle",
+                    onConfirmer: async () => {
+                      try {
+                        retenir(await changerRole(membre.email, role));
+                      } catch (exception) {
+                        setErreur(exception instanceof Error ? exception.message : "Échec du changement.");
+                      }
+                    },
+                  });
                 }}
               />
             </div>
@@ -197,16 +204,23 @@ export default function EquipePage() {
                   variant="ghost"
                   size="sm"
                   className="text-danger"
-                  onClick={async () => {
-                    if (!window.confirm(`Retirer l'accès de ${membre.email} ?`)) return;
-                    try {
-                      await retirerMembre(membre.email);
-                      requeteCourante.current += 1;
-                      setMembres((actuel) => actuel?.filter((ligne) => ligne.email !== membre.email) ?? null);
-                    } catch (exception) {
-                      setErreur(exception instanceof Error ? exception.message : "Échec du retrait.");
-                    }
-                  }}
+                  onClick={() =>
+                    setConfirmation({
+                      titre: "Retirer l'accès",
+                      phrase: `Retirer l'accès de ${membre.email} ?`,
+                      libelleConfirmer: "Retirer l'accès",
+                      destructive: true,
+                      onConfirmer: async () => {
+                        try {
+                          await retirerMembre(membre.email);
+                          requeteCourante.current += 1;
+                          setMembres((actuel) => actuel?.filter((ligne) => ligne.email !== membre.email) ?? null);
+                        } catch (exception) {
+                          setErreur(exception instanceof Error ? exception.message : "Échec du retrait.");
+                        }
+                      },
+                    })
+                  }
                 >
                   Retirer l&apos;accès
                 </Button>
@@ -215,18 +229,24 @@ export default function EquipePage() {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={async () => {
-                      const phrase =
-                        `Réinitialiser la double authentification de ${membre.email} ? ` +
-                        "Il enrôlera un nouveau téléphone à sa prochaine connexion.";
-                      if (!window.confirm(phrase)) return;
-                      try {
-                        await reinitialiserMfaMembre(membre.email);
-                        setInfo(`Double authentification de ${membre.email} réinitialisée.`);
-                      } catch (exception) {
-                        setErreur(exception instanceof Error ? exception.message : "Échec.");
-                      }
-                    }}
+                    onClick={() =>
+                      setConfirmation({
+                        titre: "Réinitialiser la double authentification",
+                        phrase:
+                          `Réinitialiser la double authentification de ${membre.email} ? ` +
+                          "Il enrôlera un nouveau téléphone à sa prochaine connexion.",
+                        libelleConfirmer: "Réinitialiser",
+                        destructive: true,
+                        onConfirmer: async () => {
+                          try {
+                            await reinitialiserMfaMembre(membre.email);
+                            setInfo(`Double authentification de ${membre.email} réinitialisée.`);
+                          } catch (exception) {
+                            setErreur(exception instanceof Error ? exception.message : "Échec.");
+                          }
+                        },
+                      })
+                    }
                   >
                     Réinitialiser la double authentification
                   </Button>
@@ -238,6 +258,7 @@ export default function EquipePage() {
       </ul>
       </div>
       {droit.admin && <FormulaireHabilitationExpert actif={droit.admin} />}
+      {confirmation && <ConfirmationDialogue confirmation={confirmation} onFermer={() => setConfirmation(null)} />}
     </div>
   );
 }
@@ -252,7 +273,7 @@ function Segment({
   desactive?: boolean;
 }) {
   return (
-    <div className="flex w-full overflow-hidden rounded-md border border-border">
+    <div className="flex w-full overflow-hidden rounded-md border border-border-strong">
       {ROLES.map((role) => (
         <button
           key={role.id}
@@ -261,8 +282,8 @@ function Segment({
           aria-pressed={valeur === role.id}
           disabled={desactive}
           onClick={() => onChoisir(role.id)}
-          className={`h-9 flex-1 border-l border-border text-sm first:border-l-0 disabled:opacity-50 ${
-            valeur === role.id ? "bg-surface-soft font-medium text-ink" : "text-subtle hover:bg-canvas-app"
+          className={`min-h-9 flex-1 border-l border-border text-sm first:border-l-0 disabled:opacity-50 ${
+            valeur === role.id ? "bg-surface-soft font-semibold text-ink" : "text-subtle hover:bg-surface-soft hover:text-ink"
           }`}
         >
           {role.libelle}

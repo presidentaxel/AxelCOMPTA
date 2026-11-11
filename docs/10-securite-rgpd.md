@@ -1,6 +1,6 @@
 # 10 — Sécurité, RGPD et protection des données
 
-> **État au 2026-11-05** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-10** (ajouté ; le reste du doc décrit la cible) :
 > - Fait : RLS par dossier sur les tables, pseudonymisation obligatoire
 >   avant tout LLM avec tests de fuite (AXE-436), journal d'audit
 >   append-only des décisions et signatures, Sentry seulement si un DSN est
@@ -14,10 +14,17 @@
 >   connexion laissent une ligne au journal d'audit ; le dirigeant les relit
 >   sur son écran Compte. Les connexions **échouées** ne passent pas par
 >   l'API : elles se lisent dans les journaux de Supabase Auth.
+> - Production isolée (AXE-810) : plus de données de démo (doc 17),
+>   `/metrics` fermé sans `METRICS_TOKEN`, verrous du rôle web testés.
+> - Paramètres SMTP et SMS des gestionnaires chiffrés (Fernet, clé
+>   `AXELCOMPTA_CLE_INTEGRATIONS` hors base), jamais renvoyés à l'écran ;
+>   les rappels ne contiennent jamais de montant (AXE-808).
+> - Compte de test (AXE-822) : lecture seule, date de fin obligatoire
+>   (90 jours au plus), chaque ouverture de dossier tracée au journal
+>   d'audit.
 > - Pas fait : sauvegardes avec restauration testée et hébergement
->   de production (AXE-811), isolation de la production, qui ne contient plus de données de démo (AXE-810, doc 17), DPA et
->   CGU (AXE-813), offboarding (export et purge d'un tenant, doc 14 :
->   aucun ticket).
+>   de production (AXE-811), DPA et CGU (AXE-813, AXE-859), offboarding
+>   (export et purge d'un tenant, doc 14 : aucun ticket).
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-12
 > Le volet juridique RGPD est traité en doc 02 §8 ; ici, l'implémentation.
