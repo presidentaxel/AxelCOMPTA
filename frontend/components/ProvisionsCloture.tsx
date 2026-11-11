@@ -7,24 +7,33 @@
 // La lecture et la liste vide sont deux états. Tant que la lecture n'a pas
 // réussi, aucun PUT ne part : sinon la seule ligne ajoutée remplacerait
 // les provisions déjà saisies.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Etat } from "@/components/Etat";
+import { Montant } from "@/components/Montant";
+import { Squelette } from "@/components/Squelette";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api";
 import {
   ErreurAuthChauffeur,
   enregistrerProvisionsCloture,
   lireProvisionsCloture,
 } from "@/lib/auth-chauffeur";
-import { formatMontant } from "@/lib/format";
 import { CHARGES_CLOTURE, NOM_NATURE, phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import { lireEuros, listeAEnregistrer, listeSans, type LectureListe } from "@/lib/saisie-chauffeur";
 import { messageEchecChargement } from "@/lib/session";
 import type { ProvisionClotureVue } from "@/lib/types";
 
-const CHAMP =
-  "h-11 w-full rounded-md border border-border bg-canvas px-3 text-base text-ink outline-none placeholder:text-muted focus-visible:border-border-focus focus-visible:shadow-focus";
+/** Les deux listes restent des `<select>` natifs, pas le `Select` de Radix :
+ * sur téléphone, le chauffeur choisit dans la liste du système, et les tests
+ * pilotent ce champ par son libellé (`selectOption`). Même gabarit que
+ * `select-lg` de DESIGN.md : 44 px, 16 px (en dessous, iOS zoome), filet
+ * `border-strong`, focus `signal`. */
+const CHAMP_NATIF =
+  "h-11 w-full rounded-md border border-border-strong bg-canvas px-3 text-base text-ink outline-none transition-colors duration-100 focus-visible:border-border-focus focus-visible:shadow-focus";
 
 export function ProvisionsCloture({
   dossierId,
@@ -121,94 +130,136 @@ export function ProvisionsCloture({
   }
 
   const lignes = lecture.statut === "pret" ? lecture.lignes : [];
+  const champs = useId();
 
   return (
-    <section
-      aria-labelledby="provisions-titre"
-      className="mt-8 rounded-md border border-border bg-canvas p-3"
-    >
-      <p id="provisions-titre" className="text-sm text-ink">
-        Une charge de cet exercice n&apos;est pas encore passée ?
-      </p>
-      <p className="mt-1 text-sm text-subtle">
-        Donnez votre estimation. Elle sera prise dans la clôture. Rien n&apos;est deviné.
-      </p>
-      {lecture.statut === "erreur" && (
-        <Etat type="erreur" className="mt-3" message={lecture.message} onReessayer={relire} />
-      )}
-      {lignes.length > 0 && (
-        <ul className="mt-3 space-y-1 text-sm text-ink">
-          {lignes.map((ligne, index) => (
-            <li
-              key={`${index}-${ligne.nature}-${ligne.compte_charge}-${ligne.libelle}`}
-              className="flex items-center justify-between gap-3"
+    <section aria-labelledby="provisions-titre" className="mt-8">
+      <Card>
+        <p id="provisions-titre" className="text-base font-semibold text-ink">
+          Une charge de cet exercice n&apos;est pas encore passée ?
+        </p>
+        <p className="mt-1 text-sm text-subtle">
+          Donnez votre estimation. Elle sera prise dans la clôture. Rien n&apos;est deviné.
+        </p>
+        {lecture.statut === "en_cours" && <Squelette className="mt-3 h-13 w-full" />}
+        {lecture.statut === "erreur" && (
+          <Etat type="erreur" className="mt-3" message={lecture.message} onReessayer={relire} />
+        )}
+        {lignes.length > 0 && (
+          <Table className="mt-3">
+            <caption className="sr-only">Charges déjà saisies</caption>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Charge</TableHead>
+                <TableHead montant>Estimation</TableHead>
+                <TableHead>
+                  <span className="sr-only">Action</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {lignes.map((ligne, index) => (
+                <TableRow key={`${index}-${ligne.nature}-${ligne.compte_charge}-${ligne.libelle}`}>
+                  <TableCell className="py-2 text-ink">
+                    <span>
+                      {NOM_NATURE[ligne.nature]} — {ligne.libelle}
+                    </span>
+                  </TableCell>
+                  <TableCell montant className="py-2">
+                    <Montant centimes={ligne.centimes} ton="neutre" />
+                  </TableCell>
+                  <TableCell className="py-1 text-right">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="lg"
+                      disabled={enCours}
+                      aria-label={`Retirer ${ligne.libelle}`}
+                      onClick={() => void retirer(index)}
+                    >
+                      Retirer
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        <div className="mt-4 flex flex-col gap-3">
+          <ChampEtiquete id={`${champs}-nature`} libelle="Nature">
+            <select
+              id={`${champs}-nature`}
+              className={CHAMP_NATIF}
+              value={nature}
+              onChange={(evenement) => setNature(evenement.target.value === "cca" ? "cca" : "fnp")}
             >
-              <span className="min-w-0">
-                <span className="block">
-                  {NOM_NATURE[ligne.nature]} — {ligne.libelle}
-                </span>
-                <span className="tabular-nums">{formatMontant(ligne.centimes)}</span>
-              </span>
-              <button
-                type="button"
-                className="inline-flex h-11 shrink-0 items-center justify-center rounded-md px-3 text-sm font-semibold text-danger outline-none focus-visible:shadow-focus disabled:opacity-50"
-                disabled={enCours}
-                aria-label={`Retirer ${ligne.libelle}`}
-                onClick={() => void retirer(index)}
-              >
-                Retirer
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="mt-3 flex flex-col gap-2">
-        <select
-          className={CHAMP}
-          value={nature}
-          onChange={(evenement) => setNature(evenement.target.value === "cca" ? "cca" : "fnp")}
-        >
-          <option value="fnp">{NOM_NATURE.fnp}</option>
-          <option value="cca">{NOM_NATURE.cca}</option>
-        </select>
-        <select
-          className={CHAMP}
-          aria-label="De quoi s'agit-il ?"
-          value={compte}
-          onChange={(evenement) => setCompte(evenement.target.value)}
-        >
-          {CHARGES_CLOTURE.map((charge) => (
-            <option key={charge.compte} value={charge.compte}>
-              {charge.libelle}
-            </option>
-          ))}
-        </select>
-        <input
-          className={`${CHAMP} tabular-nums text-right`}
-          inputMode="decimal"
-          placeholder="Montant"
-          aria-label="Montant"
-          value={montant}
-          onChange={(evenement) => setMontant(evenement.target.value)}
-        />
-        <input
-          className={CHAMP}
-          placeholder="Libellé"
-          aria-label="Libellé"
-          value={libelle}
-          onChange={(evenement) => setLibelle(evenement.target.value)}
-        />
-        <Button
-          type="button"
-          variant="secondary"
-          className="h-11 w-full"
-          disabled={enCours || lecture.statut !== "pret"}
-          onClick={() => void ajouter()}
-        >
-          Ajouter
-        </Button>
-      </div>
-      {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}
+              <option value="fnp">{NOM_NATURE.fnp}</option>
+              <option value="cca">{NOM_NATURE.cca}</option>
+            </select>
+          </ChampEtiquete>
+          <ChampEtiquete id={`${champs}-compte`} libelle="De quoi s'agit-il ?">
+            <select
+              id={`${champs}-compte`}
+              className={CHAMP_NATIF}
+              value={compte}
+              onChange={(evenement) => setCompte(evenement.target.value)}
+            >
+              {CHARGES_CLOTURE.map((charge) => (
+                <option key={charge.compte} value={charge.compte}>
+                  {charge.libelle}
+                </option>
+              ))}
+            </select>
+          </ChampEtiquete>
+          <ChampEtiquete id={`${champs}-montant`} libelle="Montant">
+            <Input
+              id={`${champs}-montant`}
+              montant
+              uiSize="lg"
+              inputMode="decimal"
+              placeholder="€"
+              value={montant}
+              onChange={(evenement) => setMontant(evenement.target.value)}
+            />
+          </ChampEtiquete>
+          <ChampEtiquete id={`${champs}-libelle`} libelle="Libellé">
+            <Input
+              id={`${champs}-libelle`}
+              uiSize="lg"
+              value={libelle}
+              onChange={(evenement) => setLibelle(evenement.target.value)}
+            />
+          </ChampEtiquete>
+          <Button
+            type="button"
+            variant="secondary"
+            size="lg"
+            className="w-full"
+            disabled={enCours || lecture.statut !== "pret"}
+            onClick={() => void ajouter()}
+          >
+            Ajouter
+          </Button>
+        </div>
+        {erreur && (
+          <p role="alert" className="mt-3 text-sm text-danger">
+            {erreur}
+          </p>
+        )}
+      </Card>
     </section>
+  );
+}
+
+/** Un champ avec son libellé visible : plus de placeholder qui disparaît à la
+ * frappe, et le même texte nomme le champ pour les lecteurs d'écran. */
+function ChampEtiquete({ id, libelle, children }: { id: string; libelle: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={id} className="text-sm font-medium text-ink">
+        {libelle}
+      </label>
+      {children}
+    </div>
   );
 }
