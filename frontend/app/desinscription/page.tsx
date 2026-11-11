@@ -30,7 +30,7 @@ export default function DesinscriptionPage() {
     const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
     fetch(`${base}/desinscription${window.location.search}`)
       .then(async (reponse) => {
-        const corps = (await reponse.json().catch(() => ({}))) as { message?: string; detail?: string };
+        const corps = (await reponse.json().catch(() => ({}))) as { message?: unknown; detail?: unknown };
         setEtat(etatApresReponse(reponse.ok, corps));
       })
       .catch(() => setEtat(ETAT_INJOIGNABLE));

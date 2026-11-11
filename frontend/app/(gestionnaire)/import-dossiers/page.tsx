@@ -61,7 +61,7 @@ export default function ImportDossiersPage() {
 
   return (
     <div>
-      <h1 className="text-[28px] font-bold tracking-tight text-ink">Importer des entreprises</h1>
+      <h1 className="text-[22px] font-bold tracking-tight text-ink">Importer des entreprises</h1>
       <p className="mt-2 text-sm text-subtle">
         Une ligne par société, au format du modèle (CSV, séparateur « ; »). Chaque ligne est
         vérifiée avant toute création : SIREN, combinaison forme × impôt × TVA, dates d&apos;exercice.

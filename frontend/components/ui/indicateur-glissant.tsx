@@ -20,12 +20,16 @@ import {
 export function IndicateurGlissant({
   selecteur,
   axe = "horizontal",
+  forme = "filet",
   className = "",
 }: {
   selecteur: string
   /** `horizontal` : filet sous une rangée (onglets). `vertical` : filet à
    * gauche d'une colonne (barre latérale), comme le sélecteur de la vidéo. */
   axe?: "horizontal" | "vertical"
+  /** `filet` : trait de 2 px. `bulle` (axe vertical) : rectangle arrondi qui
+   * entoure l'entrée active ; les entrées doivent être `relative z-10`. */
+  forme?: "filet" | "bulle"
   className?: string
 }) {
   const reference = React.useRef<HTMLSpanElement>(null)
@@ -87,8 +91,12 @@ export function IndicateurGlissant({
       ref={reference}
       aria-hidden="true"
       data-slot="indicateur-glissant"
-      className={`pointer-events-none absolute bg-ink ${
-        vertical ? "top-0 left-0 w-0.5" : "-bottom-px left-0 h-0.5"
+      className={`pointer-events-none absolute z-0 ${
+        forme === "bulle" && vertical
+          ? "inset-x-0 top-0 rounded-md border border-border-strong bg-surface-soft"
+          : vertical
+            ? "top-0 left-0 w-0.5 bg-ink"
+            : "-bottom-px left-0 h-0.5 bg-ink"
       } ${className}`}
       style={{
         ...(vertical ? { height: taille } : { width: taille }),

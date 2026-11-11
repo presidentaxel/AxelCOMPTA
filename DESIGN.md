@@ -656,31 +656,32 @@ components:
 
   # --- Navigation : barre latérale (AXE-877) ---
   # Une barre horizontale (AXE-874) a été essayée puis écartée : voir l'ADR-008.
-  # Collée à la hauteur de l'écran ; la marque occupe les 64 px du haut.
+  # Collée à la hauteur de l'écran ; la marque occupe les 56 px du haut.
   nav-sidebar:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink}"
     borderRight: "1px solid {colors.border}"
-    width: 256px
-    brandHeight: 64px
+    width: 224px
+    brandHeight: 56px
   nav-item:
     backgroundColor: "transparent"
     textColor: "{colors.muted}"
     typography: "{typography.label-md}"
     hoverBackground: "{colors.surface-soft}"
     hoverTextColor: "{colors.ink}"
-    minHeight: 44px
-    padding: 0 16px
+    minHeight: 36px   # 44px dans le tiroir, sous 1024px
+    padding: 0 12px
     rounded: "{rounded.md}"
     transition: "{transition.base}"
   nav-item-active:
-    backgroundColor: "{colors.surface-soft}"
+    backgroundColor: "transparent"   # la bulle `nav-indicator` passe derrière
     textColor: "{colors.ink}"
     typography: "{typography.heading-sm}"
-  # Le filet vertical de 2 px à gauche de la colonne : il glisse d'une entrée à l'autre.
+  # La bulle : un rectangle arrondi autour de l'entrée active, qui glisse d'une entrée à l'autre.
   nav-indicator:
-    width: 2px
-    backgroundColor: "{colors.ink}"
+    backgroundColor: "{colors.surface-soft}"
+    borderColor: "{colors.border-strong}"
+    rounded: "{rounded.md}"
     transition: "{transition.indicator}"
   # Une action est attendue dans cette section : point de 7 px, aligné à droite de l'entrée.
   nav-item-alert:
@@ -1005,7 +1006,7 @@ couleur `{colors.amount-positive}` dans un tableau de recettes,
 │ (AR) Organisation │                                               │
 │      e-mail       │                                               │
 └───────────────────┴───────────────────────────────────────────────┘
-   Barre latérale : 256px · fond canvas · filet droit border · collée à
+   Barre latérale : 224px · fond canvas · filet droit border · collée à
    la hauteur de l'écran (position sticky)
    ● = nav-item-alert : une action est attendue dans cette section
    (AR) = bloc de compte, en bas : avatar de 32px sur fond ink, nom de
@@ -1123,18 +1124,19 @@ Au plus un par écran.
 
 ### Navigation
 
-La navigation du gestionnaire est la barre latérale `nav-sidebar` : 256px de
+La navigation du gestionnaire est la barre latérale `nav-sidebar` : 224px de
 large, fond `{colors.canvas}`, filet droit `{colors.border}`, collée à la
 hauteur de l'écran (le contenu défile, pas la barre). De haut en bas : la
-marque (zone de 64px), les sept entrées en colonne, le bloc de compte.
+marque (zone de 56px), les sept entrées en colonne, le bloc de compte.
 
-- **`nav-item`** : 14px, poids 500, `{colors.muted}`, 44px de haut au moins,
-  `{rounded.md}`, padding horizontal de 16px. Au survol : fond
+- **`nav-item`** : 13px, poids 500, `{colors.muted}`, 36px de haut (44px dans
+  le tiroir), `{rounded.md}`, padding horizontal de 12px. Au survol : fond
   `{colors.surface-soft}` et texte `{colors.ink}`.
-- **`nav-item-active`** : poids 600, `{colors.ink}`, fond
-  `{colors.surface-soft}`.
-- **`nav-indicator`** : le filet vertical de 2px `ink`, à gauche de la colonne,
-  n'est pas une bordure de l'entrée : c'est un indicateur qui glisse d'une
+- **`nav-item-active`** : poids 600, `{colors.ink}`, sans fond propre : c'est
+  la bulle qui l'entoure.
+- **`nav-indicator`** : la bulle, un rectangle arrondi (`{rounded.md}`, fond
+  `{colors.surface-soft}`, filet `{colors.border-strong}`) posé derrière l'entrée
+  active, n'est pas une bordure de l'entrée : c'est un indicateur qui glisse d'une
   entrée à l'autre en 180 ms (`{transition.indicator}`), car la barre reste
   montée d'une page à l'autre. C'est le composant `IndicateurGlissant`, que les
   onglets utilisent sur l'axe horizontal (filet sous la rangée) : la même
@@ -1310,7 +1312,7 @@ mobile-first (voir « Espace chauffeur »).
 |---|---|---|
 | Desktop XL | ≥ 1440px | Grille dashboard 3 colonnes, tableaux pleine largeur |
 | Desktop | 1280–1439px | Idem, container légèrement réduit |
-| Laptop | 1024–1279px | Barre latérale de 256px ; grille dashboard 2 colonnes |
+| Laptop | 1024–1279px | Barre latérale de 224px ; grille dashboard 2 colonnes |
 | Tablet | 768–1023px | Barre latérale remplacée par une barre haute de 56px, entrées dans un bouton « Menu » (tiroir) ; grille 1 colonne |
 | Mobile | < 768px | Espace chauffeur (colonne unique, barre du bas) ; le gestionnaire n'est pas optimisé mobile |
 
@@ -1435,6 +1437,11 @@ les colonnes numériques.
   classe commune (`LienAction`, `components/LienAction.tsx`) ; le surlignage
   jaune du titre est posé en style local (`Surligneur`). La fiche d'une
   entreprise est un panneau `fixed` à droite avec `shadow-overlay`.
+- **Densité du gestionnaire** : la racine passe à 15px dans l'espace gestionnaire
+  (`html:has([data-espace="gestionnaire"])`, `globals.css`), ce qui réduit de 6 %
+  tout ce que Tailwind compte en rem (texte, espacements, hauteurs). Titres de
+  page à 22px, titre d'accueil du portefeuille à 40px, lignes de tableau à
+  40px, marge de page de 32px. L'espace chauffeur reste à 16px, lisible au doigt.
 - **Chauffeur (AXE-883)** : la barre du bas pose le filet de 2 px sur son bord
   haut et le fait glisser (`IndicateurGlissant` placé en `-top-px`) ; les
   boutons principaux sont `Button size="lg"` et `h-12`, les titres d'écran

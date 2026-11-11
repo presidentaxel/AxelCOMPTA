@@ -67,7 +67,7 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        "h-13 transition-colors duration-100 hover:bg-surface-soft motion-reduce:transition-none",
+        "h-10 transition-colors duration-100 hover:bg-surface-soft motion-reduce:transition-none",
         className
       )}
       {...props}
@@ -91,7 +91,7 @@ function TableHead({
     <th
       data-slot="table-head"
       className={cn(
-        "h-9 border-b border-ink bg-canvas-app px-4 align-middle text-xs font-semibold tracking-[0.06em] whitespace-nowrap text-subtle uppercase",
+        "h-8 border-b border-ink bg-canvas-app px-4 align-middle text-xs font-semibold tracking-[0.06em] whitespace-nowrap text-subtle uppercase",
         montant ? "text-right" : "text-left",
         className
       )}
@@ -109,7 +109,7 @@ function TableCell({
     <td
       data-slot="table-cell"
       className={cn(
-        "border-b border-hairline px-4 align-middle",
+        "border-b border-hairline px-3 align-middle",
         montant && "text-right tabular-nums",
         className
       )}

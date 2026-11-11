@@ -228,7 +228,7 @@ export default function ModeExpertPage() {
 
   return (
     <div>
-      <h1 className="text-[28px] font-bold tracking-tight text-ink">Mode expert</h1>
+      <h1 className="text-[22px] font-bold tracking-tight text-ink">Mode expert</h1>
       <p className="mt-2 text-sm text-subtle">
         Libellés et montants des écritures encore ouvertes. « Imputer » écrit dans la
         comptabilité de l&apos;entreprise : une contre-passation, puis une nouvelle écriture.

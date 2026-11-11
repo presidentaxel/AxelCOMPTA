@@ -130,6 +130,13 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* Densité du gestionnaire : un écran de travail qui se parcourt vite. Tailwind
+     compte en rem (texte, espacements, hauteurs) : passer la racine à 15 px
+     réduit tout le gestionnaire de 6 %, sans toucher l'espace chauffeur (16 px,
+     lisible au doigt) ni les pages d'accès. Les valeurs en px restent fixes. */
+  html:has([data-espace="gestionnaire"]) {
+    font-size: 15px;
+  }
   /* DESIGN.md : fond app = canvas-app, jamais du blanc pur en body direct. */
   body {
     @apply bg-background text-foreground;

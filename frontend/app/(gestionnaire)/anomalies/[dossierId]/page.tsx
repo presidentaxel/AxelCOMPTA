@@ -89,7 +89,7 @@ export default function AnomaliesPage() {
       <Link href={retour} className={CLASSE_LIEN_ACTION}>
         Entreprises
       </Link>
-      <h1 className="mt-4 text-[28px] leading-[1.21] font-semibold tracking-[-0.02em] text-ink">
+      <h1 className="mt-4 text-[22px] leading-[1.21] font-semibold tracking-[-0.02em] text-ink">
         Anomalies{nom ? ` · ${nom}` : ""}
       </h1>
       <p className="mt-2 text-sm text-subtle">

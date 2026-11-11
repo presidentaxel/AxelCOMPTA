@@ -86,7 +86,7 @@ export default function ConnexionsBancairesPage() {
 
   return (
     <div>
-      <h1 className="text-[28px] font-bold tracking-tight text-ink">Connexions bancaires</h1>
+      <h1 className="text-[22px] font-bold tracking-tight text-ink">Connexions bancaires</h1>
       <p className="mt-2 text-sm text-subtle">
         Sans connexion valide, les opérations d&apos;une entreprise n&apos;arrivent plus.
         <Aide texte={pourquoiEnvoi(canauxEnvoi)} />
@@ -102,7 +102,7 @@ export default function ConnexionsBancairesPage() {
             <Compteur libelle="Jamais connectées" valeur={donnees.compteurs.jamais_connecte} />
           </dl>
 
-          <section className="mt-10">
+          <section className="mt-8">
             <h2 className="text-sm font-medium text-ink">
               Relances des entreprises
               <Aide texte={pourquoiEnvoi(canauxEnvoi)} />
@@ -127,7 +127,7 @@ export default function ConnexionsBancairesPage() {
             </div>
           </section>
 
-          <Table className="mt-10">
+          <Table className="mt-8">
             <TableHeader>
               <TableRow>
                 <TableHead>Entreprise</TableHead>
