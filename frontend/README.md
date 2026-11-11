@@ -65,8 +65,9 @@ chauffeur (mobile) est cadré dans [doc 19](../docs/19-parcours-utilisateur.md).
   sa page de connexion (« votre session a expiré »), puis ramené sur la
   page qu'il quittait. Serveur injoignable : message clair, session gardée.
   Routage restructuré en groupe `app/(gestionnaire)/` pour que la
-  navigation (la barre de navigation horizontale du design system v2.0, à
-  venir avec AXE-877, qui remplacera l'ancienne sidebar) ne s'applique qu'aux
+  navigation (la barre de navigation horizontale du design system v2.0,
+  `components/Navigation.tsx`, livrée avec AXE-877 : elle a remplacé
+  l'ancienne sidebar, supprimée avec la TopBar) ne s'applique qu'aux
   routes gestionnaire (doc 19 §7 : « même socle, deux habillages ») — sans
   effet sur les URLs.
   **Parcours mobile complet fait (2026-09-09, Semaine 3)** : transactions
