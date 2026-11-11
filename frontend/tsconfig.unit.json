@@ -58,6 +58,8 @@
     "lib/piege-focus.ts",
     "lib/piege-focus.test.ts",
     "lib/indicateur.ts",
-    "lib/indicateur.test.ts"
+    "lib/indicateur.test.ts",
+    "lib/navigation.ts",
+    "lib/navigation.test.ts"
   ]
 }
