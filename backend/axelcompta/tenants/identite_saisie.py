@@ -13,7 +13,7 @@ valeur par défaut inventée.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 from axelcompta.core.errors import SaisieInvalide
@@ -38,8 +38,20 @@ class IdentiteInvalide(SaisieInvalide):
 
 
 @dataclass(frozen=True, slots=True)
+class PersonneConnue:
+    """Ce qu'un registre dit d'une personne, sans rien inventer. La civilité
+    et la date de naissance complète n'y sont pas : le dirigeant les saisit."""
+
+    nom: str
+    prenoms: str
+    code_postal: str = ""
+    commune: str = ""
+    pays: str = "France"
+
+
+@dataclass(frozen=True, slots=True)
 class PreRemplissage:
-    """Ce que le registre public donne pour un SIREN. Une valeur absente
+    """Ce que les registres donnent pour un SIREN. Une valeur absente
     reste vide : le dirigeant la saisit."""
 
     siren: str
@@ -47,6 +59,8 @@ class PreRemplissage:
     nic: str
     adresse_siege: Adresse
     code_ape: str
+    capital_social_cts: int | None = None
+    personnes: tuple[PersonneConnue, ...] = ()
 
 
 def verifier_identite(identite: IdentiteEntreprise, forme: str, aujourd_hui: date) -> None:
@@ -101,6 +115,45 @@ def _verifier_associe(associe: Associe, aujourd_hui: date) -> None:
 def qualite_par_defaut(forme: str) -> str:
     """Ce que le dirigeant est le plus souvent, selon la forme."""
     return QUALITE_PAR_FORME.get(forme, "")
+
+
+def completer_pre_remplissage(
+    pre: PreRemplissage | None,
+    siren: str,
+    denomination: str | None = None,
+    siege: Adresse | None = None,
+    code_ape: str | None = None,
+    capital_social_cts: int | None = None,
+    personnes: tuple[PersonneConnue, ...] = (),
+) -> PreRemplissage | None:
+    """Ajoute le capital et les personnes d'un registre officiel. `None` si
+    aucun registre n'a rien donné."""
+    if (
+        pre is None
+        and not denomination
+        and siege is None
+        and not code_ape
+        and not capital_social_cts
+        and not personnes
+    ):
+        return None
+    base = pre or PreRemplissage(
+        siren=siren,
+        denomination="",
+        nic="",
+        adresse_siege=Adresse("", "", "", ""),
+        code_ape="",
+    )
+    return replace(
+        base,
+        denomination=base.denomination or denomination or "",
+        code_ape=base.code_ape or code_ape or "",
+        adresse_siege=(
+            base.adresse_siege if base.adresse_siege.voie else (siege or base.adresse_siege)
+        ),
+        capital_social_cts=capital_social_cts or base.capital_social_cts,
+        personnes=personnes or base.personnes,
+    )
 
 
 def pre_remplissage(reponse: Mapping[str, object], siren: str) -> PreRemplissage | None:

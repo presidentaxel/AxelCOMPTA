@@ -88,6 +88,46 @@ test("le registre remplit sans effacer ce qui est déjà saisi", () => {
   assert.equal(apres.adresse_siege.commune, "PARIS");
 });
 
+test("le registre remplit le capital et le nom, pas la rue ni la date", () => {
+  const apres = appliquerRegistre(formulaireDepuis(VUE_VIDE), {
+    siren: "989841911",
+    denomination: "AxeL Project",
+    nic: "",
+    code_ape: "",
+    adresse_siege: { numero: "", voie: "", code_postal: "", commune: "", pays: "France" },
+    capital_social_cts: 10000,
+    personnes: [
+      { nom: "REICHARD", prenoms: "Arthur", code_postal: "92160", commune: "ANTONY", pays: "France" },
+    ],
+  });
+  assert.equal(apres.capital_euros, "100");
+  assert.equal(apres.associes[0]?.nom, "REICHARD");
+  assert.equal(apres.associes[0]?.prenoms, "Arthur");
+  assert.equal(apres.associes[0]?.adresse.commune, "ANTONY");
+  assert.equal(apres.associes[0]?.adresse.code_postal, "92160");
+  assert.equal(apres.associes[0]?.adresse.voie, "");
+  assert.equal(apres.associes[0]?.date_naissance, "");
+  assert.equal(apres.associes[0]?.nb_titres, "");
+});
+
+test("un capital ou un nom déjà saisi n'est pas remplacé", () => {
+  const avant = { ...formulaireDepuis(VUE_VIDE), capital_euros: "500" };
+  avant.associes = avant.associes.map((a) => ({ ...a, nom: "Dupont" }));
+  const apres = appliquerRegistre(avant, {
+    siren: "989841911",
+    denomination: "AxeL Project",
+    nic: "",
+    code_ape: "",
+    adresse_siege: { numero: "", voie: "", code_postal: "", commune: "", pays: "France" },
+    capital_social_cts: 10000,
+    personnes: [
+      { nom: "REICHARD", prenoms: "Arthur", code_postal: "92160", commune: "ANTONY", pays: "France" },
+    ],
+  });
+  assert.equal(apres.capital_euros, "500");
+  assert.equal(apres.associes[0]?.nom, "Dupont");
+});
+
 test("l'adresse du siège se recopie sur un associé", () => {
   const copie = copierAdresseDuSiege(rempli(), 0);
   assert.deepEqual(copie.associes[0]?.adresse, rempli().adresse_siege);

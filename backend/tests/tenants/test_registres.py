@@ -19,6 +19,7 @@ from axelcompta.tenants.registres import (
     CHAMP_DIRIGEANT,
     CHAMP_ETAT,
     CHAMP_FORME,
+    PersonneOfficielle,
     TranchageRefuse,
     combiner,
     ecarts,
@@ -85,6 +86,35 @@ def test_rne_leve_l_ambiguite_sas_sasu_et_lit_capital_et_dirigeants() -> None:
     assert (plusieurs.forme_juridique, unique.forme_juridique) == ("SAS", "SASU")
     assert plusieurs.capital_cts == 100000
     assert plusieurs.dirigeants == ("Karim AMRANI",)
+    assert plusieurs.personnes == (PersonneOfficielle("AMRANI", "Karim"),)
+
+
+def test_une_personne_rne_garde_nom_et_commune_pas_la_rue_ni_la_date() -> None:
+    reponse = copy.deepcopy(RNE_SAS_PLURIPERSONNELLE)
+    reponse["formality"]["content"]["personneMorale"]["composition"]["pouvoirs"] = [
+        {"typeDePersonne": "ENTREPRISE"},
+        {
+            "typeDePersonne": "INDIVIDU",
+            "individu": {
+                "descriptionPersonne": {
+                    "nom": "REICHARD",
+                    "prenoms": ["Arthur", "Louis"],
+                    "dateDeNaissance": "1990-01",
+                },
+                "adresseDomicile": {
+                    "codePostal": "92160",
+                    "commune": "ANTONY",
+                    "pays": "France",
+                },
+            },
+        },
+    ]
+    fiche = fiche_rne(reponse, SIREN, LE)
+    assert fiche is not None
+    assert fiche.personnes == (
+        PersonneOfficielle("REICHARD", "Arthur Louis", "92160", "ANTONY", "France"),
+    )
+    assert fiche.dirigeants == ("Arthur REICHARD",)
 
 
 def test_sans_indicateur_d_associe_unique_la_forme_reste_inconnue() -> None:

@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.demo_api import get_dossiers, get_registres
+from axelcompta.demo_api import _sujets_ecarts, get_dossiers, get_registres
 from axelcompta.registres_officiels import (
     Insee,
     Rne,
@@ -160,6 +160,16 @@ def test_critere_le_gestionnaire_voit_l_ecart_et_la_liasse_est_refusee() -> None
     liasse = client.get(f"/dossiers/{KARIM}/liasse-fiscale.pdf", headers=_en_tete(KARIM))
     assert liasse.status_code == 409
     assert "forme au registre SAS" in liasse.json()["detail"]
+
+
+def test_un_ecart_est_un_sujet_de_la_file_expert() -> None:
+    client, _ = _client_avec_ecart()
+    depot = client.app.dependency_overrides[get_dossiers]()  # type: ignore[attr-defined]
+    dossier = depot.obtenir(DossierId(KARIM))
+    sujets = _sujets_ecarts(dossier)
+    assert [(s.nature, s.imputable, s.detail, s.montant_cts, s.ecriture_id) for s in sujets] == [
+        ("registre", False, "Forme déclarée SASU, forme au registre SAS.", None, None)
+    ]
 
 
 def test_un_dossier_sans_ecart_n_affiche_rien_de_plus() -> None:

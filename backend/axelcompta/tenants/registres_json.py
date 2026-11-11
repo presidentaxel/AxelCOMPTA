@@ -9,7 +9,7 @@ from typing import Any
 from axelcompta.core.identite import Adresse
 
 from .models import EcartRegistre
-from .registres import FicheOfficielle
+from .registres import FicheOfficielle, PersonneOfficielle
 
 
 def ecarts_vers_json(ecarts: tuple[EcartRegistre, ...]) -> list[dict[str, str]]:
@@ -38,6 +38,11 @@ def fiche_depuis_json(donnees: dict[str, Any]) -> FicheOfficielle:
             "lu_le": date.fromisoformat(donnees["lu_le"]),
             "sources": tuple(donnees.get("sources") or ()),
             "dirigeants": tuple(donnees.get("dirigeants") or ()),
+            "personnes": tuple(
+                PersonneOfficielle(**personne)
+                for personne in donnees.get("personnes") or ()
+                if isinstance(personne, dict)
+            ),
             "siege": Adresse(**siege) if isinstance(siege, dict) else None,
             "date_creation": date.fromisoformat(creation) if creation else None,
         }

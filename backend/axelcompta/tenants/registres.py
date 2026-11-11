@@ -45,6 +45,17 @@ _UNIPERSONNELLE = {"SAS": "SASU", "SARL": "EURL"}
 
 
 @dataclass(frozen=True, slots=True)
+class PersonneOfficielle:
+    """Une personne lue au registre. Seulement les champs réellement donnés."""
+
+    nom: str
+    prenoms: str
+    code_postal: str = ""
+    commune: str = ""
+    pays: str = "France"
+
+
+@dataclass(frozen=True, slots=True)
 class FicheOfficielle:
     """Ce que disent les registres, à une date de lecture. `None` : le
     registre ne le dit pas (ou n'a pas été lu)."""
@@ -58,6 +69,7 @@ class FicheOfficielle:
     siege: Adresse | None = None
     capital_cts: int | None = None
     dirigeants: tuple[str, ...] = ()
+    personnes: tuple[PersonneOfficielle, ...] = ()
     cessee: bool | None = None
     date_creation: date | None = None
     code_naf: str | None = None
@@ -141,6 +153,38 @@ def _capital_cts(valeur: object) -> int | None:
     return int(centimes) if centimes == centimes.to_integral_value() and centimes >= 0 else None
 
 
+def _prenoms(valeur: object) -> str:
+    if isinstance(valeur, Sequence) and not isinstance(valeur, str):
+        return " ".join(p for p in (_texte(v) for v in valeur) if p)
+    return _texte(valeur) or ""
+
+
+def _personnes(pouvoirs: object) -> tuple[PersonneOfficielle, ...]:
+    """Les personnes physiques du RNE. Une entreprise au capital, une date
+    incomplète ou une rue non publiée ne deviennent pas une saisie."""
+    trouvees = []
+    for pouvoir in (
+        pouvoirs if isinstance(pouvoirs, Sequence) and not isinstance(pouvoirs, str) else ()
+    ):
+        if _texte(_objet(pouvoir).get("typeDePersonne")) == "ENTREPRISE":
+            continue
+        personne = _objet(_chemin(pouvoir, "individu", "descriptionPersonne"))
+        nom = _texte(personne.get("nom"))
+        if nom is None:
+            continue
+        domicile = _objet(_chemin(pouvoir, "individu", "adresseDomicile"))
+        trouvees.append(
+            PersonneOfficielle(
+                nom=nom,
+                prenoms=_prenoms(personne.get("prenoms")),
+                code_postal=_texte(domicile.get("codePostal")) or "",
+                commune=_texte(domicile.get("commune")) or "",
+                pays=_texte(domicile.get("pays")) or "France",
+            )
+        )
+    return tuple(trouvees)
+
+
 def _dirigeants(pouvoirs: object) -> tuple[str, ...]:
     noms = []
     for pouvoir in (
@@ -177,6 +221,7 @@ def fiche_rne(reponse: Mapping[str, object], siren: str, lu_le: date) -> FicheOf
     elif forme in _UNIPERSONNELLE:
         forme = None  # le RNE ne lève pas l'ambiguïté : on ne compare pas
     adresse = _objet(_chemin(morale, "adresseEntreprise", "adresse"))
+    pouvoirs = _chemin(morale, "composition", "pouvoirs")
     return FicheOfficielle(
         siren=siren,
         lu_le=lu_le,
@@ -192,7 +237,8 @@ def fiche_rne(reponse: Mapping[str, object], siren: str, lu_le: date) -> FicheOf
             adresse.get("commune"),
         ),
         capital_cts=_capital_cts(description.get("montantCapital")),
-        dirigeants=_dirigeants(_chemin(morale, "composition", "pouvoirs")),
+        dirigeants=_dirigeants(pouvoirs),
+        personnes=_personnes(pouvoirs),
     )
 
 
@@ -211,6 +257,7 @@ def combiner(insee: FicheOfficielle | None, rne: FicheOfficielle | None) -> Fich
         siege=insee.siege or rne.siege,
         capital_cts=rne.capital_cts,
         dirigeants=rne.dirigeants,
+        personnes=rne.personnes or insee.personnes,
     )
 
 

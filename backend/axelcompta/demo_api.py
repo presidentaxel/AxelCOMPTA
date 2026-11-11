@@ -215,6 +215,8 @@ from axelcompta.tenants.identite_json import identite_vers_json
 from axelcompta.tenants.identite_saisie import (
     FORMES_UNIPERSONNELLES,
     IdentiteInvalide,
+    PersonneConnue,
+    completer_pre_remplissage,
     pre_remplissage,
     qualite_par_defaut,
     verifier_identite,
@@ -232,7 +234,7 @@ from axelcompta.tenants.orm import droits_membre, rappels, regles_rappel
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.provisions_cloture import ProvisionsClotureRepository
 from axelcompta.tenants.provisions_cloture_postgres import PostgresProvisionsClotureRepository
-from axelcompta.tenants.registres import phrase, phrase_gestionnaire, trancher
+from axelcompta.tenants.registres import FicheOfficielle, phrase, phrase_gestionnaire, trancher
 from axelcompta.tenants.registres_depot import (
     RegistresPostgres,
     RegistresRepository,
@@ -589,7 +591,7 @@ class SujetExpertVue(BaseModel):
     dossier_id: str
     dossier_nom: str
     cote: Literal["chauffeur", "gestionnaire"]
-    nature: Literal["a_trancher", "ticket", "anomalie"]
+    nature: Literal["a_trancher", "ticket", "anomalie", "registre"]
     libelle: str
     detail: str
     montant_cts: int | None
@@ -4061,12 +4063,22 @@ class IdentiteDossierVue(BaseModel):
     siren_connu: str | None  # pour pré-remplir sans le redemander
 
 
+class PersonneConnueVue(BaseModel):
+    nom: str
+    prenoms: str
+    code_postal: str = ""
+    commune: str = ""
+    pays: str = "France"
+
+
 class PreRemplissageVue(BaseModel):
     siren: str
     denomination: str
     nic: str
     adresse_siege: AdresseModele
     code_ape: str
+    capital_social_cts: int | None = None
+    personnes: list[PersonneConnueVue] = []
 
 
 def _identite_depuis_modele(modele: IdentiteModele) -> IdentiteEntreprise:
@@ -4106,11 +4118,21 @@ def _vue_identite(dossier: Dossier) -> IdentiteDossierVue:
 
 
 LireRegistre = Callable[[str], Mapping[str, object]]
+LireFicheOfficielle = Callable[[str], FicheOfficielle | None]
 
 
 def get_lire_registre() -> LireRegistre:
     """Dépendance FastAPI : Recherche d'entreprises (remplacée en test)."""
     return recherche_entreprises
+
+
+def get_lire_fiche_officielle() -> LireFicheOfficielle | None:
+    """INSEE et RNE quand les clés sont dans le `.env`. `None` sinon.
+    Remplacée en test, pour ne jamais appeler les registres réels."""
+    from axelcompta.registres_officiels import charger_env, lecteur_depuis_env
+
+    charger_env()
+    return lecteur_depuis_env()
 
 
 def _enregistrer_routes_identite(app: FastAPI) -> None:
@@ -4129,17 +4151,31 @@ def _enregistrer_routes_identite(app: FastAPI) -> None:
         dossier: DossierDep,
         identite: IdentiteDep,
         lire: Annotated[LireRegistre, Depends(get_lire_registre)],
+        lire_fiche: Annotated[LireFicheOfficielle | None, Depends(get_lire_fiche_officielle)],
     ) -> PreRemplissageVue:
         _verifier_acces_dossier(dossier.id, identite)
         siren = siren.replace(" ", "")
         if not siren_valide(siren):
             raise IdentiteInvalide("Le SIREN doit compter 9 chiffres valides.")
         trouve = pre_remplissage(lire(siren), siren)
-        if trouve is None:
+        fiche = lire_fiche(siren) if lire_fiche is not None else None
+        complet = completer_pre_remplissage(
+            trouve,
+            siren,
+            denomination=fiche.denomination if fiche else None,
+            siege=fiche.siege if fiche else None,
+            code_ape=fiche.code_naf if fiche else None,
+            capital_social_cts=fiche.capital_cts if fiche else None,
+            personnes=tuple(
+                PersonneConnue(p.nom, p.prenoms, p.code_postal, p.commune, p.pays)
+                for p in (fiche.personnes if fiche else ())
+            ),
+        )
+        if complet is None:
             raise HTTPException(
                 status_code=404, detail="Aucune société à ce SIREN dans le registre."
             )
-        return PreRemplissageVue.model_validate(dataclasses.asdict(trouve))
+        return PreRemplissageVue.model_validate(dataclasses.asdict(complet))
 
     @app.put("/dossiers/{dossier_id}/identite", response_model=ConfigurationDossierVue)
     def saisir_identite(
@@ -5038,6 +5074,27 @@ SourcesExpert = tuple[
 ]
 
 
+def _sujets_ecarts(dossier: Dossier) -> list[SujetExpertVue]:
+    """Un écart de registre non tranché, visible dans la file. Calculé à
+    l'affichage : le résoudre ne change pas la version des agrégats, donc
+    un sujet gardé en cache resterait affiché après la décision."""
+    return [
+        SujetExpertVue(
+            id=f"registre:{dossier.id}:{ecart.champ}",
+            dossier_id=str(dossier.id),
+            dossier_nom=dossier.nom,
+            cote="gestionnaire",
+            nature="registre",
+            libelle="Le registre officiel dit autre chose",
+            detail=phrase_gestionnaire(ecart),
+            montant_cts=None,
+            ecriture_id=None,
+            imputable=False,
+        )
+        for ecart in dossier.ecarts_registre
+    ]
+
+
 def _sujets_du_portefeuille(
     portefeuille: Sequence[Dossier],
     sources: SourcesExpert,
@@ -5056,13 +5113,14 @@ def _sujets_du_portefeuille(
         version = versions.get(dossier.id, 0)
         garde = gardes.get(dossier.id)
         if garde is not None and garde.valables(version):
-            sujets.extend(SujetExpertVue.model_validate(s) for s in garde.sujets)
-            continue
-        calcules = _sujets_expert(
-            dossier, base, decisions, justificatifs, None, propositions=propositions
-        )
-        cache.enregistrer(dossier.id, version, [s.model_dump() for s in calcules])
+            calcules = [SujetExpertVue.model_validate(s) for s in garde.sujets]
+        else:
+            calcules = _sujets_expert(
+                dossier, base, decisions, justificatifs, None, propositions=propositions
+            )
+            cache.enregistrer(dossier.id, version, [s.model_dump() for s in calcules])
         sujets.extend(calcules)
+        sujets.extend(_sujets_ecarts(dossier))
     return sujets
 
 
@@ -5098,7 +5156,7 @@ def _sujet(
     dossier: Dossier,
     sujet_id: str,
     cote: Literal["chauffeur", "gestionnaire"],
-    nature: Literal["a_trancher", "ticket", "anomalie"],
+    nature: Literal["a_trancher", "ticket", "anomalie", "registre"],
     libelle: str,
     detail: str,
     montant_cts: int,
@@ -5163,6 +5221,7 @@ def imputer_ecriture(
         ),
         propositions,
     )
+    sujets = [*sujets, *_sujets_ecarts(dossier)]
     return ImputationVue(
         ecriture_id=nouvelle.id,
         contrepassation_id=inverse.id,

@@ -48,6 +48,7 @@ const NATURE: Record<SujetExpert["nature"], string> = {
   a_trancher: "Opération",
   ticket: "Ticket",
   anomalie: "Anomalie",
+  registre: "Registre",
 };
 const SENS = { debit: "Débit", credit: "Crédit" } as const;
 

@@ -135,7 +135,7 @@ export type SujetExpert = {
   dossier_id: string;
   dossier_nom: string;
   cote: "chauffeur" | "gestionnaire";
-  nature: "a_trancher" | "ticket" | "anomalie";
+  nature: "a_trancher" | "ticket" | "anomalie" | "registre";
   libelle: string;
   detail: string;
   montant_cts: number | null;

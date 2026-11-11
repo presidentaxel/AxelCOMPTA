@@ -45,12 +45,22 @@ export type IdentiteDossierVue = {
   siren_connu: string | null;
 };
 
+export type PersonneRegistre = {
+  nom: string;
+  prenoms: string;
+  code_postal: string;
+  commune: string;
+  pays: string;
+};
+
 export type PreRemplissage = {
   siren: string;
   denomination: string;
   nic: string;
   adresse_siege: Adresse;
   code_ape: string;
+  capital_social_cts?: number | null;
+  personnes?: PersonneRegistre[];
 };
 
 /** Un associé tel que saisi : tout en texte, le nombre de titres compris. */
@@ -112,7 +122,8 @@ export function formulaireDepuis(vue: IdentiteDossierVue): Formulaire {
 }
 
 /** Le registre remplit ce qu'il sait ; une valeur qu'il ne donne pas ne
- * remplace jamais ce que le dirigeant a déjà saisi. */
+ * remplace jamais ce que le dirigeant a déjà saisi. La civilité, la date
+ * de naissance, la rue du domicile et le nombre de titres n'y sont pas. */
 export function appliquerRegistre(formulaire: Formulaire, registre: PreRemplissage): Formulaire {
   const garder = (saisi: string, trouve: string) => trouve || saisi;
   const siege = registre.adresse_siege;
@@ -122,6 +133,9 @@ export function appliquerRegistre(formulaire: Formulaire, registre: PreRemplissa
     denomination: garder(formulaire.denomination, registre.denomination),
     nic: garder(formulaire.nic, registre.nic),
     code_ape: garder(formulaire.code_ape, registre.code_ape),
+    capital_euros:
+      formulaire.capital_euros ||
+      (registre.capital_social_cts ? euros(registre.capital_social_cts) : ""),
     adresse_siege: {
       ...formulaire.adresse_siege,
       numero: garder(formulaire.adresse_siege.numero, siege.numero),
@@ -129,7 +143,26 @@ export function appliquerRegistre(formulaire: Formulaire, registre: PreRemplissa
       code_postal: garder(formulaire.adresse_siege.code_postal, siege.code_postal),
       commune: garder(formulaire.adresse_siege.commune, siege.commune),
     },
+    associes: remplirAssocies(formulaire, registre.personnes ?? []),
   };
+}
+
+function remplirAssocies(formulaire: Formulaire, personnes: PersonneRegistre[]): AssocieSaisi[] {
+  if (personnes.length === 0) return formulaire.associes;
+  const dejaSaisi = formulaire.associes.some((a) => a.nom.trim() !== "" || a.prenoms.trim() !== "");
+  if (dejaSaisi) return formulaire.associes;
+  const qualite = formulaire.associes[0]?.qualite ?? "";
+  return personnes.map((personne) => ({
+    ...associeVide(qualite),
+    nom: personne.nom,
+    prenoms: personne.prenoms,
+    adresse: {
+      ...adresseVide(),
+      code_postal: personne.code_postal,
+      commune: personne.commune,
+      pays: personne.pays || "France",
+    },
+  }));
 }
 
 export type Lecture = { corps: Identite; message: null } | { corps: null; message: string };
