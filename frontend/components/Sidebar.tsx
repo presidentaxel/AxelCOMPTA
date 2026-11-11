@@ -87,7 +87,7 @@ export function Sidebar() {
             }}
             readOnly={!droit.admin}
             aria-label="Nom de l'organisation"
-            className="w-full truncate bg-transparent text-sm font-semibold text-ink outline-none read-only:cursor-default focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)]"
+            className="w-full truncate bg-transparent text-sm font-semibold text-ink outline-none read-only:cursor-default focus-visible:shadow-focus"
           />
           <span className="block text-xs text-subtle">Organisation</span>
           {erreurNom && <span className="mt-1 block text-xs text-danger">{erreurNom}</span>}

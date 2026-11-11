@@ -49,7 +49,7 @@ import type { DossierResume, TransactionVue } from "@/lib/types";
 const MOIS = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
 const JOUR = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
 const ANNEAU =
-  "outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]";
+  "outline-none focus-visible:shadow-focus-detache";
 
 /** Activité : d'abord l'arriéré, qui se termine. Les mouvements déjà traités
  * se lisent mois par mois, comme un relevé, pas comme une file sans fin. */

@@ -232,7 +232,7 @@ export function ClotureSection({
               aria-label={`Télécharger ${label} (${detail})`}
               disabled={bloque}
               onClick={() => void telecharger(document)}
-              className="flex min-h-11 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 py-3 text-sm text-subtle outline-none hover:bg-primary-subtle focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb] disabled:cursor-not-allowed"
+              className="flex min-h-11 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 py-3 text-sm text-subtle outline-none hover:bg-primary-subtle focus-visible:shadow-focus-detache disabled:cursor-not-allowed"
             >
               {detail}
               <Download className="h-4 w-4 text-primary" aria-hidden />

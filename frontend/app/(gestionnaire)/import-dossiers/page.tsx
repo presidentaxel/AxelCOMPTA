@@ -102,7 +102,7 @@ export default function ImportDossiersPage() {
           </p>
           <table className="mt-3 w-full text-sm">
             <thead>
-              <tr className="h-9 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr className="h-9 border-b border-border bg-canvas-app text-left text-xs font-semibold uppercase tracking-wide text-subtle">
                 <th className="px-2">Ligne</th>
                 <th className="px-2">Entreprise</th>
                 <th className="px-2">Vérification</th>
@@ -110,7 +110,7 @@ export default function ImportDossiersPage() {
             </thead>
             <tbody>
               {rapport.lignes.map((ligne) => (
-                <tr key={ligne.numero} className="border-b border-slate-100 align-top">
+                <tr key={ligne.numero} className="border-b border-hairline align-top">
                   <td className="px-2 py-2 tabular-nums text-subtle">{ligne.numero}</td>
                   <td className="px-2 py-2 text-ink">{ligne.nom ?? "—"}</td>
                   <td className="px-2 py-2">

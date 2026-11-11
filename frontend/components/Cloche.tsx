@@ -110,7 +110,7 @@ export function Cloche({ dossierId, chemin }: { dossierId: string; chemin: strin
         aria-expanded={ouvert}
         aria-haspopup="dialog"
         aria-label={nonLues > 0 ? `Notifications, ${nonLues} non lues` : "Notifications"}
-        className="relative flex h-11 w-11 items-center justify-center rounded-full text-ink outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]"
+        className="relative flex h-11 w-11 items-center justify-center rounded-full text-ink outline-none focus-visible:shadow-focus-detache"
       >
         <Bell className="h-5 w-5" aria-hidden />
         {nonLues > 0 && (

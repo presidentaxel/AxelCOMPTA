@@ -15,7 +15,7 @@ import type { TransactionVue } from "@/lib/types";
 
 const JOUR = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
 const ANNEAU =
-  "outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_#2563eb]";
+  "outline-none focus-visible:shadow-focus-detache";
 
 export { ticketPrioritaire };
 

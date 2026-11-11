@@ -1,7 +1,7 @@
 "use client";
 
 const ANNEAU =
-  "outline-none focus-visible:shadow-[0_0_0_2px_#0f172a,0_0_0_4px_#2563eb]";
+  "outline-none focus-visible:shadow-focus-detache-sombre";
 
 /** Confirmation éphémère : le tap est encore annulable. */
 export function ToastDecision({

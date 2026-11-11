@@ -69,7 +69,7 @@ export function SaisieCode({
           aria-describedby={idErreur}
           className={cn(
             "h-11 w-full min-w-0 rounded-md border border-border bg-canvas text-center text-lg font-semibold tabular-nums text-ink outline-none",
-            "focus-visible:border-border-focus focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.45)]",
+            "focus-visible:border-border-focus focus-visible:shadow-focus",
             "disabled:cursor-not-allowed disabled:opacity-50",
             invalide && "border-danger-border",
           )}

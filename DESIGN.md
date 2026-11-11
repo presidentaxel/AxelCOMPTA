@@ -1,5 +1,5 @@
 ---
-version: 1.0
+version: 1.1
 name: AxeLCompta-design-system
 description: |
   AxeLCompta est un outil B2B de production comptable : interface de
@@ -241,6 +241,11 @@ shadow:
   md: "0 4px 6px -1px rgba(15,23,42,0.08), 0 2px 4px -2px rgba(15,23,42,0.04)"
   lg: "0 10px 15px -3px rgba(15,23,42,0.08), 0 4px 6px -4px rgba(15,23,42,0.04)"
   overlay: "0 20px 25px -5px rgba(15,23,42,0.10), 0 8px 10px -6px rgba(15,23,42,0.04)"
+  # Anneaux de focus : collé au champ ou au bouton, ou détaché du fond par
+  # 2 px (lien, icône, onglet), sur fond clair ou sombre.
+  focus: "0 0 0 3px rgba(37,99,235,0.45)"
+  focus-detache: "0 0 0 2px #FFFFFF, 0 0 0 4px #2563EB"
+  focus-detache-sombre: "0 0 0 2px #0F172A, 0 0 0 4px #2563EB"
 
 transition:
   fast: "100ms ease"
@@ -286,6 +291,7 @@ components:
     rounded: "{rounded.md}"
     padding: 7px 16px
     height: 36px
+    hoverBackground: "rgba(212,38,38,0.90)"
     transition: "{transition.base}"
   button-sm:
     backgroundColor: "{colors.primary}"
@@ -304,31 +310,43 @@ components:
     height: 28px
     hoverBackground: "{colors.surface-soft}"
     transition: "{transition.base}"
+  # Cible tactile du chauffeur (habillage mobile, AXE-692) : mêmes variantes,
+  # 44 px de haut. Utilisé pleine largeur sur téléphone.
+  button-lg:
+    typography: "{typography.button-md}"
+    rounded: "{rounded.md}"
+    padding: 12px 16px
+    height: 44px
+    transition: "{transition.base}"
+  # Tous les boutons : désactivé = opacité 50 %, sans pointeur ni hover.
+  button-disabled:
+    opacity: 0.5
+    pointerEvents: none
 
   # --- Champs de saisie ---
   text-input:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink}"
-    placeholderColor: "{colors.muted}"
+    placeholderColor: "{colors.subtle}"
     typography: "{typography.body-md}"
     border: "1px solid {colors.border}"
     rounded: "{rounded.md}"
     padding: 7px 12px
     height: 36px
     focusBorder: "{colors.border-focus}"
-    focusRing: "0 0 0 3px rgba(37,99,235,0.12)"
+    focusRing: "{shadow.focus}"
     transition: "{transition.fast}"
   text-input-lg:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink}"
-    placeholderColor: "{colors.muted}"
+    placeholderColor: "{colors.subtle}"
     typography: "{typography.body-lg}"
     border: "1px solid {colors.border}"
     rounded: "{rounded.md}"
     padding: 10px 14px
     height: 44px
     focusBorder: "{colors.border-focus}"
-    focusRing: "0 0 0 3px rgba(37,99,235,0.12)"
+    focusRing: "{shadow.focus}"
   select:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink}"
@@ -338,7 +356,18 @@ components:
     padding: 7px 12px
     height: 36px
     focusBorder: "{colors.border-focus}"
-    focusRing: "0 0 0 3px rgba(37,99,235,0.12)"
+    focusRing: "{shadow.focus}"
+  # Champ et liste du chauffeur : 44 px, texte 16 px (en dessous, iOS zoome).
+  select-lg:
+    backgroundColor: "{colors.canvas}"
+    textColor: "{colors.ink}"
+    typography: "{typography.body-lg}"
+    border: "1px solid {colors.border}"
+    rounded: "{rounded.md}"
+    padding: 0 12px
+    height: 44px
+    focusBorder: "{colors.border-focus}"
+    focusRing: "{shadow.focus}"
 
   # --- Cards et panneaux ---
   card:
@@ -524,41 +553,36 @@ components:
     fontVariantNumeric: tabular-nums
     paddingRight: 16px
 
-  # --- Navigation (sidebar sombre) ---
+  # --- Navigation (sidebar claire depuis le 2026-09-25) ---
   sidebar:
-    backgroundColor: "{colors.surface-dark}"
-    textColor: "{colors.on-dark}"
+    backgroundColor: "{colors.canvas-app}"
+    textColor: "{colors.ink}"
+    borderRight: "1px solid {colors.border}"
     width: 240px
-    padding: 12px 8px
+    padding: 16px 12px
   sidebar-header:
-    backgroundColor: "{colors.surface-dark}"
-    textColor: "{colors.on-dark}"
+    # Organisation : pastille d'initiale, nom renommable, rôle.
+    backgroundColor: "{colors.canvas}"
+    textColor: "{colors.ink}"
     typography: "{typography.heading-sm}"
-    padding: 12px 12px 8px 12px
-    borderBottom: "1px solid rgba(248,250,252,0.08)"
-  sidebar-section-label:
-    textColor: "rgba(248,250,252,0.40)"
-    typography: "{typography.caption-strong}"
-    letterSpacing: 0.6px
-    textTransform: uppercase
-    padding: 14px 12px 4px 12px
+    rounded: "{rounded.lg}"
+    padding: 8px 10px
   sidebar-item:
     backgroundColor: "transparent"
-    textColor: "{colors.on-dark-mute}"
+    textColor: "{colors.subtle}"
     typography: "{typography.label-md}"
-    rounded: "{rounded.md}"
-    padding: 7px 12px
-    height: 34px
-    hoverBackground: "rgba(248,250,252,0.07)"
-    hoverTextColor: "{colors.on-dark}"
-    transition: "{transition.fast}"
+    rounded: "{rounded.lg}"
+    padding: 8px 10px
+    hoverBackground: "{colors.canvas}"
+    hoverTextColor: "{colors.ink}"
+    transition: "{transition.base}"
   sidebar-item-active:
-    backgroundColor: "rgba(37,99,235,0.25)"
-    textColor: "{colors.on-dark}"
+    backgroundColor: "{colors.canvas}"
+    textColor: "{colors.ink}"
     typography: "{typography.label-md}"
-    rounded: "{rounded.md}"
-    padding: 7px 12px
-    height: 34px
+    rounded: "{rounded.lg}"
+    padding: 8px 10px
+    shadow: "{shadow.sm}"
 
   # --- En-tête de page (top bar) ---
   top-bar:
@@ -662,10 +686,11 @@ AxeLCompta adopte un **système canvas clair** : le fond de l'application est
 une ombre `{shadow.xs}`. Le contraste se joue en douceur — jamais de noir
 pur sur blanc pur, toujours le `{colors.ink}` (`#0F172A`) légèrement chaud.
 
-L'exception est la **sidebar** : fond `{colors.surface-dark}` (`#0F172A`)
-avec texte `{colors.on-dark-mute}`, qui ancre l'interface sans agressivité.
-C'est le seul endroit sombre de l'app en V1 (le mode sombre global est en
-phase 2).
+La **sidebar** du gestionnaire est claire depuis le 2026-09-25 : fond
+`{colors.canvas-app}`, bordure droite `{colors.border}`, item actif en
+`{colors.canvas}` avec texte `{colors.ink}`. (Elle était sombre à l'origine ;
+les tokens `surface-dark` et `on-dark` restent pour le toast de décision.)
+Le mode sombre global n'est pas prévu en V1.
 
 L'**accent bleu** (`{colors.primary}` — `#2563EB`) apparaît exclusivement
 sur les boutons d'action primaires, les bordures de focus, les éléments
@@ -786,7 +811,7 @@ est supprimée — l'item racine mène directement au tableau de bord du dossier
 - **Gap entre cards** : `{spacing.lg}` (16px).
 - **Padding interne card** : `{spacing.xl}` (20px) standard, `{spacing.xxl}`
   (24px) pour les modales et la review-card.
-- **Hauteur de ligne de tableau** : 52px (`{component.table-row}`) — permet
+- **Hauteur de ligne de tableau** : 52px (`{components.table-row}`) — permet
   de voir le contenu sans rembourrage excessif sur un portefeuille de 200
   dossiers.
 
@@ -810,7 +835,7 @@ canvas-app / canvas :
 | 1 — surface | `{colors.canvas}` + `{shadow.xs}` + bordure | Cards, tableaux |
 | 2 — panneau flottant | `{colors.canvas}` + `{shadow.md}` + bordure | Dropdowns, popovers |
 | 3 — overlay | `{colors.canvas}` + `{shadow.overlay}` + bordure | Modales |
-| S — sidebar | `{colors.surface-dark}` — ancrage, sans ombre | Navigation principale |
+| S — sidebar | `{colors.canvas-app}` + bordure droite, sans ombre | Navigation principale du gestionnaire |
 
 Pas de gradient, pas d'effet glassmorphism, pas de fond flouté.
 
@@ -844,6 +869,11 @@ Pas de gradient, pas d'effet glassmorphism, pas de fond flouté.
 - Rouge, réservé aux confirmations de suppression. Toujours dans une modale de
   confirmation, jamais directement accessible sur une liste.
 
+**Tailles** — `default` (36 px, desktop), `sm` (28 px, actions inline),
+`lg` (44 px, **toute action du chauffeur sur téléphone**, souvent pleine
+largeur : `<Button size="lg" className="w-full">`). Désactivé : opacité
+50 %, sans hover ni pointeur. Focus : `{shadow.focus}`.
+
 ### File de revue (`review-card`)
 
 L'écran le plus utilisé du produit. Règles strictes :
@@ -853,7 +883,7 @@ L'écran le plus utilisé du produit. Règles strictes :
   correspondant (`auto-rule` → bleu, `auto-ml` → violet, `auto-llm` → violet
   plus profond) — l'utilisateur sait en un coup d'œil pourquoi cette
   proposition a été faite.
-- Les **raccourcis clavier** (`{component.kbd}`) sont affichés à côté de chaque
+- Les **raccourcis clavier** (`{components.kbd}`) sont affichés à côté de chaque
   action : `A` Accepter, `1-3` Alternatives, `R` Rechercher, `S` Passer,
   `J` Joindre.
 - Montant affiché en `{typography.amount-lg}` avec la couleur appropriée.
@@ -864,11 +894,11 @@ L'écran le plus utilisé du produit. Règles strictes :
 
 Les tableaux sont le cœur de l'interface comptable. Règles :
 
-- En-tête : `{component.table-header}` — fond `canvas-app`, texte `subtle`,
+- En-tête : `{components.table-header}` — fond `canvas-app`, texte `subtle`,
   uppercase, 12px. Toujours fixe (sticky) sur les tableaux longs.
-- Lignes : `{component.table-row}` — 52px de haut, hover `canvas-app`.
+- Lignes : `{components.table-row}` — 52px de haut, hover `canvas-app`.
 - Colonnes de montants : **toujours alignées à droite**, tabular-nums.
-- Ligne de total : `{component.table-row-total}` — fond `canvas-app`, weight 600,
+- Ligne de total : `{components.table-row-total}` — fond `canvas-app`, weight 600,
   bordure supérieure double.
 - Virtualisation obligatoire (TanStack Virtual) au-delà de 100 lignes — le grand
   livre peut dépasser 10 000 lignes pour un dossier actif.
@@ -891,18 +921,23 @@ Vocabulaire unique — un seul badge par objet à la fois :
 Ne jamais créer de badge ad hoc. Si un état manque, ouvrir une discussion sur
 le vocabulaire avant d'ajouter un token.
 
-### Page de signature (chauffeur — mobile-first)
+### Espace chauffeur (mobile-first)
 
-Cet écran est vu par les gérants (chauffeurs), pas par les pros de la compta.
-Règles distinctes :
+Depuis septembre (doc 19), le chauffeur a son propre espace : Activité, À
+traiter, Exercice, Mon résultat, Ma TVA, Ma société, Compte, et la cloche.
+C'est la partie mobile-first du produit ; le gestionnaire reste
+desktop-first. Règles distinctes :
 
-- Max-width 600px, centré.
-- Taille de bouton CTA : 48px de haut, pleine largeur — target tactile
-  confortable.
-- Résumé en langage clair AVANT le PDF (jamais juste un PDF brut).
-- Zéro création de compte, zéro jargon comptable.
-- Aucun élément du design system interne (sidebar, table-header, etc.)
-  n'apparaît sur cette page.
+- Colonne unique, max-width 600 px, barre de navigation en bas (qui suit
+  l'encoche et disparaît quand le clavier est ouvert).
+- **Cibles tactiles de 44 px** : `button-lg`, `text-input-lg`, `select-lg`,
+  liens en `min-h-11`. Champs en 16 px (sinon iOS zoome au focus).
+- Une action principale par écran, en pleine largeur.
+- Langage du chauffeur, pas de jargon : les termes imposés (liasse, FEC)
+  restent derrière une aide (« ? »).
+- Chaque état vide ou erreur propose une action (« Réessayer »,
+  « Actualiser »).
+- Ni sidebar ni tableaux du gestionnaire.
 
 ## Do's et Don'ts
 
@@ -948,8 +983,8 @@ Règles distinctes :
 
 ## Comportement responsive
 
-L'interface est B2B desktop-first. La page de signature est l'exception
-mobile-first.
+L'espace gestionnaire est desktop-first. L'espace chauffeur est
+mobile-first (voir « Espace chauffeur »).
 
 | Breakpoint | Largeur | Changements principaux |
 |---|---|---|
@@ -957,18 +992,21 @@ mobile-first.
 | Desktop | 1280–1439px | Idem, container légèrement réduit |
 | Laptop | 1024–1279px | Grille dashboard 2 colonnes |
 | Tablet | 768–1023px | Sidebar réduite à 56px (icônes seules) ; grille 1 colonne |
-| Mobile | < 768px | Sidebar masquée (drawer) ; uniquement pour la page de signature |
+| Mobile | < 768px | Espace chauffeur (colonne unique, barre du bas) ; le gestionnaire n'est pas optimisé mobile |
 
-La sidebar collapse à 56px (icônes seules) à partir de 1023px. En dessous de
-768px, elle devient un drawer — le seul cas d'usage mobile en V1 est la page de
-signature, qui est une page publique autonome sans sidebar.
+L'espace chauffeur n'a pas de sidebar : navigation par la barre du bas.
+Les textes juridiques (`/legal/…`) sont des pages publiques sans sidebar.
 
 ## Accessibilité
 
 - Contrastes WCAG AA obligatoires sur tous les textes. Vérifier avec Radix
   Colors ou Tailwind Contrast Checker avant tout nouveau token de couleur.
-- Focus ring visible sur tous les éléments interactifs : `{colors.border-focus}`
-  avec `focusRing` à 3px (`box-shadow: 0 0 0 3px rgba(37,99,235,0.12)`).
+- Focus ring visible sur tous les éléments interactifs : `{shadow.focus}`
+  (3 px à 45 % d'opacité ; 12 % ne se voyait pas) sur un champ ou un
+  bouton, `{shadow.focus-detache}` sur un lien ou une icône, et
+  `{shadow.focus-detache-sombre}` sur fond sombre. Classes Tailwind :
+  `focus-visible:shadow-focus`, `…-focus-detache`, `…-focus-detache-sombre`.
+  Jamais de valeur `shadow-[…]` en dur.
 - Navigation clavier complète — les professionnels vivent au clavier, notamment
   dans la file de revue.
 - Touch targets minimum 44px sur les éléments mobiles (page de signature et habillage chauffeur). Les champs du chauffeur font 16px : en dessous, iOS zoome au focus. Aucun texte chauffeur sous 12px.
@@ -1003,7 +1041,7 @@ neutre — toujours l'écraser, jamais la garder telle quelle) :
   --secondary: #ffffff;    /* canvas — button-secondary */
   --muted: #f1f5f9;        /* surface-soft */
   --muted-foreground: #475569; /* subtle */
-  --destructive: #dc2626;  /* danger */
+  --destructive: #d42626;  /* danger */
   --border: #e2e8f0;       /* border */
   --input: #e2e8f0;        /* border, text-input */
   --ring: #2563eb;         /* border-focus */
@@ -1014,6 +1052,12 @@ neutre — toujours l'écraser, jamais la garder telle quelle) :
 Piège vérifié en pratique : `shadcn init`/`add` propose **Geist** comme
 police par défaut (preset Nova) — toujours l'écarter, `--font-sans` doit
 rester Inter (`next/font/google`), sans exception.
+
+Les ombres (`--shadow-xs` à `--shadow-overlay`) et les anneaux de focus
+(`--shadow-focus*`) sont aussi dans `@theme` : ils **remplacent** les ombres
+grises par défaut de Tailwind, et `shadow-xs`, `shadow-sm`… suivent donc ce
+contrat. Les variables `--sidebar-*` du bloc `:root` viennent du CLI shadcn
+et ne servent pas : la sidebar réelle est écrite en classes Tailwind.
 
 Pour les montants, utiliser la classe utilitaire Tailwind `tabular-nums`
 (`font-variant-numeric: tabular-nums`) et ne jamais oublier `text-right` sur
@@ -1034,6 +1078,23 @@ les colonnes numériques.
 
 ## Known Gaps
 
+- **Remise à jour du 2026-11-10 (AXE-870)** : code et contrat relus l'un
+  contre l'autre. Les couleurs étaient déjà identiques (53 tokens). Écarts
+  corrigés : ombres du contrat absentes du code (Tailwind utilisait ses
+  ombres grises) → ajoutées à `@theme` ; anneau de focus à 45 % dans le
+  code mais 12 % ici → le contrat suit le code, et 18 valeurs
+  `shadow-[…]` en dur deviennent des tokens ; texte indicatif des champs
+  en `subtle` (le contrat disait `muted`) ; taille 44 px du chauffeur
+  utilisée partout (`h-11`) mais absente → `button-lg` (et `size="lg"` sur
+  `Button`), `select-lg` ; sidebar claire depuis le 25/09 → décrite ;
+  page de signature → espace chauffeur ; `surface-raised` et
+  `surface-overlay` ajoutés au code ; une classe de palette Tailwind brute
+  (écran d'import) remplacée par les tokens. Les écrans qui forcent `h-11`
+  sur un `Button` peuvent passer à `size="lg"` au fil de l'eau : même
+  rendu.
+- Pas de composant `Select` : les listes déroulantes du chauffeur sont des
+  `<select>` en classes Tailwind qui suivent `select-lg`. À extraire en
+  composant si elles se multiplient.
 - **V1 des composants faite (2026-09-22)**, via shadcn/ui (Radix + CVA) —
   a nécessité de migrer le projet **Tailwind v3 → v4** au passage (le CLI
   shadcn actuel ne génère que du code v4 ; migration faite avec l'outil
@@ -1066,16 +1127,12 @@ les colonnes numériques.
   `review-card`, `table-*`, `sidebar-*` (le composant shadcn, pas les
   tokens), `toast-*`, `modal` restent des tokens DESIGN.md sans composant
   React, aucun écran actuel n'en a besoin pour l'instant.
-- **Parcours chauffeur : problème plus profond que le design system**
-  (retour de Louis, 2026-09-22 soir, doc 17 §14) — l'écran actuel (liste de
-  transactions qui défile) n'est pas structuré comme une « app », pas
-  seulement mal stylé. Discussion UI + psychologie utilisateur à part
-  entière prévue, avant toute nouvelle proposition d'écran — ne pas
-  assumer un design ici en attendant.
+- ~~Parcours chauffeur : problème plus profond que le design system~~
+  (2026-09-22) — traité depuis : espace chauffeur en écrans séparés, une
+  opération à la fois, revues UX AXE-563 et AXE-704 (novembre).
 - Thème sombre (dark mode global) — prévu en phase 5. La sidebar sombre n'est
   pas un dark mode, c'est un choix délibéré de contraste de navigation.
-- États disabled non documentés sur les boutons et inputs — à ajouter quand
-  les premiers formulaires sont implémentés.
+- États disabled : documentés le 2026-11-10 (`button-disabled`, opacité 50 %).
 - Design system Figma — les maquettes des 3 écrans clés (doc 12, tâche 0.3)
   doivent utiliser ces tokens comme source de vérité, pas l'inverse.
 - Animations et micro-interactions au-delà des transitions de base — hors scope
