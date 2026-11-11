@@ -82,7 +82,11 @@ export function EcranEntreprises() {
 
   const charger = useCallback(() => {
     listerDossiers()
-      .then(setDossiers)
+      .then((liste) => {
+        // Un « Réessayer » réussi efface le message d'erreur.
+        setErreur(null);
+        setDossiers(liste);
+      })
       .catch((exception) => {
         if (exception instanceof ErreurAuthGestionnaire) {
           router.replace("/connexion");
