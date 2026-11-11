@@ -415,7 +415,7 @@ components:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink}"
     typography: "{typography.body-md}"
-    border: "1px solid {colors.border}"
+    border: "1px solid {colors.border-strong}"
     rounded: "{rounded.md}"
     padding: 7px 12px
     height: 36px
@@ -426,7 +426,7 @@ components:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink}"
     typography: "{typography.body-lg}"
-    border: "1px solid {colors.border}"
+    border: "1px solid {colors.border-strong}"
     rounded: "{rounded.md}"
     padding: 0 12px
     height: 44px
@@ -625,7 +625,7 @@ components:
     backgroundColor: "{colors.canvas-app}"
     textColor: "{colors.subtle}"
     typography: "{typography.overline}"
-    borderBottom: "1px solid {colors.border}"
+    borderBottom: "1px solid {colors.ink}"
     height: 36px
     padding: 0 16px
     textTransform: uppercase
@@ -636,13 +636,14 @@ components:
     borderBottom: "1px solid {colors.hairline}"
     height: 52px
     padding: 0 16px
-    hoverBackground: "{colors.canvas-app}"
+    hoverBackground: "{colors.surface-soft}"
     transition: "{transition.fast}"
   table-row-total:
     backgroundColor: "{colors.canvas-app}"
     textColor: "{colors.ink}"
     typography: "{typography.heading-sm}"
-    borderTop: "2px solid {colors.border-strong}"
+    # Bordure double de 4 px (`border-t-4 border-double`), posée sur les cellules.
+    borderTop: "4px double {colors.border-strong}"
     height: 44px
     padding: 0 16px
   table-cell-amount:
@@ -730,26 +731,29 @@ components:
   toast-success:
     backgroundColor: "{colors.surface-dark}"
     textColor: "{colors.on-dark}"
-    border: "1px solid rgba(251,250,248,0.12)"
+    border: "1px solid rgba(251,250,248,0.10)"
     rounded: "{rounded.md}"
     padding: 12px 16px
     shadow: "{shadow.lg}"
+    accentBarWidth: 3px  # repère de gauche en success
     accentColor: "{colors.success}"
   toast-warning:
     backgroundColor: "{colors.surface-dark}"
     textColor: "{colors.on-dark}"
-    border: "1px solid rgba(251,250,248,0.12)"
+    border: "1px solid rgba(251,250,248,0.10)"
     rounded: "{rounded.md}"
     padding: 12px 16px
     shadow: "{shadow.lg}"
+    accentBarWidth: 3px  # repère de gauche en warning
     accentColor: "{colors.warning}"
   toast-error:
     backgroundColor: "{colors.surface-dark}"
     textColor: "{colors.on-dark}"
-    border: "1px solid rgba(251,250,248,0.12)"
+    border: "1px solid rgba(251,250,248,0.10)"
     rounded: "{rounded.md}"
     padding: 12px 16px
     shadow: "{shadow.lg}"
+    accentBarWidth: 3px  # repère de gauche en danger
     accentColor: "{colors.danger}"
 
   # --- Modals ---
@@ -763,6 +767,16 @@ components:
     padding: 24px
     shadow: "{shadow.overlay}"
     maxWidth: 520px
+    # Espace chauffeur : feuille du bas (au-dessus de la barre, hauteur calée sur
+    # le visual viewport). Titre en heading-lg, padding 24px.
+    titleTypography: "{typography.heading-lg}"
+  # --- Onglets : texte muted, actif ink avec filet bas de 2px, 14px/600, sans fond ---
+  tabs:
+    textColor: "{colors.muted}"
+    activeTextColor: "{colors.ink}"
+    activeBorderBottom: "2px solid {colors.ink}"
+    typography: "{typography.button-md}"
+    height: 40px
 ---
 
 ## Vue d'ensemble
@@ -1341,7 +1355,8 @@ les colonnes numériques.
 
 - **Design system v2.0 (2026-11-11)** : tokens, DESIGN.md et ADR-008 faits ;
   composants Button/Input/Card/Badge faits (AXE-875), primitives Select/Dialogue/
-  Toast/Tableau (AXE-876), navigation (AXE-877) à faire. Tant que ces tickets
+  Toast/Tableau/Onglets et StatutDossier faites (AXE-876), navigation
+  (AXE-877) à faire. Tant que ces tickets
   ne sont pas livrés, les composants du code peuvent encore refléter l'ancien
   rendu (bleu, sidebar, ombres) : le contrat est DESIGN.md.
 - **Remise à jour du 2026-11-10 (AXE-870)** (historique) : code et contrat
@@ -1386,9 +1401,10 @@ les colonnes numériques.
   `Input uiSize="lg"` + `Button`). Plus aucun écran du produit n'a de bouton,
   carte ou champ de saisie en classes Tailwind ad hoc. La passe UX/UI
   proprement dite (revue visuelle, pas juste la conformité aux tokens) est
-  reprise par la refonte AXE-873. `review-card`, `table-*`, `toast-*`,
-  `modal` restent des tokens DESIGN.md sans composant React, aucun écran
-  actuel n'en a besoin pour l'instant.
+  reprise par la refonte AXE-873. Depuis AXE-876, `table-*`, `toast-*`, `modal`, `select`, `tabs` et
+  `statut-dossier` ont leur composant (`components/ui/table|toast|select|tabs.tsx`,
+  `Dialogue`, `StatutDossier`), pas encore branchés sur les écrans (issues 5 à
+  11). `review-card` reste un token sans composant React.
 - ~~Parcours chauffeur : problème plus profond que le design system~~
   (2026-09-22) — traité depuis : espace chauffeur en écrans séparés, une
   opération à la fois, revues UX AXE-563 et AXE-704 (novembre).
