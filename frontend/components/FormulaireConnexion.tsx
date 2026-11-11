@@ -5,6 +5,7 @@ import { useEffect, useId, useState } from "react";
 import { BoutonLien } from "@/components/LienAction";
 import { MessageAcces } from "@/components/MessageAcces";
 import { TitreAcces } from "@/components/PageAcces";
+import { LiensJuridiques } from "@/components/LiensJuridiques";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { demanderReinitialisation, envoyerLienMagique } from "@/lib/auth-chauffeur";
@@ -154,6 +155,7 @@ export function FormulaireConnexion({
           <BoutonLien onClick={() => basculer("mot_de_passe")}>Se connecter avec un mot de passe</BoutonLien>
         )}
       </div>
+      <LiensJuridiques className="mt-6" />
     </div>
   );
 }

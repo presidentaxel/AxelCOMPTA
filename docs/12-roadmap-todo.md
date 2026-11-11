@@ -1,6 +1,6 @@
 # 12 — Roadmap et TODO maître
 
-> Statut : brouillon à valider. Dernière mise à jour : 2026-11-05.
+> Statut : brouillon à valider. Dernière mise à jour : 2026-11-10.
 > **Seule source de l'état du projet dans le repo** (fait, en cours, prévu).
 > Le suivi au jour le jour est dans Linear, projet
 > [Axel Compta — V1 prod](https://linear.app/axel-project/project/axel-compta-v1-prod-api-ingestion-fiabilite-899778ce7b41)
@@ -16,23 +16,118 @@
 > #3 à #39) est archivé tel quel dans
 > [archive/12-recalage-2026-09.md](archive/12-recalage-2026-09.md).
 
-## État au 2026-11-05 (à lire avant tout le reste)
+## État au 2026-11-10 (à lire avant tout le reste)
 
-**En une phrase :** le produit démo est complet et a été poli (deux revues
-UX traitées). Ce qui manque pour la V1, c'est un **vrai dossier chauffeur**
-qui passe de bout en bout, puis la mise en production.
+**En une phrase :** la plateforme est en mode réel depuis le 05/11, et la
+semaine du 05 au 10/11 a fermé presque tous les trous de fiabilité de
+l'analyse critique (invariants I3, I4, I7, contre-passations des décisions,
+MFA, mode expert avec responsabilité de l'expert-comptable, TVA en cours
+d'année, rappels par e-mail et SMS). Ce qui manque pour la V1 : **un mois
+réel exporté** (AXE-733), le cœur comptable VTC (versements de plateformes,
+véhicule, bilan d'ouverture), puis la mise en production.
 
 **Où on en est par rapport au plan.** Le projet Linear « Moteur & exports
 (démo) » est clos depuis le 17/10. Le projet « V1 prod » (cible
 **31/12/2026**, initiative « Prod-ready trio → Market janv. 2027 ») a avancé
-sur l'API, la fiabilité et l'UX. Il n'a **pas encore avancé sur son chemin
-critique** : l'ingestion réelle Digifactory et les contre-passations. Aucun
-dossier `DIGI_` n'a encore été tranché ni clôturé de bout en bout (ancien J3).
+sur son chemin critique : comptes bancaires retenus (AXE-729), contre-
+passations des décisions humaines (AXE-420) et de la quarantaine (AXE-424),
+configuration confirmée par le chauffeur (AXE-730). **Pas encore fait** : la
+première synchro des chauffeurs réels (AXE-728) et le mois exporté
+(AXE-733). Aucun dossier `DIGI_` n'a encore été tranché ni clôturé de bout
+en bout (ancien J3).
+
+**Attention : code mergé ≠ production à jour.** Les reprises de données et
+la mise en route des tickets mergés (Sirene, tags, comptes bancaires,
+décisions, crontab, jeton `/metrics`) restent à appliquer sur la base
+réelle (AXE-842). Des écritures sont restées au 471 après la synchro sans
+modèle du 05/11 (AXE-850).
 
 Client de référence V1 : Serenity Gestion, installé étape par étape avant
 toute autre vente.
 
-### Fait depuis le 2026-09-27 (PR #41 à #81)
+### Fait du 2026-11-05 au 2026-11-10 (PR #87 à #123)
+
+**Grand livre et invariants du doc 06**
+- I4 (AXE-806, #91) : aucune écriture datée dans un exercice clos, refusée
+  en base par trigger. Une correction d'exercice clos est datée du premier
+  jour de l'exercice ouvert du dossier (AXE-838, #103). Une opération
+  bancaire tardive dans un exercice clos part en quarantaine.
+- I3 et I7 (AXE-807, #92) : numérotation continue par dossier et par
+  exercice, posée par trigger dans la transaction ; contrôle quotidien de la
+  balance (3 h), alerte Sentry et métrique `balance_desequilibree_total`,
+  sans correction automatique.
+- Décisions humaines au grand livre (AXE-420, #93) : chaque décision écrit
+  une OD de reclassement `{S}:decision-{k}` du compte en vigueur vers le
+  nouveau ; annulation = retour en 471. Décision et OD dans la même
+  transaction (AXE-852, #114). Reprise des décisions d'avant :
+  `scripts/materialiser_decisions.py`.
+- Quarantaine d'ingestion résolue par le gestionnaire (AXE-424, #97) :
+  accepter un montant modifié (contre-passation puis nouveau montant),
+  ignorer ; écran « Opérations bancaires à revoir » dans Anomalies.
+- Un sous-compte 512 par compte bancaire (5121, 5122…) et solde comptable
+  face au solde de la banque (AXE-832, #87).
+- Libellés d'écritures sans la catégorie entre parenthèses (AXE-848, #118).
+
+**TVA (AXE-805, #121)**
+- CA3 de chaque période (mensuelle ou trimestrielle), échéance, écriture de
+  liquidation vers 44551 ou 44567, déclaration avec preuve. La CA3 annuelle
+  de la liasse reprend la somme des périodes. Rappels J-7 et J-2. Écran
+  « Ma TVA » côté chauffeur.
+
+**Mode expert et responsabilité juridique (AXE-800, #120)**
+- Rôle `expert_comptable` habilité par un admin (cabinet, Ordre, lettre de
+  mission, dossiers couverts) ; engagement de responsabilité versionné ;
+  motif obligatoire sur chaque imputation, annulation et qualification. Le
+  mode expert, les anomalies, les opérations classées et la quarantaine lui
+  sont réservés. Le chauffeur voit « Reclassée par [nom], expert-comptable ».
+- Opérations déjà classées : filtres, verdicts « juste » / « faux »
+  (AXE-823, #99) ; moyen de paiement affiché (AXE-855, #117).
+- Performance (AXE-824, #100) : index et cache de la file expert ; à 200
+  dossiers × 300 écritures, file expert 11,5 s → 0,14 s.
+
+**Catégorisation et anomalies**
+- Ordre du pipeline : virements internes, règles du pack, modèle, puis
+  catégorie de la banque (Bridge) en simple proposition ; 7 règles VTC
+  ajoutées (AXE-826, #88). Sans modèle ML, MK DRIVING passe de 18 % à 56 %
+  d'opérations classées seules, B'CARS de 6 % à 44 %.
+- Sans modèle de catégorisation, la synchro s'arrête et le dit (AXE-825,
+  #111) ; repli sur les règles seules avec `AXELCOMPTA_SANS_MODELE=1`.
+- Plancher réglable par règle : sous 5 €, la règle carburant propose sans
+  imputer (AXE-837, #106).
+- Retraits d'espèces : une question dédiée au chauffeur (AXE-844, #108).
+- Qualifications d'anomalies en base, avec historique (AXE-814, #98) ;
+  détecteurs carburant affinés et moyen de paiement sous chaque alerte
+  (AXE-836, #107).
+
+**Dossiers et onboarding**
+- Création des dossiers en masse depuis un CSV, avec rapport ligne par
+  ligne avant création (AXE-809, #95).
+- L'import pose l'exercice, la forme et l'activité depuis Sirene (AXE-834,
+  #89) ; le chauffeur confirme sa configuration, et clôture et liasse
+  l'attendent (AXE-730, #109).
+- Comptes bancaires retenus, écartés ou à décider (AXE-729, #110) ; le
+  gestionnaire voit ceux qui attendent un choix (AXE-851, #113).
+- Nouveaux chauffeurs Digifactory proposés dans Entreprises, bouton
+  « Synchroniser » exécuté par le worker (AXE-845, #105).
+- Tags d'entreprises et exclusion des traitements (AXE-829, #90).
+- Rappels envoyés par le SMTP ou le fournisseur SMS du gestionnaire,
+  paramètres chiffrés, lien de désinscription (AXE-808, #122).
+
+**Sécurité, production et qualité**
+- MFA native de Supabase demandée à l'admin et à l'expert-comptable
+  (jeton `aal2`), journal des connexions et des exports, « Accès à votre
+  dossier » pour le dirigeant (AXE-812, #101). `tenants/mfa.py` retiré.
+- Production isolée (AXE-810, #94) : `/metrics` fermé sans
+  `METRICS_TOKEN`, verrous du rôle web testés.
+- Compte de test en lecture seule qui ouvre l'espace chauffeur de tout
+  dossier du portefeuille, avec date de fin et trace d'audit (AXE-822,
+  #119, #123).
+- Erreurs métier en 4xx avec leur phrase, jamais 500 (AXE-839, #104 ;
+  AXE-853, #116). Une seule tête Alembic en CI, l'API refuse une base en
+  retard (AXE-841, #102, #112) ; le test des migrations compare tout le
+  schéma au modèle ORM (AXE-854, #115).
+
+### Fait du 2026-09-27 au 2026-11-05 (PR #41 à #86)
 
 **Liasse et exports (AXE-438, AXE-422, AXE-557, AXE-558 ; 14-15/10 et 24-25/10)**
 - La liasse est contrôlée avant d'être livrée : équilibre, résultat,
@@ -61,8 +156,8 @@ toute autre vente.
 - `anomaly/` (AXE-437) : profil par dossier et détecteurs V1 (personnel,
   enseigne ambiguë, écart 3σ, doublon de pièce, double plein). Le
   gestionnaire qualifie une alerte sur `/anomalies/{dossier}`.
-  **Limite : les qualifications sont en mémoire de process**, perdues au
-  redémarrage.
+  Les qualifications, d'abord en mémoire de process, sont en base depuis
+  le 06/11 (AXE-814).
 - `documents/` (AXE-425) : les photos de justificatifs sont en base
   (`justificatifs`), par tenant et dossier, avec empreinte, 8 Mo max, RLS.
   La photo n'est toujours pas lue (pas d'OCR).
@@ -72,8 +167,9 @@ toute autre vente.
   ce type. **Aucun fournisseur LLM n'est branché.**
 - `jobs/` et `tenants/mfa.py` (AXE-442) : file de jobs Postgres
   (`FOR UPDATE SKIP LOCKED`, ADR-002), TOTP RFC 6238, rôles lecture,
-  membre, admin. **Posés, pas branchés** : le cron `axelcompta.taches` reste
-  le mécanisme réel, et la connexion ne demande pas encore de code TOTP.
+  membre, admin. La file de jobs sert depuis le 09/11 au worker (import des
+  dossiers, « Synchroniser », rappels). Le TOTP maison a été remplacé par
+  la MFA native de Supabase le 09/11 (AXE-812).
 - Observabilité (AXE-426) : `GET /metrics` (Prometheus), journal JSON,
   Sentry s'il y a un DSN (vide en local).
 - `api.app` est le point d'entrée (`uvicorn axelcompta.api.app:app`, AXE-428)
@@ -92,8 +188,8 @@ toute autre vente.
   les actions d'écriture ; retirer un membre pose le rôle `retire`.
 - Invitations (AXE-702) : en masse, renvoi, annulation.
 - Rappels (AXE-698/699) : plus de doublons de règles préfaites, règles
-  suspendables, un seul vocabulaire de relance. L'envoi n'est toujours pas
-  branché et l'écran le dit.
+  suspendables, un seul vocabulaire de relance. L'envoi hors de
+  l'application est branché depuis le 10/11 (AXE-808).
 - Anomalies accessibles depuis le mode expert (AXE-700), navigation et
   focus clavier (AXE-703).
 
@@ -138,103 +234,93 @@ jour, dans l'ordre :
 Les relevés CSV (AXE-801) restent la source de secours pour un chauffeur
 sans Rollee.
 
-### En cours (05/11)
+### En cours (10/11)
 
-- PR #82 (AXE-704) et #83 (AXE-690) : mergées le 05/11.
-- **Bug ouvert AXE-685** : les provisions de clôture peuvent être écrasées
-  après une lecture ratée. Priorité haute, à corriger avant tout dossier
-  réel.
+- PR #96 (AXE-732) ouverte : mesurer le pack VTC sur le premier flux réel.
+- AXE-842 : appliquer en production les reprises des tickets mergés
+  (Sirene, tags, comptes bancaires, décisions, crontab, jeton métriques).
+  Tant qu'elle n'est pas faite, la base réelle ne profite pas de la semaine.
 
 ### Prévu
 
 **Novembre — confiance client : un mois réel exporté** (AXE-767, urgent).
-Dans l'ordre :
+Fait : AXE-726, AXE-727, AXE-729, AXE-730, et les contre-passations
+AXE-420 et AXE-424 (AXE-768, qui les regroupait, peut être fermé). Reste,
+dans l'ordre :
 
-1. AXE-726 : le script de démo ne crée plus tous les contacts Digifactory.
-2. AXE-727 : dossiers pilotes des vrais chauffeurs, hors démo.
-3. AXE-729 : retenir les comptes professionnels d'un contact Digifactory.
-4. AXE-728 : première synchro et bulletin de connexion des chauffeurs réels.
-5. AXE-731 : versement de plateforme sans l'éclater, en attendant Rollee ;
-   AXE-732 : mesurer le pack VTC sur ce premier flux réel.
-6. **AXE-733 (le jalon)** : un mois d'un dossier réel, tranché, équilibré,
+1. AXE-842 : production à jour (voir « En cours »), puis AXE-850 : reprendre
+   les écritures restées au 471 après la synchro sans modèle du 05/11.
+2. AXE-728 : première synchro et bulletin de connexion des chauffeurs réels.
+3. AXE-732 : mesurer le pack VTC sur ce premier flux réel (PR #96).
+4. AXE-801 : éclater les versements Uber/Bolt depuis les relevés des
+   plateformes (remplace AXE-731, annulé).
+5. **AXE-733 (le jalon)** : un mois d'un dossier réel, tranché, équilibré,
    exporté.
-
-À côté : AXE-730 (le chauffeur confirme sa configuration et entre avec son
-e-mail), AXE-768 (contre-passations des décisions humaines AXE-420 et
-depuis la quarantaine Digifactory AXE-424).
 
 **Décembre — prod fiable au 31/12** (AXE-770, échéance 15/12)
 - AXE-427 : branche prod et déploiement continu.
+- AXE-811 : hébergement de production (ADR-003) et restauration
+  chronométrée.
 - AXE-441 : décider du périmètre de la signature qualifiée RGS (devis
   Yousign/Docusign, ADR-004), puis le circuit clôture → archive.
 
+**Rollee** (ouverts le 05/11, remplacent AXE-440, annulé) : AXE-817
+(contrat, sandbox, choix d'API, urgent), AXE-818 (client et
+`RolleeProvider`), AXE-819 (Rollee Connect), AXE-820 (webhooks et synchro de
+secours), AXE-821 (réconciliation avec le virement Digifactory, écritures
+706, TVA et commission).
+
 **Après, ou à trancher**
-- AXE-440 : pack VTC complet, Rollee réel, relecture par un
-  expert-comptable. À trancher : Rollee est-il bloquant, ou AXE-731
-  suffit-il pour le pilote ?
 - AXE-423 : finir l'audit du dataset 10 ans. La relecture des 500 lignes
   (ancien J1) en est toujours à 7/500.
 - AXE-433 : connexion bancaire directe par le chauffeur (basse priorité).
 - AXE-484 : annexes 2054 à 2059 en détail et Test Compta Demat (basse).
+- AXE-765 : connecter Qonto et un accès dédié pour le bot Finance & Admin.
 
-### Ajouté au plan V1 le 2026-11-05 (analyse critique)
+### Plan V1 de l'analyse critique du 2026-11-05 : où on en est
 
-Une relecture du plan contre les docs 01, 02, 06, 10 et 14 a montré des trous
-que Linear ne couvrait pas. Tickets créés dans P-AXE-28 :
+Une relecture du plan contre les docs 01, 02, 06, 10 et 14 avait montré
+des trous que Linear ne couvrait pas (72 points ajoutés à P-AXE-28).
 
-**Mode expert et responsabilité juridique** (décision de Louis, doc 02 §2.3)
-- AXE-800 (urgent) : le mode expert vise une entreprise avec son
-  expert-comptable ; l'expert prend la charge juridique de chaque
-  changement (rôle dédié, engagement tracé, auteur et motif sur chaque
-  écriture). Le logiciel ne décide jamais.
+**Fait (05/11 au 10/11)** : AXE-800 (mode expert et responsabilité de
+l'expert-comptable), AXE-805 (TVA en cours d'année), AXE-806 (I4), AXE-807
+(I3 et I7), AXE-808 (rappels par e-mail et SMS), AXE-809 (création en
+masse), AXE-810 (isolation de la production), AXE-812 (MFA et journal des
+accès), AXE-814 (qualifications d'anomalies en base). Détail plus haut.
 
-**Cœur comptable VTC** (sans eux, les comptes d'un vrai chauffeur sont faux)
-- AXE-801 : éclater les versements Uber/Bolt depuis les relevés des
-  plateformes (recette brute, TVA 10 %, commission). Remplace la rustine
-  AXE-731 sans attendre Rollee.
-- AXE-802 : registre des immobilisations et amortissement du véhicule.
-- AXE-803 : véhicule en LOA (loyers, part non déductible, levée d'option).
-- AXE-804 : bilan d'ouverture des sociétés existantes (import FEC ou saisie
-  guidée).
-- AXE-805 : TVA en cours d'année (CA3 mensuelle, échéances, rappels).
+**Reste à faire**
+- Cœur comptable VTC (sans eux, les comptes d'un vrai chauffeur sont
+  faux) : AXE-801 (versements Uber/Bolt), AXE-802 (immobilisations et
+  amortissement du véhicule), AXE-803 (LOA), AXE-804 (bilan d'ouverture des
+  sociétés existantes).
+- Production : AXE-811 (hébergement et restauration), AXE-813 (CGU/CGV, DPA
+  et engagement de l'expert-comptable relus par un juriste ; voir aussi
+  AXE-859, le légal rédigé à partir des API réellement branchées).
+- Calendrier et mesure : AXE-815 (relecture par un expert-comptable
+  **avant le 31/01/2027** ; les liasses 2026 partent en mai 2027), AXE-816
+  (objectifs V1 du doc 01 sur un jeu gelé, bloqué par AXE-423).
 
-**Invariants du doc 06 non tenus**
-- AXE-806 : I4, aucune écriture datée dans un exercice clos.
-- AXE-807 : I3, numérotation continue en base, et I7, contrôle quotidien de
-  la balance.
+### Ouverts depuis le 2026-11-05 (hors analyse critique)
 
-**Avant d'ouvrir aux 200 dossiers**
-- AXE-808 : rappels hors de l'application, par l'intégration e-mail/SMS du
-  gestionnaire.
-- AXE-809 : création des dossiers en masse avec rapport de validation.
-- AXE-810 : isoler la production. Le menu Démo est retiré le 05/11 et la
-  base devient la production ; restent les routes `demo_api`, `/metrics`
-  et les tags d'entreprises pour exclure les sociétés qui ne sont pas des
-  chauffeurs.
-- AXE-811 : hébergement de production (ADR-003) et restauration
-  chronométrée.
-- AXE-812 : MFA demandée à la connexion, journal des connexions et exports.
-- AXE-813 : CGU/CGV, DPA et engagement de l'expert-comptable, relus par un
-  juriste.
-- AXE-814 : persister les qualifications d'anomalies.
-
-**Calendrier et mesure**
-- AXE-815 : relecture par un expert-comptable **avant le 31/01/2027**, et
-  non plus « tout à la fin » : les liasses 2026 partent en mai 2027.
-- AXE-816 : mesurer les objectifs V1 du doc 01 sur un jeu gelé (bloqué par
-  AXE-423).
-
-Ces tickets ajoutent 72 points au projet. Le 31/12 ne les tiendra
-pas tous : l'arbitrage entre ce qui part au pilote de décembre et ce qui
-glisse en T1 2027 est à faire dans AXE-766.
+- Comptabilité : AXE-831 (TVA déductible sur les dépenses venues de la
+  banque, taux par défaut par catégorie), AXE-833 (reprendre les mois
+  d'avant la connexion Digifactory), AXE-846 (saisir siège, capital et
+  associés pour débloquer la liasse).
+- Données d'entreprise : AXE-849 (INSEE, RNE et écart avec ce que déclare
+  le dirigeant).
+- Modèle de catégorisation : AXE-830 (transférer le modèle v2 et ses
+  données depuis l'autre poste), AXE-847 (le stocker hors du poste :
+  bucket privé, version, empreinte).
+- Exploitation : AXE-843 (mesurer les temps réels en production après
+  AXE-824), AXE-840 (renommer les fichiers `demo_*` du chemin de
+  production).
+- Design : AXE-870 (mettre à jour le design system, [DESIGN.md](../DESIGN.md)).
 
 ### Décisions à prendre (ouvertes dans Linear)
 
 - AXE-766 : valider la définition de « fini » pour novembre (un mois réel
   exporté et l'UX P0, pas tout le polish) et pour décembre (déploiement
-  continu et décision RGS).
-- AXE-769 : limiter l'UX en cours à 3 tickets pour laisser la place à
-  l'ingestion réelle.
+  continu et décision RGS), et arbitrer ce qui glisse en T1 2027.
 - Offboarding (doc 14 §2 : export et purge d'un tenant, RGPD) : aucun
   ticket. À décider s'il fait partie de la V1 ou du contrat (AXE-813).
 
@@ -248,7 +334,7 @@ glisse en T1 2027 est à faire dans AXE-766.
 - La clôture est décidée par le chauffeur, et par lui seul. Le gestionnaire
   ne voit que des agrégats.
 - Pas de SMTP chez AxeLCompta : la cloche est le canal, e-mail et SMS
-  seront des intégrations du gestionnaire.
+  sont des intégrations du gestionnaire (branchées le 10/11, AXE-808).
 - À lancer en attente externe : devis de signature RGS, trame CGU/CGV/DPA.
 
 ## Vue d'ensemble des phases
@@ -365,8 +451,8 @@ testé (ou développement mené contre fixtures si le token reste bloqué — do
       c'est un acte irrévocable du dirigeant), et le passage d'un exercice
       au suivant, qui n'existe pas encore dans le code (un dossier n'a
       qu'un exercice) et devra lire `regime_pour_exercice`.
-- [ ] **Création de dossiers en masse** : import CSV/XLSX de la configuration (SIREN, forme, régime, dates d'exercice, option IR…) pour onboarder 200 dossiers sans 200 saisies manuelles, avec rapport de validation avant création.
-- [ ] Auth B2B : email + MFA TOTP, rôles V1, journal d'audit append-only. **Tranche journal (2026-09-24)** : décisions et signatures seulement (`journal_audit`). Auth/MFA et le journal consultations/exports restent ouverts. **Posés le 2026-10-25 (AXE-442)** : TOTP RFC 6238 (`tenants/mfa.py`) et rôles lecture/membre/admin, appliqués dans l'interface gestionnaire le 2026-11-04 (AXE-701). Le TOTP n'est pas encore demandé à la connexion ; connexion, export et consultation ne sont pas encore journalisés.
+- [x] **Création de dossiers en masse** : import CSV/XLSX de la configuration (SIREN, forme, régime, dates d'exercice, option IR…) pour onboarder 200 dossiers sans 200 saisies manuelles, avec rapport de validation avant création.
+- [x] Auth B2B : email + MFA TOTP, rôles V1, journal d'audit append-only. **Tranche journal (2026-09-24)** : décisions et signatures seulement (`journal_audit`). Auth/MFA et le journal consultations/exports restent ouverts. **Posés le 2026-10-25 (AXE-442)** : TOTP RFC 6238 (`tenants/mfa.py`) et rôles lecture/membre/admin, appliqués dans l'interface gestionnaire le 2026-11-04 (AXE-701). Le TOTP n'est pas encore demandé à la connexion ; connexion, export et consultation ne sont pas encore journalisés. **Fait le 2026-11-09 (AXE-812)** : MFA native de Supabase demandée à la connexion (admin et expert-comptable), connexions et exports journalisés.
 - [x] Observabilité : logs JSON structurés, Sentry, premières métriques. **Fait le 2026-10-25 (AXE-426)** : `GET /metrics` Prometheus, journal JSON, Sentry si `SENTRY_DSN` est posé. Restent les dashboards et l'alerting (doc 15).
 
 ### 1.2 Ingestion
@@ -380,12 +466,12 @@ testé (ou développement mené contre fixtures si le token reste bloqué — do
 - [ ] **Dashboard consentements** : panneau premier rang listant consentements valides/expirant/expirés pour Digifactory (accès bancaire) et Rollee. Mode relance configurable par tenant (auto ou manuel, doc 14 §2.3) — date d'expiration DSP2 **confirmée exposée côté Digifactory depuis le 2026-09-11** (`item.authentication_expires_at`, doc 16 §3.2/§6). **Classement persisté le 2026-09-24** à chaque synchro (`consentements_bancaires`) : actif / à renouveler (J-14) / expiré / jamais connecté. **Santé de connexion persistée le 2026-09-25** sur la même ligne. **Écran gestionnaire et relances faits le 2026-09-27** pour Digifactory (doc 14 §2.2, §2.3) : relances dans la cloche du chauffeur, pas d'e-mail. Reste Rollee, pas couvert.
 - [ ] Normalisation des libellés versionné + tests.
 - [ ] Déduplication/idempotence + rapport d'import avec prévisualisation.
-- [ ] Quarantaine + UI de correction.
+- [x] Quarantaine + UI de correction. **Fait le 2026-11-07 (AXE-424)** : le gestionnaire accepte ou ignore, avec contre-passation.
 - [ ] Fixtures : un corpus de fichiers par banque rencontrée + corpus de payloads Rollee (vivant, doc 09 §2.2).
 
 ### 1.3 Cœur comptable (`ledger`)
 - [ ] Plan de comptes PCG embarqué versionné + comptes par dossier + axe analytique.
-- [ ] Écritures append-only, partie double, séquences par journal, périodes + verrous (invariants I1-I8 + triggers de protection). **Fait le 2026-09-24 pour I2** : trigger sur les écritures validées, et contre-passation d'une transaction bancaire modifiée ou supprimée après comptabilisation (doc 06). Séquences, périodes et verrou de clôture (I4) restent ouverts.
+- [ ] Écritures append-only, partie double, séquences par journal, périodes + verrous (invariants I1-I8 + triggers de protection). **Fait le 2026-09-24 pour I2** : trigger sur les écritures validées, et contre-passation d'une transaction bancaire modifiée ou supprimée après comptabilisation (doc 06). Séquences, périodes et verrou de clôture (I4) restent ouverts. **Fait le 2026-11-06/07** : I4 (AXE-806), I3 numérotation continue et I7 contrôle quotidien de la balance (AXE-807). Reste I8 (Test Compta Demat, AXE-484).
 - [ ] Mécanique générique « template + paramètres dossier → écritures équilibrées » (le moteur ne connaît aucun secteur).
 - [ ] **Templates pack VTC** (fichiers de données `packs/vtc/`) : carburant (TVA récupération selon véhicule), péage, entretien, LOA (part non déductible), usage personnel (455/108 selon statut), banale charge TTC/HT/TVA.
 - [ ] **Templates recettes plateformes** : settlement Rollee → 706 + 44571 (10% ou franchise) + 622x + 44566 (TVA commission selon entité Uber/Bolt — doc 13 §5). Config plateformes dans `packs/vtc/platforms.yaml`.
@@ -406,7 +492,7 @@ testé (ou développement mené contre fixtures si le token reste bloqué — do
       (le calcul l'accepte, le dossier ne la porte pas encore), et le
       passage effectif au réel, qui attend le passage d'un exercice au
       suivant.
-- [ ] Rapprochement bancaire.
+- [ ] Rapprochement bancaire. **Avancé le 2026-11-06 (AXE-832)** : un sous-compte 512x par compte bancaire, solde comptable et solde de la banque côte à côte, écart en rouge. Pas de lettrage ligne à ligne.
 - [ ] Dossiers de référence synthétiques → golden tests : SASU IS + Rollee settlements, EURL option IR, dossier franchise TVA, dossier traversant fin d'option IR.
 - [ ] **Relecture des templates par un expert-comptable** (prestation, doc 09 §8) — obligatoire avant V1.
 
@@ -452,7 +538,7 @@ couverture ledger ≥ 95 %.
 ### 2.5 Anomalies
 - [x] **Profils comportementaux par dossier** (doc 05 §6.2, doc 07 §3.3) — **fait le 2026-10-24 (AXE-437)**, recalculés à la lecture : agrégats incrémentaux par catégorie, construits automatiquement à l'import de l'historique.
 - [x] Détecteurs V1 : catégories personnelles, enseigne ambiguë sans/avec ticket incohérent, écart au profil comportemental (3σ), doublons de pièce, double plein. **Fait le 2026-10-24 (AXE-437).**
-- [ ] Cycle de vie d'alerte + UI d'instruction (doc 11 §3.2, écart au profil affiché) + templates comptables de résolution (455/108 selon statut du dossier). **UI d'instruction faite le 2026-10-24** (`/anomalies/{dossier}`, ouverte → en instruction → justifiée, usage personnel ou faux positif). **Les qualifications sont en mémoire de process** : à persister en base avant le pilote.
+- [ ] Cycle de vie d'alerte + UI d'instruction (doc 11 §3.2, écart au profil affiché) + templates comptables de résolution (455/108 selon statut du dossier). **UI d'instruction faite le 2026-10-24** (`/anomalies/{dossier}`, ouverte → en instruction → justifiée, usage personnel ou faux positif). Qualifications en base, avec historique, depuis le 2026-11-06 (AXE-814).
 - [ ] Jeu d'évaluation : abus historiques connus + abus synthétiques injectés ; mesure rappel/précision.
 
 ### 2.6 Justificatifs

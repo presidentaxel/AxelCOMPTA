@@ -13,12 +13,17 @@ vérifiée par import-linter en CI, doc 03 §3).
   `axelcompta.demo_api`, le composition root, et ajoute `GET /sante`.
   Les corps de routes restent là-bas jusqu'à l'extraction de chaque
   façade (`module/service.py`). Rien de métier n'est copié ici.
-- **Au 2026-11-05** : `GET /metrics` (Prometheus, AXE-426). Rôles
-  lecture, membre, admin appliqués par route et dans l'interface (AXE-701).
-- **V1 (doc 12, phase 1.1 + 3)** : MFA demandée à la connexion et journal
-  des connexions et exports (AXE-812), rôle `expert_comptable` (AXE-800),
-  routes de démo absentes en production (AXE-810), isolation multi-tenant
-  appliquée au niveau des routes.
+- **Au 2026-11-10** : `GET /metrics` (Prometheus, AXE-426), fermé sans
+  `METRICS_TOKEN` (AXE-810). Rôles lecture, membre, admin appliqués par
+  route et dans l'interface (AXE-701), et `expert_comptable` (AXE-800).
+  MFA demandée à la connexion (jeton `aal2`, dépendance
+  `exiger_double_authentification`) et journal des connexions et exports
+  (AXE-812). Compte de test en lecture seule (en-tête `X-Dossier`,
+  AXE-822). `api/erreurs.py` : un seul gestionnaire pour les erreurs
+  métier, 4xx avec leur phrase (AXE-839). Au démarrage, l'API vérifie que
+  la base est à la dernière migration (AXE-841).
+- **V1 (doc 12)** : extraire les routes de `demo_api.py` vers les façades
+  et renommer les fichiers `demo_*` (AXE-840).
 
 ## Doc de référence
 
