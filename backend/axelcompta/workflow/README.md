@@ -102,10 +102,14 @@ seul module autorisé à transformer une `ProposedEntry` (sortie de
 - **2026-11-05** : le chauffeur peut corriger une décision (nouvelle
   décision, la première reste en base) et annuler pendant 6 secondes
   (PR #81, #82). La notification se marque lue à l'ouverture (AXE-691).
+- **Fait du 2026-11-06 au 2026-11-10** : décisions humaines au grand livre
+  (AXE-420, AXE-852), quarantaine résolue par le gestionnaire (AXE-424),
+  opérations déjà classées (AXE-823), envoi des rappels hors de
+  l'application (AXE-808), rôle et engagement de l'expert-comptable
+  (AXE-800, `expert_comptable.py`, voir doc 02 §2.3). Détail des autres
+  dans les sections ci-dessous.
 - **V1 (doc 12, phase 3)** : actif, prestataire de signature tranché
-  (AXE-441), contre-passations des décisions humaines (AXE-420) et depuis
-  la quarantaine (AXE-424), envoi des rappels hors de l'application
-  (AXE-808).
+  (AXE-441).
 
 ## Doc de référence
 

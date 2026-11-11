@@ -30,6 +30,6 @@ test("phrase d'identité manquante", () => {
   assert.equal(phraseIdentiteManquante([]), null);
   assert.equal(
     phraseIdentiteManquante(["capital", "associes"]),
-    "Votre comptable doit encore renseigner le capital et les associés de la société.",
+    "Il manque encore le capital et les associés de votre société.",
   );
 });

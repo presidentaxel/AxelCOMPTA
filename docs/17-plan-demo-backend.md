@@ -1,6 +1,6 @@
 # 17 — Mode réel
 
-> Dernière mise à jour : 2026-11-05. Remplace le plan de démo, archivé tel
+> Dernière mise à jour : 2026-11-10. Remplace le plan de démo, archivé tel
 > quel dans [archive/17-plan-demo-2026-11.md](archive/17-plan-demo-2026-11.md)
 > (et, pour septembre, [archive/17-plan-demo-journal-2026-09.md](archive/17-plan-demo-journal-2026-09.md)).
 > L'état du projet est dans le [doc 12](12-roadmap-todo.md).
@@ -95,5 +95,5 @@ que les chauffeurs se connectent.
 | Risque | Parade |
 |---|---|
 | Les données de vrais chauffeurs vivent dans la même base que le développement | Plus de chemin applicatif qui lève les verrous ; migrations appliquées seulement après revue. Sauvegardes et restauration testée : AXE-811. Isolation stricte de la production : AXE-810 |
-| Des sociétés du compte Digifactory ne sont pas des chauffeurs (Serenity Groupe, Serenity Investissement, Bolt) | Import sur liste explicite (§4) ; tags d'entreprises pour les exclure des traitements (ticket du 05/11) |
+| Des sociétés du compte Digifactory ne sont pas des chauffeurs (Serenity Groupe, Serenity Investissement, Bolt) | Import sur liste explicite (§4) ; tags d'entreprises pour les exclure des traitements (AXE-829, fait le 06/11) |
 | Le mode expert n'a pas encore sa garde juridique | Ne pas l'ouvrir à Serenity avant AXE-800 (doc 02 §2.3) |

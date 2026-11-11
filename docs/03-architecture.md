@@ -1,17 +1,26 @@
 # 03 — Architecture technique
 
-> **État au 2026-11-05** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-10** (ajouté ; le reste du doc décrit la cible) :
 > - Modules ajoutés au découpage : `pseudonymize/` (seule porte vers un LLM)
 >   et `jobs/` (file Postgres, ADR-002). Carte à jour dans le
 >   [doc 18](18-organisation-code.md).
 > - Point d'entrée HTTP : `axelcompta.api.app`. Les routes vivent encore
->   dans `demo_api.py` (migration vers les façades : AXE-428).
-> - Rôles en place : lecture, membre, admin (et `retire` pour un membre
->   retiré). À venir : `expert_comptable` (AXE-800). La MFA TOTP est codée
->   mais pas demandée à la connexion (AXE-812).
+>   dans `demo_api.py` (renommage des fichiers `demo_*` : AXE-840). Les
+>   erreurs métier répondent 4xx avec leur phrase, par un seul gestionnaire
+>   (`api/erreurs.py`, AXE-839). L'API refuse de démarrer sur une base dont
+>   la migration Alembic est en retard (AXE-841).
+> - Rôles en place : lecture, membre, admin, `expert_comptable` (habilité
+>   par un admin, engagement de responsabilité, AXE-800), et `retire` pour
+>   un membre retiré. Un compte de test en lecture seule ouvre l'espace
+>   chauffeur de tout dossier du portefeuille (AXE-822).
+> - MFA native de Supabase demandée à l'admin et à l'expert-comptable
+>   (jeton `aal2`, AXE-812). Le TOTP maison (`tenants/mfa.py`) est retiré.
+> - Un worker (`axelcompta.worker`) exécute la file de jobs Postgres :
+>   import des dossiers, « Synchroniser », rappels (AXE-809, AXE-845,
+>   AXE-808).
 > - Depuis le 2026-11-05, la base Supabase `AxelCompta` est la base réelle
->   du portefeuille Serenity ; seul un dossier fictif y reste, pour les
->   reviews UX (doc 17). Isolation stricte (AXE-810), hébergement de production à
+>   du portefeuille Serenity ; aucun dossier ni compte de démo n'y reste
+>   (doc 17). Isolation stricte (AXE-810), hébergement de production à
 >   trancher (AXE-811).
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-09-24

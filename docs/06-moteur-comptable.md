@@ -1,16 +1,28 @@
 # 06 — Moteur comptable (`ledger` + `closing` + `filings`)
 
-> **État au 2026-11-05** (ajouté ; le reste du doc décrit la cible) :
-> - Invariants : I2 tenu en base (2026-09-24). **I3, I4 et I7 ne le sont
->   pas** (AXE-807, AXE-806). I8 : validateur A.47 A-1 en place, Test
->   Compta Demat pas passé (AXE-484).
+> **État au 2026-11-10** (ajouté ; le reste du doc décrit la cible) :
+> - Invariants : I2 tenu en base (2026-09-24). I4 tenu en base depuis le
+>   06/11 (trigger, AXE-806) ; une correction d'exercice clos est datée du
+>   premier jour de l'exercice ouvert du dossier (AXE-838). I3 (séquence
+>   par dossier et par exercice, tous journaux) et I7 (contrôle quotidien
+>   de la balance, sans correction automatique) depuis le 07/11 (AXE-807).
+>   I8 : validateur A.47 A-1 en place, Test Compta Demat pas passé
+>   (AXE-484).
+> - Une décision humaine s'écrit en OD de reclassement du compte en vigueur
+>   vers le nouveau, dans la même transaction que la décision (AXE-420,
+>   AXE-852). Un sous-compte 512x par compte bancaire (AXE-832).
 > - Templates du pack VTC manquants : versements de plateformes éclatés
 >   (AXE-801), immobilisations et amortissement du véhicule (AXE-802), LOA
 >   (AXE-803).
 > - Clôture : décidée par le chauffeur seul, CCA/FNP saisies par lui (le
 >   moteur ne provisionne jamais seul), à-nouveaux d'un exercice clos dans
->   AxeLCompta (`closing/ouverture.py`). Bilan d'ouverture d'une société
->   existante : AXE-804. TVA en cours d'année : AXE-805.
+>   AxeLCompta (`closing/ouverture.py`). Clôture et liasse attendent que le
+>   chauffeur ait confirmé sa configuration (AXE-730). Bilan d'ouverture
+>   d'une société existante : AXE-804.
+> - TVA en cours d'année (AXE-805, `closing/tva_periodique.py`) : CA3 de
+>   chaque période, liquidation vers 44551 ou 44567, rappels ; la CA3
+>   annuelle reprend la somme des périodes. TVA déductible des dépenses
+>   bancaires : AXE-831.
 > - Aucune relecture par un expert-comptable à ce jour : prévue avant le
 >   31/01/2027 (AXE-815).
 
@@ -42,8 +54,9 @@ fournisseur modifie ou supprime n'est pas réécrite : `contrepasser()`
 l'écriture inverse — journal `OD`, date et montants d'origine, sens
 opposés, `reference_piece` = id d'origine, id stable
 `{id}:contrepassation`. La quarantaine reste posée ; le nouveau montant
-n'est pas comptabilisé tout seul. I4 (période clôturée) n'est pas fait :
-délai et CCA/FNP ne sont pas tranchés (§5bis).
+n'est pas comptabilisé tout seul : le gestionnaire l'accepte ou l'ignore
+(AXE-424). Depuis I4 (AXE-806), une contre-passation qui viserait un
+exercice clos est datée du premier jour de l'exercice ouvert.
 
 ## 2. Objets du domaine
 

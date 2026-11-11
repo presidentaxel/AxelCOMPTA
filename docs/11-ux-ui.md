@@ -1,12 +1,22 @@
 # 11 — UX / UI : interface B2B
 
-> **État au 2026-11-05** (ajouté ; le reste du doc décrit la cible
+> **État au 2026-11-10** (ajouté ; le reste du doc décrit la cible
 > d'origine) : l'hypothèse « le chauffeur ne voit que la page de signature »
 > est caduque (doc 19). Écrans réels : côté chauffeur (mobile) Activité,
-> À traiter, Exercice, Mon résultat, Compte et la cloche ; côté
-> gestionnaire Entreprises, Invitations, Rappels, Équipe, Intégrations,
-> Mode expert et Anomalies. Le design system est [DESIGN.md](../DESIGN.md),
-> passé en v2.0 le 2026-11-11 (refonte AXE-873, direction C2,
+> À traiter, Exercice, Mon résultat, Ma TVA (AXE-805), Compte (avec « Mes
+> comptes bancaires », AXE-832 et AXE-729, et « Accès à votre dossier »,
+> AXE-812), la carte « Vérifiez votre entreprise » (AXE-730) et la cloche ;
+> côté gestionnaire Entreprises (tags, AXE-829 ; nouveaux chauffeurs
+> Digifactory et « Synchroniser », AXE-845 ; comptes à choisir, AXE-851),
+> Importer des entreprises (AXE-809), Invitations, Rappels (suivi des
+> envois, AXE-808), Équipe (habilitation de l'expert, réinitialisation de
+> la MFA), Intégrations (SMTP, SMS, état de la catégorisation), Mode
+> expert (engagement, motifs, opérations classées, AXE-800 et AXE-823) et
+> Anomalies (historique, opérations bancaires à revoir, AXE-814 et
+> AXE-424). Écran « Double authentification » à la connexion (AXE-812) ;
+> bandeau « Mode test, lecture seule » du compte de test (AXE-822). Le
+> design system est [DESIGN.md](../DESIGN.md), passé en v2.0 le 2026-11-11
+> (refonte AXE-873, direction C2,
 > [ADR-008](adr/ADR-008-design-system-monochrome.md)) : monochrome à l'encre,
 > un accent orange foncé, navigation en barre latérale claire.
 > Les revues UX d'Arthur (AXE-563, AXE-564) ont été traitées le 04/11 et

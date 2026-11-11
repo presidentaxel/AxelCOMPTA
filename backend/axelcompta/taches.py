@@ -38,6 +38,7 @@ from axelcompta.core.metriques import METRIQUES
 from axelcompta.demo_api import prechauffer_caches
 from axelcompta.ledger.balance import SoldeJournal, ecarts
 from axelcompta.ledger.repository import soldes_par_journal
+from axelcompta.modeles_distants import assurer_modele
 from axelcompta.notifier import notifier_depuis_base
 from axelcompta.rappels import envoyer, planifier
 from axelcompta.synchro_digifactory import ResultatDossier, synchroniser_portefeuille
@@ -215,6 +216,8 @@ def main() -> int:
     parseur.add_argument("--sans-synchro", action="store_true")
     args = parseur.parse_args()
 
+    if not args.sans_synchro:
+        assurer_modele()
     debut = datetime.now(UTC)
     engine = engine_depuis_env()
     bilan = lancer_taches(
