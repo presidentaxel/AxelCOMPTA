@@ -47,6 +47,7 @@ from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ingestion.providers.digifactory import DigifactoryHttpClient, DigifactoryProvider
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
+from axelcompta.modeles_distants import assurer_modele
 from axelcompta.packs.vtc_demo import (
     charger_categories_banque,
     charger_compte_par_categorie,
@@ -224,6 +225,7 @@ def main() -> int:
     groupe.add_argument("--dossier")
     args = parseur.parse_args()
 
+    assurer_modele()
     engine = engine_depuis_env()
     depot = PostgresDossierRepository(engine)
     if args.dossier:

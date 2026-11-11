@@ -1,10 +1,15 @@
 # 13 — Intégrations de plateformes et pattern DataProvider
 
-> **État au 2026-11-05** (ajouté) : la réconciliation et les écritures de
+> **État au 2026-11-10** (ajouté) : la réconciliation et les écritures de
 > settlement (§4, §5) sont codées et testées sur fixtures (golden test
-> §5.3, autoliquidation Bolt). Rollee n'est pas contractualisé (AXE-440).
-> En attendant, les settlements viendront des relevés exportés par le
-> chauffeur depuis Uber et Bolt (AXE-801).
+> §5.3, autoliquidation Bolt). Rollee n'est pas contractualisé. Tickets
+> ouverts le 05/11 (AXE-440, qui les regroupait, est annulé) : AXE-817
+> (contrat, sandbox, User API ou Company API), AXE-818 (client et
+> `RolleeProvider`), AXE-819 (Rollee Connect), AXE-820 (webhooks signés,
+> synchro de secours), AXE-821 (réconciliation avec le virement
+> Digifactory, écritures 706, TVA et commission). En attendant, les
+> settlements viendront des relevés exportés par le chauffeur depuis Uber
+> et Bolt (AXE-801).
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-16
 

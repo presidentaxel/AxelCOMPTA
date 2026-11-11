@@ -14,6 +14,7 @@ import {
 } from "@/lib/auth-gestionnaire";
 import { useDroitGestionnaire } from "@/lib/use-droit";
 
+import { LiensJuridiques } from "@/components/LiensJuridiques";
 const LIENS = [
   { href: "/portefeuille", libelle: "Entreprises", Icone: LayoutGrid },
   { href: "/expert", libelle: "Mode expert", Icone: Scale },
@@ -130,6 +131,7 @@ export function Sidebar() {
         >
           Se déconnecter
         </button>
+        <LiensJuridiques className="mt-2 px-2" />
       </div>
     </aside>
   );

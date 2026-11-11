@@ -26,9 +26,11 @@ transverse).
 - **Fait le 2026-10-24 (AXE-437, PR #50)** : profils, détecteurs V1, écran
   gestionnaire `/anomalies/{dossier}`, accessible depuis le mode expert
   (AXE-700). Un rôle Lecture consulte sans qualifier.
-- **Limite** : les qualifications sont en mémoire de process
-  (`demo_api.py`). Elles disparaissent au redémarrage de l'API. À
-  persister en base avant le pilote.
+- **Fait le 2026-11-06 (AXE-814)** : les qualifications sont en base,
+  avec leur historique (voir plus bas). Le motif est obligatoire et la
+  qualification est réservée à l'expert-comptable habilité depuis le
+  2026-11-10 (AXE-800). Détecteurs carburant affinés le 2026-11-09
+  (AXE-836).
 - **V1 (doc 12, phase 2.5)** : templates comptables de résolution (455/108
   selon le statut), jeu d'évaluation (rappel et précision), paramètres par
   pack.
