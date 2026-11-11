@@ -56,6 +56,8 @@
     "lib/confirmation-configuration.ts",
     "lib/confirmation-configuration.test.ts",
     "lib/identite-entreprise.ts",
-    "lib/identite-entreprise.test.ts"
+    "lib/identite-entreprise.test.ts",
+    "lib/juridique.ts",
+    "lib/juridique.test.ts"
   ]
 }
