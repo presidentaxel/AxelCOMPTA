@@ -82,7 +82,7 @@ gestionnaire :
     s'arrête au premier jalon absent. Ajouter ou retirer une preuve
     déplace l'étape. L'année en cours ne montre que le compte.
   - Le nom de l'organisation (`tenants.nom`) se change dans le menu du compte
-    (l'avatar, à droite de la barre de navigation), qui défile avec la
+    (l'avatar, en bas de la barre latérale), qui défile avec la
     page. Invitations est le lien en haut à droite de la liste, et n'est
     plus dans la barre.
   - **Rappels** (`/rappels`) : règles SMS, e-mail ou appel, pour toutes
