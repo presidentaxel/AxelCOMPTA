@@ -6208,6 +6208,22 @@ def _admin_du_portefeuille(
     return tenant_id, str(identite.user_id)
 
 
+def _garder_jeton(
+    depot: BranchementsRepository, branchement: Branchement, par: str
+) -> Callable[[str], None]:
+    """Rollee renouvelle son jeton (AXE-818) : le nouveau remplace l'ancien
+    dans le branchement, sinon le prochain appel repartirait d'un jeton périmé."""
+
+    def garder(jeton: str) -> None:
+        parametres = {**branchement.parametres(), "jeton": jeton}
+        a_enregistrer = modifier(
+            depot.lister(branchement.tenant_id), branchement.id, Modification(parametres=parametres)
+        )
+        depot.enregistrer(a_enregistrer, par, datetime.now(UTC))
+
+    return garder
+
+
 def _enregistrer_routes_branchements(app: FastAPI) -> None:
     """AXE-872 : plusieurs intégrations de chaque type, une par défaut. Les
     identifiants sont chiffrés, et ne reviennent jamais à l'écran."""
@@ -6260,13 +6276,13 @@ def _enregistrer_routes_branchements(app: FastAPI) -> None:
         role: RoleMembreDep,
         branchements: BranchementsDep,
     ) -> EssaiVue:
-        tenant_id, _par = _admin_du_portefeuille(identite, role)
+        tenant_id, par = _admin_du_portefeuille(identite, role)
         branchement = next(
             (b for b in branchements.lister(tenant_id) if b.id == branchement_id), None
         )
         if branchement is None:
             raise BranchementIntrouvable(f"Branchement inconnu : {branchement_id}")
-        essai = tester_branchement(branchement)
+        essai = tester_branchement(branchement, _garder_jeton(branchements, branchement, par))
         return EssaiVue(statut=essai.statut, message=essai.message)
 
 

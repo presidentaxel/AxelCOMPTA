@@ -3,10 +3,11 @@ import type { Branchement } from "@/lib/auth-gestionnaire";
 type Champ = {
   cle: string;
   libelle: string;
-  type: "text" | "number" | "password" | "email" | "url";
+  type: "text" | "number" | "password" | "email" | "url" | "choix";
   facultatif?: boolean;
   /** Jeton, clé ou mot de passe : visible le temps de la saisie, jamais relu. */
   secret?: boolean;
+  options?: { valeur: string; libelle: string }[];
 };
 
 /** AXE-872 : les types d'intégration qu'un portefeuille peut brancher, et
@@ -28,6 +29,29 @@ export const TYPES_BRANCHEMENT: Record<
         secret: true,
       },
       { cle: "url", libelle: "Adresse de l'API", type: "url" },
+    ],
+  },
+  rollee: {
+    nom: "Rollee",
+    detail:
+      "Lit les revenus Uber et Bolt de chaque chauffeur (brut, commission, versement).",
+    fournisseur: "rollee",
+    champs: [
+      {
+        cle: "jeton",
+        libelle: "Jeton JWT (tableau de bord Rollee › Settings › JWT Token)",
+        type: "password",
+        secret: true,
+      },
+      {
+        cle: "environnement",
+        libelle: "Environnement du jeton",
+        type: "choix",
+        options: [
+          { valeur: "sandbox", libelle: "Sandbox (essais, données fictives)" },
+          { valeur: "production", libelle: "Production (vrais chauffeurs)" },
+        ],
+      },
     ],
   },
   mail: {
@@ -56,6 +80,7 @@ export const TYPES_BRANCHEMENT: Record<
 
 export const ORDRE_TYPES: Branchement["type"][] = [
   "digifactory",
+  "rollee",
   "mail",
   "sms",
 ];

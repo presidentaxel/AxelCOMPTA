@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import {
   ajouterBranchement,
   modifierBranchement,
@@ -416,6 +417,18 @@ function FormulaireBranchement({
                   required={!champ.facultatif && !dejaEnregistre}
                   dejaEnregistre={dejaEnregistre}
                   onChange={(valeur) => setValeurs((v) => ({ ...v, [champ.cle]: valeur }))}
+                />
+              ) : champ.type === "choix" ? (
+                <Select
+                  aria-label={champ.libelle}
+                  value={valeurs[champ.cle] ?? ""}
+                  placeholder="Choisir…"
+                  onValueChange={(valeur) => setValeurs((v) => ({ ...v, [champ.cle]: valeur }))}
+                  options={(champ.options ?? []).map((option) => ({
+                    value: option.valeur,
+                    label: option.libelle,
+                  }))}
+                  className="mt-1"
                 />
               ) : (
                 <Input

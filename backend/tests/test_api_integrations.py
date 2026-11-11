@@ -156,7 +156,7 @@ def test_tester_un_branchement_ne_renvoie_qu_un_statut_et_un_message(
     branchement = _id(_ajouter(client, "A"), "A")
     vus: list[str] = []
 
-    def faux_test(b: object) -> Essai:
+    def faux_test(b: object, _garder: object = None) -> Essai:
         vus.append(getattr(b, "nom", ""))
         return Essai("ok", "Connexion et identifiants acceptés. Aucun e-mail envoyé.")
 

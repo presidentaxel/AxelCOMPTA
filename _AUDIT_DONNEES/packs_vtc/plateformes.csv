@@ -1,0 +1,3 @@
+plateforme,motif,commission_tva_regime,note
+uber,(?i)\buber\b,france_20,"Uber France facture la commission avec TVA française (doc 13 §5.2)"
+bolt,(?i)\bbolt\b,autoliquidation_ue,"Bolt Operations OÜ (Estonie) : commission autoliquidée (doc 13 §5.2)"

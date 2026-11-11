@@ -10,6 +10,7 @@ import pytest
 from axelcompta import tester_branchement
 from axelcompta.core.ids import TenantId
 from axelcompta.ingestion.providers.base import ProviderHealth
+from axelcompta.ingestion.providers.rollee import RolleeHttpClient
 from axelcompta.tenants.branchements import Branchement, nouveau
 from axelcompta.workflow.rappels_envoi import ExpediteurSmtp
 
@@ -64,3 +65,31 @@ def test_digifactory_dit_si_le_jeton_est_accepte(monkeypatch: pytest.MonkeyPatch
 def test_un_fournisseur_de_sms_ne_se_teste_pas_sans_envoyer() -> None:
     sms = {"url": "https://sms", "cle_api": "k", "expediteur": "S"}
     assert tester_branchement.tester(_branchement("sms", "http", sms)).statut == "indisponible"
+
+
+def test_rollee_renouvelle_son_jeton_et_le_fait_garder(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AXE-818 : le test Rollee renouvelle le jeton ; le nouveau est rendu
+    à l'appelant, qui le garde dans le branchement."""
+
+    class _Client:
+        environnement = "sandbox"
+
+        def __init__(self, rappel: Any) -> None:
+            self.rappel = rappel
+
+        async def renouveler(self) -> str:
+            self.rappel("neuf")
+            return "neuf"
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        RolleeHttpClient,
+        "depuis_parametres",
+        classmethod(lambda _cls, _p, rappel=None: _Client(rappel)),
+    )
+    gardes: list[str] = []
+    rollee = _branchement("rollee", "rollee", {"jeton": "vieux", "environnement": "sandbox"})
+    essai = tester_branchement.tester(rollee, gardes.append)
+    assert essai.statut == "ok" and gardes == ["neuf"]

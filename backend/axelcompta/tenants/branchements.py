@@ -31,13 +31,19 @@ FOURNISSEURS: dict[str, tuple[str, ...]] = {
     "mail": ("smtp",),
     "sms": ("http",),
     "digifactory": ("digifactory",),
+    "rollee": ("rollee",),
 }
 # Champs obligatoires, puis facultatifs, par fournisseur.
 CHAMPS: dict[str, tuple[str, ...]] = {
     "smtp": ("hote", "port", "utilisateur", "mot_de_passe", "expediteur"),
     "http": ("url", "cle_api", "expediteur"),
     "digifactory": ("jeton", "url"),
+    # AXE-818 : JWT du tableau de bord Rollee (Settings → JWT Token). Les
+    # jetons sandbox et production sont distincts.
+    "rollee": ("jeton", "environnement"),
 }
+# Valeurs permises, quand un champ n'accepte qu'une liste.
+VALEURS: dict[str, tuple[str, ...]] = {"environnement": ("sandbox", "production")}
 CHAMPS_FACULTATIFS: dict[str, tuple[str, ...]] = {}
 # Jamais renvoyés à l'écran. Un champ vide à la mise à jour garde la valeur
 # déjà chiffrée : on retape le jeton seulement pour le remplacer.
@@ -84,6 +90,9 @@ def chiffrer_parametres(fournisseur: str, parametres: dict[str, str]) -> str:
     manquants = [c for c in obligatoires if not str(parametres.get(c, "")).strip()]
     if manquants:
         raise BranchementInvalide(f"Champs manquants : {', '.join(manquants)}.")
+    for champ, permises in VALEURS.items():
+        if champ in obligatoires and str(parametres[champ]).strip() not in permises:
+            raise BranchementInvalide(f"{champ} : {' ou '.join(permises)}.")
     utiles = {
         c: str(parametres[c]).strip()
         for c in obligatoires + CHAMPS_FACULTATIFS.get(fournisseur, ())

@@ -144,3 +144,10 @@ def test_un_dossier_ne_choisit_qu_un_branchement_actif_du_bon_type() -> None:
     verifier_choix(depot.lister(T), "mail", None)
     with pytest.raises(BranchementInvalide):
         verifier_choix(depot.lister(T), "mail", banque.id)
+
+
+def test_un_branchement_rollee_exige_un_environnement_connu() -> None:
+    """AXE-818 : jetons sandbox et production distincts chez Rollee."""
+    nouveau([], T, "rollee", "rollee", "Rollee", {"jeton": "j", "environnement": "sandbox"})
+    with pytest.raises(BranchementInvalide):
+        nouveau([], T, "rollee", "rollee", "Rollee", {"jeton": "j", "environnement": "prod"})
