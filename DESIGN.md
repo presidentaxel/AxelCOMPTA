@@ -308,7 +308,8 @@ components:
     rounded: "{rounded.md}"
     padding: 6px 15px
     height: 36px
-    hoverBackground: "{colors.canvas-app}"
+    hoverBackground: "{colors.surface-soft}"
+    activeBackground: "{colors.border}"
     focusBorder: "{colors.border-focus}"
     focusRing: "{shadow.focus}"
     transition: "{transition.base}"
@@ -321,6 +322,7 @@ components:
     height: 36px
     hoverBackground: "{colors.surface-soft}"
     hoverTextColor: "{colors.ink}"
+    activeBackground: "{colors.border}"
     focusBorder: "{colors.border-focus}"
     focusRing: "{shadow.focus}"
     transition: "{transition.base}"
@@ -331,7 +333,9 @@ components:
     rounded: "{rounded.md}"
     padding: 7px 16px
     height: 36px
+    # Survol = danger à 90 % d'opacité (`hover:bg-danger/90`), appui = 80 %.
     hoverBackground: "rgba(190,18,60,0.90)"
+    activeBackground: "rgba(190,18,60,0.80)"
     transition: "{transition.base}"
   button-sm:
     backgroundColor: "{colors.primary}"
@@ -383,26 +387,30 @@ components:
   text-input:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink}"
-    placeholderColor: "{colors.subtle}"
+    placeholderColor: "{colors.muted}"
     typography: "{typography.body-md}"
-    border: "1px solid {colors.border}"
+    border: "1px solid {colors.border-strong}"
     rounded: "{rounded.md}"
     padding: 7px 12px
     height: 36px
     focusBorder: "{colors.border-focus}"
     focusRing: "{shadow.focus}"
+    # Erreur : aria-invalid pose la bordure danger, même focalisé.
+    errorBorder: "{colors.danger}"
     transition: "{transition.fast}"
   text-input-lg:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink}"
-    placeholderColor: "{colors.subtle}"
+    placeholderColor: "{colors.muted}"
     typography: "{typography.body-lg}"
-    border: "1px solid {colors.border}"
+    border: "1px solid {colors.border-strong}"
     rounded: "{rounded.md}"
     padding: 10px 14px
     height: 44px
     focusBorder: "{colors.border-focus}"
     focusRing: "{shadow.focus}"
+    # Erreur : aria-invalid pose la bordure danger, même focalisé.
+    errorBorder: "{colors.danger}"
   select:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink}"
@@ -1035,7 +1043,17 @@ pas d'effet glassmorphism, pas de fond flouté.
 `lg` (44 px, **toute action du chauffeur sur téléphone**, souvent pleine
 largeur : `<Button size="lg" className="w-full">`). Désactivé : opacité
 50 %, sans hover ni pointeur. Focus : anneau `signal` (`{shadow.focus}`,
-3 px à 45 % d'opacité) accompagné d'une bordure `signal`.
+3 px à 45 % d'opacité) accompagné d'une bordure `signal`. Appui : secondary
+et ghost passent au filet `{colors.border}`, danger à 80 % d'opacité.
+
+### Champs de saisie
+
+Fond canvas, bordure `{colors.border-strong}`, texte ink, placeholder
+`{colors.muted}`, `rounded.md`, 36 px de haut (`lg` : 44 px, formulaires pleine
+page et chauffeur). Focus : bordure et anneau `signal`. Erreur : l'attribut
+`aria-invalid` pose la bordure `{colors.danger}`, qui reste rouge même
+focalisée, et le lecteur d'écran l'annonce. Champ de montant : la prop
+`montant` d'`Input` applique `tabular-nums` et l'alignement à droite.
 
 ### Liens d'action et surlignage
 
@@ -1322,7 +1340,7 @@ les colonnes numériques.
 ## Known Gaps
 
 - **Design system v2.0 (2026-11-11)** : tokens, DESIGN.md et ADR-008 faits ;
-  composants Button/Input/Card/Badge (AXE-875), primitives Select/Dialogue/
+  composants Button/Input/Card/Badge faits (AXE-875), primitives Select/Dialogue/
   Toast/Tableau (AXE-876), navigation (AXE-877) à faire. Tant que ces tickets
   ne sont pas livrés, les composants du code peuvent encore refléter l'ancien
   rendu (bleu, sidebar, ombres) : le contrat est DESIGN.md.
