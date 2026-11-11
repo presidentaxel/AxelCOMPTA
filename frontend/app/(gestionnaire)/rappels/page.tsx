@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Aide, POURQUOI_RIEN_N_EST_ENVOYE } from "@/components/Aide";
+import { BoutonChoix } from "@/components/BoutonChoix";
+import { ConfirmationDialogue, type Confirmation } from "@/components/ConfirmationDialogue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -45,6 +47,7 @@ export default function RappelsPage() {
   const [erreur, setErreur] = useState<string | null>(null);
   const [erreurRegle, setErreurRegle] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
 
   useEffect(() => {
     listerRegles()
@@ -140,49 +143,29 @@ export default function RappelsPage() {
           {CANAUX.map((canal) => {
             const actif = canaux.includes(canal.id);
             return (
-              <button
+              <BoutonChoix
                 key={canal.id}
-                type="button"
-                aria-pressed={actif}
+                actif={actif}
                 disabled={!droit.admin}
                 onClick={() =>
                   setCanaux((actuel) => (actif ? actuel.filter((id) => id !== canal.id) : [...actuel, canal.id]))
                 }
-                className={`rounded-full border px-3 py-1.5 text-sm ${actif ? "border-primary bg-primary-subtle text-signal" : "border-border text-subtle"}`}
               >
                 {canal.libelle}
-              </button>
+              </BoutonChoix>
             );
           })}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <button
-            type="button"
-            aria-pressed={declencheur === "avant_cloture"}
-            disabled={!droit.admin}
-            onClick={() => setDeclencheur("avant_cloture")}
-            className={`rounded-full border px-3 py-1.5 ${declencheur === "avant_cloture" ? "border-primary bg-primary-subtle text-signal" : "border-border text-subtle"}`}
-          >
+          <BoutonChoix actif={declencheur === "avant_cloture"} disabled={!droit.admin} onClick={() => setDeclencheur("avant_cloture")}>
             Avant la clôture
-          </button>
-          <button
-            type="button"
-            aria-pressed={declencheur === "a_traiter"}
-            disabled={!droit.admin}
-            onClick={() => setDeclencheur("a_traiter")}
-            className={`rounded-full border px-3 py-1.5 ${declencheur === "a_traiter" ? "border-primary bg-primary-subtle text-signal" : "border-border text-subtle"}`}
-          >
+          </BoutonChoix>
+          <BoutonChoix actif={declencheur === "a_traiter"} disabled={!droit.admin} onClick={() => setDeclencheur("a_traiter")}>
             Opérations en attente
-          </button>
-          <button
-            type="button"
-            aria-pressed={declencheur === "manuel"}
-            disabled={!droit.admin}
-            onClick={() => setDeclencheur("manuel")}
-            className={`rounded-full border px-3 py-1.5 ${declencheur === "manuel" ? "border-primary bg-primary-subtle text-signal" : "border-border text-subtle"}`}
-          >
+          </BoutonChoix>
+          <BoutonChoix actif={declencheur === "manuel"} disabled={!droit.admin} onClick={() => setDeclencheur("manuel")}>
             Bouton sur la fiche
-          </button>
+          </BoutonChoix>
           {declencheur !== "manuel" && (
             <label className="flex items-center gap-2 text-subtle">
               {declencheur === "a_traiter" && "depuis"}
@@ -198,27 +181,15 @@ export default function RappelsPage() {
           )}
         </div>
         <div className="flex gap-2">
-          <button
-            type="button"
-            aria-pressed={portee === "tous"}
-            disabled={!droit.admin}
-            onClick={() => setPortee("tous")}
-            className={`rounded-full border px-3 py-1.5 text-sm ${portee === "tous" ? "border-primary bg-primary-subtle text-signal" : "border-border text-subtle"}`}
-          >
+          <BoutonChoix actif={portee === "tous"} disabled={!droit.admin} onClick={() => setPortee("tous")}>
             Toutes les entreprises
-          </button>
-          <button
-            type="button"
-            aria-pressed={portee === "selection"}
-            disabled={!droit.admin}
-            onClick={() => setPortee("selection")}
-            className={`rounded-full border px-3 py-1.5 text-sm ${portee === "selection" ? "border-primary bg-primary-subtle text-signal" : "border-border text-subtle"}`}
-          >
+          </BoutonChoix>
+          <BoutonChoix actif={portee === "selection"} disabled={!droit.admin} onClick={() => setPortee("selection")}>
             Certaines
-          </button>
+          </BoutonChoix>
         </div>
         {portee === "selection" && (
-          <ul className="max-h-40 overflow-y-auto rounded-lg border border-border">
+          <ul className="max-h-40 overflow-y-auto rounded-md border border-border">
             {dossiers.map((dossier) => (
               <li key={dossier.dossier_id}>
                 <label className="flex items-center gap-2 px-3 py-2 text-sm text-ink">
@@ -276,17 +247,25 @@ export default function RappelsPage() {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={async () => {
-                    setErreurRegle(null);
-                    try {
-                      await supprimerRegle(regle.id);
-                      setRegles(await listerRegles());
-                    } catch (exception) {
-                      setErreurRegle(
-                        exception instanceof Error ? exception.message : "Impossible de supprimer la règle.",
-                      );
-                    }
-                  }}
+                  onClick={() =>
+                    setConfirmation({
+                      titre: "Supprimer la règle",
+                      phrase: `Supprimer la règle « ${regle.libelle} » ? Elle ne se déclenchera plus.`,
+                      libelleConfirmer: "Supprimer",
+                      destructive: true,
+                      onConfirmer: async () => {
+                        setErreurRegle(null);
+                        try {
+                          await supprimerRegle(regle.id);
+                          setRegles(await listerRegles());
+                        } catch (exception) {
+                          setErreurRegle(
+                            exception instanceof Error ? exception.message : "Impossible de supprimer la règle.",
+                          );
+                        }
+                      },
+                    })
+                  }
                 >
                   Supprimer
                 </Button>
@@ -313,6 +292,7 @@ export default function RappelsPage() {
       {regles && regles.length === 0 && <p className="mt-3 text-sm text-subtle">Aucune règle.</p>}
       </div>
       </div>
+      {confirmation && <ConfirmationDialogue confirmation={confirmation} onFermer={() => setConfirmation(null)} />}
     </div>
   );
 }

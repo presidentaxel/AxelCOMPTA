@@ -9,6 +9,7 @@ import { OperationsClassees } from "@/components/OperationsClassees";
 import { Squelette } from "@/components/Squelette";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import {
   annulerImputation,
   ErreurAuthGestionnaire,
@@ -251,7 +252,7 @@ export default function ModeExpertPage() {
         </div>
       )}
       {succes && (
-        <div className="mt-6 rounded-lg border border-border bg-canvas p-4">
+        <div className="mt-6 rounded-md border border-border bg-canvas p-4">
           <p className="text-sm font-medium text-ink">Écrit pour {succes.libelle}</p>
           <ul className="mt-2 space-y-1">
             {succes.imputation.lignes.map((ligne, index) => (
@@ -291,20 +292,16 @@ export default function ModeExpertPage() {
           <Squelette className="h-16 w-full" />
         </div>
       )}
-      <label className="mt-6 block text-sm text-subtle">
+      <div className="mt-6 flex items-center gap-2 text-sm text-subtle">
         Statut
-        <select
+        <Select
+          aria-label="Statut"
           value={vue.vue}
-          onChange={(evenement) => changerVue({ ...vue, vue: evenement.target.value, page: "1" })}
-          className="ml-2 h-9 rounded-md border border-border bg-canvas px-3 text-sm text-ink"
-        >
-          {Object.entries(STATUTS).map(([id, libelle]) => (
-            <option key={id} value={id}>
-              {libelle}
-            </option>
-          ))}
-        </select>
-      </label>
+          onValueChange={(valeur) => changerVue({ ...vue, vue: valeur, page: "1" })}
+          options={Object.entries(STATUTS).map(([id, libelle]) => ({ value: id, label: libelle }))}
+          className="w-56"
+        />
+      </div>
       {vue.vue !== VUE_A_TRAITER && (
         <OperationsClassees
           etat={vue}
@@ -316,53 +313,47 @@ export default function ModeExpertPage() {
       {vue.vue === VUE_A_TRAITER && file && (
         <>
           <div className="mt-6 flex flex-wrap items-center gap-2">
-            <label className="text-sm text-subtle">
+            <div className="flex items-center gap-2 text-sm text-subtle">
               Entreprise
-              <select
+              <Select
+                aria-label="Entreprise"
                 value={entreprise}
-                onChange={(evenement) => changerFiltre("entreprise", evenement.target.value)}
-                className="ml-2 h-9 rounded-md border border-border bg-canvas px-3 text-sm text-ink"
-              >
-                <option value="toutes">Toutes</option>
-                {entreprises.map(([id, nom]) => (
-                  <option key={id} value={id}>
-                    {nom}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm text-subtle">
+                onValueChange={(valeur) => changerFiltre("entreprise", valeur)}
+                options={[
+                  { value: "toutes", label: "Toutes" },
+                  ...entreprises.map(([id, nom]) => ({ value: id, label: nom })),
+                ]}
+                className="w-56"
+              />
+            </div>
+            <div className="flex items-center gap-2 text-sm text-subtle">
               Nature
-              <select
+              <Select
+                aria-label="Nature"
                 value={nature}
-                onChange={(evenement) => changerFiltre("nature", evenement.target.value)}
-                className="ml-2 h-9 rounded-md border border-border bg-canvas px-3 text-sm text-ink"
-              >
-                <option value="toutes">Toutes</option>
-                {(Object.keys(NATURE) as SujetExpert["nature"][]).map((id) => (
-                  <option key={id} value={id}>
-                    {NATURE[id]}
-                  </option>
-                ))}
-              </select>
-            </label>
+                onValueChange={(valeur) => changerFiltre("nature", valeur)}
+                options={[
+                  { value: "toutes", label: "Toutes" },
+                  ...(Object.keys(NATURE) as SujetExpert["nature"][]).map((id) => ({ value: id, label: NATURE[id] })),
+                ]}
+                className="w-48"
+              />
+            </div>
             {tagsDeLaFile.length > 0 && (
-              <label className="text-sm text-subtle">
+              <div className="flex items-center gap-2 text-sm text-subtle">
                 Tag
-                <select
+                <Select
+                  aria-label="Tag"
                   value={tag}
-                  onChange={(evenement) => changerFiltre("tag", evenement.target.value)}
-                  className="ml-2 h-9 rounded-md border border-border bg-canvas px-3 text-sm text-ink"
-                >
-                  <option value={TOUS_LES_TAGS}>Tous</option>
-                  <option value={SANS_TAG}>Sans tag</option>
-                  {tagsDeLaFile.map((nom) => (
-                    <option key={nom} value={nom}>
-                      {libelleTag(nom)}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  onValueChange={(valeur) => changerFiltre("tag", valeur)}
+                  options={[
+                    { value: TOUS_LES_TAGS, label: "Tous" },
+                    { value: SANS_TAG, label: "Sans tag" },
+                    ...tagsDeLaFile.map((nom) => ({ value: nom, label: libelleTag(nom) })),
+                  ]}
+                  className="w-48"
+                />
+              </div>
             )}
             <p className="text-sm text-subtle">
               {page.length} sur {filtres.length}
@@ -418,21 +409,17 @@ export default function ModeExpertPage() {
                 )}
                 {sujet.nature !== "anomalie" && sujet.imputable && sujet.ecriture_id && (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <select
+                    <Select
                       aria-label={`Compte pour ${sujet.libelle}`}
                       value={compte[sujet.id] ?? ""}
-                      onChange={(evenement) =>
-                        setCompte((actuel) => ({ ...actuel, [sujet.id]: evenement.target.value }))
-                      }
-                      className="h-9 min-w-56 rounded-md border border-border bg-canvas px-3 text-sm text-ink"
-                    >
-                      <option value="">Compte</option>
-                      {file.comptes.map((choix) => (
-                        <option key={choix.compte} value={choix.compte}>
-                          {choix.compte} — {choix.libelle}
-                        </option>
-                      ))}
-                    </select>
+                      onValueChange={(valeur) => setCompte((actuel) => ({ ...actuel, [sujet.id]: valeur }))}
+                      placeholder="Compte"
+                      options={file.comptes.map((choix) => ({
+                        value: choix.compte,
+                        label: `${choix.compte} — ${choix.libelle}`,
+                      }))}
+                      className="min-w-56"
+                    />
                     <Input
                       value={motifs[sujet.id] ?? ""}
                       onChange={(e) =>
@@ -465,7 +452,7 @@ export default function ModeExpertPage() {
                   <p className="mt-2 text-sm text-danger">{erreurs[sujet.id]}</p>
                 )}
                 {confirmation?.id === sujet.id && (
-                  <div className="mt-3 rounded-lg border border-border bg-canvas-app p-4">
+                  <div className="mt-3 rounded-md border border-border bg-canvas-app p-4">
                     <p className="text-sm text-ink">
                       Écrire dans la comptabilité de {sujet.dossier_nom} : le compte{" "}
                       {compte[sujet.id]} remplace la contrepartie, le compte 512 reste. Les lignes

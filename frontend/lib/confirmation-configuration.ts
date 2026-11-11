@@ -25,11 +25,12 @@ export function aConfirmer(configuration: ConfigurationDossier): boolean {
   return configuration.a_confirmer.length > 0;
 }
 
-/** « Votre comptable doit encore renseigner le capital et les associés. »,
- * ou `null`. Ces éléments ne se confirment pas d'un clic. */
+/** « Il manque encore le capital et les associés de votre société. », ou
+ * `null`. Ces éléments ne se confirment pas d'un clic : le dirigeant les
+ * saisit sur « Ma société » (AXE-846). */
 export function phraseIdentiteManquante(manques: readonly string[]): string | null {
   const noms = manques.map((code) => MANQUES[code]).filter((nom): nom is string => !!nom);
   if (noms.length === 0) return null;
   const liste = noms.length === 1 ? noms[0] : `${noms.slice(0, -1).join(", ")} et ${noms.at(-1)}`;
-  return `Votre comptable doit encore renseigner ${liste} de la société.`;
+  return `Il manque encore ${liste} de votre société.`;
 }
