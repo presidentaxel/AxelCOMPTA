@@ -464,6 +464,11 @@ export function EcranEntreprises() {
                         {alerte}
                       </span>
                     ))}
+                  {(dossier.ecarts_registre ?? []).map((ecart) => (
+                    <span key={ecart} className="block text-sm text-warning">
+                      {ecart}
+                    </span>
+                  ))}
                 </span>
               </span>
               <span

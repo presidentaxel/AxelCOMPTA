@@ -26,6 +26,7 @@ from axelcompta.workflow.audit import (
 from .identite_json import identite_depuis_json, identite_vers_json
 from .models import Dossier, Tenant, verifier_mode_relance
 from .orm import dossiers, tenants
+from .registres_json import ecarts_depuis_json
 from .repository import DossierRepository
 from .statuts import configuration_de
 
@@ -242,6 +243,8 @@ def _parametres_tva(dossier: Dossier) -> dict[str, object]:
     valeurs = {
         "tva_periodicite": dossier.tva_periodicite,
         "tva_jour_echeance": dossier.tva_jour_echeance,
+        # AXE-849, même raison : nommée seulement si connue.
+        "siren": dossier.siren,
     }
     return {colonne: valeur for colonne, valeur in valeurs.items() if valeur is not None}
 
@@ -269,6 +272,8 @@ def _vers_dossier(ligne: Any) -> Dossier:
         a_confirmer=tuple(ligne.a_confirmer or ()),
         tva_periodicite=ligne.tva_periodicite,
         tva_jour_echeance=ligne.tva_jour_echeance,
+        siren=ligne.siren,
+        ecarts_registre=ecarts_depuis_json(ligne.ecarts_registre),
     )
 
 

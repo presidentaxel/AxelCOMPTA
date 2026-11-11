@@ -161,6 +161,7 @@ def _construire(tenant_id: TenantId, ligne: dict[str, str], erreurs: list[str]) 
         exercice_fin=fin,
         option_ir_debut=int(option) if option else None,
         contact_nr=ligne.get("contact_digifactory") or None,
+        siren=siren,
     )
 
 

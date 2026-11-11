@@ -414,3 +414,21 @@ Publier une version, après accord sur le rapport d'entraînement
 Mise en route : créer le bucket privé `modeles` dans Supabase Storage, et
 des clés d'accès S3 (Storage > S3 Connection) posées en `S3_ENDPOINT`,
 `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION` sur le poste et le serveur.
+
+## Registres officiels INSEE et RNE (AXE-849)
+
+Chaque dossier qui a un SIREN est relu au plus une fois par semaine par les
+tâches planifiées. Les écarts avec la déclaration du dirigeant apparaissent
+dans Entreprises et bloquent la clôture et la liasse jusqu'à son choix.
+
+Mise en route (rien ne se passe sans) :
+
+1. `INSEE_API_KEY` : clé d'intégration de « API Sirene » **3.11** (pas la
+   V4). `INPI_RNE_USERNAME` et `INPI_RNE_PASSWORD` : compte data.inpi.fr.
+   L'une des deux suffit. Sirene 3.11 a été lue le 2026-11-11.
+2. Vérifier la lecture sur un SIREN réel, sans rien écrire (le `.env`
+   racine est chargé) :
+   `python -m axelcompta.registres_officiels --siren 989841911`.
+3. Poser le SIREN des dossiers existants : `scripts/ajouter_chauffeurs_digifactory.py --sirene`
+   (le reprend du contact Digifactory).
+

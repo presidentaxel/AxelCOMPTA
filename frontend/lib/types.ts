@@ -86,6 +86,8 @@ export type DossierAgregat = {
   alerte_tva: string | null;
   /** AXE-834 : configuration proposée sans certitude, à confirmer par le dirigeant. */
   a_confirmer: string[];
+  /** AXE-849 : écarts non tranchés avec les registres officiels (INSEE, RNE), en phrases. */
+  ecarts_registre?: string[];
   /** AXE-805 : la plus ancienne période de TVA à déclarer, et son échéance. */
   tva_a_declarer?: string | null;
   tva_echeance?: string | null;
@@ -133,7 +135,7 @@ export type SujetExpert = {
   dossier_id: string;
   dossier_nom: string;
   cote: "chauffeur" | "gestionnaire";
-  nature: "a_trancher" | "ticket" | "anomalie";
+  nature: "a_trancher" | "ticket" | "anomalie" | "registre";
   libelle: string;
   detail: string;
   montant_cts: number | null;

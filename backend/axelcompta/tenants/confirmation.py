@@ -4,7 +4,10 @@ Un dossier est **ambigu** tant que :
 - Sirene a proposé un élément sans certitude (`Dossier.a_confirmer` : forme
   SAS ou SASU, SARL ou EURL ; premier exercice déduit de la création) ;
 - ou, pour une société, le siège, le capital ou les associés manquent.
-  Sirene ne les donne pas, et la liasse ne s'en passe pas.
+  Sirene ne les donne pas, et la liasse ne s'en passe pas ;
+- ou un registre officiel (INSEE, RNE) dit autre chose que la déclaration,
+  tant que personne n'a tranché (AXE-849). Une société cessée au registre
+  passe avant tout le reste.
 
 La clôture et la liasse fiscale refusent un dossier ambigu. Pur : le dépôt
 écrit, l'API lit.
@@ -17,6 +20,7 @@ from dataclasses import replace
 from axelcompta.core.errors import DomaineError
 
 from .models import Dossier
+from .registres import CHAMP_ETAT, phrase
 from .sirene import A_CONFIRMER_EXERCICE, A_CONFIRMER_FORME
 from .statuts import FormeJuridique
 
@@ -78,8 +82,13 @@ def raison_ambiguite(dossier: Dossier) -> str | None:
     """La phrase qui bloque la clôture et la liasse, ou `None`."""
     a_confirmer = [_NOMS.get(code, code) for code in dossier.a_confirmer]
     manque = [_NOMS[code] for code in identite_manquante(dossier)]
+    ecarts = dossier.ecarts_registre
+    if any(e.champ == CHAMP_ETAT for e in ecarts):
+        return "La société est cessée au registre : vérifiez avant toute clôture."
     if a_confirmer:
         return f"Le dirigeant doit d'abord confirmer {_liste(a_confirmer)}."
+    if ecarts:
+        return "Le registre ne dit pas la même chose. " + " ".join(phrase(e) for e in ecarts)
     if manque:
         return f"Il manque {_liste(manque)} de la société."
     return None
