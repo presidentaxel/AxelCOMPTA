@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Dialog, Popover } from "radix-ui";
 
 import { Marque } from "@/components/Marque";
+import { IndicateurGlissant } from "@/components/ui/indicateur-glissant";
 import { Input } from "@/components/ui/input";
 import {
   deconnecterGestionnaire,
@@ -22,7 +23,8 @@ import { useDroitGestionnaire } from "@/lib/use-droit";
  *
  * Responsive, en classes `lg:` seulement : à partir de 1024px les entrées sont
  * dans la barre ; en dessous (≤ 1023px) elles passent dans le tiroir du bouton
- * « Menu », et la zone de compte reste visible.
+ * « Menu », et la zone de compte reste visible. Le filet de l'entrée active est
+ * un indicateur glissant (180 ms), pas une bordure par entrée.
  *
  * `alertes` : href des entrées « qui demandent une action » (point `signal`
  * à droite du libellé). Vide tant qu'aucun écran ne fournit l'information. */
@@ -36,7 +38,7 @@ export function Navigation({ alertes = {} }: { alertes?: Partial<Record<string, 
         <Marque />
       </div>
 
-      <nav aria-label="Gestionnaire" className="-mb-px hidden items-stretch gap-6 lg:flex">
+      <nav aria-label="Gestionnaire" className="relative hidden items-stretch gap-6 lg:flex">
         {ENTREES_GESTIONNAIRE.map(({ href, libelle }) => {
           const actif = entreeActive(chemin, href);
           return (
@@ -44,10 +46,8 @@ export function Navigation({ alertes = {} }: { alertes?: Partial<Record<string, 
               key={href}
               href={href}
               aria-current={actif ? "page" : undefined}
-              className={`flex items-center gap-1.5 border-b-2 text-sm whitespace-nowrap outline-none transition-colors duration-150 focus-visible:shadow-focus-detache ${
-                actif
-                  ? "border-ink font-semibold text-ink"
-                  : "border-transparent font-medium text-muted hover:text-ink"
+              className={`flex items-center gap-1.5 text-sm whitespace-nowrap outline-none transition-colors duration-150 focus-visible:shadow-focus-detache ${
+                actif ? "font-semibold text-ink" : "font-medium text-muted hover:text-ink"
               }`}
             >
               {libelle}
@@ -55,6 +55,9 @@ export function Navigation({ alertes = {} }: { alertes?: Partial<Record<string, 
             </Link>
           );
         })}
+        {/* Le filet de l'entrée active glisse d'une entrée à l'autre (la barre
+            reste montée d'une page à l'autre) au lieu de réapparaître. */}
+        <IndicateurGlissant selecteur='[aria-current="page"]' />
       </nav>
 
       <div className="ml-auto flex items-center gap-2">

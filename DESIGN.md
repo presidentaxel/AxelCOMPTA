@@ -679,7 +679,7 @@ components:
   # Zone de compte, à droite de la barre.
   nav-account:
     backgroundColor: "{colors.ink}"
-    textColor: "{colors.on-dark}"
+    textColor: "{colors.on-primary}"
     size: 32px
     rounded: "{rounded.full}"
 
@@ -972,7 +972,7 @@ couleur `{colors.amount-positive}` dans un tableau de recettes,
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │  Barre de navigation (64px) · fond canvas · filet bas border     │
-│  Logo · Entreprises ● · Invitations · Rappels · …   ⌘K · (AR)    │
+│  Logo · Entreprises ● · Invitations · Rappels · …        (AR)    │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │            Zone de contenu principale                            │
@@ -983,6 +983,7 @@ couleur `{colors.amount-positive}` dans un tableau de recettes,
 └──────────────────────────────────────────────────────────────────┘
    ● = nav-item-alert : une action est attendue dans cette section
    (AR) = zone de compte, avatar de 32px sur fond ink
+   (la recherche globale ⌘K, prévue au doc 11, n'est pas encore livrée)
 ```
 
 En mode mono-entreprise, la barre reste présente mais la liste des dossiers
@@ -1090,15 +1091,23 @@ La navigation du gestionnaire est la barre `nav-bar` : 64px de haut, fond
 `{colors.canvas}`, filet bas `{colors.border}`, padding `0 40px`.
 
 - **`nav-item`** : 14px, poids 500, `{colors.muted}`.
-- **`nav-item-active`** : poids 600, `{colors.ink}`, filet bas de 2px `ink`.
+- **`nav-item-active`** : poids 600, `{colors.ink}`. Le filet bas de 2px `ink` n'est
+  pas une bordure de l'entrée : c'est un indicateur qui glisse d'une entrée à
+  l'autre en 180 ms (`{transition.indicator}`), car la barre reste montée d'une
+  page à l'autre.
 - **`nav-item-alert`** : point de 7px `{colors.signal}` à droite du libellé.
   Signifie qu'une action est attendue dans cette section ; le libellé et, dans
   la page, le texte de la ligne concernée disent laquelle (le point ne
   distingue jamais seul).
-- **Zone de compte** à droite : avatar de 32px sur fond `ink`.
+- **Zone de compte** à droite : avatar de 32px sur fond `ink` (texte
+  `{colors.on-primary}`). L'avatar ouvre un menu : nom de l'organisation
+  (modifiable par un administrateur), e-mail, « Compte » et « Se déconnecter ».
+  À partir de 1280px, le nom de l'organisation reste lisible à côté de l'avatar.
 
-Sous 1024px (≤ 1023px), les entrées passent dans un bouton « Menu » qui ouvre
-un tiroir ; la zone de compte reste visible.
+Sous 1024px (≤ 1023px), les entrées passent dans un bouton « Menu » (à gauche
+de la zone de compte, cible d'au moins 44px) qui ouvre un tiroir : panneau
+gauche de 18rem, ombre `{shadow.overlay}`, voile `ink` à 50 %, focus piégé,
+Échap ferme ; la zone de compte reste visible.
 
 ### Ligne « à traiter » (`row-a-traiter`)
 
@@ -1363,10 +1372,11 @@ les colonnes numériques.
 
 - **Design system v2.0 (2026-11-11)** : tokens, DESIGN.md et ADR-008 faits ;
   composants Button/Input/Card/Badge faits (AXE-875), primitives Select/Dialogue/
-  Toast/Tableau/Onglets et StatutDossier faites (AXE-876), navigation
-  (AXE-877) à faire. Tant que ces tickets
-  ne sont pas livrés, les composants du code peuvent encore refléter l'ancien
-  rendu (bleu, sidebar, ombres) : le contrat est DESIGN.md.
+  Toast/Tableau/Onglets et StatutDossier faites (AXE-876), barre de
+  navigation faite (AXE-877, `components/Navigation.tsx`, `lib/navigation.ts`).
+  Restent les écrans (issues 5 à 11) : tant qu'ils ne sont pas livrés, certains
+  peuvent encore refléter l'ancien rendu : le contrat est DESIGN.md. La cloche du
+  chauffeur suit le niveau « popover » (`shadow-md`, `rounded-md`).
 - **Remise à jour du 2026-11-10 (AXE-870)** (historique) : code et contrat
   relus l'un contre l'autre. Les couleurs étaient déjà identiques (53 tokens).
   Écarts corrigés : ombres du contrat absentes du code (Tailwind utilisait ses
