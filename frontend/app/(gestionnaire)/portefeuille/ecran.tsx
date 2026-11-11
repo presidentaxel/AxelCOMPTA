@@ -105,12 +105,14 @@ export function EcranEntreprises() {
     if (memo) setDossiers(memo);
     charger();
     listerRegles().then(setRegles).catch(() => setRegles([]));
-    lireTags().then(setReglageTags).catch(() => setReglageTags(null));
+    lireTags()
+      .then((reglage) => setReglageTags(Array.isArray(reglage?.tags) ? reglage : null))
+      .catch(() => setReglageTags(null));
     listerDossiersRetires().then(setRetires).catch(() => setRetires([]));
     // Une seule lecture des connexions : elle sert l'avis « À savoir » et la
     // raison « à traiter » de chaque ligne. Sans réponse, rien n'est signalé.
     lireConnexionsBancaires()
-      .then((donnees) => setConnexions(donnees.dossiers))
+      .then((donnees) => setConnexions(Array.isArray(donnees.dossiers) ? donnees.dossiers : []))
       .catch(() => setConnexions([]));
   }, [charger]);
 
@@ -221,25 +223,6 @@ export function EcranEntreprises() {
         synchro={synchro}
       />
       <NouveauxChauffeurs etat={synchro} ecriture={droit.ecriture} />
-      <RetireesDeLaListe
-        retires={retires}
-        admin={droit.admin}
-        onRemettre={async (dossierId) => {
-          await restaurerDossier(dossierId);
-          setRetires(await listerDossiersRetires());
-          charger();
-        }}
-      />
-      {reglageTags && (
-        <ReglageExclusions
-          reglage={reglageTags}
-          ecriture={droit.ecriture}
-          onModifie={(reglage) => {
-            setReglageTags(reglage);
-            charger();
-          }}
-        />
-      )}
 
       {bandeau && banque !== COMPTES_A_CHOISIR && (
         <div
@@ -295,12 +278,34 @@ export function EcranEntreprises() {
           )
         }
         onOuvrir={(dossierId) => ecrire({ ouvert: selection === dossierId ? null : dossierId }, true)}
+        onOuvrirFiche={(dossierId) => ecrire({ ouvert: dossierId }, true)}
         page={pageCourante}
         pages={pages}
         onPage={(suivante) => ecrire({ page: String(suivante) }, true)}
         admin={droit.admin}
         onReinitialiser={reinitialiser}
       />
+
+      {/* Réglages rares, sous la liste : ils ne doivent pas repousser les dossiers. */}
+      <RetireesDeLaListe
+        retires={retires}
+        admin={droit.admin}
+        onRemettre={async (dossierId) => {
+          await restaurerDossier(dossierId);
+          setRetires(await listerDossiersRetires());
+          charger();
+        }}
+      />
+      {reglageTags && (
+        <ReglageExclusions
+          reglage={reglageTags}
+          ecriture={droit.ecriture}
+          onModifie={(reglage) => {
+            setReglageTags(reglage);
+            charger();
+          }}
+        />
+      )}
 
       {choisi && (
         <FicheEntreprise

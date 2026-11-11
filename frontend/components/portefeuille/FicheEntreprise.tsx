@@ -71,7 +71,12 @@ export function FicheEntreprise({
 
   useEffect(() => {
     function surTouche(evenement: KeyboardEvent) {
-      if (evenement.key === "Escape") onFermer();
+      if (evenement.key !== "Escape" || evenement.defaultPrevented) return;
+      // Échap qui referme une liste déroulante des filtres (Radix) ne doit pas
+      // fermer la fiche en plus : le focus est alors dans la liste.
+      const cible = evenement.target instanceof Element ? evenement.target : null;
+      if (cible?.closest('[role="listbox"], [role="menu"]')) return;
+      onFermer();
     }
     document.addEventListener("keydown", surTouche);
     return () => document.removeEventListener("keydown", surTouche);
@@ -154,11 +159,12 @@ export function FicheEntreprise({
             Rappels
             <Aide texte={aideRappels} />
           </p>
-          {regles.length === 0 && (
+          {ecriture && regles.length === 0 && (
             <p className="mt-2 text-sm text-subtle">Aucune règle. Elles se préparent dans Rappels.</p>
           )}
           <div className="mt-2 flex flex-col gap-2">
-            {regles
+            {/* Lecture seule : les boutons de rappel ne sont pas montrés, plutôt que grisés. */}
+            {(ecriture ? regles : [])
               .filter((regle) => regle.declencheur === "manuel")
               .filter((regle) => regle.portee !== "selection" || regle.dossier_ids.includes(dossier.dossier_id))
               .map((regle) => (
@@ -167,7 +173,6 @@ export function FicheEntreprise({
                     type="button"
                     variant="secondary"
                     size="sm"
-                    disabled={!ecriture}
                     onClick={async () => {
                       setInfoRappel(null);
                       try {

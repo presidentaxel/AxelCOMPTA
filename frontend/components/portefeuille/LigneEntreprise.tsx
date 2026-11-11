@@ -22,7 +22,10 @@ type Props = {
   selectionne: boolean;
   /** `null` : pas de sélection groupée (lecture seule, ou tags indisponibles). */
   coche: { cochee: boolean; onBasculer: (cochee: boolean) => void } | null;
+  /** Clic sur la ligne : ouvre la fiche, ou la referme si elle est déjà ouverte. */
   onOuvrir: () => void;
+  /** Lien d'action « Ouvrir la fiche » : ouvre toujours, ne referme jamais. */
+  onAction: () => void;
 };
 
 /** Colonne de droite, la même dans les deux groupes : le montant reste ainsi
@@ -60,7 +63,7 @@ function Montant({ centimes }: { centimes: number }) {
 
 /** `row-a-traiter` (DESIGN.md) : lavis, repère `signal` de 3 px à gauche, nom
  * en 16/600, la raison en une phrase, le montant, puis le lien d'action. */
-export function LigneATraiter({ ligne, selectionne, coche, onOuvrir }: Props) {
+export function LigneATraiter({ ligne, selectionne, coche, onOuvrir, onAction }: Props) {
   const { dossier, analyse } = ligne;
   const action = analyse.action;
   return (
@@ -105,7 +108,7 @@ export function LigneATraiter({ ligne, selectionne, coche, onOuvrir }: Props) {
             type="button"
             className={LIEN_ACTION}
             aria-label={`${action.libelle} : ${dossier.nom}`}
-            onClick={onOuvrir}
+            onClick={onAction}
           >
             {action.libelle}
             <span aria-hidden> →</span>
@@ -119,6 +122,7 @@ export function LigneATraiter({ ligne, selectionne, coche, onOuvrir }: Props) {
 /** Dossier qui suit son cours : le nom et la forme en discret, l'étape en
  * texte (les frises vivent dans la fiche), le montant, le statut. */
 export function LigneAutre({ ligne, selectionne, coche, onOuvrir }: Props) {
+  // Pas de lien d'action sur ces lignes : `onAction` ne sert pas ici.
   const { dossier, analyse } = ligne;
   const ouvert = dossier.statut_invitation === "actif";
   const precedente = dossier.etape_precedente !== "Sans exercice";

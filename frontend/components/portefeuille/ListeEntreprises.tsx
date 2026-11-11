@@ -25,7 +25,10 @@ type Props = {
   /** `false` : pas de sélection groupée (lecture seule, ou tags indisponibles). */
   peutCocher: boolean;
   onBasculerCoche: (dossierId: string, cochee: boolean) => void;
+  /** Clic sur une ligne : ouvre la fiche ou la referme. */
   onOuvrir: (dossierId: string) => void;
+  /** Lien d'action : ouvre la fiche, sans jamais la refermer. */
+  onOuvrirFiche: (dossierId: string) => void;
   page: number;
   pages: number;
   onPage: (page: number) => void;
@@ -50,6 +53,7 @@ export function ListeEntreprises({
   peutCocher,
   onBasculerCoche,
   onOuvrir,
+  onOuvrirFiche,
   page,
   pages,
   onPage,
@@ -74,6 +78,7 @@ export function ListeEntreprises({
             : null
         }
         onOuvrir={() => onOuvrir(id)}
+        onAction={() => onOuvrirFiche(id)}
       />
     );
   }

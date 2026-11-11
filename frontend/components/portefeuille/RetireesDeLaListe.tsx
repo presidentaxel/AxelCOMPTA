@@ -17,7 +17,8 @@ export function RetireesDeLaListe({
   onRemettre: (dossierId: string) => Promise<void>;
 }) {
   const [erreur, setErreur] = useState<string | null>(null);
-  if (retires.length === 0) return null;
+  // `Array.isArray` : une réponse inattendue du serveur ne doit pas casser l'écran.
+  if (!Array.isArray(retires) || retires.length === 0) return null;
   return (
     <section className="mt-6 rounded-lg border border-border bg-canvas p-4">
       <h2 className="text-sm font-semibold text-ink">Retirées de la liste</h2>
