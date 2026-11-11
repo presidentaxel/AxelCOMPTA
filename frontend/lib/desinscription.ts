@@ -15,12 +15,16 @@ export const ETAT_INJOIGNABLE: EtatDesinscription = {
 };
 
 /** L'API répond `{ message }` au succès et `{ detail }` au refus ; un corps
- * illisible tombe sur une phrase par défaut. */
+ * illisible tombe sur une phrase par défaut. `detail` n'est repris que s'il est
+ * une phrase : sur un lien incomplet, FastAPI renvoie une liste d'erreurs de
+ * validation, qui ne doit jamais arriver à l'écran. */
 export function etatApresReponse(
   ok: boolean,
-  corps: { message?: string; detail?: string },
+  corps: { message?: unknown; detail?: unknown },
 ): EtatDesinscription {
+  const phrase = (valeur: unknown): string | null =>
+    typeof valeur === "string" && valeur.trim() ? valeur : null;
   return ok
-    ? { statut: "faite", message: corps.message ?? "C'est noté." }
-    : { statut: "refusee", message: corps.detail ?? "Ce lien n'est pas valable." };
+    ? { statut: "faite", message: phrase(corps.message) ?? "C'est noté." }
+    : { statut: "refusee", message: phrase(corps.detail) ?? "Ce lien n'est pas valable." };
 }

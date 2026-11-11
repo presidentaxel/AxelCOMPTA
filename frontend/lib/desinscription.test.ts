@@ -30,3 +30,10 @@ test("l'attente et le serveur muet ont leur phrase", () => {
   assert.equal(ETAT_ATTENTE.statut, "attente");
   assert.equal(ETAT_INJOIGNABLE.statut, "injoignable");
 });
+
+test("une liste d'erreurs de validation ne devient pas le message affiché", () => {
+  assert.deepEqual(etatApresReponse(false, { detail: [{ type: "missing", loc: ["query", "sig"], msg: "Field required" }] }), {
+    statut: "refusee",
+    message: "Ce lien n'est pas valable.",
+  });
+});
