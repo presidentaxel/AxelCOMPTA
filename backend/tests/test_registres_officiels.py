@@ -117,7 +117,9 @@ def test_un_rne_refuse_laisse_la_fiche_insee(monkeypatch: pytest.MonkeyPatch) ->
         return fiche
 
     def rne(self: Rne, siren: str, jour: date) -> FicheOfficielle:
-        requete = httpx.Request("POST", "https://registre-national-entreprises.inpi.fr/api/sso/login")
+        requete = httpx.Request(
+            "POST", "https://registre-national-entreprises.inpi.fr/api/sso/login"
+        )
         reponse = httpx.Response(403, request=requete)
         raise httpx.HTTPStatusError("403", request=requete, response=reponse)
 
