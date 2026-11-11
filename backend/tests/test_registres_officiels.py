@@ -7,11 +7,15 @@ import dataclasses
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 
+import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.demo_api import get_dossiers, get_registres
 from axelcompta.registres_officiels import (
+    Insee,
+    Rne,
     lecteur_depuis_env,
     relire_dossier,
     relire_portefeuilles,
@@ -103,6 +107,27 @@ def test_une_erreur_de_registre_n_arrete_pas_les_autres() -> None:
     relus, erreurs = relire_portefeuilles(depot, registres, lire, MAINTENANT)
     assert relus == 1
     assert erreurs == ["DIGI_3 : TimeoutError: RNE lent"]
+
+
+def test_un_rne_refuse_laisse_la_fiche_insee(monkeypatch: pytest.MonkeyPatch) -> None:
+    fiche = _fiche_sas()
+    assert fiche is not None
+
+    def insee(self: Insee, siren: str, jour: date) -> FicheOfficielle:
+        return fiche
+
+    def rne(self: Rne, siren: str, jour: date) -> FicheOfficielle:
+        requete = httpx.Request("POST", "https://registre-national-entreprises.inpi.fr/api/sso/login")
+        reponse = httpx.Response(403, request=requete)
+        raise httpx.HTTPStatusError("403", request=requete, response=reponse)
+
+    monkeypatch.setattr(Insee, "lire", insee)
+    monkeypatch.setattr(Rne, "lire", rne)
+    lire = lecteur_depuis_env(
+        {"INSEE_API_KEY": "k", "INPI_RNE_USERNAME": "u", "INPI_RNE_PASSWORD": "p"}
+    )
+    assert lire is not None
+    assert lire(SIREN) == fiche
 
 
 def test_sans_cle_rien_n_est_lu() -> None:

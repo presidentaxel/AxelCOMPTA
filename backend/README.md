@@ -423,11 +423,12 @@ dans Entreprises et bloquent la clôture et la liasse jusqu'à son choix.
 
 Mise en route (rien ne se passe sans) :
 
-1. Créer une clé API Sirene sur le portail de l'INSEE (`INSEE_API_KEY`) et
-   un compte RNE sur data.inpi.fr (`INPI_RNE_USERNAME`,
-   `INPI_RNE_PASSWORD`).
-2. Vérifier la lecture sur un SIREN réel, sans rien écrire :
-   `python -m axelcompta.registres_officiels --siren 123456789`.
+1. `INSEE_API_KEY` : clé d'intégration de « API Sirene » **3.11** (pas la
+   V4). `INPI_RNE_USERNAME` et `INPI_RNE_PASSWORD` : compte data.inpi.fr.
+   L'une des deux suffit. Sirene 3.11 a été lue le 2026-11-11.
+2. Vérifier la lecture sur un SIREN réel, sans rien écrire (le `.env`
+   racine est chargé) :
+   `python -m axelcompta.registres_officiels --siren 989841911`.
 3. Poser le SIREN des dossiers existants : `scripts/ajouter_chauffeurs_digifactory.py --sirene`
    (le reprend du contact Digifactory).
 

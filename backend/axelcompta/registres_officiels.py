@@ -4,14 +4,17 @@ Composition root, comme `nouveaux_contacts.py` : les appels HTTP sont ici,
 la lecture des réponses et la comparaison dans `tenants/registres.py`.
 
 - INSEE, API Sirene 3.11 (portail api.insee.fr) : clé `INSEE_API_KEY`,
-  envoyée dans l'en-tête `X-INSEE-Api-Key-Integration`.
+  envoyée dans l'en-tête `X-INSEE-Api-Key-Integration`. Lecture vérifiée
+  le 2026-11-11 (dénomination, forme, siège, état, activité). Le capital
+  et les dirigeants ne sont pas dans Sirene : ils viennent du RNE.
 - RNE (INPI) : compte `INPI_RNE_USERNAME` / `INPI_RNE_PASSWORD`, échangé
-  contre un jeton (`POST /api/sso/login`).
+  contre un jeton (`POST /api/sso/login`). Vide : l'INSEE est lu seul.
 
 Les deux sont des secrets : jamais dans le dépôt. Sans eux, rien n'est lu
-et rien ne change. **Non vérifié sur de vraies réponses à l'écriture** :
-c'est la première chose à faire quand les clés existent
-(`python -m axelcompta.registres_officiels --siren …` affiche la fiche lue).
+et rien ne change. Sirene 3.11 a été lue sur un SIREN réel ; le format RNE
+reste celui de la documentation tant qu'un compte INPI n'a pas répondu
+(`python -m axelcompta.registres_officiels --siren …` affiche la fiche lue,
+le `.env` racine est chargé).
 
 Chaque dossier qui a un SIREN est relu au plus une fois par semaine, par
 les tâches planifiées. La lecture est gardée avec sa date ; les écarts non
@@ -26,9 +29,11 @@ import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
 
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.tenants.models import Dossier
@@ -46,6 +51,7 @@ from axelcompta.tenants.repository import DossierRepository
 
 URL_INSEE = "https://api.insee.fr/api-sirene/3.11"
 URL_RNE = "https://registre-national-entreprises.inpi.fr/api"
+_ENV = Path(__file__).resolve().parents[2] / ".env"
 INTERVALLE = timedelta(days=7)
 DELAI = 20.0
 
@@ -110,6 +116,11 @@ class Rne:
         return fiche_rne(corps, siren, aujourd_hui) if corps is not None else None
 
 
+def charger_env() -> None:
+    """Le `.env` racine, sans écraser une variable déjà posée."""
+    load_dotenv(_ENV)
+
+
 def lecteur_depuis_env(environ: Mapping[str, str] | None = None) -> LireFiche | None:
     """`None` si aucune des deux API n'est configurée. Une seule suffit :
     l'autre manque simplement à la fiche."""
@@ -124,10 +135,13 @@ def lecteur_depuis_env(environ: Mapping[str, str] | None = None) -> LireFiche | 
 
     def lire(siren: str) -> FicheOfficielle | None:
         aujourd_hui = date.today()
-        return combiner(
-            insee.lire(siren, aujourd_hui) if insee else None,
-            rne.lire(siren, aujourd_hui) if rne else None,
-        )
+        officielle = insee.lire(siren, aujourd_hui) if insee else None
+        try:
+            rne_fiche = rne.lire(siren, aujourd_hui) if rne else None
+        except httpx.HTTPStatusError:
+            # Compte sans droit API : Sirene reste lisible.
+            rne_fiche = None
+        return combiner(officielle, rne_fiche)
 
     return lire
 
@@ -174,6 +188,7 @@ def relire_portefeuilles(
 
 def relire_si_configure() -> str | None:
     """Pour les tâches planifiées : rien si les clés manquent."""
+    charger_env()
     lire = lecteur_depuis_env()
     if lire is None:
         return None
@@ -190,6 +205,7 @@ def main() -> int:
     parseur = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parseur.add_argument("--siren", help="affiche la fiche lue pour ce SIREN, sans rien écrire")
     args = parseur.parse_args()
+    charger_env()
     lire = lecteur_depuis_env()
     if lire is None:
         print("Ni INSEE_API_KEY ni INPI_RNE_USERNAME/PASSWORD : rien à lire.", file=sys.stderr)

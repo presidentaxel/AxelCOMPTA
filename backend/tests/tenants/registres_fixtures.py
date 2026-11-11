@@ -1,9 +1,10 @@
 """Réponses INSEE et RNE pour les tests d'AXE-849.
 
-**Construites d'après la documentation publique des deux API, pas copiées
-d'une vraie réponse** (pas de clé à l'écriture). À remplacer par des
-réponses réelles anonymisées dès que les clés existent : si un test casse
-alors, c'est le lecteur (`tenants/registres.py`) qui est à corriger.
+Les champs INSEE lus ici sont ceux d'une réponse réelle de l'API Sirene
+3.11 (2026-11-11) : `uniteLegale` à côté d'un `header`, période courante
+en premier, siège dans `etablissement.adresseEtablissement`. La réponse
+RNE suit encore la documentation publique : pas de compte INPI pour la
+remplacer.
 """
 
 from __future__ import annotations
