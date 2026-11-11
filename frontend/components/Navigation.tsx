@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Dialog, Popover } from "radix-ui";
 
+import { LiensJuridiques } from "@/components/LiensJuridiques";
 import { Marque } from "@/components/Marque";
 import { IndicateurGlissant } from "@/components/ui/indicateur-glissant";
 import { Input } from "@/components/ui/input";
@@ -61,6 +62,7 @@ export function Navigation({ alertes = {} }: { alertes?: Partial<Record<string, 
         </nav>
         <div className="shrink-0 border-t border-border p-3">
           <CompteGestionnaire chemin={chemin} variante="pied" />
+          <LiensJuridiques className="mt-2 px-3" />
         </div>
       </aside>
 
@@ -96,6 +98,7 @@ export function Navigation({ alertes = {} }: { alertes?: Partial<Record<string, 
                     }}
                   />
                 </nav>
+                <LiensJuridiques className="mt-4 px-6" />
               </Dialog.Content>
             </Dialog.Portal>
           </Dialog.Root>

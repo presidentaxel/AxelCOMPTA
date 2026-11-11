@@ -1,6 +1,6 @@
 # 08 — Qualité de code : standards « NASA-grade » adaptés au projet
 
-> Statut : brouillon à valider — Dernière mise à jour : 2026-06-12
+> Statut : brouillon à valider — Dernière mise à jour : 2026-11-09 (migrations, erreurs métier)
 
 ## 1. D'où on part : les règles NASA/JPL, et ce qu'on en garde
 

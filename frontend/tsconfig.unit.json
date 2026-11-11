@@ -69,6 +69,12 @@
     "lib/mois.ts",
     "lib/mois.test.ts",
     "lib/classees-filtres.ts",
-    "lib/classees-filtres.test.ts"
+    "lib/classees-filtres.test.ts",
+    "lib/portefeuille-a-traiter.ts",
+    "lib/portefeuille-a-traiter.test.ts",
+    "lib/identite-entreprise.ts",
+    "lib/identite-entreprise.test.ts",
+    "lib/juridique.ts",
+    "lib/juridique.test.ts"
   ]
 }

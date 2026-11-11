@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import date, datetime
 
+from axelcompta.core.identite import IdentiteEntreprise
 from axelcompta.core.ids import DossierId, TenantId, UserId
 
 from .models import Dossier, Tenant, verifier_mode_relance
@@ -19,6 +20,7 @@ class InMemoryDossierRepository(DossierRepository):
         self._dossiers: dict[str, Dossier] = {}
         # Confirmations du dirigeant (AXE-730), comme le journal d'audit.
         self.confirmations: list[tuple[DossierId, UserId, datetime]] = []
+        self.identites_saisies: list[tuple[DossierId, UserId, datetime]] = []
 
     def enregistrer_tenant(self, tenant: Tenant) -> None:
         self._tenants.setdefault(tenant.id, tenant)
@@ -64,6 +66,12 @@ class InMemoryDossierRepository(DossierRepository):
     def confirmer_configuration(self, dossier: Dossier, par: UserId, le: datetime) -> None:
         self.reconfigurer_depuis_sirene(dossier)
         self.confirmations.append((dossier.id, par, le))
+
+    def enregistrer_identite(
+        self, dossier_id: DossierId, identite: IdentiteEntreprise, par: UserId, le: datetime
+    ) -> None:
+        self._dossiers[dossier_id] = replace(self._dossiers[dossier_id], identite=identite)
+        self.identites_saisies.append((dossier_id, par, le))
 
     def parametrer_tva(
         self, dossier_id: DossierId, periodicite: str, jour: int, par: UserId, le: datetime
