@@ -7,8 +7,10 @@ import { useDossierChauffeur } from "@/app/chauffeur/use-dossier";
 import { AccesDossier } from "@/components/AccesDossier";
 import { ComptesBancaires } from "@/components/ComptesBancaires";
 import { Etat } from "@/components/Etat";
-import { FormulaireCompte } from "@/components/FormulaireCompte";
+import { FormulaireCompteChauffeur } from "@/components/FormulaireCompteChauffeur";
 import { Squelette } from "@/components/Squelette";
+import { TitreEcran } from "@/components/TitreEcran";
+import { Button } from "@/components/ui/button";
 import {
   changerEmailAvecJeton,
   deconnecter,
@@ -38,52 +40,56 @@ export default function CompteChauffeurPage() {
   if (!email || !jeton) {
     return (
       <Etat type="chargement" className="mt-0">
-        <Squelette className="h-4 w-48" />
-        <Squelette className="mt-8 h-10 w-full" />
-        <Squelette className="mt-4 h-10 w-full" />
-        <Squelette className="mt-6 h-9 w-32" />
+        <Squelette className="h-8 w-40" />
+        <Squelette className="mt-3 h-4 w-64" />
+        <Squelette className="mt-10 h-12 w-full" />
+        <Squelette className="mt-4 h-12 w-full" />
       </Etat>
     );
   }
 
   return (
     <div>
+      <TitreEcran titre="Compte" />
       {dossierId && <StatutDossier dossierId={dossierId} />}
       {dossierId && <ComptesBancaires dossierId={dossierId} />}
       {dossierId && <AccesDossier dossierId={dossierId} />}
-      <FormulaireCompte
+      <FormulaireCompteChauffeur
         email={email}
         onMotDePasse={definirMotDePasse}
         onEmail={(adresse) => changerEmailAvecJeton(jeton, adresse)}
       />
-      <button
+      <Button
         type="button"
-        className="mt-10 inline-flex min-h-11 items-center text-sm font-medium text-danger outline-none focus-visible:shadow-focus-detache"
+        size="lg"
+        variant="secondary"
+        className="mt-10 h-12 w-full text-base"
         onClick={() => {
           deconnecter();
           router.replace("/chauffeur/login");
         }}
       >
         Se déconnecter
-      </button>
+      </Button>
     </div>
   );
 }
 
+/** Qui est la société : une ligne sous le titre, en texte courant. */
 function StatutDossier({ dossierId }: { dossierId: string }) {
   const { dossier, reessayer } = useDossierChauffeur(dossierId);
   if (dossier.statut === "en_cours") {
     return (
-      <Etat type="chargement" className="mb-6 mt-0">
+      <Etat type="chargement" className="mb-8 mt-0">
         <Squelette className="h-4 w-64" />
       </Etat>
     );
   }
   if (dossier.statut === "erreur") {
-    return <Etat type="erreur" message={dossier.message} onReessayer={reessayer} className="mb-6 mt-0" />;
+    return <Etat type="erreur" message={dossier.message} onReessayer={reessayer} className="mb-8 mt-0" />;
   }
   return (
-    <p className="mb-6 text-sm text-subtle">
+    <p className="mb-8 text-base text-subtle">
       {dossier.valeur.nom} · {dossier.valeur.forme_juridique} · {dossier.valeur.regime_libelle}
     </p>
   );
