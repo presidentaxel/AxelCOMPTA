@@ -1,10 +1,16 @@
 # 04 — Ingestion des données : Bridge, fichiers, OCR & justificatifs
 
-> **État au 2026-11-05** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-10** (ajouté ; le reste du doc décrit la cible) :
 > - Bancaire : synchro Digifactory réelle, idempotente, avec archive brute,
->   quarantaine et contre-passation d'une transaction modifiée (doc 16).
->   Premier vrai dossier chauffeur : AXE-726 à AXE-733.
-> - Fichiers : aucun profil d'import CSV/Excel générique. Premiers profils
+>   quarantaine résolue par le gestionnaire (AXE-424) et contre-passation
+>   d'une transaction modifiée (doc 16). Un sous-compte 512x par compte
+>   bancaire (AXE-832) ; seuls les comptes retenus sont comptabilisés
+>   (AXE-729). Premier mois réel exporté : AXE-728 et AXE-733. Mois d'avant
+>   la connexion Digifactory : AXE-833.
+> - La transaction normalisée porte le type d'opération et la catégorie de
+>   la banque (AXE-826).
+> - Fichiers : aucun profil d'import CSV/Excel générique pour les
+>   opérations (le seul import CSV est celui des dossiers, AXE-809, doc 14). Premiers profils
 >   prévus pour les relevés Uber et Bolt (AXE-801), et l'import du FEC de
 >   l'outil précédent (AXE-804).
 > - Justificatifs : stockés en base par tenant et dossier (AXE-425), une
