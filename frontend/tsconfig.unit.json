@@ -54,6 +54,8 @@
     "lib/retrait-especes.ts",
     "lib/retrait-especes.test.ts",
     "lib/confirmation-configuration.ts",
-    "lib/confirmation-configuration.test.ts"
+    "lib/confirmation-configuration.test.ts",
+    "lib/piege-focus.ts",
+    "lib/piege-focus.test.ts"
   ]
 }
