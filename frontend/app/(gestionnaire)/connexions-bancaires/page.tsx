@@ -157,7 +157,7 @@ export default function ConnexionsBancairesPage() {
                   </td>
                   <td className="py-3">
                     {(dossier.statut === "expire" || dossier.statut === "a_renouveler") && (
-                      <Link href="/rappels" className="mb-2 block text-sm font-medium text-primary hover:underline">
+                      <Link href="/rappels" className="mb-2 block text-sm font-medium text-signal hover:underline">
                         Relancer
                       </Link>
                     )}

@@ -19,7 +19,9 @@ export type BadgeVariant =
 
 const STYLES: Record<BadgeVariant, string> = {
   validated: "bg-validated-subtle text-validated border border-success-border",
-  pending: "bg-pending-subtle text-pending border border-warning-border",
+  // `pending-ink` et non `pending` : l'or `pending` sur fond `pending-subtle`
+  // tombe sous 4,5:1 ; `pending-ink` donne 6,15:1 (DESIGN.md › Contrastes).
+  pending: "bg-pending-subtle text-pending-ink border border-warning-border",
   "auto-rule": "bg-auto-rule-subtle text-auto-rule border border-info-border",
   "auto-ml": "bg-auto-ml-subtle text-auto-ml border border-transparent",
   "auto-llm": "bg-auto-llm-subtle text-auto-llm border border-transparent",

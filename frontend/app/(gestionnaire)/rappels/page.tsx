@@ -148,7 +148,7 @@ export default function RappelsPage() {
                 onClick={() =>
                   setCanaux((actuel) => (actif ? actuel.filter((id) => id !== canal.id) : [...actuel, canal.id]))
                 }
-                className={`rounded-full border px-3 py-1.5 text-sm ${actif ? "border-primary bg-primary-subtle text-primary" : "border-border text-subtle"}`}
+                className={`rounded-full border px-3 py-1.5 text-sm ${actif ? "border-primary bg-primary-subtle text-signal" : "border-border text-subtle"}`}
               >
                 {canal.libelle}
               </button>
@@ -161,7 +161,7 @@ export default function RappelsPage() {
             aria-pressed={declencheur === "avant_cloture"}
             disabled={!droit.admin}
             onClick={() => setDeclencheur("avant_cloture")}
-            className={`rounded-full border px-3 py-1.5 ${declencheur === "avant_cloture" ? "border-primary bg-primary-subtle text-primary" : "border-border text-subtle"}`}
+            className={`rounded-full border px-3 py-1.5 ${declencheur === "avant_cloture" ? "border-primary bg-primary-subtle text-signal" : "border-border text-subtle"}`}
           >
             Avant la clôture
           </button>
@@ -170,7 +170,7 @@ export default function RappelsPage() {
             aria-pressed={declencheur === "a_traiter"}
             disabled={!droit.admin}
             onClick={() => setDeclencheur("a_traiter")}
-            className={`rounded-full border px-3 py-1.5 ${declencheur === "a_traiter" ? "border-primary bg-primary-subtle text-primary" : "border-border text-subtle"}`}
+            className={`rounded-full border px-3 py-1.5 ${declencheur === "a_traiter" ? "border-primary bg-primary-subtle text-signal" : "border-border text-subtle"}`}
           >
             Opérations en attente
           </button>
@@ -179,7 +179,7 @@ export default function RappelsPage() {
             aria-pressed={declencheur === "manuel"}
             disabled={!droit.admin}
             onClick={() => setDeclencheur("manuel")}
-            className={`rounded-full border px-3 py-1.5 ${declencheur === "manuel" ? "border-primary bg-primary-subtle text-primary" : "border-border text-subtle"}`}
+            className={`rounded-full border px-3 py-1.5 ${declencheur === "manuel" ? "border-primary bg-primary-subtle text-signal" : "border-border text-subtle"}`}
           >
             Bouton sur la fiche
           </button>
@@ -203,7 +203,7 @@ export default function RappelsPage() {
             aria-pressed={portee === "tous"}
             disabled={!droit.admin}
             onClick={() => setPortee("tous")}
-            className={`rounded-full border px-3 py-1.5 text-sm ${portee === "tous" ? "border-primary bg-primary-subtle text-primary" : "border-border text-subtle"}`}
+            className={`rounded-full border px-3 py-1.5 text-sm ${portee === "tous" ? "border-primary bg-primary-subtle text-signal" : "border-border text-subtle"}`}
           >
             Toutes les entreprises
           </button>
@@ -212,7 +212,7 @@ export default function RappelsPage() {
             aria-pressed={portee === "selection"}
             disabled={!droit.admin}
             onClick={() => setPortee("selection")}
-            className={`rounded-full border px-3 py-1.5 text-sm ${portee === "selection" ? "border-primary bg-primary-subtle text-primary" : "border-border text-subtle"}`}
+            className={`rounded-full border px-3 py-1.5 text-sm ${portee === "selection" ? "border-primary bg-primary-subtle text-signal" : "border-border text-subtle"}`}
           >
             Certaines
           </button>

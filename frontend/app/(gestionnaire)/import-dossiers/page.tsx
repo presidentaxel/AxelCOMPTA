@@ -144,7 +144,7 @@ export default function ImportDossiersPage() {
       {suivi && (
         <p role="status" className="mt-4 text-sm text-ink">
           {enCours ? "Création en cours…" : (suivi.resultat ?? suivi.erreur ?? "")}{" "}
-          {!enCours && <Link href="/" className="text-primary underline">Voir les entreprises</Link>}
+          {!enCours && <Link href="/" className="text-signal underline">Voir les entreprises</Link>}
         </p>
       )}
     </div>

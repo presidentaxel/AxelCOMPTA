@@ -70,7 +70,7 @@ export default function AnomaliesPage() {
     <div>
       <Link
         href={`/portefeuille?ouvert=${dossierId}`}
-        className="text-sm font-medium text-primary hover:underline"
+        className="text-sm font-medium text-signal hover:underline"
       >
         Entreprises
       </Link>

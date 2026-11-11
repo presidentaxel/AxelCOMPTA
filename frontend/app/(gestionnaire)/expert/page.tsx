@@ -411,7 +411,7 @@ export default function ModeExpertPage() {
                 {sujet.nature === "anomalie" && (
                   <Link
                     href={`/anomalies/${sujet.dossier_id}`}
-                    className="mt-3 inline-block text-sm font-medium text-primary hover:underline"
+                    className="mt-3 inline-block text-sm font-medium text-signal hover:underline"
                   >
                     Instruire
                   </Link>

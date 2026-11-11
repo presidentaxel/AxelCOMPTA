@@ -6,92 +6,109 @@
 */
 @custom-variant dark (&:is(.dark *));
 
+/*
+  Design system v2.0 (ADR-008, DESIGN.md) : monochrome, l'encre fait l'action,
+  la couleur ne dit que le sens. Valeurs et contrastes mesurés dans DESIGN.md.
+
+  Source de vérité unique : les couleurs de produit vivent ici, dans `@theme`.
+  Les variables génériques de shadcn (`--primary`, `--border`…, plus bas dans
+  `:root`) ne font que les référencer. Ne jamais redéclarer un même token dans
+  `@theme` et dans `@theme inline` : le second écrase le premier sans prévenir.
+*/
 @theme {
-  /* Marque */
-  --color-primary: #2563eb;
-  --color-primary-bright: #3b82f6;
-  --color-primary-deep: #1d4ed8;
-  --color-primary-subtle: #eff6ff;
+  /* Action : l'encre. Le bouton principal est noir, jamais orange. */
+  --color-primary: #111111;
+  --color-primary-bright: #2b2b2b; /* survol */
+  --color-primary-deep: #000000; /* appui */
+  --color-primary-subtle: #fff8ea; /* fond de sélection (lavis) */
   --color-on-primary: #ffffff;
 
-  /* Neutres */
-  --color-ink: #0f172a;
-  --color-body: #1e293b;
-  --color-subtle: #475569;
-  --color-muted: #5e6c84;
-  --color-faint: #cbd5e1;
-  --color-on-dark: #f8fafc;
-  --color-on-dark-mute: rgba(248, 250, 252, 0.65);
+  /* Accent « signal » : liens d'action, repères, point d'alerte, focus.
+     Jamais en fond de bouton. Nommé `signal` : `accent` est pris par shadcn. */
+  --color-signal: #c2410c;
+  --color-signal-deep: #9a3412; /* survol, appui */
+  --color-highlight: #fde7c4; /* surligneur jaune du CRM : un seul par écran */
+  --color-highlight-wash: #fff8ea; /* fond des lignes « à traiter » */
+
+  /* Neutres chauds */
+  --color-ink: #111111;
+  --color-body: #3d3d3a;
+  --color-subtle: #55534e;
+  --color-muted: #66645f;
+  --color-faint: #a8a59e; /* éléments non textuels seulement */
+  --color-on-dark: #fbfaf8;
+  --color-on-dark-mute: rgba(251, 250, 248, 0.65);
 
   /* Canvas et surfaces */
-  --color-canvas-app: #f8fafc;
+  --color-canvas-app: #fbfaf8;
   --color-canvas: #ffffff;
   --color-surface-raised: #ffffff;
   --color-surface-overlay: #ffffff;
-  --color-surface-soft: #f1f5f9;
-  --color-surface-dark: #0f172a;
-  --color-surface-dark-raised: #1e293b;
+  --color-surface-soft: #f4f2ee;
+  --color-surface-dark: #111111;
+  --color-surface-dark-raised: #2b2b2b;
 
   /* Bordures */
-  --color-border: #e2e8f0;
-  --color-border-strong: #cbd5e1;
-  --color-border-focus: #2563eb;
-  --color-hairline: #f1f5f9;
+  --color-border: #e7e5e0;
+  --color-border-strong: #d4d1ca;
+  --color-border-focus: #c2410c; /* = signal */
+  --color-hairline: #f0eee9;
 
   /* Sémantiques générales */
   --color-success: #15803d;
   --color-success-subtle: #f0fdf4;
   --color-success-border: #86efac;
-  --color-warning: #b45309;
-  --color-warning-subtle: #fffbeb;
+  --color-warning: #a16207;
+  --color-warning-subtle: #fef3c7;
   --color-warning-border: #fcd34d;
-  --color-danger: #d42626;
-  --color-danger-subtle: #fef2f2;
-  --color-danger-border: #fca5a5;
+  --color-danger: #be123c;
+  --color-danger-subtle: #fff1f2;
+  --color-danger-border: #fda4af;
   --color-info: #0369a1;
   --color-info-subtle: #f0f9ff;
   --color-info-border: #7dd3fc;
 
-  /* Sémantiques comptables (doc DESIGN.md — usage strict, ne pas détourner) */
+  /* Sémantiques comptables (DESIGN.md : usage strict, ne pas détourner) */
   --color-amount-positive: #15803d;
-  --color-amount-negative: #d42626;
-  --color-amount-neutral: #0f172a;
+  --color-amount-negative: #be123c;
+  --color-amount-neutral: #111111;
   --color-validated: #15803d;
   --color-validated-subtle: #f0fdf4;
-  --color-pending: #b45309;
-  --color-pending-subtle: #fffbeb;
+  --color-pending: #a16207;
+  --color-pending-ink: #854d0e; /* texte sur fond pending-subtle (contraste 6,15) */
+  --color-pending-subtle: #fef3c7;
   --color-auto-rule: #0369a1;
   --color-auto-rule-subtle: #f0f9ff;
   --color-auto-ml: #7c3aed;
   --color-auto-ml-subtle: #f5f3ff;
   --color-auto-llm: #9333ea;
   --color-auto-llm-subtle: #faf5ff;
-  --color-alert-anomaly: #d42626;
-  --color-alert-anomaly-subtle: #fef2f2;
-  --color-missing: #5e6c84;
-  --color-closed: #475569;
-  --color-closed-subtle: #f8fafc;
+  --color-alert-anomaly: #be123c;
+  --color-alert-anomaly-subtle: #fff1f2;
+  --color-missing: #66645f;
+  --color-closed: #3d3d3a;
+  --color-closed-subtle: #f4f2ee;
 
-  --font-sans: var(--font-inter), system-ui, sans-serif;
-
+  /* Rayons : contrôles (boutons, champs) = md, cartes = lg, fenêtres = xl. */
   --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
   --radius-lg: 12px;
   --radius-xl: 16px;
 
-  /* Ombres (DESIGN.md › shadow) : teintées ink, remplacent celles de Tailwind. */
-  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
-  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
-  --shadow-overlay: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+  /* Ombres (DESIGN.md › shadow) : réservées aux menus et fenêtres, les cartes
+     n'en ont pas (filet `border`). Teintées ink, remplacent celles de Tailwind. */
+  --shadow-xs: 0 1px 2px rgba(17, 17, 17, 0.06);
+  --shadow-sm: 0 1px 3px rgba(17, 17, 17, 0.08), 0 1px 2px rgba(17, 17, 17, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(17, 17, 17, 0.08), 0 2px 4px -2px rgba(17, 17, 17, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(17, 17, 17, 0.08), 0 4px 6px -4px rgba(17, 17, 17, 0.04);
+  --shadow-overlay: 0 20px 25px -5px rgba(17, 17, 17, 0.1), 0 8px 10px -6px rgba(17, 17, 17, 0.04);
 
   /* Anneaux de focus (DESIGN.md › Accessibilité) : collé au champ, ou
      détaché par 2 px du fond (clair ou sombre) pour un lien ou une icône. */
-  --shadow-focus: 0 0 0 3px rgba(37, 99, 235, 0.45);
-  --shadow-focus-detache: 0 0 0 2px #ffffff, 0 0 0 4px #2563eb;
-  --shadow-focus-detache-sombre: 0 0 0 2px #0f172a, 0 0 0 4px #2563eb;
+  --shadow-focus: 0 0 0 3px rgba(194, 65, 12, 0.45);
+  --shadow-focus-detache: 0 0 0 2px #ffffff, 0 0 0 4px #c2410c;
+  --shadow-focus-detache-sombre: 0 0 0 2px #111111, 0 0 0 4px #c2410c;
 }
 
 /*
@@ -108,11 +125,12 @@
   ::before,
   ::backdrop,
   ::file-selector-button {
-    border-color: var(--color-gray-200, currentcolor);
+    border-color: var(--color-border);
   }
   * {
     @apply border-border outline-ring/50;
   }
+  /* DESIGN.md : fond app = canvas-app, jamais du blanc pur en body direct. */
   body {
     @apply bg-background text-foreground;
   }
@@ -121,13 +139,7 @@
   }
 }
 
-/* DESIGN.md : fond app = canvas-app, jamais du blanc pur en body direct. */
-body {
-  background-color: #f8fafc;
-  color: #0f172a;
-}
-
-/* DESIGN.md — règle des montants : invariant non négociable. */
+/* DESIGN.md : règle des montants, invariant non négociable. */
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
@@ -135,8 +147,10 @@ body {
   ---break---
 */
 @theme inline {
+  /* Inter est chargée par next/font (`app/layout.tsx`) qui pose `--font-inter`
+     sur <html>. Une référence à une variable passe par `inline`. */
+  --font-sans: var(--font-inter), system-ui, sans-serif;
   --font-heading: var(--font-sans);
-  --font-sans: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -152,73 +166,66 @@ body {
   --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
   --color-input: var(--input);
-  --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
   /* Pas de `--color-muted: var(--muted)` : il écrasait le gris `muted` du
-     design par le fond `surface-soft` (#f1f5f9), et les placeholders
-     devenaient blancs sur blanc. */
+     design par le fond `surface-soft`, et les placeholders devenaient
+     blancs sur blanc. */
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  /* Pas de redéfinition de `--radius-*` ici : l'ancien calc(var(--radius) * …)
+     écrasait les rayons du design (`rounded-md` valait 6,4 px au lieu de 8,
+     `rounded-lg` 8 px au lieu de 12). Les rayons vivent dans `@theme`. */
 }
 /*
   ---break---
 */
-/* Palette shadcn générique remplacée par les vrais tokens DESIGN.md (pas
-   les valeurs grises par défaut du preset Nova) — voir DESIGN.md
-   "Correspondance Tailwind / shadcn-ui" pour la table de correspondance
-   d'origine, complétée ici avec les tokens qui manquaient (muted, accent,
-   input, ring). */
+/* Variables génériques de shadcn : elles ne portent aucune valeur, elles
+   référencent les tokens de `@theme` (voir DESIGN.md « Correspondance
+   Tailwind / shadcn-ui »). Les valeurs grises par défaut du preset Nova ne
+   doivent jamais revenir. */
 :root {
-  --background: #f8fafc; /* canvas-app */
-  --foreground: #0f172a; /* ink */
-  --card: #ffffff; /* canvas */
-  --card-foreground: #0f172a; /* ink */
-  --popover: #ffffff; /* canvas */
-  --popover-foreground: #0f172a; /* ink */
-  --primary: #2563eb; /* primary */
-  --primary-foreground: #ffffff; /* on-primary */
-  --secondary: #ffffff; /* canvas — button-secondary (DESIGN.md) */
-  --secondary-foreground: #0f172a; /* ink */
-  --muted: #f1f5f9; /* surface-soft */
-  --muted-foreground: #475569; /* subtle */
-  --accent: #eff6ff; /* primary-subtle */
-  --accent-foreground: #1d4ed8; /* primary-deep */
-  --destructive: #d42626; /* danger */
-  --border: #e2e8f0; /* border */
-  --input: #e2e8f0; /* border (text-input) */
-  --ring: #2563eb; /* border-focus */
-  --chart-1: #2563eb;
-  --chart-2: #7c3aed;
-  --chart-3: #9333ea;
-  --chart-4: #0369a1;
-  --chart-5: #15803d;
-  --radius: 0.5rem; /* rounded.md, 8px */
-  --sidebar: #0f172a; /* surface-dark */
-  --sidebar-foreground: #f8fafc; /* on-dark */
-  --sidebar-primary: #2563eb;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgba(248, 250, 252, 0.07);
-  --sidebar-accent-foreground: #f8fafc;
-  --sidebar-border: rgba(248, 250, 252, 0.08);
-  --sidebar-ring: #2563eb;
+  --background: var(--color-canvas-app);
+  --foreground: var(--color-ink);
+  --card: var(--color-canvas);
+  --card-foreground: var(--color-ink);
+  --popover: var(--color-canvas);
+  --popover-foreground: var(--color-ink);
+  --primary: var(--color-primary);
+  --primary-foreground: var(--color-on-primary);
+  --secondary: var(--color-canvas);
+  --secondary-foreground: var(--color-ink);
+  --muted: var(--color-surface-soft);
+  --muted-foreground: var(--color-subtle);
+  --accent: var(--color-highlight-wash);
+  --accent-foreground: var(--color-ink);
+  --destructive: var(--color-danger);
+  --border: var(--color-border);
+  --input: var(--color-border-strong);
+  --ring: var(--color-signal);
+  --chart-1: var(--color-ink);
+  --chart-2: var(--color-signal);
+  --chart-3: var(--color-pending);
+  --chart-4: var(--color-success);
+  --chart-5: var(--color-info);
+  --radius: 0.375rem; /* rounded.md, 6px */
+  --sidebar: var(--color-canvas-app);
+  --sidebar-foreground: var(--color-ink);
+  --sidebar-primary: var(--color-primary);
+  --sidebar-primary-foreground: var(--color-on-primary);
+  --sidebar-accent: var(--color-surface-soft);
+  --sidebar-accent-foreground: var(--color-ink);
+  --sidebar-border: var(--color-border);
+  --sidebar-ring: var(--color-signal);
 }
 /*
   ---break---
@@ -321,4 +328,4 @@ html[data-clavier] .barre-chauffeur {
 .chauffeur label:has(> input[type="checkbox"]),
 .chauffeur label:has(> input[type="radio"]) {
   min-height: 44px;
-}
+}

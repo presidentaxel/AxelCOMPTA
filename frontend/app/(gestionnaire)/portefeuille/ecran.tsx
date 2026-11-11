@@ -201,14 +201,14 @@ export function EcranEntreprises() {
     <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-8">
       <div className="flex items-start justify-between gap-6">
         <h1 className="text-[28px] font-bold tracking-tight text-ink">Entreprises</h1>
-        <Link href="/invitations" className="mt-2 text-sm font-medium text-primary hover:underline">
+        <Link href="/invitations" className="mt-2 text-sm font-medium text-signal hover:underline">
           Invitations
         </Link>
       </div>
       <AlerteConnexions />
       <SynchronisationPortefeuille ecriture={droit.ecriture} onTerminee={charger} />
       {droit.admin && (
-        <Link href="/import-dossiers" className="mt-2 inline-block text-sm font-medium text-primary">
+        <Link href="/import-dossiers" className="mt-2 inline-block text-sm font-medium text-signal">
           Importer des entreprises depuis un fichier
         </Link>
       )}
@@ -540,7 +540,7 @@ export function EcranEntreprises() {
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
           <Link
             href={`/anomalies/${choisi.dossier_id}`}
-            className="mt-3 inline-block text-sm font-medium text-primary hover:underline"
+            className="mt-3 inline-block text-sm font-medium text-signal hover:underline"
           >
             Anomalies
           </Link>
@@ -822,7 +822,7 @@ function AlerteConnexions() {
       {nombre === 1
         ? "Une connexion bancaire expire ou doit être confirmée."
         : `${nombre} connexions bancaires expirent ou doivent être confirmées.`}{" "}
-      <span className="font-medium text-primary">Voir</span>
+      <span className="font-medium text-signal">Voir</span>
     </Link>
   );
 }

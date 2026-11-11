@@ -8,9 +8,9 @@ import { cn } from "@/lib/utils";
 
 // DESIGN.md : une seule famille, Inter, partout — jamais mélangée à une
 // autre police d'affichage. `shadcn init` propose Geist par défaut (preset
-// Nova) : écarté ici, --font-sans reste Inter pour que les composants
-// shadcn (qui utilisent la variable --font-sans) restent conformes.
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
+// Nova) : écarté ici. next/font pose `--font-inter` sur <html> ; `@theme
+// inline` (globals.css) en fait `--font-sans`, que les composants utilisent.
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
   title: "AxeL",
