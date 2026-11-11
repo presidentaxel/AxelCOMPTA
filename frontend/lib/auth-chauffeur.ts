@@ -28,6 +28,7 @@ import {
 import { avecDossierDeTest, liensDuJeton } from "./compte-de-test";
 import { coteOuverte } from "./cote-connexion";
 import { appelAuthentifie, erreurApi, lireCorps } from "./session";
+import type { Identite, IdentiteDossierVue, PreRemplissage } from "./identite-entreprise";
 import type { TvaVue } from "./tva";
 import type {
   ConfigurationDossier,
@@ -593,6 +594,29 @@ async function ecrireTva(chemin: string, methode: string, corps: unknown): Promi
     throw erreurApi(await lireCorps(reponse), reponse);
   }
   return (await reponse.json()) as TvaVue;
+}
+
+/** AXE-846 : l'identité de la société, et le pré-remplissage depuis le
+ * registre public à partir du SIREN. */
+export function lireIdentite(dossierId: string): Promise<IdentiteDossierVue> {
+  return fetchAvecAuthChauffeur<IdentiteDossierVue>(`/dossiers/${dossierId}/identite`);
+}
+
+export function lireRegistre(dossierId: string, siren: string): Promise<PreRemplissage> {
+  const requete = new URLSearchParams({ siren });
+  return fetchAvecAuthChauffeur<PreRemplissage>(`/dossiers/${dossierId}/identite/registre?${requete}`);
+}
+
+export async function saisirIdentite(dossierId: string, identite: Identite): Promise<ConfigurationDossier> {
+  const reponse = await appelChauffeur(`/dossiers/${dossierId}/identite`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(identite),
+  });
+  if (!reponse.ok) {
+    throw erreurApi(await lireCorps(reponse), reponse);
+  }
+  return (await reponse.json()) as ConfigurationDossier;
 }
 
 export function parametrerTva(dossierId: string, periodicite: string, jourEcheance: number) {

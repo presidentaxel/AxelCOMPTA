@@ -52,7 +52,7 @@ export function SaisieCode({
     <div
       role="group"
       aria-label="Code à 6 chiffres"
-      className="grid grid-cols-6 gap-2"
+      className="grid grid-cols-6 gap-2 sm:gap-3"
     >
       {cases.map((chiffre, index) => (
         <input
@@ -68,10 +68,12 @@ export function SaisieCode({
           aria-invalid={invalide}
           aria-describedby={idErreur}
           className={cn(
-            "h-11 w-full min-w-0 rounded-md border border-border bg-canvas text-center text-lg font-semibold tabular-nums text-ink outline-none",
+            "h-11 w-full min-w-0 rounded-md border border-border-strong bg-canvas text-center text-xl font-semibold tabular-nums text-ink outline-none transition-colors duration-100",
             "focus-visible:border-border-focus focus-visible:shadow-focus",
+            // Comme `Input` : en erreur la bordure reste rouge même focalisée
+            // (l'ancien rose `danger-border` était trop pâle pour se voir).
+            "aria-invalid:border-danger",
             "disabled:cursor-not-allowed disabled:opacity-50",
-            invalide && "border-danger-border",
           )}
           onFocus={(evenement) => evenement.currentTarget.select()}
           onKeyDown={(evenement) => {

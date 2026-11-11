@@ -12,9 +12,16 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Connection, Engine
 
+from axelcompta.core.errors import Introuvable
+from axelcompta.core.identite import IdentiteEntreprise
 from axelcompta.core.ids import DossierId, TenantId, UserId
 from axelcompta.core.rls import appliquer_rls
-from axelcompta.workflow.audit import ACTE_CONFIGURATION, ACTE_PARAMETRES_TVA, noter
+from axelcompta.workflow.audit import (
+    ACTE_CONFIGURATION,
+    ACTE_IDENTITE,
+    ACTE_PARAMETRES_TVA,
+    noter,
+)
 
 from .identite_json import identite_depuis_json, identite_vers_json
 from .models import Dossier, Tenant, verifier_mode_relance
@@ -119,6 +126,21 @@ class PostgresDossierRepository(DossierRepository):
                 f"{dossier.forme_juridique}/{dossier.regime_imposition}/{dossier.regime_tva}"
             )
             noter(connexion, dossier.id, ACTE_CONFIGURATION, reference, par, le)
+
+    def enregistrer_identite(
+        self, dossier_id: DossierId, identite: IdentiteEntreprise, par: UserId, le: datetime
+    ) -> None:
+        with self._engine.begin() as connexion:
+            appliquer_rls(connexion)
+            modifie = connexion.execute(
+                update(dossiers)
+                .where(dossiers.c.id == dossier_id)
+                .values(identite=identite_vers_json(identite))
+            ).rowcount
+            # La policy RLS cache le dossier d'un autre : rien n'est écrit.
+            if modifie != 1:
+                raise Introuvable(f"Dossier introuvable : {dossier_id}.")
+            noter(connexion, dossier_id, ACTE_IDENTITE, identite.siren, par, le)
 
     def parametrer_tva(
         self, dossier_id: DossierId, periodicite: str, jour: int, par: UserId, le: datetime

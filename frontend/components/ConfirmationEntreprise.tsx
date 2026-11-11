@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -41,8 +42,9 @@ export function ConfirmationEntreprise({ dossierId }: { dossierId: string }) {
 
   if (!configuration) return null;
   const manque = phraseIdentiteManquante(configuration.identite_manquante);
+  const lienSociete = manque && <LienMaSociete dossierId={dossierId} phrase={manque} />;
   if (!aConfirmer(configuration)) {
-    return manque ? <p className="mt-4 text-sm text-subtle">{manque}</p> : null;
+    return lienSociete || null;
   }
   const choix = configuration.formes_proposees;
   const formeChoisie = choix.length === 1 ? choix[0] : forme;
@@ -110,8 +112,20 @@ export function ConfirmationEntreprise({ dossierId }: { dossierId: string }) {
         Oui, c&apos;est bien mon entreprise
       </Button>
       <p className="mt-2 text-xs text-subtle">Une erreur ? Prévenez votre gestionnaire avant de confirmer.</p>
-      {manque && <p className="mt-2 text-sm text-ink">{manque}</p>}
+      {lienSociete}
       {erreur && <p className="mt-1 text-xs text-danger">{erreur}</p>}
     </section>
+  );
+}
+
+/** AXE-846 : siège, capital et associés se saisissent sur « Ma société ». */
+function LienMaSociete({ dossierId, phrase }: { dossierId: string; phrase: string }) {
+  return (
+    <p className="mt-4 text-sm text-ink">
+      {phrase}{" "}
+      <Link href={`/chauffeur/${dossierId}/entreprise`} className="inline-flex min-h-11 items-center font-medium text-primary">
+        Renseigner ma société
+      </Link>
+    </p>
   );
 }

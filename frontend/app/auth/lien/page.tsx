@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 
+import { MessageAcces } from "@/components/MessageAcces";
+import { TitreAcces } from "@/components/PageAcces";
 import { SuitesAuth } from "@/components/SuitesAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -126,16 +128,16 @@ export default function LienAuthPage() {
   }
 
   if (etape === "lecture") {
-    return <p className="text-sm text-subtle">Vérification du lien…</p>;
+    return <MessageAcces ton="attente">Vérification du lien…</MessageAcces>;
   }
 
   if (etape === "erreur") {
     return (
       <div>
-        <h1 className="mb-2 text-xl font-bold text-ink">Lien inutilisable</h1>
-        <p role="alert" className="text-sm text-danger">
+        <TitreAcces>Lien inutilisable</TitreAcces>
+        <MessageAcces ton="erreur" className="mt-4">
           {erreur}
-        </p>
+        </MessageAcces>
         <SuitesAuth />
       </div>
     );
@@ -144,9 +146,11 @@ export default function LienAuthPage() {
   if (etape === "email_confirme") {
     return (
       <div>
-        <h1 className="mb-2 text-xl font-bold text-ink">Adresse confirmée</h1>
-        <p className="mb-4 text-sm text-subtle">La nouvelle adresse est active.</p>
-        <Button type="button" onClick={() => router.replace(destination)}>
+        <TitreAcces>Adresse confirmée</TitreAcces>
+        <MessageAcces ton="succes" className="mt-4">
+          La nouvelle adresse est active.
+        </MessageAcces>
+        <Button type="button" className="mt-8 w-full" onClick={() => router.replace(destination)}>
           Continuer
         </Button>
       </div>
@@ -154,16 +158,15 @@ export default function LienAuthPage() {
   }
 
   const idRegle = `${idMotDePasse}-regle`;
+  const idErreur = `${idMotDePasse}-erreur`;
   return (
     <div>
-      <h1 className="mb-1 text-xl font-bold text-ink">
-        {premiereConnexion ? "Bienvenue" : "Nouveau mot de passe"}
-      </h1>
-      <p className="mb-6 text-sm text-subtle">
+      <TitreAcces>{premiereConnexion ? "Bienvenue" : "Nouveau mot de passe"}</TitreAcces>
+      <p className="mt-2 text-base text-subtle">
         Choisissez un mot de passe pour vos prochaines connexions.
       </p>
-      <form className="space-y-3" onSubmit={valider}>
-        <div className="space-y-1">
+      <form className="mt-8 space-y-4" onSubmit={valider}>
+        <div className="space-y-1.5">
           <label htmlFor={idMotDePasse} className="block text-sm font-medium text-ink">
             Nouveau mot de passe
           </label>
@@ -181,14 +184,14 @@ export default function LienAuthPage() {
             required
             minLength={LONGUEUR_MIN_MOT_DE_PASSE}
             disabled={enCours}
-            aria-describedby={idRegle}
+            aria-describedby={erreur ? `${idRegle} ${idErreur}` : idRegle}
             aria-invalid={erreur ? true : undefined}
           />
         </div>
         {erreur && (
-          <p role="alert" className="text-sm text-danger">
+          <MessageAcces ton="erreur" id={idErreur}>
             {erreur}
-          </p>
+          </MessageAcces>
         )}
         <Button type="submit" disabled={enCours} className="w-full">
           {enCours ? "Enregistrement…" : "Valider"}
