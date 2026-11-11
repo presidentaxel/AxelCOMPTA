@@ -6806,6 +6806,13 @@ def _enregistrer_route_declaration_tva(app: FastAPI) -> None:
         return _tva_vue(dossier, _etats_tva(dossier, ledger, base, decisions, signatures))
 
 
+def _enregistrer_routes_societe(app: FastAPI) -> None:
+    """Identité, registres officiels et bilan d'ouverture (AXE-846, 849, 804)."""
+    _enregistrer_routes_identite(app)
+    _enregistrer_routes_registre(app)
+    _enregistrer_routes_ouverture(app)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="AxeLCompta — API",
@@ -6860,9 +6867,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_notifications(app)
     _enregistrer_routes_cloture_exercice(app)
     _enregistrer_routes_configuration(app)
-    _enregistrer_routes_identite(app)
-    _enregistrer_routes_registre(app)
-    _enregistrer_routes_ouverture(app)
+    _enregistrer_routes_societe(app)
     _enregistrer_routes_affectation(app)
     _enregistrer_routes_dividendes_paie(app)
     _enregistrer_routes_paie(app)
