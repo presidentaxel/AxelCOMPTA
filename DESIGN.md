@@ -1431,17 +1431,12 @@ les colonnes numériques.
   maquette) et la finition transverse (AXE-885) : en attendant, un écran
   peut encore refléter l'ancien rendu, le contrat est DESIGN.md. La cloche
   du chauffeur suit le niveau « popover » (`shadow-md`, `rounded-md`).
-- **Écrans Entreprises (AXE-878)** : la règle « à traiter » est dans
-  `lib/portefeuille-a-traiter.ts` (alertes de l'API et connexion bancaire à
-  renouveler, jamais un dossier exclu des compteurs). Le lien d'action a une
-  classe commune (`LienAction`, `components/LienAction.tsx`) ; le surlignage
-  jaune du titre est posé en style local (`Surligneur`). La fiche d'une
-  entreprise est un panneau `fixed` à droite avec `shadow-overlay`.
-- **Densité du gestionnaire** : la racine passe à 15px dans l'espace gestionnaire
-  (`html:has([data-espace="gestionnaire"])`, `globals.css`), ce qui réduit de 6 %
-  tout ce que Tailwind compte en rem (texte, espacements, hauteurs). Titres de
-  page à 22px, titre d'accueil du portefeuille à 40px, lignes de tableau à
-  40px, marge de page de 32px. L'espace chauffeur reste à 16px, lisible au doigt.
+- **Écran Entreprises** : c'est la liste d'origine (recherche, filtres, une ligne par
+  entreprise avec ses deux frises de 6 étapes et son résultat, fiche à droite),
+  reprise sur les primitives du design system : `Select` pour les filtres,
+  tokens, boutons et rayons v2, compactée. La version « À traiter / Autres » du
+  titre d'accueil (PR 141, AXE-878) a été écartée à la demande d'Arthur ; elle
+  reste dans l'historique de la PR. Le surlignage jaune n'y est donc pas utilisé.
 - **Chauffeur (AXE-883)** : la barre du bas pose le filet de 2 px sur son bord
   haut et le fait glisser (`IndicateurGlissant` placé en `-top-px`) ; les
   boutons principaux sont `Button size="lg"` et `h-12`, les titres d'écran

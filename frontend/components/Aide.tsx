@@ -25,11 +25,22 @@ export function Aide({ texte, tactile = false }: { texte: string; tactile?: bool
         onClick={() => setOuvert((actuel) => !actuel)}
         className={
           tactile
-            ? "ml-1 inline-flex h-11 w-11 items-center justify-center rounded-full border border-border text-xs leading-none text-subtle outline-none hover:border-ink hover:text-ink focus-visible:shadow-focus"
-            : "ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-border text-xs leading-none text-subtle outline-none hover:border-ink hover:text-ink focus-visible:shadow-focus"
+            ? "group -my-2 ml-0.5 inline-flex size-11 shrink-0 items-center justify-center rounded-full outline-none focus-visible:shadow-focus"
+            : "group ml-1 inline-flex items-center justify-center rounded-full outline-none focus-visible:shadow-focus"
         }
       >
-        ?
+        {tactile ? (
+          // La cible fait 44 px au doigt ; ce qu'on voit reste un petit rond.
+          <span className="flex size-6 items-center justify-center rounded-full border border-border text-xs leading-none text-subtle group-hover:border-ink group-hover:text-ink">
+            ?
+          </span>
+        ) : (
+          // Le rond est dessiné dedans : l'espace chauffeur impose 44 px de haut
+          // à tout bouton, et un bouton à bordure y deviendrait une capsule.
+          <span className="flex size-4 items-center justify-center rounded-full border border-border text-xs leading-none text-subtle group-hover:border-ink group-hover:text-ink">
+            ?
+          </span>
+        )}
       </button>
       {ouvert && (
         <span
