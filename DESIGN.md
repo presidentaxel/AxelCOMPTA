@@ -1421,10 +1421,34 @@ les colonnes numériques.
 - **Design system v2.0 (2026-11-11)** : tokens, DESIGN.md et ADR-008 faits ;
   composants Button/Input/Card/Badge faits (AXE-875), primitives Select/Dialogue/
   Toast/Tableau/Onglets et StatutDossier faites (AXE-876), barre latérale
-  faite (AXE-877, `components/Navigation.tsx`, `lib/navigation.ts`).
-  Restent les écrans (issues 5 à 11) : tant qu'ils ne sont pas livrés, certains
-  peuvent encore refléter l'ancien rendu : le contrat est DESIGN.md. La cloche du
-  chauffeur suit le niveau « popover » (`shadow-md`, `rounded-md`).
+  faite (AXE-877, `components/Navigation.tsx`, `lib/navigation.ts`). Écrans
+  livrés en PR séparées : Entreprises (AXE-878), Rappels et Équipe (AXE-879),
+  Intégrations, Connexions bancaires, Import et Mode expert (AXE-880),
+  Anomalies et clôture (AXE-881), pages d'accès (AXE-882), chauffeur A
+  (AXE-883). Restent le chauffeur B (AXE-884, structure à valider sur
+  maquette) et la finition transverse (AXE-885) : en attendant, un écran
+  peut encore refléter l'ancien rendu, le contrat est DESIGN.md. La cloche
+  du chauffeur suit le niveau « popover » (`shadow-md`, `rounded-md`).
+- **Écrans Entreprises (AXE-878)** : la règle « à traiter » est dans
+  `lib/portefeuille-a-traiter.ts` (alertes de l'API et connexion bancaire à
+  renouveler, jamais un dossier exclu des compteurs). Le lien d'action a une
+  classe commune (`LienAction`, `components/LienAction.tsx`) ; le surlignage
+  jaune du titre est posé en style local (`Surligneur`). La fiche d'une
+  entreprise est un panneau `fixed` à droite avec `shadow-overlay`.
+- **Chauffeur (AXE-883)** : la barre du bas pose le filet de 2 px sur son bord
+  haut et le fait glisser (`IndicateurGlissant` placé en `-top-px`) ; les
+  boutons principaux sont `Button size="lg"` et `h-12`, les titres d'écran
+  de 28 px. `EntreeChauffeur` et `FormulaireCompteChauffeur` sont des
+  contournements : une taille « grand » sur `FormulaireConnexion` et
+  `SuitesAuth` les supprimerait, et `FormulaireCompte` pourrait être factorisé
+  avec `FormulaireCompteChauffeur`.
+- **Logo** : le panda roux dans son hexagone (`frontend/public/logo.png`, 200 px,
+  fond transparent) remplace le carré orange à lettre. Il porte ses propres
+  couleurs : le contrat de couleurs de ce document ne s'y applique pas, et il
+  sert aussi d'icône de page (`frontend/app/icon.png`). Une version vectorielle
+  serait préférable à 200 px pour l'affichage sur écran dense.
+- **Confirmations** : `ConfirmationDialogue` (sur `Dialogue`) remplace les
+  `window.confirm` ; `BoutonChoix` est la pastille à état pressé.
 - **Remise à jour du 2026-11-10 (AXE-870)** (historique) : code et contrat
   relus l'un contre l'autre. Les couleurs étaient déjà identiques (53 tokens).
   Écarts corrigés : ombres du contrat absentes du code (Tailwind utilisait ses
@@ -1438,9 +1462,6 @@ les colonnes numériques.
   palette Tailwind brute (écran d'import) remplacée par les tokens. Les
   écrans qui forcent `h-11` sur un `Button` peuvent passer à `size="lg"` au
   fil de l'eau : même rendu.
-- Pas de composant `Select` : les listes déroulantes du chauffeur sont des
-  `<select>` en classes Tailwind qui suivent `select-lg`. À extraire en
-  composant avec les primitives de AXE-876.
 - **V1 des composants faite (2026-09-22)** (historique), via shadcn/ui (Radix +
   CVA) — a nécessité de migrer le projet **Tailwind v3 → v4** au passage (le CLI
   shadcn actuel ne génère que du code v4 ; migration faite avec l'outil

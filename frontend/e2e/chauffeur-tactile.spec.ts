@@ -211,7 +211,7 @@ test("la connexion chauffeur tient dans la cible tactile", async ({ page }) => {
   expect(viewport).toContain("viewport-fit=cover");
   expect(viewport).not.toContain("maximum-scale");
 
-  const email = page.getByPlaceholder("Votre e-mail");
+  const email = page.getByLabel("E-mail");
   expect(await taillePolice(email)).toBeGreaterThanOrEqual(16);
   expect(await hauteur(page, email)).toBeGreaterThanOrEqual(44);
   const placeholder = await email.evaluate((element) => getComputedStyle(element, "::placeholder").color);
