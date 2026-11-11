@@ -1,9 +1,12 @@
 "use client";
 
+import { Toast } from "@/components/ui/toast";
+
 const ANNEAU =
   "outline-none focus-visible:shadow-focus-detache-sombre";
 
-/** Confirmation éphémère : le tap est encore annulable. */
+/** Confirmation éphémère : le tap est encore annulable. Posée au-dessus de la
+ * barre du bas du chauffeur (3,5 rem + l'encoche). */
 export function ToastDecision({
   libelle,
   onAnnuler,
@@ -12,7 +15,10 @@ export function ToastDecision({
   onAnnuler: (() => void) | null;
 }) {
   return (
-    <div className="fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.75rem)] left-1/2 z-40 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-md border border-white/10 bg-surface-dark px-4 py-3 text-on-dark shadow-lg">
+    <Toast
+      variant="success"
+      className="fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.75rem)] left-1/2 z-40 w-[calc(100%-2rem)] max-w-md -translate-x-1/2"
+    >
       <p className="text-sm leading-5">Classé en « {libelle} ».</p>
       {onAnnuler && (
         <div className="flex justify-end">
@@ -21,6 +27,6 @@ export function ToastDecision({
           </button>
         </div>
       )}
-    </div>
+    </Toast>
   );
 }
