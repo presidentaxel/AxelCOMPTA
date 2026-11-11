@@ -93,7 +93,7 @@ export default function EquipePage() {
         : [];
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Équipe</h1>
       <p className="mt-2 text-sm text-subtle">Qui voit cette organisation, et jusqu&apos;où.</p>
       {erreur && <p className="mt-6 text-sm text-danger">{erreur}</p>}

@@ -9,7 +9,7 @@ import { Navigation } from "@/components/Navigation";
  * barre de navigation gestionnaire.
  *
  * Application shell (DESIGN.md) : la barre de navigation en haut, puis le
- * contenu, 40px de marge de page et 1180px au plus. Le défilement est celui de
+ * contenu, 40px de marge de page et 1600px au plus. Le défilement est celui de
  * la page.
  */
 export default function GestionnaireLayout({ children }: { children: React.ReactNode }) {
@@ -18,7 +18,7 @@ export default function GestionnaireLayout({ children }: { children: React.React
       <GardeEspaceGestionnaire />
       <GardeMfa />
       <Navigation />
-      <main className="mx-auto w-full max-w-[1180px] flex-1 px-10 py-10">{children}</main>
+      <main className="mx-auto w-full max-w-[1600px] flex-1 px-10 py-10">{children}</main>
     </div>
   );
 }

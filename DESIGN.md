@@ -978,7 +978,7 @@ couleur `{colors.amount-positive}` dans un tableau de recettes,
 │            Zone de contenu principale                            │
 │            fond canvas-app (#FBFAF8)                             │
 │            padding de page : 40px                                │
-│            largeur max : 1180px                                  │
+│            largeur max : 1600px                                  │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
    ● = nav-item-alert : une action est attendue dans cette section
@@ -1002,7 +1002,11 @@ est supprimée : l'entrée racine mène directement au tableau de bord du dossie
 
 ### Grille de contenu
 
-- **Max-width** : 1180px sur la zone de contenu.
+- **Max-width** : 1600px sur la zone de contenu (marges de 40px). Les listes et
+  tableaux prennent toute la largeur ; un écran de formulaire garde une mesure
+  lisible (60 à 75 caractères) et la remplit avec un second panneau, jamais avec
+  des marges vides. Sur un écran de 1920px, la barre et le contenu laissent au
+  plus 160px de chaque côté.
 - **Tableaux** : pleine largeur de la zone de contenu.
 - **Dashboard portefeuille** : grille 3 colonnes à ≥ 1024px, 2 à ≥ 768px, 1 en
   dessous.

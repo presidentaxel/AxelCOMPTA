@@ -28,7 +28,7 @@ export default function CompteGestionnairePage() {
 
   if (!email) {
     return (
-      <div className="mx-auto grid max-w-5xl items-start gap-12 lg:grid-cols-3">
+      <div className="grid items-start gap-12 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2" aria-hidden>
           <Squelette className="h-4 w-40" />
           <Squelette className="h-10 w-full" />
@@ -44,7 +44,7 @@ export default function CompteGestionnairePage() {
   }
 
   return (
-    <div className="mx-auto grid max-w-5xl items-start gap-12 lg:grid-cols-3">
+    <div className="grid items-start gap-12 lg:grid-cols-3">
       <p className="text-sm text-subtle lg:col-span-2">
         Le nom de l&apos;organisation se modifie dans la barre, à gauche. Entrée enregistre, et un échec s&apos;affiche sous le nom.
       </p>
