@@ -23,14 +23,15 @@ import {
 } from "@/lib/navigation";
 import { useDroitGestionnaire } from "@/lib/use-droit";
 
-/** Barre de navigation du gestionnaire (DESIGN.md § Navigation et
- * § Application shell) : 64px, fond `canvas`, filet bas `border`. La marque et
- * les sept entrées à gauche, la zone de compte à droite.
+/** Barre latérale du gestionnaire (DESIGN.md § Navigation et § Application
+ * shell) : 256px, fond `canvas`, filet droit `border`, collée à la hauteur de
+ * l'écran. La marque en haut, les sept entrées, la zone de compte en bas.
  *
- * Responsive, en classes `lg:` seulement : à partir de 1024px les entrées sont
- * dans la barre ; en dessous (≤ 1023px) elles passent dans le tiroir du bouton
- * « Menu », et la zone de compte reste visible. Le filet de l'entrée active est
- * un indicateur glissant (180 ms), pas une bordure par entrée.
+ * Responsive, en classes `lg:` seulement : à partir de 1024px la barre
+ * latérale est fixe ; en dessous (≤ 1023px) elle devient une barre de 56px avec
+ * la marque, le bouton « Menu » (qui ouvre les mêmes entrées dans un tiroir) et
+ * l'avatar. Le filet de l'entrée active est un indicateur glissant (180 ms) à
+ * gauche de la colonne, pas une bordure par entrée.
  *
  * `alertes` : href des entrées « qui demandent une action » (point `signal`
  * à droite du libellé). Vide tant qu'aucun écran ne fournit l'information. */
@@ -41,84 +42,104 @@ export function Navigation({ alertes = {} }: { alertes?: Partial<Record<string, 
   const chemin = cheminAffiche(cheminReel, attente);
   const [tiroirOuvert, setTiroirOuvert] = useState(false);
 
+  const entrees = (
+    <ListeEntrees
+      chemin={chemin}
+      alertes={alertes}
+      auClic={(href) => setAttente({ href, depuis: cheminReel })}
+    />
+  );
+
   return (
-    <header className="flex h-16 shrink-0 items-stretch gap-8 border-b border-border bg-canvas px-10">
-      <div className="flex items-center">
+    <>
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-canvas lg:flex">
+        <div className="flex h-16 shrink-0 items-center px-6">
+          <Marque />
+        </div>
+        <nav aria-label="Gestionnaire" className="flex-1 overflow-y-auto px-3 py-2">
+          {entrees}
+        </nav>
+        <div className="shrink-0 border-t border-border p-3">
+          <CompteGestionnaire chemin={chemin} variante="pied" />
+        </div>
+      </aside>
+
+      <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-canvas px-4 lg:hidden">
         <Marque />
-      </div>
+        <div className="flex items-center gap-2">
+          <Dialog.Root open={tiroirOuvert} onOpenChange={setTiroirOuvert}>
+            <Dialog.Trigger asChild>
+              <button
+                type="button"
+                className="flex h-11 min-w-11 items-center justify-center rounded-md px-3 text-sm font-semibold text-ink outline-none transition-colors duration-150 hover:bg-surface-soft focus-visible:shadow-focus-detache"
+              >
+                Menu
+              </button>
+            </Dialog.Trigger>
+            <Dialog.Portal>
+              <Dialog.Overlay className="fixed inset-0 z-40 bg-ink/50 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 motion-reduce:animate-none lg:hidden" />
+              <Dialog.Content
+                aria-describedby={undefined}
+                className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-border bg-canvas py-6 text-ink shadow-overlay outline-none data-[state=open]:animate-in data-[state=open]:slide-in-from-left data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left motion-reduce:animate-none lg:hidden"
+              >
+                <Dialog.Title className="sr-only">Navigation</Dialog.Title>
+                <div className="px-6 pb-6">
+                  <Marque />
+                </div>
+                <nav aria-label="Gestionnaire" className="flex-1 overflow-y-auto px-3">
+                  <ListeEntrees
+                    chemin={chemin}
+                    alertes={alertes}
+                    auClic={(href) => {
+                      setAttente({ href, depuis: cheminReel });
+                      setTiroirOuvert(false);
+                    }}
+                  />
+                </nav>
+              </Dialog.Content>
+            </Dialog.Portal>
+          </Dialog.Root>
+          <CompteGestionnaire chemin={chemin} variante="compacte" />
+        </div>
+      </header>
+    </>
+  );
+}
 
-      <nav aria-label="Gestionnaire" className="relative hidden items-stretch gap-6 lg:flex">
-        {ENTREES_GESTIONNAIRE.map(({ href, libelle }) => {
-          const actif = entreeActive(chemin, href);
-          return (
-            <Link
-              key={href}
-              href={href}
-              aria-current={actif ? "page" : undefined}
-              onClick={() => setAttente({ href, depuis: cheminReel })}
-              className={`flex items-center gap-1.5 text-sm whitespace-nowrap outline-none transition-colors duration-150 focus-visible:shadow-focus-detache ${
-                actif ? "font-semibold text-ink" : "font-medium text-muted hover:text-ink"
-              }`}
-            >
-              {libelle}
-              {alertes[href] && <PointAlerte />}
-            </Link>
-          );
-        })}
-        {/* Le filet de l'entrée active glisse d'une entrée à l'autre (la barre
-            reste montée d'une page à l'autre) au lieu de réapparaître. */}
-        <IndicateurGlissant selecteur='[aria-current="page"]' />
-      </nav>
-
-      <div className="ml-auto flex items-center gap-2">
-        <Dialog.Root open={tiroirOuvert} onOpenChange={setTiroirOuvert}>
-          <Dialog.Trigger asChild>
-            <button
-              type="button"
-              className="flex h-11 min-w-11 items-center justify-center rounded-md px-3 text-sm font-semibold text-ink outline-none transition-colors duration-150 hover:bg-surface-soft focus-visible:shadow-focus-detache lg:hidden"
-            >
-              Menu
-            </button>
-          </Dialog.Trigger>
-          <Dialog.Portal>
-            <Dialog.Overlay className="fixed inset-0 z-40 bg-ink/50 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 motion-reduce:animate-none lg:hidden" />
-            <Dialog.Content
-              aria-describedby={undefined}
-              className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-border bg-canvas px-6 py-6 text-ink shadow-overlay outline-none data-[state=open]:animate-in data-[state=open]:slide-in-from-left data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left motion-reduce:animate-none lg:hidden"
-            >
-              <Dialog.Title className="sr-only">Navigation</Dialog.Title>
-              <div className="pb-6">
-                <Marque />
-              </div>
-              <nav aria-label="Gestionnaire" className="flex flex-col gap-1">
-                {ENTREES_GESTIONNAIRE.map(({ href, libelle }) => {
-                  const actif = entreeActive(chemin, href);
-                  return (
-                    <Dialog.Close asChild key={href}>
-                      <Link
-                        href={href}
-                        aria-current={actif ? "page" : undefined}
-                        onClick={() => setAttente({ href, depuis: cheminReel })}
-                        className={`flex min-h-11 items-center gap-2 rounded-md border-l-2 px-3 text-sm outline-none transition-colors duration-150 focus-visible:shadow-focus-detache ${
-                          actif
-                            ? "border-ink font-semibold text-ink"
-                            : "border-transparent font-medium text-muted hover:bg-surface-soft hover:text-ink"
-                        }`}
-                      >
-                        {libelle}
-                        {alertes[href] && <PointAlerte />}
-                      </Link>
-                    </Dialog.Close>
-                  );
-                })}
-              </nav>
-            </Dialog.Content>
-          </Dialog.Portal>
-        </Dialog.Root>
-
-        <CompteGestionnaire chemin={chemin} />
-      </div>
-    </header>
+/** Les sept entrées en colonne, avec le filet qui glisse de l'une à l'autre
+ * (la barre reste montée d'une page à l'autre) au lieu de réapparaître. */
+function ListeEntrees({
+  chemin,
+  alertes,
+  auClic,
+}: {
+  chemin: string;
+  alertes: Partial<Record<string, boolean>>;
+  auClic: (href: string) => void;
+}) {
+  return (
+    <div className="relative flex flex-col gap-0.5">
+      {ENTREES_GESTIONNAIRE.map(({ href, libelle }) => {
+        const actif = entreeActive(chemin, href);
+        return (
+          <Link
+            key={href}
+            href={href}
+            aria-current={actif ? "page" : undefined}
+            onClick={() => auClic(href)}
+            className={`flex min-h-11 items-center gap-2 rounded-md px-4 text-sm whitespace-nowrap outline-none transition-colors duration-150 focus-visible:shadow-focus-detache ${
+              actif
+                ? "bg-surface-soft font-semibold text-ink"
+                : "font-medium text-muted hover:bg-surface-soft hover:text-ink"
+            }`}
+          >
+            {libelle}
+            {alertes[href] && <PointAlerte />}
+          </Link>
+        );
+      })}
+      <IndicateurGlissant selecteur='[aria-current="page"]' axe="vertical" />
+    </div>
   );
 }
 
@@ -128,16 +149,22 @@ export function Navigation({ alertes = {} }: { alertes?: Partial<Record<string, 
 function PointAlerte() {
   return (
     <>
-      <span aria-hidden className="size-[7px] shrink-0 rounded-full bg-signal" />
+      <span aria-hidden className="ml-auto size-[7px] shrink-0 rounded-full bg-signal" />
       <span className="sr-only">, une action est attendue</span>
     </>
   );
 }
 
-/** Zone de compte : l'avatar ouvre un menu avec le nom de l'organisation
- * (modifiable par un admin), l'e-mail, le lien Compte et la déconnexion. À
- * partir de 1280px le nom de l'organisation reste lisible à côté de l'avatar. */
-function CompteGestionnaire({ chemin }: { chemin: string }) {
+/** Zone de compte : l'avatar (avec, dans la barre latérale, le nom de
+ * l'organisation et l'e-mail) ouvre un menu avec le nom de l'organisation
+ * (modifiable par un admin), l'e-mail, le lien Compte et la déconnexion. */
+function CompteGestionnaire({
+  chemin,
+  variante,
+}: {
+  chemin: string;
+  variante: "pied" | "compacte";
+}) {
   const droit = useDroitGestionnaire();
   const router = useRouter();
   const [ouvert, setOuvert] = useState(false);
@@ -179,72 +206,89 @@ function CompteGestionnaire({ chemin }: { chemin: string }) {
   }
 
   const surCompte = entreeActive(chemin, "/compte");
+  const avatar = (
+    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-on-primary">
+      {initiales(email)}
+    </span>
+  );
 
   return (
-    <div className="flex items-center gap-3">
-      <span className="hidden max-w-48 truncate text-sm text-muted xl:block">{nom}</span>
-      <Popover.Root open={ouvert} onOpenChange={setOuvert}>
-        <Popover.Trigger asChild>
+    <Popover.Root open={ouvert} onOpenChange={setOuvert}>
+      <Popover.Trigger asChild>
+        {variante === "pied" ? (
           <button
             type="button"
             aria-label="Compte"
-            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-on-primary outline-none transition-colors duration-150 hover:bg-primary-bright focus-visible:shadow-focus-detache"
+            className="flex min-h-12 w-full items-center gap-3 rounded-md px-3 text-left outline-none transition-colors duration-150 hover:bg-surface-soft focus-visible:shadow-focus-detache"
           >
-            {initiales(email)}
+            {avatar}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold text-ink">{nom}</span>
+              <span className="block truncate text-xs text-subtle">{email}</span>
+            </span>
           </button>
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content
-            align="end"
-            sideOffset={8}
-            // Le focus entre dans le menu, pas dans le champ du nom : sinon
-            // ouvrir puis refermer le menu déclencherait un enregistrement.
-            onOpenAutoFocus={(evenement) => {
-              evenement.preventDefault();
-              (evenement.currentTarget as HTMLElement).focus();
-            }}
-            className="z-50 w-72 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-canvas p-3 text-ink shadow-md outline-none"
+        ) : (
+          <button
+            type="button"
+            aria-label="Compte"
+            className="flex size-11 items-center justify-center rounded-md outline-none transition-colors duration-150 hover:bg-surface-soft focus-visible:shadow-focus-detache"
           >
-            <div className="px-1 pb-3">
-              <span className="block text-xs text-subtle">Organisation</span>
-              <Input
-                value={nom}
-                onChange={(evenement) => setNom(evenement.target.value)}
-                onBlur={() => void enregistrerNom()}
-                onKeyDown={(evenement) => {
-                  if (evenement.key !== "Enter") return;
-                  evenement.preventDefault();
-                  void enregistrerNom();
-                }}
-                readOnly={!droit.admin}
-                aria-label="Nom de l'organisation"
-                className="mt-1 truncate font-semibold read-only:cursor-default read-only:border-transparent read-only:bg-transparent read-only:px-0 read-only:shadow-none"
-              />
-              {erreurNom && <span className="mt-1 block text-xs text-danger">{erreurNom}</span>}
-              <p className="mt-2 truncate text-xs text-subtle">{email}</p>
-            </div>
-            <div className="border-t border-border pt-2">
-              <Link
-                href="/compte"
-                aria-current={surCompte ? "page" : undefined}
-                onClick={() => setOuvert(false)}
-                className={`flex min-h-9 items-center rounded-md px-2 text-sm outline-none hover:bg-surface-soft hover:text-ink focus-visible:shadow-focus ${
-                  surCompte ? "font-semibold text-ink" : "text-subtle"
-                }`}
-              >
-                Compte
-              </Link>
-              <button
-                type="button"
-                onClick={seDeconnecter}
-                className="mt-1 flex min-h-9 w-full items-center rounded-md px-2 text-left text-sm text-subtle outline-none hover:bg-surface-soft hover:text-ink focus-visible:shadow-focus"
-              >
-                Se déconnecter
-              </button>
-            </div>
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
-    </div>
+            {avatar}
+          </button>
+        )}
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side={variante === "pied" ? "top" : "bottom"}
+          align={variante === "pied" ? "start" : "end"}
+          sideOffset={8}
+          // Le focus entre dans le menu, pas dans le champ du nom : sinon
+          // ouvrir puis refermer le menu déclencherait un enregistrement.
+          onOpenAutoFocus={(evenement) => {
+            evenement.preventDefault();
+            (evenement.currentTarget as HTMLElement).focus();
+          }}
+          className="z-50 w-72 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-canvas p-3 text-ink shadow-md outline-none"
+        >
+          <div className="px-1 pb-3">
+            <span className="block text-xs text-subtle">Organisation</span>
+            <Input
+              value={nom}
+              onChange={(evenement) => setNom(evenement.target.value)}
+              onBlur={() => void enregistrerNom()}
+              onKeyDown={(evenement) => {
+                if (evenement.key !== "Enter") return;
+                evenement.preventDefault();
+                void enregistrerNom();
+              }}
+              readOnly={!droit.admin}
+              aria-label="Nom de l'organisation"
+              className="mt-1 truncate font-semibold read-only:cursor-default read-only:border-transparent read-only:bg-transparent read-only:px-0 read-only:shadow-none"
+            />
+            {erreurNom && <span className="mt-1 block text-xs text-danger">{erreurNom}</span>}
+            <p className="mt-2 truncate text-xs text-subtle">{email}</p>
+          </div>
+          <div className="border-t border-border pt-2">
+            <Link
+              href="/compte"
+              aria-current={surCompte ? "page" : undefined}
+              onClick={() => setOuvert(false)}
+              className={`flex min-h-9 items-center rounded-md px-2 text-sm outline-none hover:bg-surface-soft hover:text-ink focus-visible:shadow-focus ${
+                surCompte ? "font-semibold text-ink" : "text-subtle"
+              }`}
+            >
+              Compte
+            </Link>
+            <button
+              type="button"
+              onClick={seDeconnecter}
+              className="mt-1 flex min-h-9 w-full items-center rounded-md px-2 text-left text-sm text-subtle outline-none hover:bg-surface-soft hover:text-ink focus-visible:shadow-focus"
+            >
+              Se déconnecter
+            </button>
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

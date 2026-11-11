@@ -2,7 +2,12 @@
 
 import * as React from "react"
 
-import { COURBE_GLISSEMENT, dureeGlissement, positionIndicateur } from "@/lib/indicateur"
+import {
+  COURBE_GLISSEMENT,
+  dureeGlissement,
+  positionIndicateur,
+  positionIndicateurVertical,
+} from "@/lib/indicateur"
 
 /** Filet qui glisse sous l'élément actif d'une rangée d'onglets ou d'entrées
  * de navigation, au lieu d'apparaître d'un coup sous le nouveau (mouvement
@@ -14,13 +19,17 @@ import { COURBE_GLISSEMENT, dureeGlissement, positionIndicateur } from "@/lib/in
  * ou la police change de taille. Rien n'est à passer en props par onglet. */
 export function IndicateurGlissant({
   selecteur,
+  axe = "horizontal",
   className = "",
 }: {
   selecteur: string
+  /** `horizontal` : filet sous une rangée (onglets). `vertical` : filet à
+   * gauche d'une colonne (barre latérale), comme le sélecteur de la vidéo. */
+  axe?: "horizontal" | "vertical"
   className?: string
 }) {
   const reference = React.useRef<HTMLSpanElement>(null)
-  const [position, setPosition] = React.useState<{ x: number; largeur: number } | null>(null)
+  const [position, setPosition] = React.useState<{ decalage: number; taille: number } | null>(null)
   const [pret, setPret] = React.useState(false)
   const [reduit, setReduit] = React.useState(false)
 
@@ -39,7 +48,12 @@ export function IndicateurGlissant({
       if (!actif) return setPosition(null)
       const boite = actif.getBoundingClientRect()
       const cadre = conteneur!.getBoundingClientRect()
-      setPosition(positionIndicateur({ left: cadre.left }, { left: boite.left, width: boite.width }))
+      if (axe === "vertical") {
+        const { y, hauteur } = positionIndicateurVertical({ top: cadre.top }, { top: boite.top, height: boite.height })
+        return setPosition({ decalage: y, taille: hauteur })
+      }
+      const { x, largeur } = positionIndicateur({ left: cadre.left }, { left: boite.left, width: boite.width })
+      setPosition({ decalage: x, taille: largeur })
     }
     placer()
     // Après le premier placement seulement : le navigateur a peint sans
@@ -62,20 +76,25 @@ export function IndicateurGlissant({
       etat.disconnect()
       requete.removeEventListener("change", lireMouvement)
     }
-  }, [selecteur])
+  }, [selecteur, axe])
 
   const duree = dureeGlissement(!pret, reduit)
+  const vertical = axe === "vertical"
+  const decalage = position?.decalage ?? 0
+  const taille = position?.taille ?? 0
   return (
     <span
       ref={reference}
       aria-hidden="true"
       data-slot="indicateur-glissant"
-      className={`pointer-events-none absolute -bottom-px left-0 h-0.5 bg-ink ${className}`}
+      className={`pointer-events-none absolute bg-ink ${
+        vertical ? "top-0 left-0 w-0.5" : "-bottom-px left-0 h-0.5"
+      } ${className}`}
       style={{
-        width: position?.largeur ?? 0,
+        ...(vertical ? { height: taille } : { width: taille }),
         opacity: position ? 1 : 0,
-        transform: `translateX(${position?.x ?? 0}px)`,
-        transitionProperty: "transform, width",
+        transform: vertical ? `translateY(${decalage}px)` : `translateX(${decalage}px)`,
+        transitionProperty: "transform, width, height",
         transitionDuration: `${duree}ms`,
         transitionTimingFunction: COURBE_GLISSEMENT,
       }}

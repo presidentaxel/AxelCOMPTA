@@ -10,12 +10,23 @@ export const DUREE_GLISSEMENT_MS = 180;
 export const COURBE_GLISSEMENT = "cubic-bezier(0.22, 1, 0.36, 1)";
 
 export type Rect = { left: number; width: number };
+export type RectVertical = { top: number; height: number };
 
 /** Où poser l'indicateur : décalage horizontal et largeur de l'élément actif,
  * relatifs au conteneur. Arrondi au demi-pixel pour éviter un filet flou. */
 export function positionIndicateur(conteneur: Pick<Rect, "left">, actif: Rect): { x: number; largeur: number } {
   const demi = (valeur: number) => Math.round(valeur * 2) / 2;
   return { x: demi(actif.left - conteneur.left), largeur: demi(actif.width) };
+}
+
+/** Même chose pour une colonne d'entrées (barre latérale) : décalage vertical et
+ * hauteur de l'élément actif, relatifs au conteneur. */
+export function positionIndicateurVertical(
+  conteneur: Pick<RectVertical, "top">,
+  actif: RectVertical,
+): { y: number; hauteur: number } {
+  const demi = (valeur: number) => Math.round(valeur * 2) / 2;
+  return { y: demi(actif.top - conteneur.top), hauteur: demi(actif.height) };
 }
 
 /** Durée à appliquer : aucune au premier placement (l'indicateur ne doit pas

@@ -6,19 +6,22 @@ import { Navigation } from "@/components/Navigation";
  * habillages ». Groupe de routes Next.js (`(gestionnaire)`, sans effet sur
  * l'URL) plutôt que codé en dur dans le layout racine, pour que `/chauffeur`
  * ait son propre habillage (`app/chauffeur/layout.tsx`) sans hériter de la
- * barre de navigation gestionnaire.
+ * barre latérale gestionnaire.
  *
- * Application shell (DESIGN.md) : la barre de navigation en haut, puis le
- * contenu, 40px de marge de page et 1600px au plus. Le défilement est celui de
- * la page.
+ * Application shell (DESIGN.md) : la barre latérale de 256px à gauche (une
+ * barre de 56px en haut sous 1024px), puis le contenu, 40px de marge de page et
+ * 1600px au plus. Le défilement est celui de la page ; la barre latérale reste
+ * collée à l'écran.
  */
 export default function GestionnaireLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col bg-canvas-app">
+    <div className="flex min-h-screen flex-col bg-canvas-app lg:flex-row">
       <GardeEspaceGestionnaire />
       <GardeMfa />
       <Navigation />
-      <main className="mx-auto w-full max-w-[1600px] flex-1 px-10 py-10">{children}</main>
+      <main className="min-w-0 flex-1">
+        <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-10 lg:py-10">{children}</div>
+      </main>
     </div>
   );
 }
