@@ -44,17 +44,15 @@ export default function CompteGestionnairePage() {
   }
 
   return (
-    <div className="grid items-start gap-8 lg:grid-cols-3">
-      <p className="text-sm text-subtle lg:col-span-2">
-        Le nom de l&apos;organisation se modifie dans la barre, à gauche. Entrée enregistre, et un échec s&apos;affiche sous le nom.
-      </p>
-      <div>
+    <div className="max-w-md">
       <FormulaireCompte
         email={email}
         onMotDePasse={changerMotDePasseGestionnaire}
         onEmail={changerEmailGestionnaire}
       />
-      </div>
+      <p className="mt-6 text-sm text-subtle">
+        Le nom de l&apos;organisation se modifie dans la barre, à gauche. Entrée enregistre, et un échec s&apos;affiche sous le nom.
+      </p>
     </div>
   );
 }
