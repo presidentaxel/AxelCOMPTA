@@ -19,9 +19,9 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Literal, Protocol
 
 from sqlalchemy.engine import Engine
@@ -123,14 +123,14 @@ def branchement_du_dossier(services: ServicesRollee, dossier: Dossier) -> Branch
     )
 
 
-def _client(services: ServicesRollee, branchement: Branchement) -> RolleeHttpClient:
+def client_du_branchement(services: ServicesRollee, branchement: Branchement) -> RolleeHttpClient:
     garder = garder_parametre(services.branchements, branchement, "jeton", "rollee")
     return services.fabrique(branchement, garder)
 
 
 async def ouvrir_session(services: ServicesRollee, dossier: Dossier) -> Session:
     branchement = branchement_du_dossier(services, dossier)
-    client = _client(services, branchement)
+    client = client_du_branchement(services, branchement)
     try:
         utilisateur = services.comptes.utilisateur(dossier.id)
         if utilisateur is None:
@@ -156,7 +156,7 @@ async def relire_comptes(services: ServicesRollee, dossier: Dossier) -> list[Com
     utilisateur = services.comptes.utilisateur(dossier.id)
     if utilisateur is None:
         return []
-    client = _client(services, branchement)
+    client = client_du_branchement(services, branchement)
     try:
         bruts = await client.comptes(utilisateur.rollee_user_id)
     finally:
@@ -175,7 +175,7 @@ async def relire_comptes(services: ServicesRollee, dossier: Dossier) -> list[Com
 # --- AXE-820 : webhooks et rattrapage quotidien -----------------------------
 
 Notifier = Callable[[DossierId], None]
-ReleverRevenus = Callable[[Dossier], str]
+ReleverRevenus = Callable[[Dossier], Awaitable[str]]
 
 
 def secret_webhook(parametres_chiffres: str) -> str:
@@ -208,7 +208,7 @@ async def _suivre_dossier(suivi: Suivi, dossier: Dossier, donnees: bool) -> str:
     if perdus:
         suivi.notifier(dossier.id)
     if donnees and suivi.relever_revenus is not None:
-        return suivi.relever_revenus(dossier)
+        return await suivi.relever_revenus(dossier)
     return f"{dossier.id} : {len(comptes)} compte(s), {len(perdus)} à reconnecter"
 
 
@@ -272,11 +272,17 @@ def suivi_postgres(engine: Engine) -> Suivi:
             )
         )
 
+    # Import différé : `revenus_rollee` s'appuie sur ce module (AXE-821).
+    from axelcompta.revenus_rollee import depots_postgres, relever_revenus
+
+    services = ServicesRollee(PostgresBranchements(engine), PostgresComptesRollee(engine))
+    depots = depots_postgres(engine)
     return Suivi(
-        services=ServicesRollee(PostgresBranchements(engine), PostgresComptesRollee(engine)),
+        services=services,
         evenements=PostgresEvenementsRollee(engine),
         dossiers=PostgresDossierRepository(engine),
         notifier=notifier,
+        relever_revenus=lambda d: relever_revenus(services, depots, d, date.today()),
     )
 
 

@@ -40,6 +40,9 @@ from axelcompta.ingestion.comptes_rollee_postgres import PostgresComptesRollee
 from axelcompta.ingestion.consentement import ReleveSante, SanteConnexion, StatutConsentement
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
+from axelcompta.ingestion.providers.base import PlatformSettlement
+from axelcompta.ingestion.settlements_plateforme import fusionner
+from axelcompta.ingestion.settlements_plateforme_postgres import PostgresSettlements
 from axelcompta.ingestion.webhooks_rollee_postgres import PostgresEvenementsRollee
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
@@ -831,3 +834,35 @@ def test_un_webhook_rollee_signe_est_garde_dans_son_portefeuille_seulement(
             text("SELECT type FROM jobs WHERE tenant_id = 'tenant-a'")
         ).scalars()
         assert list(types) == ["rollee"]
+
+
+def test_les_releves_de_plateformes_se_relisent_et_restent_au_dossier(
+    engine: Engine, engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """AXE-821 (migration `e8c3a1f6d9b4`) : écrits par le worker, relus à
+    l'identique ; le chauffeur lit les siens, pas ceux d'un autre."""
+    le = datetime(2026, 11, 11, 10, 0, tzinfo=UTC)
+    semaine = PlatformSettlement(
+        dossier_id=DossierId("karim"),
+        platform="uber",
+        period_start=date(2026, 10, 5),
+        period_end=date(2026, 10, 11),
+        payout_date=date(2026, 10, 11),
+        gross_earnings_cts=1_040_00,
+        commission_cts=192_00,
+        commission_tva_regime="france_20",
+        net_payout_cts=848_00,
+        currency="EUR",
+        source_provider="rollee",
+        raw_payload={"gross_earnings": 1040.0},
+    )
+    stocke = fusionner(None, "acc-1", semaine, le)
+    assert stocke is not None
+    PostgresSettlements(engine).enregistrer([stocke])
+    PostgresSettlements(engine).enregistrer([dataclasses.replace(stocke, etat="reconcilie")])
+    web = PostgresSettlements(engine_web)
+    with contexte_identite(dossier_id="karim", tenant_id=None):
+        (relu,) = web.lister(DossierId("karim"))
+    assert relu.settlement == semaine and relu.etat == "reconcilie"
+    with contexte_identite(dossier_id="sophie", tenant_id=None):
+        assert web.lister(DossierId("karim")) == []

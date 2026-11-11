@@ -13,6 +13,8 @@ import {
 import { formatDate } from "@/lib/format";
 import { etatPlateforme } from "@/lib/plateformes";
 
+import { VersementsPlateformes } from "./VersementsPlateformes";
+
 type EtatBloc =
   | { statut: "en_cours" }
   | { statut: "erreur"; message: string }
@@ -95,6 +97,7 @@ export function PlateformesChauffeur({ dossierId }: { dossierId: string }) {
               : "Relier mes plateformes"}
           </Button>
           {ouverture && <p className="mt-2 text-sm text-danger">{ouverture}</p>}
+          <VersementsPlateformes dossierId={dossierId} />
         </>
       )}
     </section>

@@ -523,6 +523,22 @@ export function lirePlateformesChauffeur(dossierId: string): Promise<Plateformes
   return fetchAvecAuthChauffeur<PlateformesChauffeur>(`/dossiers/${dossierId}/plateformes`);
 }
 
+/** AXE-821 : une période de revenus d'une plateforme et son rapprochement. */
+export type VersementPlateforme = {
+  plateforme: string;
+  du: string;
+  au: string;
+  brut_cts: number;
+  commission_cts: number;
+  verse_cts: number;
+  etat: "en_attente_banque" | "reconcilie" | "a_classer" | "a_verifier";
+  motif: string | null;
+};
+
+export function lireVersementsPlateformesChauffeur(dossierId: string): Promise<VersementPlateforme[]> {
+  return fetchAvecAuthChauffeur<VersementPlateforme[]>(`/dossiers/${dossierId}/versements-plateformes`);
+}
+
 /** Un lien Rollee Connect de 30 minutes, pour relier ou reconnecter. */
 export function ouvrirSessionRolleeChauffeur(
   dossierId: string,

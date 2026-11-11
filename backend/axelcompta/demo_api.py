@@ -175,6 +175,8 @@ from axelcompta.ingestion.journal import EntreeQuarantaine, JournalIngestion
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ingestion.providers.digifactory import normaliser_payload
+from axelcompta.ingestion.settlements_plateforme import SettlementsRepository
+from axelcompta.ingestion.settlements_plateforme_postgres import PostgresSettlements
 from axelcompta.jobs.file import (
     TYPE_IMPORT_DOSSIERS,
     TYPE_RAPPELS,
@@ -6474,6 +6476,52 @@ def _enregistrer_route_webhook_rollee(app: FastAPI) -> None:
         return {"statut": issue}
 
 
+def get_settlements() -> SettlementsRepository:
+    """AXE-821 : relevés de revenus des plateformes et leur rapprochement."""
+    return PostgresSettlements(_engine())
+
+
+SettlementsDep = Annotated[SettlementsRepository, Depends(get_settlements)]
+
+
+class VersementPlateformeVue(BaseModel):
+    """Côté chauffeur seulement (doc 19 : le gestionnaire ne voit pas de montant)."""
+
+    plateforme: str
+    du: str
+    au: str
+    brut_cts: int
+    commission_cts: int
+    verse_cts: int
+    etat: str  # en_attente_banque | reconcilie | a_classer | a_verifier
+    motif: str | None
+
+
+def _enregistrer_route_versements(app: FastAPI) -> None:
+    @app.get(
+        "/dossiers/{dossier_id}/versements-plateformes",
+        response_model=list[VersementPlateformeVue],
+    )
+    def lire_versements(
+        dossier: DossierDep, settlements: SettlementsDep
+    ) -> list[VersementPlateformeVue]:
+        """Les 20 dernières périodes : brut, commission, versé, et où en est
+        le rapprochement avec la banque."""
+        return [
+            VersementPlateformeVue(
+                plateforme=s.settlement.platform,
+                du=s.settlement.period_start.isoformat(),
+                au=s.settlement.period_end.isoformat(),
+                brut_cts=s.settlement.gross_earnings_cts,
+                commission_cts=s.settlement.commission_cts,
+                verse_cts=s.settlement.net_payout_cts,
+                etat=s.etat,
+                motif=s.motif,
+            )
+            for s in reversed(settlements.lister(dossier.id)[-20:])
+        ]
+
+
 def _enregistrer_routes_integrations(app: FastAPI) -> None:
     """Branchements, envois et plateformes Rollee (AXE-872, AXE-808, AXE-819)."""
     _enregistrer_routes_branchements(app)
@@ -6483,6 +6531,7 @@ def _enregistrer_routes_integrations(app: FastAPI) -> None:
     _enregistrer_routes_envoi(app)
     _enregistrer_routes_plateformes(app)
     _enregistrer_route_webhook_rollee(app)
+    _enregistrer_route_versements(app)
 
 
 def _enregistrer_routes_envoi(app: FastAPI) -> None:

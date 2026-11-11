@@ -218,10 +218,16 @@ def _suivi(
         evenements=EvenementsRolleeMemoire(),
         dossiers=dossiers,
         notifier=lambda d: notifications.append(d),
-        relever_revenus=(lambda d: revenus.append(d.id) or "revenus lus")  # type: ignore[func-returns-value]
-        if revenus is not None
-        else None,
+        relever_revenus=_faux_releve(revenus) if revenus is not None else None,
     )
+
+
+def _faux_releve(revenus: list[str]) -> Any:
+    async def relever(dossier: Dossier) -> str:
+        revenus.append(dossier.id)
+        return "revenus lus"
+
+    return relever
 
 
 def _evenement(payload: dict[str, Any]) -> EvenementRollee:
