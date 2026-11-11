@@ -54,6 +54,10 @@
     "lib/retrait-especes.ts",
     "lib/retrait-especes.test.ts",
     "lib/confirmation-configuration.ts",
-    "lib/confirmation-configuration.test.ts"
+    "lib/confirmation-configuration.test.ts",
+    "lib/identite-entreprise.ts",
+    "lib/identite-entreprise.test.ts",
+    "lib/juridique.ts",
+    "lib/juridique.test.ts"
   ]
 }

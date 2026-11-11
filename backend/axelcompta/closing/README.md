@@ -47,10 +47,15 @@ pivot de liasse (`LiassePivot`) avant rendu par `filings/`.
   (`paie.py`), affectation du résultat et dividendes, à-nouveaux d'un
   exercice clos dans AxeLCompta (`ouverture.py`). Le bilan simplifié
   s'équilibre avec le capital et les immobilisations (AXE-421).
+- **Fait depuis le 2026-11-05** : provisions qui ne s'écrasent plus après
+  une lecture ratée (AXE-685), CA3 par période (AXE-805, ci-dessous),
+  clôture et liasse qui attendent la configuration confirmée par le
+  chauffeur (AXE-730), refus de clôture en erreur métier `PassageRefuse`
+  (409, AXE-853).
 - **Manque pour la V1** : dotations aux amortissements (AXE-802), LOA
-  (AXE-803), bilan d'ouverture d'une société existante (AXE-804), CA3 par
-  période (AXE-805), rapprochement bancaire, lignes de détail des annexes
-  2054 à 2059 (AXE-484). Bug ouvert : provisions écrasables (AXE-685).
+  (AXE-803), bilan d'ouverture d'une société existante (AXE-804),
+  identité de la société pour la liasse (AXE-846), rapprochement bancaire
+  ligne à ligne, lignes de détail des annexes 2054 à 2059 (AXE-484).
 
 ## Doc de référence
 
