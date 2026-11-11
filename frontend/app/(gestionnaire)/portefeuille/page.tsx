@@ -8,10 +8,9 @@ export default function PortefeuillePage() {
     <Suspense
       fallback={
         <div className="space-y-3" aria-hidden>
-          <Squelette className="h-[18px] w-48" />
-          <Squelette className="h-[59px] w-[min(28rem,100%)]" />
-          <Squelette className="h-[76px] w-full" />
-          <Squelette className="h-[76px] w-full" />
+          <Squelette className="h-10 w-48" />
+          <Squelette className="h-16 w-full" />
+          <Squelette className="h-16 w-full" />
         </div>
       }
     >
