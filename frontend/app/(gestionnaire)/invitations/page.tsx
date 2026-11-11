@@ -49,7 +49,7 @@ export default function InvitationsPage() {
     [];
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <Link href="/portefeuille" className="text-sm font-medium text-signal hover:underline">
         Retour aux entreprises
       </Link>

@@ -226,7 +226,7 @@ export default function ModeExpertPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Mode expert</h1>
       <p className="mt-2 text-sm text-subtle">
         Libellés et montants des écritures encore ouvertes. « Imputer » écrit dans la

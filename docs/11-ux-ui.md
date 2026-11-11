@@ -18,7 +18,7 @@
 > design system est [DESIGN.md](../DESIGN.md), passé en v2.0 le 2026-11-11
 > (refonte AXE-873, direction C2,
 > [ADR-008](adr/ADR-008-design-system-monochrome.md)) : monochrome à l'encre,
-> un accent orange foncé, navigation en barre horizontale.
+> un accent orange foncé, navigation en barre latérale claire.
 > Les revues UX d'Arthur (AXE-563, AXE-564) ont été traitées le 04/11 et
 > le 05/11.
 

@@ -19,7 +19,7 @@ const PAGES_PUBLIQUES = new Set(["/chauffeur/login", "/chauffeur/accepter-invita
 
 /** Habillage chauffeur — webapp téléphone, lisible aussi sur un grand
  * écran (colonne centrée). Même calme que le portefeuille gestionnaire :
- * marque, liste, une barre du bas. Pas de Sidebar.
+ * marque, liste, une barre du bas. Pas de barre de navigation horizontale.
  *
  * La coque est fixe et suit le visual viewport (`--vvh`, `--vv-offset`),
  * pas `100vh` : la barre du bas reste au bord visible, et se retire quand

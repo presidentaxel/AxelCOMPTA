@@ -81,9 +81,10 @@ gestionnaire :
     validation, greffe, dépôt aux impôts, signature légale. La frise
     s'arrête au premier jalon absent. Ajouter ou retirer une preuve
     déplace l'étape. L'année en cours ne montre que le compte.
-  - Le nom de l'organisation (`tenants.nom`) se change dans la barre
-    latérale, qui reste fixe au défilement. Invitations est le lien en
-    haut à droite de la liste, et n'est plus dans la barre.
+  - Le nom de l'organisation (`tenants.nom`) se change dans le menu du compte
+    (l'avatar, en bas de la barre latérale), qui défile avec la
+    page. Invitations est le lien en haut à droite de la liste, et n'est
+    plus dans la barre.
   - **Rappels** (`/rappels`) : règles SMS, e-mail ou appel, pour toutes
     les entreprises ou certaines, manuelles ou N jours avant la clôture.
     L'envoi n'est pas branché. Trois règles de base sont posées au

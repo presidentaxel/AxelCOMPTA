@@ -90,7 +90,7 @@ export default function RappelsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Rappels</h1>
       <p className="mt-2 text-sm text-subtle">
         Les relances se préparent ici. L&apos;envoi n&apos;est pas branché : aucun SMS, e-mail ou appel ne part.

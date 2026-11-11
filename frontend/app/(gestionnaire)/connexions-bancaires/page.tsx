@@ -83,7 +83,7 @@ export default function ConnexionsBancairesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Connexions bancaires</h1>
       <p className="mt-2 text-sm text-subtle">
         Sans connexion valide, les opérations d&apos;une entreprise n&apos;arrivent plus.

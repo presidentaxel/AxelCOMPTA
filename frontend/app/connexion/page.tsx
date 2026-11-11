@@ -12,7 +12,7 @@ import { CHEMIN_DOUBLE_AUTHENTIFICATION } from "@/lib/mfa-code";
 import { cheminDeRetour } from "@/lib/session";
 
 /** Connexion gestionnaire (doc 03 §7). Hors du groupe `(gestionnaire)` pour
- * ne pas hériter de la Sidebar/TopBar avant d'être connecté. */
+ * ne pas hériter de la barre de navigation avant d'être connecté. */
 export default function ConnexionGestionnairePage() {
   const router = useRouter();
 

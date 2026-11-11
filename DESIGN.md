@@ -9,7 +9,7 @@ description: |
   chaud), un seul accent orange foncé (signal) pour les repères et les liens
   d'action, un surligneur jaune pour le chiffre qui compte. Inter partout,
   titres à 600, cartes cernées d'un filet plutôt que d'une ombre, navigation
-  en barre horizontale. Les chiffres ont leur propre traitement typographique
+  en barre latérale claire. Les chiffres ont leur propre traitement typographique
   (tabular-nums, alignement à droite, codage couleur positif/négatif).
   L'interface s'adapte à deux modes (portefeuille N dossiers vs mono-entreprise)
   et au statut de chaque dossier, sans jamais afficher de fonctions grisées.
@@ -285,6 +285,9 @@ transition:
   fast: "100ms ease"
   base: "150ms ease"
   slow: "200ms ease"
+  # Indicateur glissant (onglets, navigation) : 180 ms, freine en fin de course.
+  # Mesuré sur une vidéo de référence : un saut de 350 px en ~170 ms.
+  indicator: "180ms cubic-bezier(0.22, 1, 0.36, 1)"
 
 components:
   # --- Boutons ---
@@ -415,7 +418,7 @@ components:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink}"
     typography: "{typography.body-md}"
-    border: "1px solid {colors.border}"
+    border: "1px solid {colors.border-strong}"
     rounded: "{rounded.md}"
     padding: 7px 12px
     height: 36px
@@ -426,7 +429,7 @@ components:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink}"
     typography: "{typography.body-lg}"
-    border: "1px solid {colors.border}"
+    border: "1px solid {colors.border-strong}"
     rounded: "{rounded.md}"
     padding: 0 12px
     height: 44px
@@ -625,7 +628,7 @@ components:
     backgroundColor: "{colors.canvas-app}"
     textColor: "{colors.subtle}"
     typography: "{typography.overline}"
-    borderBottom: "1px solid {colors.border}"
+    borderBottom: "1px solid {colors.ink}"
     height: 36px
     padding: 0 16px
     textTransform: uppercase
@@ -636,13 +639,14 @@ components:
     borderBottom: "1px solid {colors.hairline}"
     height: 52px
     padding: 0 16px
-    hoverBackground: "{colors.canvas-app}"
+    hoverBackground: "{colors.surface-soft}"
     transition: "{transition.fast}"
   table-row-total:
     backgroundColor: "{colors.canvas-app}"
     textColor: "{colors.ink}"
     typography: "{typography.heading-sm}"
-    borderTop: "2px solid {colors.border-strong}"
+    # Bordure double de 4 px (`border-t-4 border-double`), posée sur les cellules.
+    borderTop: "4px double {colors.border-strong}"
     height: 44px
     padding: 0 16px
   table-cell-amount:
@@ -650,34 +654,56 @@ components:
     fontVariantNumeric: tabular-nums
     paddingRight: 16px
 
-  # --- Navigation : barre horizontale (remplace la sidebar, AXE-874) ---
-  nav-bar:
+  # --- Navigation : barre latérale (AXE-877) ---
+  # Une barre horizontale (AXE-874) a été essayée puis écartée : voir l'ADR-008.
+  # Collée à la hauteur de l'écran ; la marque occupe les 64 px du haut.
+  nav-sidebar:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink}"
-    borderBottom: "1px solid {colors.border}"
-    height: 64px
-    padding: 0 40px
+    borderRight: "1px solid {colors.border}"
+    width: 256px
+    brandHeight: 64px
   nav-item:
     backgroundColor: "transparent"
     textColor: "{colors.muted}"
     typography: "{typography.label-md}"
+    hoverBackground: "{colors.surface-soft}"
     hoverTextColor: "{colors.ink}"
+    minHeight: 44px
+    padding: 0 16px
+    rounded: "{rounded.md}"
     transition: "{transition.base}"
   nav-item-active:
+    backgroundColor: "{colors.surface-soft}"
     textColor: "{colors.ink}"
     typography: "{typography.heading-sm}"
-    borderBottom: "2px solid {colors.ink}"
-  # Une action est attendue dans cette section : point de 7 px à droite du libellé.
+  # Le filet vertical de 2 px à gauche de la colonne : il glisse d'une entrée à l'autre.
+  nav-indicator:
+    width: 2px
+    backgroundColor: "{colors.ink}"
+    transition: "{transition.indicator}"
+  # Une action est attendue dans cette section : point de 7 px, aligné à droite de l'entrée.
   nav-item-alert:
     dotColor: "{colors.signal}"
     dotSize: 7px
     dotRounded: "{rounded.full}"
-  # Zone de compte, à droite de la barre.
+  # Bloc de compte, en bas de la barre latérale : avatar, nom de l'organisation, e-mail.
   nav-account:
+    borderTop: "1px solid {colors.border}"
+    minHeight: 48px
+    rounded: "{rounded.md}"
+    hoverBackground: "{colors.surface-soft}"
+  nav-account-avatar:
     backgroundColor: "{colors.ink}"
-    textColor: "{colors.on-dark}"
+    textColor: "{colors.on-primary}"
     size: 32px
     rounded: "{rounded.full}"
+  # Sous 1024 px : barre haute avec la marque, le bouton « Menu » et l'avatar.
+  nav-bar-compact:
+    backgroundColor: "{colors.canvas}"
+    borderBottom: "1px solid {colors.border}"
+    height: 56px
+    padding: 0 16px
 
   # --- Raccourcis clavier (affichés dans l'UI) ---
   kbd:
@@ -730,26 +756,29 @@ components:
   toast-success:
     backgroundColor: "{colors.surface-dark}"
     textColor: "{colors.on-dark}"
-    border: "1px solid rgba(251,250,248,0.12)"
+    border: "1px solid rgba(251,250,248,0.10)"
     rounded: "{rounded.md}"
     padding: 12px 16px
     shadow: "{shadow.lg}"
+    accentBarWidth: 3px  # repère de gauche en success
     accentColor: "{colors.success}"
   toast-warning:
     backgroundColor: "{colors.surface-dark}"
     textColor: "{colors.on-dark}"
-    border: "1px solid rgba(251,250,248,0.12)"
+    border: "1px solid rgba(251,250,248,0.10)"
     rounded: "{rounded.md}"
     padding: 12px 16px
     shadow: "{shadow.lg}"
+    accentBarWidth: 3px  # repère de gauche en warning
     accentColor: "{colors.warning}"
   toast-error:
     backgroundColor: "{colors.surface-dark}"
     textColor: "{colors.on-dark}"
-    border: "1px solid rgba(251,250,248,0.12)"
+    border: "1px solid rgba(251,250,248,0.10)"
     rounded: "{rounded.md}"
     padding: 12px 16px
     shadow: "{shadow.lg}"
+    accentBarWidth: 3px  # repère de gauche en danger
     accentColor: "{colors.danger}"
 
   # --- Modals ---
@@ -763,6 +792,18 @@ components:
     padding: 24px
     shadow: "{shadow.overlay}"
     maxWidth: 520px
+    # Espace chauffeur : feuille du bas (au-dessus de la barre, hauteur calée sur
+    # le visual viewport). Titre en heading-lg, padding 24px.
+    titleTypography: "{typography.heading-lg}"
+  # --- Onglets : texte muted, actif ink avec filet bas de 2px, 14px/600, sans fond ---
+  tabs:
+    textColor: "{colors.muted}"
+    activeTextColor: "{colors.ink}"
+    # Le filet n'est plus sur l'onglet : il glisse de l'un à l'autre.
+    indicator: "2px solid {colors.ink}"
+    indicatorTransition: "{transition.indicator}"
+    typography: "{typography.button-md}"
+    height: 40px
 ---
 
 ## Vue d'ensemble
@@ -782,9 +823,10 @@ point d'alerte ; `{colors.highlight}` (`#FDE7C4`) pour le surligneur jaune ;
 Partout ailleurs : des neutres chauds. (Le design system 1.x reposait sur un
 accent bleu ; l'ADR-008 le remplace.)
 
-La navigation est une **barre horizontale** en haut de l'écran : il n'y a plus
-de barre latérale, donc plus aucune zone sombre dans l'interface courante. Les
-tokens `surface-dark` et `on-dark` ne servent plus qu'aux toasts de décision.
+La navigation est une **barre latérale** claire, à gauche de l'écran (fond
+`{colors.canvas}`, filet droit) : plus aucune zone sombre dans l'interface
+courante. Les tokens `surface-dark` et `on-dark` ne servent plus qu'aux toasts
+de décision.
 Le mode sombre global n'est pas prévu avant la phase 5.
 
 ## Couleurs
@@ -837,7 +879,7 @@ Gamme neutre chaude, légèrement tirée vers le beige, cohérente avec le fond 
 - **Canvas App** (`{colors.canvas-app}` — `#FBFAF8`) : fond de l'application
   (body). Ne jamais poser du blanc pur sur blanc pur.
 - **Canvas** (`{colors.canvas}` — `#FFFFFF`) : cartes, panneaux, tableaux,
-  barre de navigation.
+  barre latérale.
 - **Surface Soft** (`{colors.surface-soft}` — `#F4F2EE`) : survols légers,
   pills de filtre.
 - **Border** (`#E7E5E0`), **Border Strong** (`#D4D1CA`), **Hairline**
@@ -951,28 +993,36 @@ couleur `{colors.amount-positive}` dans un tableau de recettes,
 ### Application shell
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│  Barre de navigation (64px) · fond canvas · filet bas border     │
-│  Logo · Entreprises ● · Invitations · Rappels · …   ⌘K · (AR)    │
-├──────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│            Zone de contenu principale                            │
-│            fond canvas-app (#FBFAF8)                             │
-│            padding de page : 40px                                │
-│            largeur max : 1180px                                  │
-│                                                                  │
-└──────────────────────────────────────────────────────────────────┘
+┌───────────────────┬───────────────────────────────────────────────┐
+│ Marque (64px)     │ Zone de contenu principale                    │
+│                   │ fond canvas-app (#FBFAF8)                     │
+│ Entreprises ●     │ marge de page : 40px                          │
+│ Mode expert       │ largeur max : 1600px, centrée                 │
+│ Rappels           │ défilement : celui de la page                 │
+│ Invitations       │                                               │
+│ …                 │                                               │
+│                   │                                               │
+│ (AR) Organisation │                                               │
+│      e-mail       │                                               │
+└───────────────────┴───────────────────────────────────────────────┘
+   Barre latérale : 256px · fond canvas · filet droit border · collée à
+   la hauteur de l'écran (position sticky)
    ● = nav-item-alert : une action est attendue dans cette section
-   (AR) = zone de compte, avatar de 32px sur fond ink
+   (AR) = bloc de compte, en bas : avatar de 32px sur fond ink, nom de
+   l'organisation et e-mail ; il ouvre un menu vers le haut
+   (la recherche globale ⌘K, prévue au doc 11, n'est pas encore livrée)
 ```
+
+Sous 1024px, la barre latérale est masquée : une barre haute de 56px (marque,
+bouton « Menu », avatar) la remplace, et le contenu passe sous elle.
 
 En mode mono-entreprise, la barre reste présente mais la liste des dossiers
 est supprimée : l'entrée racine mène directement au tableau de bord du dossier.
 
 ### Espacement
 
-- **Padding de page** : 40px sur les quatre côtés (barre de navigation
-  comprise : `padding: 0 40px`).
+- **Marge de page** : 40px sur les quatre côtés de la zone de contenu, à côté
+  de la barre latérale (24px sous 1024px, 16px sous 640px).
 - **Gap entre cards** : `{spacing.lg}` (16px).
 - **Padding interne card** : 20px standard, `{spacing.xl}` (24px) pour les
   modales et la review-card.
@@ -982,7 +1032,12 @@ est supprimée : l'entrée racine mène directement au tableau de bord du dossie
 
 ### Grille de contenu
 
-- **Max-width** : 1180px sur la zone de contenu.
+- **Max-width** : 1600px sur la zone de contenu (marges de 40px). Les listes et
+  tableaux prennent toute la largeur ; un écran de formulaire garde une mesure
+  lisible (60 à 75 caractères) et la remplit avec un second panneau, jamais avec
+  des marges vides. Le cadre de 1600px est centré dans la place que laisse la
+  barre latérale : sur un écran de 1920px, il reste 1664px à côté d'elle, et le
+  cadre laisse 32px de chaque côté.
 - **Tableaux** : pleine largeur de la zone de contenu.
 - **Dashboard portefeuille** : grille 3 colonnes à ≥ 1024px, 2 à ≥ 768px, 1 en
   dessous.
@@ -1001,7 +1056,7 @@ filet `border`. Les ombres `shadow-*` ne servent qu'aux éléments flottants.
 | 1 — surface | `{colors.canvas}` + bordure, **sans ombre** | Cards, tableaux |
 | 2 — panneau flottant | `{colors.canvas}` + `{shadow.md}` + bordure | Menus déroulants, popovers |
 | 3 — overlay | `{colors.canvas}` + `{shadow.overlay}` + bordure | Fenêtres (modales) |
-| N — navigation | `{colors.canvas}` + filet bas `{colors.border}`, sans ombre | Barre de navigation |
+| N — navigation | `{colors.canvas}` + filet droit `{colors.border}`, sans ombre | Barre latérale (filet bas pour la barre haute sous 1024px) |
 
 Pas de gradient décoratif (le seul gradient est le surlignage `highlight`),
 pas d'effet glassmorphism, pas de fond flouté.
@@ -1014,7 +1069,8 @@ pas d'effet glassmorphism, pas de fond flouté.
 - `{rounded.md}` (6px) — les « contrôles » : boutons, champs, menus déroulants, toasts.
 - `{rounded.sm}` (4px) — pastilles internes.
 - `{rounded.xs}` (4px) — chips internes, kbd, petits éléments.
-- `{rounded.none}` — tableaux full-width, barre de navigation.
+- `{rounded.none}` — tableaux full-width, barre latérale (ses entrées, elles,
+  sont en `{rounded.md}`).
 
 ## Composants clés
 
@@ -1067,19 +1123,38 @@ Au plus un par écran.
 
 ### Navigation
 
-La navigation du gestionnaire est la barre `nav-bar` : 64px de haut, fond
-`{colors.canvas}`, filet bas `{colors.border}`, padding `0 40px`.
+La navigation du gestionnaire est la barre latérale `nav-sidebar` : 256px de
+large, fond `{colors.canvas}`, filet droit `{colors.border}`, collée à la
+hauteur de l'écran (le contenu défile, pas la barre). De haut en bas : la
+marque (zone de 64px), les sept entrées en colonne, le bloc de compte.
 
-- **`nav-item`** : 14px, poids 500, `{colors.muted}`.
-- **`nav-item-active`** : poids 600, `{colors.ink}`, filet bas de 2px `ink`.
-- **`nav-item-alert`** : point de 7px `{colors.signal}` à droite du libellé.
-  Signifie qu'une action est attendue dans cette section ; le libellé et, dans
-  la page, le texte de la ligne concernée disent laquelle (le point ne
+- **`nav-item`** : 14px, poids 500, `{colors.muted}`, 44px de haut au moins,
+  `{rounded.md}`, padding horizontal de 16px. Au survol : fond
+  `{colors.surface-soft}` et texte `{colors.ink}`.
+- **`nav-item-active`** : poids 600, `{colors.ink}`, fond
+  `{colors.surface-soft}`.
+- **`nav-indicator`** : le filet vertical de 2px `ink`, à gauche de la colonne,
+  n'est pas une bordure de l'entrée : c'est un indicateur qui glisse d'une
+  entrée à l'autre en 180 ms (`{transition.indicator}`), car la barre reste
+  montée d'une page à l'autre. C'est le composant `IndicateurGlissant`, que les
+  onglets utilisent sur l'axe horizontal (filet sous la rangée) : la même
+  transition `{transition.indicator}` s'applique aux deux axes.
+- **`nav-item-alert`** : point de 7px `{colors.signal}`, aligné à droite de
+  l'entrée. Signifie qu'une action est attendue dans cette section ; le libellé
+  et, dans la page, le texte de la ligne concernée disent laquelle (le point ne
   distingue jamais seul).
-- **Zone de compte** à droite : avatar de 32px sur fond `ink`.
+- **`nav-account`**, le bloc de compte en bas de la barre (filet haut
+  `{colors.border}`) : avatar de 32px sur fond `ink` (`nav-account-avatar`,
+  texte `{colors.on-primary}`), nom de l'organisation et e-mail. Le bloc ouvre un
+  menu vers le haut : nom de l'organisation (modifiable par un administrateur),
+  e-mail, « Compte » et « Se déconnecter ».
 
-Sous 1024px (≤ 1023px), les entrées passent dans un bouton « Menu » qui ouvre
-un tiroir ; la zone de compte reste visible.
+Sous 1024px (≤ 1023px), la barre latérale est masquée et laisse place à la barre
+haute `nav-bar-compact` : 56px de haut, fond `{colors.canvas}`, filet bas
+`{colors.border}`, avec la marque, un bouton « Menu » (cible d'au moins 44px) et
+l'avatar, sans le nom ni l'e-mail. Le bouton ouvre les mêmes entrées dans un
+tiroir : panneau gauche de 18rem, ombre `{shadow.overlay}`, voile `ink` à 50 %,
+focus piégé, Échap ferme.
 
 ### Ligne « à traiter » (`row-a-traiter`)
 
@@ -1170,7 +1245,7 @@ desktop-first. Règles distinctes :
   restent derrière une aide (« ? »).
 - Chaque état vide ou erreur propose une action (« Réessayer »,
   « Actualiser »).
-- Ni la barre de navigation horizontale ni les tableaux du gestionnaire.
+- Ni la barre latérale ni les tableaux du gestionnaire.
 
 ## Do's et Don'ts
 
@@ -1192,7 +1267,10 @@ desktop-first. Règles distinctes :
   `{shadow.md}` et `{shadow.overlay}` aux menus, popovers et fenêtres.
 - Tout état vide a une action — jamais de page blanche sans invitation.
 - Transitions à 150ms (`{transition.base}`) maximum — l'interface doit sembler
-  réactive, pas animée.
+  réactive, pas animée. Seule exception : le filet qui glisse d'un onglet
+  (horizontal) ou d'une entrée de la barre latérale (vertical) à l'autre
+  (`{transition.indicator}`, 180 ms, il freine en fin de course). Aucune animation si l'utilisateur réduit le
+  mouvement, ni au premier affichage.
 
 ### Don't
 
@@ -1232,13 +1310,14 @@ mobile-first (voir « Espace chauffeur »).
 |---|---|---|
 | Desktop XL | ≥ 1440px | Grille dashboard 3 colonnes, tableaux pleine largeur |
 | Desktop | 1280–1439px | Idem, container légèrement réduit |
-| Laptop | 1024–1279px | Barre de navigation complète ; grille dashboard 2 colonnes |
-| Tablet | 768–1023px | Entrées de navigation dans un bouton « Menu » (tiroir) ; grille 1 colonne |
+| Laptop | 1024–1279px | Barre latérale de 256px ; grille dashboard 2 colonnes |
+| Tablet | 768–1023px | Barre latérale remplacée par une barre haute de 56px, entrées dans un bouton « Menu » (tiroir) ; grille 1 colonne |
 | Mobile | < 768px | Espace chauffeur (colonne unique, barre du bas) ; le gestionnaire n'est pas optimisé mobile |
 
-À partir de 1023px et en dessous, les entrées de la barre de navigation
-passent dans un bouton « Menu » qui ouvre un tiroir ; la zone de compte reste
-visible.
+À partir de 1023px et en dessous, la barre latérale est masquée : une barre haute
+de 56px (marque, bouton « Menu », avatar) la remplace, et les entrées passent
+dans le tiroir qu'ouvre le bouton. La marge de page est de 24px sous 1024px, de
+16px sous 640px.
 
 L'espace chauffeur n'a pas de barre de navigation horizontale : navigation par
 la barre du bas. Les textes juridiques (`/legal/…`) sont des pages publiques
@@ -1314,8 +1393,8 @@ Les ombres (`--shadow-xs` à `--shadow-overlay`) et les anneaux de focus
 (`--shadow-focus*`) sont aussi dans `@theme` : ils **remplacent** les ombres
 grises par défaut de Tailwind, et `shadow-xs`, `shadow-sm`… suivent donc ce
 contrat. Les variables `--sidebar-*` du bloc `:root` viennent du CLI shadcn
-et ne servent pas : la navigation est une barre horizontale écrite en classes
-Tailwind.
+et ne servent pas : la barre latérale est écrite en classes Tailwind
+(`components/Navigation.tsx`).
 
 Pour les montants, utiliser la classe utilitaire Tailwind `tabular-nums`
 (`font-variant-numeric: tabular-nums`) et ne jamais oublier `text-right` sur
@@ -1341,9 +1420,11 @@ les colonnes numériques.
 
 - **Design system v2.0 (2026-11-11)** : tokens, DESIGN.md et ADR-008 faits ;
   composants Button/Input/Card/Badge faits (AXE-875), primitives Select/Dialogue/
-  Toast/Tableau (AXE-876), navigation (AXE-877) à faire. Tant que ces tickets
-  ne sont pas livrés, les composants du code peuvent encore refléter l'ancien
-  rendu (bleu, sidebar, ombres) : le contrat est DESIGN.md.
+  Toast/Tableau/Onglets et StatutDossier faites (AXE-876), barre latérale
+  faite (AXE-877, `components/Navigation.tsx`, `lib/navigation.ts`).
+  Restent les écrans (issues 5 à 11) : tant qu'ils ne sont pas livrés, certains
+  peuvent encore refléter l'ancien rendu : le contrat est DESIGN.md. La cloche du
+  chauffeur suit le niveau « popover » (`shadow-md`, `rounded-md`).
 - **Remise à jour du 2026-11-10 (AXE-870)** (historique) : code et contrat
   relus l'un contre l'autre. Les couleurs étaient déjà identiques (53 tokens).
   Écarts corrigés : ombres du contrat absentes du code (Tailwind utilisait ses
@@ -1386,9 +1467,10 @@ les colonnes numériques.
   `Input uiSize="lg"` + `Button`). Plus aucun écran du produit n'a de bouton,
   carte ou champ de saisie en classes Tailwind ad hoc. La passe UX/UI
   proprement dite (revue visuelle, pas juste la conformité aux tokens) est
-  reprise par la refonte AXE-873. `review-card`, `table-*`, `toast-*`,
-  `modal` restent des tokens DESIGN.md sans composant React, aucun écran
-  actuel n'en a besoin pour l'instant.
+  reprise par la refonte AXE-873. Depuis AXE-876, `table-*`, `toast-*`, `modal`, `select`, `tabs` et
+  `statut-dossier` ont leur composant (`components/ui/table|toast|select|tabs.tsx`,
+  `Dialogue`, `StatutDossier`), pas encore branchés sur les écrans (issues 5 à
+  11). `review-card` reste un token sans composant React.
 - ~~Parcours chauffeur : problème plus profond que le design system~~
   (2026-09-22) — traité depuis : espace chauffeur en écrans séparés, une
   opération à la fois, revues UX AXE-563 et AXE-704 (novembre).

@@ -124,7 +124,7 @@ export function Cloche({ dossierId, chemin }: { dossierId: string; chemin: strin
           role="dialog"
           aria-label="Notifications"
           style={{ maxHeight: HAUTEUR_PANNEAU }}
-          className="absolute right-0 top-12 z-20 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-lg border border-border bg-canvas p-2 shadow-lg"
+          className="absolute right-0 top-12 z-20 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-md border border-border bg-canvas p-2 shadow-md"
         >
           {statut === "erreur" ? (
             <Etat
