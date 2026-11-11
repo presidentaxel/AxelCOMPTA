@@ -1,5 +1,6 @@
-/** Marque du produit. Le badge Alpha dit que le produit commence,
- * sans étiquette de démonstration. */
+/** Marque du produit : carré d'accent `signal`, lettre en `on-primary` (lisible
+ * sur le fond blanc de la barre de navigation comme sur fond sombre). Le badge
+ * Alpha dit que le produit commence, sans étiquette de démonstration. */
 export function Marque({ surFondSombre = false }: { surFondSombre?: boolean }) {
   const encre = surFondSombre ? "var(--color-on-dark)" : "var(--color-ink)";
   const filet = surFondSombre ? "var(--color-on-dark-mute)" : "var(--color-border-strong)";
@@ -12,12 +13,17 @@ export function Marque({ surFondSombre = false }: { surFondSombre?: boolean }) {
         <path
           d="M8 20.5 L14 7.5 L20 20.5"
           fill="none"
-          stroke="#FFFFFF"
+          style={{ stroke: "var(--color-on-primary)" }}
           strokeWidth="2.2"
           strokeLinejoin="round"
           strokeLinecap="round"
         />
-        <path d="M10.4 15.6 H17.6" stroke="#FFFFFF" strokeWidth="2.2" strokeLinecap="round" />
+        <path
+          d="M10.4 15.6 H17.6"
+          style={{ stroke: "var(--color-on-primary)" }}
+          strokeWidth="2.2"
+          strokeLinecap="round"
+        />
       </svg>
       <span className="text-sm font-semibold" style={{ color: encre }}>
         AxeL
