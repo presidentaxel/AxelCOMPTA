@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ENTREES_GESTIONNAIRE, entreeActive, initiales } from "./navigation";
+import { ENTREES_GESTIONNAIRE, cheminAffiche, entreeActive, initiales } from "./navigation";
 
 test("une entrée est active sur sa page et sur ses sous-pages", () => {
   assert.equal(entreeActive("/portefeuille", "/portefeuille"), true);
@@ -46,4 +46,17 @@ test("les initiales sont les deux premières lettres de l'e-mail, en majuscules"
 
 test("sans e-mail connu, l'avatar affiche AX", () => {
   assert.equal(initiales(""), "AX");
+});
+
+test("au clic, l'entrée visée est affichée avant l'arrivée de la page", () => {
+  assert.equal(cheminAffiche("/portefeuille", { href: "/equipe", depuis: "/portefeuille" }), "/equipe");
+});
+
+test("sans attente, on montre le vrai chemin", () => {
+  assert.equal(cheminAffiche("/portefeuille", null), "/portefeuille");
+});
+
+test("une attente périmée est ignorée : la page est arrivée ou une garde a redirigé", () => {
+  assert.equal(cheminAffiche("/equipe", { href: "/equipe", depuis: "/portefeuille" }), "/equipe");
+  assert.equal(cheminAffiche("/connexion", { href: "/equipe", depuis: "/portefeuille" }), "/connexion");
 });

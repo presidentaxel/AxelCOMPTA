@@ -14,7 +14,13 @@ import {
   obtenirSessionGestionnaire,
   renommerPortefeuille,
 } from "@/lib/auth-gestionnaire";
-import { ENTREES_GESTIONNAIRE, entreeActive, initiales } from "@/lib/navigation";
+import {
+  ENTREES_GESTIONNAIRE,
+  cheminAffiche,
+  entreeActive,
+  initiales,
+  type EntreeEnAttente,
+} from "@/lib/navigation";
 import { useDroitGestionnaire } from "@/lib/use-droit";
 
 /** Barre de navigation du gestionnaire (DESIGN.md § Navigation et
@@ -29,7 +35,10 @@ import { useDroitGestionnaire } from "@/lib/use-droit";
  * `alertes` : href des entrées « qui demandent une action » (point `signal`
  * à droite du libellé). Vide tant qu'aucun écran ne fournit l'information. */
 export function Navigation({ alertes = {} }: { alertes?: Partial<Record<string, boolean>> }) {
-  const chemin = usePathname();
+  const cheminReel = usePathname();
+  const [attente, setAttente] = useState<EntreeEnAttente | null>(null);
+  // Le filet part au clic, pas à l'arrivée de la page (voir `cheminAffiche`).
+  const chemin = cheminAffiche(cheminReel, attente);
   const [tiroirOuvert, setTiroirOuvert] = useState(false);
 
   return (
@@ -46,6 +55,7 @@ export function Navigation({ alertes = {} }: { alertes?: Partial<Record<string, 
               key={href}
               href={href}
               aria-current={actif ? "page" : undefined}
+              onClick={() => setAttente({ href, depuis: cheminReel })}
               className={`flex items-center gap-1.5 text-sm whitespace-nowrap outline-none transition-colors duration-150 focus-visible:shadow-focus-detache ${
                 actif ? "font-semibold text-ink" : "font-medium text-muted hover:text-ink"
               }`}
@@ -88,6 +98,7 @@ export function Navigation({ alertes = {} }: { alertes?: Partial<Record<string, 
                       <Link
                         href={href}
                         aria-current={actif ? "page" : undefined}
+                        onClick={() => setAttente({ href, depuis: cheminReel })}
                         className={`flex min-h-11 items-center gap-2 rounded-md border-l-2 px-3 text-sm outline-none transition-colors duration-150 focus-visible:shadow-focus-detache ${
                           actif
                             ? "border-ink font-semibold text-ink"

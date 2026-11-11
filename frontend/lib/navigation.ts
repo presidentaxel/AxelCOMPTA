@@ -23,3 +23,15 @@ export function entreeActive(chemin: string, href: string): boolean {
 export function initiales(email: string): string {
   return email.slice(0, 2).toUpperCase() || "AX";
 }
+
+/** Entrée cliquée dont la page n'est pas encore arrivée : `depuis` est le
+ * chemin où se trouvait l'utilisateur au clic. */
+export type EntreeEnAttente = { href: string; depuis: string };
+
+/** Chemin à montrer comme actif. Dès le clic, la barre marque l'entrée visée
+ * sans attendre que la page se charge : le filet commence à glisser tout de
+ * suite. Dès que le chemin réel change (la page est arrivée, ou une garde a
+ * redirigé ailleurs), l'attente est périmée et on retombe sur le vrai chemin. */
+export function cheminAffiche(chemin: string, attente: EntreeEnAttente | null): string {
+  return attente && attente.depuis === chemin ? attente.href : chemin;
+}
