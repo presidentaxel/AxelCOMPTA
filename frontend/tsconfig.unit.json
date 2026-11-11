@@ -15,6 +15,10 @@
   },
   "include": [
     "lib/messages-auth.ts",
+    "lib/messages-mfa.ts",
+    "lib/messages-mfa.test.ts",
+    "lib/desinscription.ts",
+    "lib/desinscription.test.ts",
     "lib/mfa-code.ts",
     "lib/mfa.test.ts",
     "lib/tva.ts",
