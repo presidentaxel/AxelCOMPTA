@@ -1,9 +1,14 @@
 # 15 — Observabilité, métriques et monitoring
 
-> **État au 2026-11-05** (ajouté) : `GET /metrics` au format Prometheus,
-> journal JSON structuré et Sentry si `SENTRY_DSN` est posé (AXE-426).
-> Pas encore : dashboards, alerting, métriques métier (taux de
-> catégorisation, coût LLM), contrôle quotidien de la balance (AXE-807).
+> **État au 2026-11-10** (ajouté) : `GET /metrics` au format Prometheus,
+> fermé sans `METRICS_TOKEN` (404) ou avec un mauvais jeton (401,
+> AXE-810), journal JSON structuré et Sentry si `SENTRY_DSN` est posé
+> (AXE-426). Contrôle quotidien de la balance à 3 h (AXE-807) : écart →
+> alerte Sentry, ligne au journal des tâches, métrique
+> `balance_desequilibree_total`. Sans modèle de catégorisation, la synchro
+> s'arrête avec une erreur Sentry (AXE-825). Pas encore : dashboards,
+> alerting au-delà de Sentry, métriques métier (taux de catégorisation,
+> coût LLM), mesure des temps réels en production (AXE-843).
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-16
 

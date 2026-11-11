@@ -29,6 +29,7 @@ from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.ingestion.providers.digifactory import DigifactoryHttpClient
 from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, TYPE_RAPPELS, TYPE_SYNCHRO, Job
 from axelcompta.jobs.postgres import FilePostgres
+from axelcompta.modeles_distants import assurer_modele
 from axelcompta.nouveaux_contacts import (
     LireFiche,
     Proposition,
@@ -242,6 +243,7 @@ def dependances_reelles() -> Dependances:
 def main() -> int:
     """Une passe : toutes les demandes en attente, puis s'arrête (le
     planificateur relance chaque minute, sous `flock`)."""
+    assurer_modele()
     file = FilePostgres(engine_depuis_env())
     deps = dependances_reelles()
     while (job := file.prendre("worker")) is not None:

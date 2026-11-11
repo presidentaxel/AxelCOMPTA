@@ -58,6 +58,10 @@
     "lib/piege-focus.ts",
     "lib/piege-focus.test.ts",
     "lib/indicateur.ts",
-    "lib/indicateur.test.ts"
+    "lib/indicateur.test.ts",
+    "lib/identite-entreprise.ts",
+    "lib/identite-entreprise.test.ts",
+    "lib/juridique.ts",
+    "lib/juridique.test.ts"
   ]
 }
