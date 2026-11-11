@@ -236,19 +236,9 @@ decisions_expert = Table(
     Column("ecritures", JSON, nullable=False),  # écrites avec la décision (I6)
 )
 
-# AXE-808 (migration `e6b2d9f4a371`) : intégrations e-mail et SMS du
-# gestionnaire (paramètres chiffrés), envois des rappels, désinscriptions.
-integrations_envoi = Table(
-    "integrations_envoi",
-    metadata,
-    Column("tenant_id", String, ForeignKey("tenants.id"), primary_key=True),
-    Column("canal", String, primary_key=True),  # mail | sms
-    Column("fournisseur", String, nullable=False),  # smtp | http
-    Column("parametres_chiffres", String, nullable=False),
-    Column("maj_par", String, nullable=False),
-    Column("maj_le", DateTime(timezone=True), nullable=False),
-)
-
+# AXE-808 (migration `e6b2d9f4a371`) : envois des rappels, désinscriptions.
+# Les intégrations elles-mêmes sont des branchements du portefeuille
+# (`tenants.orm.branchements`, AXE-872).
 envois_rappel = Table(
     "envois_rappel",
     metadata,
@@ -262,6 +252,8 @@ envois_rappel = Table(
     Column("tentatives", Integer, nullable=False, server_default="0"),
     Column("raison", String, nullable=True),
     Column("maj_le", DateTime(timezone=True), nullable=False),
+    # AXE-872 : le branchement par lequel l'envoi est parti (ou a échoué).
+    Column("branchement_id", String, nullable=True),
 )
 
 desinscriptions = Table(

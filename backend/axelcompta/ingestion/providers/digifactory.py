@@ -369,6 +369,17 @@ class DigifactoryHttpClient:
             )
         return cls(base_url, token)
 
+    @classmethod
+    def depuis_parametres(cls, parametres: dict[str, str]) -> DigifactoryHttpClient:
+        """Un branchement Digifactory du portefeuille (AXE-872) : son jeton,
+        et son adresse, ou à défaut `DIGIFACTORY_BASE_URL`."""
+        base_url = parametres.get("url") or os.environ.get("DIGIFACTORY_BASE_URL")
+        if not base_url:
+            raise RuntimeError(
+                "adresse Digifactory absente du branchement et de DIGIFACTORY_BASE_URL"
+            )
+        return cls(base_url, parametres["jeton"])
+
     async def _get(self, chemin: str, params: dict[str, str] | None = None) -> Any:
         reponse = await self._client.get(chemin, params=params)
         if reponse.status_code == 401:

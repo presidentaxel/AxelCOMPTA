@@ -17,12 +17,14 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Identity,
+    Index,
     Integer,
     String,
     Table,
     Text,
     UniqueConstraint,
     false,
+    text,
     true,
 )
 
@@ -319,4 +321,42 @@ decisions_contacts = Table(
     Column("decision", String, nullable=False),
     Column("par", String, nullable=False),
     Column("le", DateTime(timezone=True), nullable=False),
+)
+
+# AXE-872 : les intégrations du portefeuille, plusieurs par type (SMTP, SMS,
+# Digifactory…). Remplace `integrations_envoi`, qui n'en gardait qu'une par
+# canal. Paramètres chiffrés (`core.chiffrement`), jamais relus à l'écran.
+branchements = Table(
+    "branchements",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False),
+    Column("type", String, nullable=False),  # mail | sms | digifactory
+    Column("fournisseur", String, nullable=False),  # smtp | http | digifactory
+    Column("nom", String, nullable=False),
+    Column("parametres_chiffres", String, nullable=False),
+    Column("par_defaut", Boolean, nullable=False),
+    Column("actif", Boolean, nullable=False),
+    Column("maj_par", String, nullable=False),
+    Column("maj_le", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("tenant_id", "type", "nom", name="uq_branchements_nom"),
+)
+# Un seul défaut par type et par portefeuille.
+Index(
+    "uq_branchements_defaut",
+    branchements.c.tenant_id,
+    branchements.c.type,
+    unique=True,
+    postgresql_where=text("par_defaut"),
+)
+
+# Le branchement qu'un dossier utilise pour un type, quand ce n'est pas
+# celui par défaut. Pas de ligne : le défaut.
+branchements_dossier = Table(
+    "branchements_dossier",
+    metadata,
+    Column("dossier_id", String, ForeignKey("dossiers.id"), primary_key=True),
+    Column("type", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False),
+    Column("branchement_id", String, ForeignKey("branchements.id"), nullable=False),
 )

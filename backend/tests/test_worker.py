@@ -4,6 +4,7 @@ contacts Digifactory et synchronise, avec un résumé pour l'écran."""
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, date, datetime
 
 from axelcompta.core.ids import DossierId, TenantId
@@ -15,7 +16,13 @@ from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.sirene import FicheSirene
 from axelcompta.tenants.tags import TAG_CHAUFFEUR
 from axelcompta.tenants.tags_memoire import TagsMemoire
-from axelcompta.worker import Dependances, detecter_portefeuilles, executer_job, resume
+from axelcompta.worker import (
+    CLE_BRANCHEMENT,
+    Dependances,
+    detecter_portefeuilles,
+    executer_job,
+    resume,
+)
 from axelcompta.workflow.synchro import RapportSynchro
 
 T = TenantId("TENANT_DEMO")
@@ -61,7 +68,7 @@ def _deps() -> tuple[Dependances, InMemoryDossierRepository, ContactsProposesMem
         dossiers=dossiers,
         contacts_proposes=contacts,
         tags=TagsMemoire(),
-        lire_contacts=lambda: CONTACTS,
+        lire_contacts=lambda _tenant: CONTACTS,
         lire_fiche=lambda siren: FICHES.get(siren or ""),
         synchroniser=synchroniser,
         prechauffer=len,
@@ -151,3 +158,22 @@ def test_l_import_cree_les_lignes_valides_en_un_lot_et_ne_double_rien() -> None:
     assert premier == "1 dossier créé, 1 ligne écartée"
     assert second == "0 dossier créé, 2 lignes écartées"
     assert [d.nom for d in depot.lister_par_tenant(TenantId("t"))] == ["MK DRIVING"]
+
+
+def test_un_dossier_cree_depuis_un_second_compte_digifactory_y_est_rattache() -> None:
+    """AXE-872 : un contact lu par un branchement qui n'est pas celui par
+    défaut garde son origine ; le dossier créé y est rattaché."""
+    deps, dossiers, contacts, _ = _deps()
+    rattaches: list[tuple[str, str, str]] = []
+    contacts_marques = {**CONTACTS, "10": {**CONTACTS["10"], CLE_BRANCHEMENT: "digi-2"}}
+    deps = replace(
+        deps,
+        lire_contacts=lambda _tenant: contacts_marques,
+        choisir_branchement=lambda t, d, b: rattaches.append((t, d, b)),
+    )
+    contacts.decider(T, "10", "ajouter", "louis@exemple.fr", datetime.now(UTC))
+
+    executer_job(FileMemoire().demander(T, TYPE_SYNCHRO), deps, AUJOURD_HUI)
+
+    assert dossiers.obtenir(DossierId("DIGI_10")) is not None
+    assert rattaches == [(T, "DIGI_10", "digi-2")]

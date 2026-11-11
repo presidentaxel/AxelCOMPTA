@@ -209,6 +209,17 @@ from axelcompta.tenants.avenants import (
     alerte_option_ir,
 )
 from axelcompta.tenants.avenants_postgres import PostgresAvenantRegimeRepository
+from axelcompta.tenants.branchements import (
+    Branchement,
+    BranchementIntrouvable,
+    BranchementsRepository,
+    Modification,
+    modifier,
+    nouveau,
+    types_branches,
+    verifier_choix,
+)
+from axelcompta.tenants.branchements_postgres import PostgresBranchements
 from axelcompta.tenants.confirmation import (
     ConfirmationRefusee,
     confirmer,
@@ -267,6 +278,7 @@ from axelcompta.tenants.tags import (
     nom_de_tag,
 )
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
+from axelcompta.tester_branchement import tester as tester_branchement
 from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT
 from axelcompta.workflow.classees import (
     Filtres,
@@ -336,7 +348,6 @@ from axelcompta.workflow.rappels_envoi import (
     EnvoisRepository,
     desinscription_valide,
     envois_du_rappel,
-    preparer_integration,
 )
 from axelcompta.workflow.rappels_envoi_postgres import PostgresEnvois
 from axelcompta.workflow.reclassement import (
@@ -2987,6 +2998,7 @@ def _enregistrer_route_declencher_rappel(app: FastAPI) -> None:
         identite: IdentiteDep,
         role: RoleMembreDep,
         envois: EnvoisDep,
+        branchements: BranchementsDep,
         file: DemandesJobsDep,
     ) -> RappelVue:
         """Enregistre le rappel, et un envoi par canal branché (AXE-808) que
@@ -3030,7 +3042,7 @@ def _enregistrer_route_declencher_rappel(app: FastAPI) -> None:
             DossierId(entree.dossier_id),
             regle.message,
             list(regle.canaux),
-            list(envois.canaux_branches(tenant_id)),
+            list(types_branches(branchements.lister(tenant_id))),
             datetime.now(UTC),
         )
         if a_envoyer:
@@ -6096,9 +6108,12 @@ def get_envois() -> EnvoisRepository:
 EnvoisDep = Annotated[EnvoisRepository, Depends(get_envois)]
 
 
-class IntegrationEnvoiEntree(BaseModel):
-    fournisseur: str
-    parametres: dict[str, str]
+def get_branchements() -> BranchementsRepository:
+    """Intégrations du portefeuille, plusieurs par type (AXE-872)."""
+    return PostgresBranchements(_engine())
+
+
+BranchementsDep = Annotated[BranchementsRepository, Depends(get_branchements)]
 
 
 class IntegrationsEnvoiVue(BaseModel):
@@ -6107,52 +6122,191 @@ class IntegrationsEnvoiVue(BaseModel):
     canaux: dict[str, str]
 
 
+class BranchementEntree(BaseModel):
+    type: str
+    fournisseur: str
+    nom: str
+    parametres: dict[str, str]
+
+
+class BranchementModification(BaseModel):
+    """Champs absents : inchangés. `parametres` remplace tous les identifiants."""
+
+    nom: str | None = None
+    parametres: dict[str, str] | None = None
+    par_defaut: bool | None = None
+    actif: bool | None = None
+
+
+class BranchementVue(BaseModel):
+    """Jamais un identifiant ni un mot de passe."""
+
+    id: str
+    type: str
+    fournisseur: str
+    nom: str
+    par_defaut: bool
+    actif: bool
+    maj_le: str | None
+
+
+class EssaiVue(BaseModel):
+    statut: str  # ok | echec | indisponible
+    message: str
+
+
+class ChoixDossierEntree(BaseModel):
+    """`None` : le dossier revient au branchement par défaut."""
+
+    branchement_id: str | None
+
+
+class ChoixDossierVue(BaseModel):
+    """Type → branchement choisi pour ce dossier (absent : celui par défaut)."""
+
+    choix: dict[str, str]
+
+
 class EnvoiVue(BaseModel):
     canal: str
     statut: str
     tentatives: int
     raison: str | None
     le: str | None
+    branchement: str | None = None  # nom du branchement par lequel il est parti
 
 
 class DesinscriptionVue(BaseModel):
     message: str
 
 
-def _integrations_vue(envois: EnvoisRepository, tenant_id: TenantId) -> IntegrationsEnvoiVue:
-    return IntegrationsEnvoiVue(
-        canaux={c: le.isoformat() for c, le in envois.canaux_branches(tenant_id).items()}
+def _vue_branchement(b: Branchement) -> BranchementVue:
+    return BranchementVue(
+        id=b.id,
+        type=b.type,
+        fournisseur=b.fournisseur,
+        nom=b.nom,
+        par_defaut=b.par_defaut,
+        actif=b.actif,
+        maj_le=b.maj_le.isoformat() if b.maj_le else None,
     )
 
 
-def _enregistrer_routes_envoi(app: FastAPI) -> None:
-    """AXE-808 : brancher l'e-mail et le SMS du gestionnaire, suivre les envois."""
+def _admin_du_portefeuille(
+    identite: IdentiteAuthentifiee | None, role: str
+) -> tuple[TenantId, str]:
+    tenant_id, identite = _verifier_acces_gestionnaire(identite)
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="Réservé à un administrateur.")
+    return tenant_id, str(identite.user_id)
 
-    @app.get("/portefeuille/integrations/envoi", response_model=IntegrationsEnvoiVue)
-    def lire_integrations_envoi(identite: IdentiteDep, envois: EnvoisDep) -> IntegrationsEnvoiVue:
+
+def _enregistrer_routes_branchements(app: FastAPI) -> None:
+    """AXE-872 : plusieurs intégrations de chaque type, une par défaut. Les
+    identifiants sont chiffrés, et ne reviennent jamais à l'écran."""
+
+    @app.get("/portefeuille/integrations", response_model=list[BranchementVue])
+    def lister_branchements(
+        identite: IdentiteDep, branchements: BranchementsDep
+    ) -> list[BranchementVue]:
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
-        return _integrations_vue(envois, tenant_id)
+        return [_vue_branchement(b) for b in branchements.lister(tenant_id)]
 
-    @app.put("/portefeuille/integrations/envoi/{canal}", response_model=IntegrationsEnvoiVue)
-    def brancher_integration_envoi(
-        canal: str,
-        entree: IntegrationEnvoiEntree,
+    @app.post("/portefeuille/integrations", response_model=list[BranchementVue])
+    def ajouter_branchement(
+        entree: BranchementEntree,
         identite: IdentiteDep,
         role: RoleMembreDep,
-        envois: EnvoisDep,
+        branchements: BranchementsDep,
+    ) -> list[BranchementVue]:
+        tenant_id, par = _admin_du_portefeuille(identite, role)
+        existants = branchements.lister(tenant_id)
+        cree = nouveau(
+            existants, tenant_id, entree.type, entree.fournisseur, entree.nom, entree.parametres
+        )
+        branchements.enregistrer([cree], par, datetime.now(UTC))
+        return [_vue_branchement(b) for b in branchements.lister(tenant_id)]
+
+    @app.patch("/portefeuille/integrations/{branchement_id}", response_model=list[BranchementVue])
+    def modifier_branchement(
+        branchement_id: str,
+        entree: BranchementModification,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        branchements: BranchementsDep,
+    ) -> list[BranchementVue]:
+        tenant_id, par = _admin_du_portefeuille(identite, role)
+        modification = Modification(
+            nom=entree.nom,
+            parametres=entree.parametres,
+            par_defaut=entree.par_defaut,
+            actif=entree.actif,
+        )
+        a_enregistrer = modifier(branchements.lister(tenant_id), branchement_id, modification)
+        branchements.enregistrer(a_enregistrer, par, datetime.now(UTC))
+        return [_vue_branchement(b) for b in branchements.lister(tenant_id)]
+
+    @app.post("/portefeuille/integrations/{branchement_id}/tester", response_model=EssaiVue)
+    def tester_un_branchement(
+        branchement_id: str,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        branchements: BranchementsDep,
+    ) -> EssaiVue:
+        tenant_id, _par = _admin_du_portefeuille(identite, role)
+        branchement = next(
+            (b for b in branchements.lister(tenant_id) if b.id == branchement_id), None
+        )
+        if branchement is None:
+            raise BranchementIntrouvable(f"Branchement inconnu : {branchement_id}")
+        essai = tester_branchement(branchement)
+        return EssaiVue(statut=essai.statut, message=essai.message)
+
+
+def _enregistrer_routes_branchements_dossier(app: FastAPI) -> None:
+    """AXE-872 : le branchement qu'un dossier utilise, type par type."""
+
+    @app.get("/dossiers/{dossier_id}/integrations", response_model=ChoixDossierVue)
+    def lire_choix_dossier(
+        dossier: DossierPortefeuilleDep, branchements: BranchementsDep
+    ) -> ChoixDossierVue:
+        return ChoixDossierVue(choix=branchements.choix_du_dossier(dossier.tenant_id, dossier.id))
+
+    @app.put("/dossiers/{dossier_id}/integrations/{type_}", response_model=ChoixDossierVue)
+    def choisir_pour_le_dossier(
+        type_: str,
+        entree: ChoixDossierEntree,
+        dossier: DossierPortefeuilleDep,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        branchements: BranchementsDep,
+    ) -> ChoixDossierVue:
+        tenant_id, _par = _admin_du_portefeuille(identite, role)
+        verifier_choix(branchements.lister(tenant_id), type_, entree.branchement_id)
+        branchements.choisir_pour_dossier(tenant_id, dossier.id, type_, entree.branchement_id)
+        return ChoixDossierVue(choix=branchements.choix_du_dossier(tenant_id, dossier.id))
+
+
+def _enregistrer_routes_envoi(app: FastAPI) -> None:
+    """AXE-808 : suivre les envois, se désinscrire. Les canaux branchés se
+    lisent ici pour les écrans qui n'ont besoin que de savoir « branché »."""
+
+    @app.get("/portefeuille/integrations/envoi", response_model=IntegrationsEnvoiVue)
+    def lire_integrations_envoi(
+        identite: IdentiteDep, branchements: BranchementsDep
     ) -> IntegrationsEnvoiVue:
-        """Admin seulement. Les identifiants sont chiffrés avant d'être
-        écrits, et ne reviennent jamais à l'écran."""
-        tenant_id, identite = _verifier_acces_gestionnaire(identite)
-        if role != "admin":
-            raise HTTPException(status_code=403, detail="Réservé à un administrateur.")
-        integration = preparer_integration(tenant_id, canal, entree.fournisseur, entree.parametres)
-        envois.brancher(integration, str(identite.user_id), datetime.now(UTC))
-        return _integrations_vue(envois, tenant_id)
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        branches = types_branches(branchements.lister(tenant_id))
+        return IntegrationsEnvoiVue(
+            canaux={t: le.isoformat() for t, le in branches.items() if t in ("mail", "sms")}
+        )
 
     @app.get("/dossiers/{dossier_id}/envois", response_model=list[EnvoiVue])
-    def lire_envois(dossier: DossierPortefeuilleDep, envois: EnvoisDep) -> list[EnvoiVue]:
+    def lire_envois(
+        dossier: DossierPortefeuilleDep, envois: EnvoisDep, branchements: BranchementsDep
+    ) -> list[EnvoiVue]:
         """Suivi des rappels envoyés à cette entreprise : un statut, pas un contenu."""
+        noms = {b.id: b.nom for b in branchements.lister(dossier.tenant_id)}
         return [
             EnvoiVue(
                 canal=e.canal,
@@ -6160,6 +6314,7 @@ def _enregistrer_routes_envoi(app: FastAPI) -> None:
                 tentatives=e.tentatives,
                 raison=e.raison,
                 le=e.maj_le.isoformat() if e.maj_le else None,
+                branchement=noms.get(e.branchement_id or ""),
             )
             for e in envois.du_dossier(dossier.id, 50)
         ]
@@ -6837,6 +6992,8 @@ def create_app() -> FastAPI:
     _enregistrer_routes_tva(app)
     _enregistrer_route_declaration_tva(app)
     _enregistrer_routes_envoi(app)
+    _enregistrer_routes_branchements(app)
+    _enregistrer_routes_branchements_dossier(app)
     _enregistrer_routes_transactions(app)
     _enregistrer_route_correction(app)
     _enregistrer_routes_annulation(app)

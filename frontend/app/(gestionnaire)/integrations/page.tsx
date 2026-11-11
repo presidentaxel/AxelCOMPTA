@@ -3,12 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { IntegrationEnvoi } from "@/components/IntegrationEnvoi";
+import { BranchementsType } from "@/components/Branchements";
 import {
   lireCategorisation,
-  lireIntegrationsEnvoi,
+  listerBranchements,
   obtenirSessionGestionnaire,
+  type Branchement,
 } from "@/lib/auth-gestionnaire";
+import { ORDRE_TYPES } from "@/lib/branchements";
 import { useDroitGestionnaire } from "@/lib/use-droit";
 import type { EtatCategorisation } from "@/lib/types";
 
@@ -27,13 +29,14 @@ const PREVUES = [
   },
 ];
 
-/** Digifactory est le canal bancaire du portefeuille : les comptes des
- * entreprises arrivent par lui, l'app chauffeur ne propose donc pas de
- * connecter sa banque. Les autres intégrations sont annoncées, pas branchées. */
+/** AXE-872 : chaque intégration peut avoir plusieurs accès (plusieurs SMTP,
+ * plusieurs comptes Digifactory…). Un accès par défaut par type ; chaque
+ * entreprise peut en choisir un autre depuis sa fiche. Digifactory reste le
+ * canal bancaire : l'app chauffeur ne propose pas de connecter sa banque. */
 export default function IntegrationsPage() {
   const router = useRouter();
   const [categorisation, setCategorisation] = useState<EtatCategorisation | null>(null);
-  const [envoi, setEnvoi] = useState<Record<string, string>>({});
+  const [branchements, setBranchements] = useState<Branchement[]>([]);
   const droit = useDroitGestionnaire();
 
   useEffect(() => {
@@ -42,12 +45,12 @@ export default function IntegrationsPage() {
       return;
     }
     let actif = true;
-    lireIntegrationsEnvoi()
-      .then((canaux) => {
-        if (actif) setEnvoi(canaux);
+    listerBranchements()
+      .then((liste) => {
+        if (actif) setBranchements(liste);
       })
       .catch(() => {
-        // Non lu : les deux canaux s'affichent « À brancher ».
+        // Non lus : chaque type s'affiche « À brancher ».
       });
     lireCategorisation()
       .then((etat) => {
@@ -65,20 +68,19 @@ export default function IntegrationsPage() {
     <div className="mx-auto max-w-xl">
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Intégrations</h1>
       <p className="mt-2 text-sm text-subtle">
-        Digifactory apporte les comptes bancaires des entreprises. Le reste n&apos;est pas encore
-        connecté.
+        Chaque intégration peut avoir plusieurs accès. Celui « par défaut » sert à toutes les
+        entreprises, sauf celles qui en choisissent un autre dans leur fiche.
       </p>
       <ul className="mt-8">
-        <li className="flex items-start justify-between gap-6 border-b border-hairline py-4">
-          <span>
-            <span className="block text-sm font-medium text-ink">Digifactory</span>
-            <span className="mt-1 block text-sm text-subtle">
-              Branché. Les opérations arrivent chaque heure ; l&apos;état de chaque banque est dans
-              Connexions bancaires.
-            </span>
-          </span>
-          <span className="shrink-0 text-xs text-subtle">Branché</span>
-        </li>
+        {ORDRE_TYPES.map((type) => (
+          <BranchementsType
+            key={type}
+            type={type}
+            branchements={branchements.filter((b) => b.type === type)}
+            admin={droit.admin}
+            onChange={setBranchements}
+          />
+        ))}
         {categorisation && (
           <li className="flex items-start justify-between gap-6 border-b border-hairline py-4">
             <span>
@@ -97,15 +99,6 @@ export default function IntegrationsPage() {
             </span>
           </li>
         )}
-        {(["mail", "sms"] as const).map((canal) => (
-          <IntegrationEnvoi
-            key={canal}
-            canal={canal}
-            branche={envoi[canal]}
-            admin={droit.admin}
-            onBranche={setEnvoi}
-          />
-        ))}
         {PREVUES.map((integration) => (
           <li
             key={integration.nom}

@@ -24,6 +24,15 @@ d'héritage implicite (doc 03 §3bis, doc 06 §7).
 
 ## Fichiers
 
+- `branchements.py`, `branchements_postgres.py` (AXE-872) — les
+  intégrations du portefeuille, plusieurs par type (SMTP, SMS,
+  Digifactory). Un seul branchement par défaut par type (index unique
+  partiel), un choix possible par dossier (`branchements_dossier`). Le
+  défaut ne se désactive pas tant qu'un autre peut le remplacer : on
+  choisit d'abord le nouveau. Identifiants chiffrés (`core.chiffrement`),
+  jamais relus à l'écran. Migration `b8d4e1f7a2c6`, qui reprend
+  `integrations_envoi`.
+
 - `tags.py`, `tags_memoire.py`, `tags_postgres.py` (AXE-829) — tags
   d'entreprises et exclusion des traitements. Un réglage par portefeuille
   dit quels tags sortent un dossier de : synchro, classement automatique,

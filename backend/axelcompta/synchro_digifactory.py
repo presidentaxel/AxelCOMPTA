@@ -6,7 +6,9 @@ la main ou depuis un cron. Chaque dossier est indépendant : l'échec de l'un
 n'empêche pas les autres, et le code de sortie vaut 1 si l'un a échoué.
 
 Usage, depuis backend/ (DATABASE_URL, DIGIFACTORY_BASE_URL et
-DIGIFACTORY_TOKEN définis, migrations appliquées) :
+AXELCOMPTA_CLE_INTEGRATIONS définis, migrations appliquées). Le jeton vient du
+branchement Digifactory du dossier (AXE-872) ; `DIGIFACTORY_TOKEN` ne sert
+plus que pour un portefeuille qui n'en a encore aucun :
 
     python -m axelcompta.synchro_digifactory --tenant <tenant_id>
     python -m axelcompta.synchro_digifactory --dossier <dossier_id>
@@ -53,6 +55,8 @@ from axelcompta.packs.vtc_demo import (
     charger_compte_par_categorie,
     charger_regles,
 )
+from axelcompta.tenants.branchements import Branchement, BranchementsRepository, choisir
+from axelcompta.tenants.branchements_postgres import PostgresBranchements
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.tags import etat_du_portefeuille, exclus, retenus
@@ -62,6 +66,7 @@ from axelcompta.workflow.propositions_postgres import PostgresPropositionReposit
 from axelcompta.workflow.synchro import RapportSynchro, SourceTransactions, synchroniser_dossier
 
 SOURCE = "digifactory"
+TYPE_DIGIFACTORY = "digifactory"
 
 
 class ClientComptes(Protocol):
@@ -166,6 +171,38 @@ async def _relever_consentements(
     return releves
 
 
+SANS_JETON = (
+    "Aucun branchement Digifactory pour ce dossier : ajoutez-en un dans Intégrations "
+    "(ou DIGIFACTORY_TOKEN sur le serveur)."
+)
+
+
+def repartir_par_branchement(
+    dossiers: tuple[Dossier, ...], depot: BranchementsRepository
+) -> list[tuple[Branchement | None, tuple[Dossier, ...]]]:
+    """AXE-872 : les dossiers regroupés par branchement Digifactory, celui
+    choisi pour le dossier ou celui par défaut du portefeuille. `None` : aucun
+    branchement, le jeton de l'environnement sert (comme avant AXE-872)."""
+    par_tenant: dict[TenantId, list[Branchement]] = {}
+    groupes: dict[str | None, list[Dossier]] = {}
+    connus: dict[str, Branchement] = {}
+    for dossier in dossiers:
+        if dossier.tenant_id not in par_tenant:
+            par_tenant[dossier.tenant_id] = depot.lister(dossier.tenant_id)
+        choix = depot.choix_du_dossier(dossier.tenant_id, dossier.id).get(TYPE_DIGIFACTORY)
+        branchement = choisir(par_tenant[dossier.tenant_id], TYPE_DIGIFACTORY, choix)
+        if branchement is not None:
+            connus[branchement.id] = branchement
+        groupes.setdefault(branchement.id if branchement else None, []).append(dossier)
+    return [(connus.get(cle or ""), tuple(groupe)) for cle, groupe in groupes.items()]
+
+
+def client_digifactory(branchement: Branchement | None) -> DigifactoryHttpClient:
+    if branchement is None:
+        return DigifactoryHttpClient.depuis_env()
+    return DigifactoryHttpClient.depuis_parametres(branchement.parametres())
+
+
 def synchroniser_portefeuille(
     engine: Engine,
     dossiers: tuple[Dossier, ...],
@@ -173,7 +210,8 @@ def synchroniser_portefeuille(
 ) -> list[ResultatDossier]:
     """Synchro + relevé des consentements, pour un lot de dossiers. Point
     d'entrée partagé par la ligne de commande et les tâches planifiées
-    (`axelcompta.taches`)."""
+    (`axelcompta.taches`). Chaque groupe de dossiers passe par son
+    branchement Digifactory (AXE-872)."""
     try:
         modele = modele_pour_synchro()
     except SynchroSansModele as refus:
@@ -185,37 +223,53 @@ def synchroniser_portefeuille(
         calibration=charger_calibration() if modele is not None else None,
         categories_banque=charger_categories_banque(),
     )
-
-    async def lancer() -> list[ResultatDossier]:
-        client = DigifactoryHttpClient.depuis_env()
+    par_id: dict[DossierId, ResultatDossier] = {}
+    for branchement, groupe in repartir_par_branchement(dossiers, PostgresBranchements(engine)):
         try:
-            sante = await DigifactoryProvider(client_reel=client).health()
-            if not sante.ok:
-                print(f"Digifactory indisponible : {sante.message}", file=sys.stderr)
-                return [ResultatDossier(d.id, erreur=sante.message) for d in dossiers]
-            comptes_bancaires = PostgresCompteBancaireRepository(engine)
-            resultats = await synchroniser_dossiers(
-                dossiers,
-                DigifactoryProvider(client_reel=client),
-                PostgresJournalIngestion(engine),
-                PostgresLedgerService(engine),
-                PostgresPropositionRepository(engine),
-                pipeline,
-                charger_compte_par_categorie(),
-                comptes_bancaires,
-                sans_classement,
-            )
-            return await _relever_consentements(
-                client,
-                dossiers,
-                resultats,
-                (PostgresConsentementRepository(engine), comptes_bancaires),
-                date.today(),
-            )
-        finally:
-            await client.aclose()
+            client = client_digifactory(branchement)
+        except RuntimeError:
+            par_id.update({d.id: ResultatDossier(d.id, erreur=SANS_JETON) for d in groupe})
+            continue
+        for resultat in asyncio.run(
+            _synchroniser_groupe(engine, client, groupe, pipeline, sans_classement)
+        ):
+            par_id[resultat.dossier_id] = resultat
+    return [par_id[d.id] for d in dossiers]
 
-    return asyncio.run(lancer())
+
+async def _synchroniser_groupe(
+    engine: Engine,
+    client: DigifactoryHttpClient,
+    dossiers: tuple[Dossier, ...],
+    pipeline: CategorizationPipeline,
+    sans_classement: frozenset[DossierId],
+) -> list[ResultatDossier]:
+    try:
+        sante = await DigifactoryProvider(client_reel=client).health()
+        if not sante.ok:
+            print(f"Digifactory indisponible : {sante.message}", file=sys.stderr)
+            return [ResultatDossier(d.id, erreur=sante.message) for d in dossiers]
+        comptes_bancaires = PostgresCompteBancaireRepository(engine)
+        resultats = await synchroniser_dossiers(
+            dossiers,
+            DigifactoryProvider(client_reel=client),
+            PostgresJournalIngestion(engine),
+            PostgresLedgerService(engine),
+            PostgresPropositionRepository(engine),
+            pipeline,
+            charger_compte_par_categorie(),
+            comptes_bancaires,
+            sans_classement,
+        )
+        return await _relever_consentements(
+            client,
+            dossiers,
+            resultats,
+            (PostgresConsentementRepository(engine), comptes_bancaires),
+            date.today(),
+        )
+    finally:
+        await client.aclose()
 
 
 def main() -> int:
