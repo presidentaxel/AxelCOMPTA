@@ -337,22 +337,22 @@ Détail complet de la correspondance arbre ↔ docs : [docs/18-organisation-code
 
 ## Modules
 
-| Module | Rôle en une ligne | État au 2026-11-05 | Manque pour la V1 |
+| Module | Rôle en une ligne | État au 2026-11-10 | Manque pour la V1 |
 |---|---|---|---|
 | [`core/`](axelcompta/core/README.md) | Types partagés : monnaie, erreurs, ids typés, accès DB, métriques | Actif | — |
-| [`tenants/`](axelcompta/tenants/README.md) | Tenants, dossiers, matrice statut × régime, avenants, agrégats, MFA | Actif (tous statuts sauf micro) | MFA branchée (AXE-812), création en masse (AXE-809) |
-| [`packs/`](axelcompta/packs/README.md) | Packs métier : taxonomies, règles, templates | 12 règles d'audit | Taxonomie relue (AXE-815) |
-| [`ingestion/providers/`](axelcompta/ingestion/providers/README.md) | Interface `DataProvider` + implémentations | Digifactory réel, settlements sur fixtures | Relevés Uber/Bolt (AXE-801), import FEC (AXE-804) |
+| [`tenants/`](axelcompta/tenants/README.md) | Tenants, dossiers, matrice statut × régime, avenants, agrégats, tags, Sirene, import CSV | Actif (tous statuts sauf micro), création en masse (AXE-809), Sirene (AXE-834), tags (AXE-829), configuration confirmée (AXE-730) | Identité de la société (AXE-846), INSEE/RNE (AXE-849) |
+| [`packs/`](axelcompta/packs/README.md) | Packs métier : taxonomies, règles, templates | 21 règles, plancher par règle (AXE-826, AXE-837) | Taxonomie relue (AXE-815) |
+| [`ingestion/providers/`](axelcompta/ingestion/providers/README.md) | Interface `DataProvider` + implémentations | Digifactory réel, comptes retenus et 512x (AXE-729, AXE-832), settlements sur fixtures | Relevés Uber/Bolt (AXE-801), import FEC (AXE-804), Rollee (AXE-817 à 821) |
 | [`documents/`](axelcompta/documents/README.md) | Justificatifs, OCR, Factur-X, matching | Stockage en base (AXE-425) | OCR, matching, WORM |
-| [`categorize/`](axelcompta/categorize/README.md) | Pipeline règles → ML → LLM → revue humaine | Règles + modèle v2 + apprises | LLM branché, mesure (AXE-816) |
-| [`anomaly/`](axelcompta/anomaly/README.md) | Détection d'abus / anomalies | Détecteurs V1 (AXE-437) | Qualifications en base (AXE-814) |
-| [`ledger/`](axelcompta/ledger/README.md) | ❤️ Moteur comptable pur | I2 tenu, contre-passation | I3/I7 (AXE-807), I4 (AXE-806) |
-| [`closing/`](axelcompta/closing/README.md) | Clôture d'exercice, états financiers | Liasse 2033/2031, réel normal en totaux, CA3 annuelle | Immobilisations (AXE-802), LOA (AXE-803), TVA par période (AXE-805) |
+| [`categorize/`](axelcompta/categorize/README.md) | Pipeline règles → ML → LLM → revue humaine | Virements internes, règles, modèle v2, catégorie Bridge ; arrêt sans modèle (AXE-825) | LLM branché, mesure (AXE-816), modèle hors du poste (AXE-847) |
+| [`anomaly/`](axelcompta/anomaly/README.md) | Détection d'abus / anomalies | Détecteurs V1 (AXE-437, AXE-836), qualifications en base (AXE-814) | Jeu d'évaluation |
+| [`ledger/`](axelcompta/ledger/README.md) | ❤️ Moteur comptable pur | I2, I3, I4, I7 tenus (AXE-806, AXE-807), contre-passation, sous-comptes 512x | I8 : Test Compta Demat (AXE-484) |
+| [`closing/`](axelcompta/closing/README.md) | Clôture d'exercice, états financiers | Liasse 2033/2031, réel normal en totaux, CA3 annuelle et par période (AXE-805) | Immobilisations (AXE-802), LOA (AXE-803), bilan d'ouverture (AXE-804) |
 | [`filings/`](axelcompta/filings/README.md) | Renderers FEC, PDF, EDI-TDFC, INPI | FEC validé, CERFA 2065/2031/2033, dossier INPI | Test Compta Demat (AXE-484), signature RGS (AXE-441) |
-| [`workflow/`](axelcompta/workflow/README.md) | Validation, revue, notifications, signature | Décisions, cloche, synchro | Contre-passations (AXE-420/424), rappels envoyés (AXE-808) |
-| [`api/`](axelcompta/api/README.md) | Routes FastAPI, auth, permissions | `api.app`, rôles, `/metrics` | Routes hors `demo_api` (AXE-428, AXE-810), rôle expert (AXE-800) |
+| [`workflow/`](axelcompta/workflow/README.md) | Validation, revue, notifications, signature | Décisions en OD de reclassement (AXE-420), quarantaine (AXE-424), expert-comptable (AXE-800), rappels envoyés (AXE-808) | Signature RGS (AXE-441) |
+| [`api/`](axelcompta/api/README.md) | Routes FastAPI, auth, permissions | `api.app`, rôles dont expert, MFA, `/metrics` à jeton, erreurs 4xx | Routes hors `demo_api` et fichiers `demo_*` renommés (AXE-840) |
 | [`pseudonymize/`](axelcompta/pseudonymize/) | Seule porte vers un LLM | Fait (AXE-436) | Fournisseur branché |
-| [`jobs/`](axelcompta/jobs/) | File de jobs Postgres (ADR-002) | Posée, inutilisée | Premier usage (AXE-808) |
+| [`jobs/`](axelcompta/jobs/) | File de jobs Postgres (ADR-002) | Utilisée par le worker (AXE-809, AXE-845, AXE-808) | — |
 | [`ml/`](axelcompta/ml/README.md) | Entraînement, évaluation, registry modèles | Entraînement dans `_AUDIT_DONNEES/` | Registry, dérive |
 
 ## Ce qui existe déjà et sera réutilisé (hors de cet arbre)
@@ -370,3 +370,47 @@ acceptés, détection des contacts Digifactory sans dossier, synchro, caches.
 
     * * * * * /chemin/vers/AxeLCompta/backend/scripts/worker_planifie.sh
 
+## Mettre en route les tickets du 05 au 10/11 sur une base existante
+
+Le code mergé ne suffit pas : sur la base réelle, il faut aussi (suivi dans
+AXE-842) :
+
+1. `alembic upgrade head` (l'API refuse de démarrer sur une base en
+   retard, AXE-841).
+2. Variables d'environnement (voir `.env.example`) : `METRICS_TOKEN` (sans
+   lui, `/metrics` répond 404, AXE-810), `AXELCOMPTA_CLE_INTEGRATIONS` (clé
+   qui chiffre les paramètres SMTP et SMS des gestionnaires, AXE-808).
+   `AXELCOMPTA_SANS_MODELE=1` seulement en dépannage : sans modèle, la
+   synchro s'arrête (AXE-825).
+3. Reprises, en simulation d'abord, puis avec `--appliquer` (rejouables
+   sans doublon) :
+
+       python scripts/ventiler_comptes_bancaires.py --tenant TENANT --appliquer   # AXE-832
+       python scripts/materialiser_decisions.py --tenant TENANT --appliquer       # AXE-420
+
+4. Crontab : `taches_planifiees.sh` (chaque heure) et `worker_planifie.sh`
+   (chaque minute).
+5. Compte de test, si besoin (AXE-822, à supprimer avant que les
+   chauffeurs se connectent) :
+   `python scripts/compte_de_test.py creer <e-mail> --jusqu-au <date>`.
+
+## Modèle de catégorisation hors du poste (AXE-847)
+
+Le `.joblib` est gitignoré. Il vit dans un bucket S3 **privé**
+(`MODELES_BUCKET`, `modeles` par défaut ; Supabase Storage en mode S3), un
+dossier par version : modèle, empreinte `.sha256`, calibration, rapport.
+Au démarrage du worker, de la synchro, des tâches planifiées et de l'API,
+la version `AXELCOMPTA_MODELE_VERSION` est téléchargée si elle manque sur le
+poste (ou si le fichier local ne respecte plus son empreinte), empreinte
+vérifiée avant d'écrire. Sans stockage configuré, rien n'est tenté : la
+synchro s'arrête d'elle-même sans modèle (AXE-825).
+
+Publier une version, après accord sur le rapport d'entraînement
+(simulation par défaut ; une version publiée ne se remplace pas) :
+
+    python scripts/publier_modele.py tfidf_logreg_v2 \
+        --rapport ../_AUDIT_DONNEES/resultats/rapport_modele_v2.txt --publier
+
+Mise en route : créer le bucket privé `modeles` dans Supabase Storage, et
+des clés d'accès S3 (Storage > S3 Connection) posées en `S3_ENDPOINT`,
+`S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION` sur le poste et le serveur.

@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from datetime import datetime
 
+from axelcompta.core.identite import IdentiteEntreprise
 from axelcompta.core.ids import DossierId, TenantId, UserId
 
 from .models import Dossier, Tenant
@@ -82,6 +83,14 @@ class DossierRepository(ABC):
     def confirmer_configuration(self, dossier: Dossier, par: UserId, le: datetime) -> None:
         """Le dirigeant a confirmé la configuration (AXE-730) : forme choisie
         et plus rien à confirmer. Tracé au journal d'audit."""
+
+    @abstractmethod
+    def enregistrer_identite(
+        self, dossier_id: DossierId, identite: IdentiteEntreprise, par: UserId, le: datetime
+    ) -> None:
+        """Siège, capital et associés saisis par le dirigeant (AXE-846),
+        tracés au journal d'audit. Identité déjà vérifiée par l'appelant
+        (`identite_saisie.verifier_identite`)."""
 
     @abstractmethod
     def parametrer_tva(

@@ -49,11 +49,9 @@ class Proposition:
         return self.dossier is not None and not self.avertissements
 
 
-def fiche_sirene(siren: str | None) -> FicheSirene | None:
-    """Recherche d'entreprises (data.gouv, sans clé). `None` sans SIREN ou
-    sans fiche à ce SIREN exact."""
-    if siren is None:
-        return None
+def recherche_entreprises(siren: str) -> dict[str, object]:
+    """Réponse brute de Recherche d'entreprises (data.gouv, sans clé) pour
+    un SIREN. `{}` si elle n'est pas un objet JSON."""
     reponse = httpx.get(
         URL_RECHERCHE_ENTREPRISES,
         params={"q": siren, "per_page": 1},
@@ -62,7 +60,14 @@ def fiche_sirene(siren: str | None) -> FicheSirene | None:
     )
     reponse.raise_for_status()
     corps = reponse.json()
-    return fiche_depuis_reponse(corps, siren) if isinstance(corps, dict) else None
+    return corps if isinstance(corps, dict) else {}
+
+
+def fiche_sirene(siren: str | None) -> FicheSirene | None:
+    """`None` sans SIREN ou sans fiche à ce SIREN exact."""
+    if siren is None:
+        return None
+    return fiche_depuis_reponse(recherche_entreprises(siren), siren)
 
 
 def contacts_sans_dossier(

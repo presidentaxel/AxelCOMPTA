@@ -83,9 +83,15 @@ ne dépend jamais d'`ingestion` en retour, règle absolue doc 03 §3).
   Orchestration multi-dossiers : **faite le 2026-09-22** en lancement manuel
   (`python -m axelcompta.synchro_digifactory`), lancée toutes les heures
   par le cron `axelcompta.taches`.
-- **Prévu au 2026-11-05** : vrais chauffeurs hors démo (AXE-726 à
-  AXE-729), relevés Uber et Bolt comme source de settlements (AXE-801),
-  import du FEC de l'outil précédent (AXE-804).
+- **Fait du 2026-11-05 au 2026-11-09** : contacts importés sur liste
+  (AXE-726), dossiers pilotes réels (AXE-727), comptes bancaires retenus
+  (AXE-729, AXE-851), sous-comptes 512x (AXE-832), type d'opération et
+  catégorie de la banque portés par la transaction (AXE-826), nouveaux
+  contacts proposés (AXE-845).
+- **Prévu au 2026-11-10** : première synchro des chauffeurs réels
+  (AXE-728), relevés Uber et Bolt comme source de settlements (AXE-801),
+  import du FEC de l'outil précédent (AXE-804), mois d'avant la connexion
+  Digifactory (AXE-833).
 
 ## Doc de référence
 
