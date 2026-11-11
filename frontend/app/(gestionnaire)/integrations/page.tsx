@@ -91,7 +91,7 @@ export default function IntegrationsPage() {
 
   return (
     <div>
-      <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-ink">Intégrations</h1>
+      <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-ink">Intégrations</h1>
       <p className="mt-2 max-w-[75ch] text-sm text-subtle">
         Digifactory apporte les comptes bancaires des entreprises. Le reste n&apos;est pas encore
         connecté.
@@ -134,7 +134,7 @@ export default function IntegrationsPage() {
         </Table>
       </Card>
 
-      <section className="mt-10" aria-labelledby="titre-envoi">
+      <section className="mt-8" aria-labelledby="titre-envoi">
         <h2 id="titre-envoi" className="text-base font-semibold text-ink">
           Envoi des rappels
         </h2>

@@ -94,13 +94,13 @@ export default function RappelsPage() {
 
   return (
     <div>
-      <h1 className="text-[28px] font-bold tracking-tight text-ink">Rappels</h1>
+      <h1 className="text-[22px] font-bold tracking-tight text-ink">Rappels</h1>
       <p className="mt-2 text-sm text-subtle">
         Les relances se préparent ici. L&apos;envoi n&apos;est pas branché : aucun SMS, e-mail ou appel ne part.
         <Aide texte={POURQUOI_RIEN_N_EST_ENVOYE} />
       </p>
 
-      <div className="mt-8 grid items-start gap-12 lg:grid-cols-3">
+      <div className="mt-8 grid items-start gap-8 lg:grid-cols-3">
       <form
         className="space-y-4 lg:col-span-2"
         onSubmit={(evenement) => {

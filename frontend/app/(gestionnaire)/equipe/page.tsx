@@ -96,7 +96,7 @@ export default function EquipePage() {
 
   return (
     <div>
-      <h1 className="text-[28px] font-bold tracking-tight text-ink">Équipe</h1>
+      <h1 className="text-[22px] font-bold tracking-tight text-ink">Équipe</h1>
       <p className="mt-2 text-sm text-subtle">Qui voit cette organisation, et jusqu&apos;où.</p>
       {erreur && <p className="mt-6 text-sm text-danger">{erreur}</p>}
       {info && (
@@ -105,7 +105,7 @@ export default function EquipePage() {
         </p>
       )}
 
-      <div className="mt-8 grid items-start gap-12 lg:grid-cols-3">
+      <div className="mt-8 grid items-start gap-8 lg:grid-cols-3">
       <form
         className="space-y-4 lg:col-span-2"
         onSubmit={async (evenement) => {

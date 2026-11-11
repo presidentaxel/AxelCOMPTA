@@ -11,7 +11,7 @@ export function Marque({ surFondSombre = false }: { surFondSombre?: boolean }) {
 
   return (
     <div className="flex items-center gap-2">
-      <Image src="/logo.png" alt="" width={40} height={40} priority className="size-10 shrink-0" />
+      <Image src="/logo.png" alt="" width={32} height={32} priority className="size-8 shrink-0" />
       <span className="text-sm font-semibold" style={{ color: encre }}>
         AxeL
       </span>

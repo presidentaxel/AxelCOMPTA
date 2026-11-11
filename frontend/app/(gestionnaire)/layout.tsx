@@ -15,12 +15,12 @@ import { Navigation } from "@/components/Navigation";
  */
 export default function GestionnaireLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col bg-canvas-app lg:flex-row">
+    <div data-espace="gestionnaire" className="flex min-h-screen flex-col bg-canvas-app lg:flex-row">
       <GardeEspaceGestionnaire />
       <GardeMfa />
       <Navigation />
       <main className="min-w-0 flex-1">
-        <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-10 lg:py-10">{children}</div>
+        <div className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8 lg:py-6">{children}</div>
       </main>
     </div>
   );

@@ -70,7 +70,7 @@ export function EnTete({
           </div>
           {charge ? (
             <>
-              <p className="mt-3 text-[56px] leading-[1.05] font-semibold tracking-[-0.04em] text-ink">
+              <p className="mt-3 text-[40px] leading-[1.05] font-semibold tracking-[-0.04em] text-ink">
                 {titre.surligne && <Surligneur>{titre.surligne}</Surligneur>}
                 {titre.suite}
               </p>
@@ -146,7 +146,7 @@ function Chiffre({ libelle, valeur, couleur = "text-ink" }: { libelle: string; v
   return (
     <div>
       <dt className="text-[13px] leading-[1.38] text-muted">{libelle}</dt>
-      <dd className={`mt-1 text-[28px] leading-[1.25] font-semibold tabular-nums ${couleur}`}>{valeur}</dd>
+      <dd className={`mt-1 text-[22px] leading-[1.25] font-semibold tabular-nums ${couleur}`}>{valeur}</dd>
     </div>
   );
 }

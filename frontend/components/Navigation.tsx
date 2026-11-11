@@ -53,16 +53,16 @@ export function Navigation({ alertes = {} }: { alertes?: Partial<Record<string, 
 
   return (
     <>
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-canvas lg:flex">
-        <div className="flex h-16 shrink-0 items-center px-6">
+      <aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col border-r border-border bg-canvas lg:flex">
+        <div className="flex h-14 shrink-0 items-center px-4">
           <Marque />
         </div>
-        <nav aria-label="Gestionnaire" className="flex-1 overflow-y-auto px-3 py-2">
+        <nav aria-label="Gestionnaire" className="flex-1 overflow-y-auto px-2 py-1">
           {entrees}
         </nav>
-        <div className="shrink-0 border-t border-border p-3">
+        <div className="shrink-0 border-t border-border p-2">
           <CompteGestionnaire chemin={chemin} variante="pied" />
-          <LiensJuridiques className="mt-2 px-3" />
+          <LiensJuridiques className="mt-1.5 px-2" />
         </div>
       </aside>
 
@@ -130,10 +130,8 @@ function ListeEntrees({
             href={href}
             aria-current={actif ? "page" : undefined}
             onClick={() => auClic(href)}
-            className={`flex min-h-11 items-center gap-2 rounded-md px-4 text-sm whitespace-nowrap outline-none transition-colors duration-150 focus-visible:shadow-focus-detache ${
-              actif
-                ? "bg-surface-soft font-semibold text-ink"
-                : "font-medium text-muted hover:bg-surface-soft hover:text-ink"
+            className={`relative z-10 flex min-h-11 items-center lg:min-h-9 gap-2 rounded-md px-3 text-[13px] whitespace-nowrap outline-none transition-colors duration-150 focus-visible:shadow-focus-detache ${
+              actif ? "font-semibold text-ink" : "font-medium text-muted hover:text-ink"
             }`}
           >
             {libelle}
@@ -141,7 +139,7 @@ function ListeEntrees({
           </Link>
         );
       })}
-      <IndicateurGlissant selecteur='[aria-current="page"]' axe="vertical" />
+      <IndicateurGlissant selecteur='[aria-current="page"]' axe="vertical" forme="bulle" />
     </div>
   );
 }
@@ -210,7 +208,7 @@ function CompteGestionnaire({
 
   const surCompte = entreeActive(chemin, "/compte");
   const avatar = (
-    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-on-primary">
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-ink text-[11px] font-semibold text-on-primary">
       {initiales(email)}
     </span>
   );
@@ -222,11 +220,11 @@ function CompteGestionnaire({
           <button
             type="button"
             aria-label="Compte"
-            className="flex min-h-12 w-full items-center gap-3 rounded-md px-3 text-left outline-none transition-colors duration-150 hover:bg-surface-soft focus-visible:shadow-focus-detache"
+            className="flex min-h-10 w-full items-center gap-2.5 rounded-md px-2 text-left outline-none transition-colors duration-150 hover:bg-surface-soft focus-visible:shadow-focus-detache"
           >
             {avatar}
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold text-ink">{nom}</span>
+              <span className="block truncate text-[13px] font-semibold text-ink">{nom}</span>
               <span className="block truncate text-xs text-subtle">{email}</span>
             </span>
           </button>
