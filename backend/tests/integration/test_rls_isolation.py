@@ -33,6 +33,8 @@ from axelcompta.core.rls import appliquer_rls, contexte_identite
 from axelcompta.documents.postgres import PostgresJustificatifRepository
 from axelcompta.ingestion.comptes_bancaires import CompteBancaire, CompteInconnu
 from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
+from axelcompta.ingestion.comptes_rollee import UtilisateurRollee, depuis_rollee
+from axelcompta.ingestion.comptes_rollee_postgres import PostgresComptesRollee
 from axelcompta.ingestion.consentement import ReleveSante, SanteConnexion, StatutConsentement
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
@@ -754,3 +756,30 @@ def test_les_branchements_d_un_portefeuille_restent_les_siens(
     assert PostgresBranchements(engine).choix_du_dossier(
         TenantId("tenant-a"), DossierId("karim")
     ) == {"mail": premier.id}
+
+
+def test_les_plateformes_reliees_restent_celles_du_dossier(
+    engine: Engine, engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """AXE-819 (migration `c4e9a7d2b5f1`) : le chauffeur relie et relit les
+    siennes ; ni un autre chauffeur ni un autre portefeuille ne les voient."""
+    le = datetime(2026, 11, 11, 10, 0, tzinfo=UTC)
+    web = PostgresComptesRollee(engine_web)
+    karim = DossierId("karim")
+    with contexte_identite(dossier_id="karim", tenant_id=None):
+        web.enregistrer_utilisateur(UtilisateurRollee(karim, "user-k", "b1"), le)
+        web.remplacer_comptes(
+            karim,
+            [depuis_rollee(karim, {"id": "acc-u", "name": "Uber", "connected": True}, None, le)],
+        )
+        web.remplacer_comptes(
+            karim,
+            [depuis_rollee(karim, {"id": "acc-u", "name": "Uber", "connected": False}, None, le)],
+        )
+        assert [c.connecte for c in web.comptes(karim)] == [False]
+    with contexte_identite(dossier_id="sophie", tenant_id=None):
+        assert web.comptes(karim) == [] and web.utilisateur(karim) is None
+    with contexte_identite(dossier_id=None, tenant_id="tenant-b"):
+        assert web.comptes(karim) == []
+    with contexte_identite(dossier_id=None, tenant_id="tenant-a"):
+        assert [c.nom for c in web.comptes(karim)] == ["Uber"]

@@ -506,6 +506,30 @@ export async function listerComptesBancairesChauffeur(
   return fetchAvecAuthChauffeur<CompteBancaireVue[]>(`/dossiers/${dossierId}/comptes-bancaires`);
 }
 
+/** AXE-819 : une plateforme reliée dans Rollee Connect. Aucun montant. */
+export type PlateformeReliee = {
+  nom: string;
+  etat: "connecte" | "en_cours" | "a_reconnecter";
+  relie_le: string | null;
+};
+
+export type PlateformesChauffeur = {
+  comptes: PlateformeReliee[];
+  manquantes: string[];
+  erreur: string | null;
+};
+
+export function lirePlateformesChauffeur(dossierId: string): Promise<PlateformesChauffeur> {
+  return fetchAvecAuthChauffeur<PlateformesChauffeur>(`/dossiers/${dossierId}/plateformes`);
+}
+
+/** Un lien Rollee Connect de 30 minutes, pour relier ou reconnecter. */
+export function ouvrirSessionRolleeChauffeur(
+  dossierId: string,
+): Promise<{ lien: string; expire_le: string | null }> {
+  return envoyerChauffeur(`/dossiers/${dossierId}/plateformes/session`, {});
+}
+
 /** AXE-729 : comptabiliser ce compte (pro) ou l'écarter (personnel). */
 export function deciderCompteBancaireChauffeur(
   dossierId: string,

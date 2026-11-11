@@ -81,6 +81,8 @@
     "lib/registre.ts",
     "lib/registre.test.ts",
     "lib/ouverture.ts",
-    "lib/ouverture.test.ts"
+    "lib/ouverture.test.ts",
+    "lib/plateformes.ts",
+    "lib/plateformes.test.ts"
   ]
 }

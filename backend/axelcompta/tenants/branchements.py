@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Protocol
 
 from axelcompta.core.chiffrement import chiffrer, dechiffrer
@@ -341,3 +341,20 @@ class BranchementsMemoire:
             self.choix.pop((dossier_id, type_), None)
         else:
             self.choix[(dossier_id, type_)] = branchement_id
+
+
+def garder_parametre(
+    depot: BranchementsRepository, branchement: Branchement, cle: str, par: str
+) -> Callable[[str], None]:
+    """Un fournisseur qui renouvelle un identifiant (le jeton Rollee, AXE-818) :
+    la nouvelle valeur remplace l'ancienne dans le branchement, sinon le
+    prochain appel repartirait d'une valeur périmée."""
+
+    def garder(valeur: str) -> None:
+        parametres = {**branchement.parametres(), cle: valeur}
+        a_enregistrer = modifier(
+            depot.lister(branchement.tenant_id), branchement.id, Modification(parametres=parametres)
+        )
+        depot.enregistrer(a_enregistrer, par, datetime.now(UTC))
+
+    return garder

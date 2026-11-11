@@ -98,3 +98,28 @@ comptes_bancaires = Table(
     UniqueConstraint("dossier_id", "compte_comptable", name="comptes_bancaires_compte_unique"),
     CheckConstraint("compte_comptable LIKE '512_%'", name="comptes_bancaires_sous_compte"),
 )
+
+# AXE-819 : le « user » Rollee d'un dossier (créé à la première demande de
+# connexion) et le branchement Rollee par lequel il a été créé.
+utilisateurs_rollee = Table(
+    "utilisateurs_rollee",
+    metadata,
+    Column("dossier_id", String, ForeignKey("dossiers.id"), primary_key=True),
+    Column("rollee_user_id", String, nullable=False, unique=True),
+    Column("branchement_id", String, nullable=False),
+    Column("cree_le", DateTime(timezone=True), nullable=False),
+)
+
+# Les comptes de plateformes que le chauffeur a reliés dans Rollee Connect,
+# relus chez Rollee (jamais saisis ici). Aucun montant.
+comptes_rollee = Table(
+    "comptes_rollee",
+    metadata,
+    Column("account_id", String, primary_key=True),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("nom", String, nullable=False),
+    Column("connecte", Boolean, nullable=False),
+    Column("reconnexion", Boolean, nullable=False),
+    Column("relie_le", DateTime(timezone=True), nullable=True),
+    Column("maj_le", DateTime(timezone=True), nullable=False),
+)
