@@ -2,7 +2,9 @@
 
 TypeScript / React / Next.js (App Router) — back-office riche + pages de
 signature publiques en SSR (doc 03 §2). Design system : voir
-[DESIGN.md](../DESIGN.md).
+[DESIGN.md](../DESIGN.md) (v2.0 depuis le 2026-11-11 : monochrome à l'encre,
+accent orange foncé, Inter ; décision dans
+[ADR-008](../docs/adr/ADR-008-design-system-monochrome.md)).
 
 **Dépendances :** le frontend parle à `axelcompta.api.app` (voir
 Statuts ci-dessous). Les routes sont encore câblées dans `demo_api`.
@@ -63,8 +65,10 @@ chauffeur (mobile) est cadré dans [doc 19](../docs/19-parcours-utilisateur.md).
   sa page de connexion (« votre session a expiré »), puis ramené sur la
   page qu'il quittait. Serveur injoignable : message clair, session gardée.
   Routage restructuré en groupe `app/(gestionnaire)/` pour que la
-  Sidebar/TopBar ne s'applique qu'aux routes gestionnaire (doc 19 §7 :
-  « même socle, deux habillages ») — sans effet sur les URLs.
+  navigation (la barre de navigation horizontale du design system v2.0, à
+  venir avec AXE-877, qui remplacera l'ancienne sidebar) ne s'applique qu'aux
+  routes gestionnaire (doc 19 §7 : « même socle, deux habillages ») — sans
+  effet sur les URLs.
   **Parcours mobile complet fait (2026-09-09, Semaine 3)** : transactions
   catégorisées, question de catégorisation (`QuestionCategorisation.tsx`,
   démontrée sur Sophie plutôt que Karim — lui n'a par construction aucune

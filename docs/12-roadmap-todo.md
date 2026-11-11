@@ -412,6 +412,7 @@ testé (ou développement mené contre fixtures si le token reste bloqué — do
 
 ### 1.4 Front (en parallèle)
 - [ ] Design system de base (tokens, composants, Storybook).
+- [ ] Design : refonte AXE-873 (design system v2.0 fait en AXE-874, ADR-008) ; composants AXE-875, primitives AXE-876, navigation AXE-877 à faire.
 - [ ] Écrans : connexion/MFA, dashboard, liste/fiche dossier, transactions, import avec prévisualisation, journaux/balance (lecture).
 
 **Critère de sortie Phase 1** : un fichier CSV réel importé → écritures manuellement

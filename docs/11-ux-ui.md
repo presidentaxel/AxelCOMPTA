@@ -5,7 +5,10 @@
 > est caduque (doc 19). Écrans réels : côté chauffeur (mobile) Activité,
 > À traiter, Exercice, Mon résultat, Compte et la cloche ; côté
 > gestionnaire Entreprises, Invitations, Rappels, Équipe, Intégrations,
-> Mode expert et Anomalies. Le design system est [DESIGN.md](../DESIGN.md).
+> Mode expert et Anomalies. Le design system est [DESIGN.md](../DESIGN.md),
+> passé en v2.0 le 2026-11-11 (refonte AXE-873, direction C2,
+> [ADR-008](adr/ADR-008-design-system-monochrome.md)) : monochrome à l'encre,
+> un accent orange foncé, navigation en barre horizontale.
 > Les revues UX d'Arthur (AXE-563, AXE-564) ont été traitées le 04/11 et
 > le 05/11.
 
@@ -36,9 +39,10 @@ outil B2B de production comptable :
 - **Clarté avant densité.** Beaucoup d'outils comptables affichent tout, tout le
   temps. Nous affichons *ce qui demande une décision*, le reste est accessible mais
   en retrait.
-- **Calme visuel.** Fond clair, blancs généreux, une seule couleur d'accent,
-  typographie soignée (Inter ou équivalent), coins arrondis discrets, ombres
-  légères, micro-transitions sobres (150-200 ms). Mode sombre en phase 2.
+- **Calme visuel.** Fond blanc cassé, blancs généreux, texte et bouton
+  principal à l'encre, une seule couleur d'accent (orange foncé, ADR-008),
+  Inter seule, coins arrondis discrets, cartes cernées d'un filet plutôt que
+  d'une ombre, micro-transitions sobres (150-200 ms). Mode sombre en phase 5.
 - **La hiérarchie suit le flux de travail**, pas la structure de la base de données.
 - **Chiffres irréprochables** : alignement tabulaire des montants (chiffres à
   chasse fixe), format français (`1 234,56 €`), négatifs visuellement distincts.
@@ -167,8 +171,11 @@ Objectif : **< 10 secondes par décision**.
 ### Règles d'implémentation issues de `DESIGN.md`
 
 - Tout montant = token `amount-*` + `tabular-nums` + `text-right`. Sans exception.
-- Fond body = `canvas-app` (`#F8FAFC`), jamais `#FFFFFF` directement.
-- Un seul accent : bleu `primary` (`#2563EB`). Pas de deuxième couleur de marque.
+- Fond body = `canvas-app` (`#FBFAF8`), jamais `#FFFFFF` directement.
+- Un seul accent : l'orange foncé `signal` (`#C2410C`), pour les repères, les
+  liens d'action et le focus ; le bouton principal est à l'encre (`#111111`),
+  jamais orange ; au plus un surlignage jaune par écran. Pas de deuxième
+  couleur de marque sans ADR (ADR-008, qui remplace l'accent bleu d'origine).
 - Transitions à 150 ms max. Pas de spinner plein écran — squelettes uniquement.
 - Pas de page grisée : les modules non applicables au dossier sont absents, pas
   désactivés.
