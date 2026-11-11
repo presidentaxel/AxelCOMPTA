@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useState } from "react";
 
+import { LiensJuridiques } from "@/components/LiensJuridiques";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { demanderReinitialisation, envoyerLienMagique } from "@/lib/auth-chauffeur";
@@ -162,6 +163,7 @@ export function FormulaireConnexion({
           </button>
         )}
       </div>
+      <LiensJuridiques className="mt-6" />
     </div>
   );
 }

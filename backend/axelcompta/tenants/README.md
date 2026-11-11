@@ -40,6 +40,16 @@ d'héritage implicite (doc 03 §3bis, doc 06 §7).
   `Dossier.a_confirmer` (migration `d4a8c2e61f37`) ; le gestionnaire voit
   « … à confirmer par le dirigeant » dans Entreprises.
 
+- `identite_saisie.py` (AXE-846) — le dirigeant saisit le siège, le
+  capital et les associés de sa société (écran « Ma société »), pré-remplis
+  depuis Recherche d'entreprises à partir du SIREN. Pur : vérifications
+  (SIREN, NIC, code postal, capital, un seul associé pour une SASU ou une
+  EURL) et lecture du registre. Enregistré par
+  `DossierRepository.enregistrer_identite`, tracé au journal d'audit
+  (`identite_saisie`). La migration `a3f8c2d71e46` donne au rôle web
+  l'UPDATE de `identite`, `forme_juridique` et `a_confirmer` : sans elle,
+  la confirmation d'AXE-730 échouait en production.
+
 - `models.py` — domaine pur (`Tenant`, `Dossier`).
 - `agregats.py` / `agregats_postgres.py` (**fait, AXE-566**) : les agrégats de
   la vue portefeuille (montants de la liasse, exercice, alerte de franchise)

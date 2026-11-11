@@ -1,16 +1,27 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { Aide, pourquoiEnvoi } from "@/components/Aide";
-import { useCanauxEnvoi } from "@/lib/use-canaux-envoi";
-import { SuiviEnvois } from "@/components/SuiviEnvois";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { pourquoiEnvoi } from "@/components/Aide";
+import { BarreOutils } from "@/components/portefeuille/BarreOutils";
+import { EnTete } from "@/components/portefeuille/EnTete";
+import { FicheEntreprise } from "@/components/portefeuille/FicheEntreprise";
+import { ListeEntreprises } from "@/components/portefeuille/ListeEntreprises";
+import { RetireesDeLaListe } from "@/components/portefeuille/RetireesDeLaListe";
 import {
-  declencherRappel,
+  COMPTES_A_CHOISIR,
+  lireCompte,
+  lireResultat,
+  lireTri,
+  nombreDeFiltres,
+  type EtatFiltres,
+} from "@/components/portefeuille/filtres";
+import type { LigneAnalysee } from "@/components/portefeuille/LigneEntreprise";
+import { NouveauxChauffeurs, useSynchronisationPortefeuille } from "@/components/SynchronisationPortefeuille";
+import { PoseEnLot, ReglageExclusions } from "@/components/TagsEntreprises";
+import { Button } from "@/components/ui/button";
+import {
   ErreurAuthGestionnaire,
   lireConnexionsBancaires,
   lirePortefeuilleSession,
@@ -19,48 +30,31 @@ import {
   listerRegles,
   lireTags,
   restaurerDossier,
-  retirerDossier,
+  type ConnexionDossier,
   type RegleRappel,
 } from "@/lib/auth-gestionnaire";
+import { attendUnChoixDeCompte, bandeauComptesAChoisir } from "@/lib/comptes-a-choisir";
+import { gardeEtape, rangEtape } from "@/lib/filtres-portefeuille";
 import {
-  attendUnChoixDeCompte,
-  bandeauComptesAChoisir,
-  phraseComptesAChoisir,
-} from "@/lib/comptes-a-choisir";
-import { phraseAConfirmer } from "@/lib/configuration-dossier";
-import { phraseTvaADeclarer } from "@/lib/tva";
-import {
-  libelleBanque,
-  libelleCompte,
-  libelleImposition,
-  libelleRegimeTva,
-  libelleTvaRecettes,
-} from "@/lib/dossier-libelles";
-import {
-  ETAPES_FRISE,
-  etapeBloquante,
-  gardeEtape,
-  rangEtape,
-} from "@/lib/filtres-portefeuille";
-import { formatDate, formatMontant } from "@/lib/format";
-import { gardeTag, libelleTag, SANS_TAG, TOUS_LES_TAGS, totauxPortefeuille } from "@/lib/tags";
+  aTraiterEnPremier,
+  analyserLigne,
+  connexionARenouveler,
+  toutesLesRaisons,
+} from "@/lib/portefeuille-a-traiter";
+import { gardeTag, TOUS_LES_TAGS, totauxPortefeuille } from "@/lib/tags";
 import type { DossierAgregat, ReglageTags } from "@/lib/types";
+import { useCanauxEnvoi } from "@/lib/use-canaux-envoi";
 import { useDroitGestionnaire } from "@/lib/use-droit";
-import { Squelette } from "@/components/Squelette";
-import { SynchronisationPortefeuille } from "@/components/SynchronisationPortefeuille";
-import {
-  PastillesTags,
-  PoseEnLot,
-  ReglageExclusions,
-  TagsDuDossier,
-} from "@/components/TagsEntreprises";
-
-const COMPTES_A_CHOISIR = "a_choisir";
-type FiltreCompte = "tous" | "sans_compte" | "invite" | "ouvert";
-type FiltreResultat = "tous" | "negatif" | "positif";
 
 const PAR_PAGE = 25;
 
+/** Écran Entreprises. Il charge, lit l'URL et assemble ; ce qui s'affiche vit
+ * dans `components/portefeuille/` et la règle « à traiter » dans
+ * `lib/portefeuille-a-traiter.ts`.
+ *
+ * La liste complète arrive d'un coup et la pagination est faite ici : on peut
+ * donc mettre les dossiers « à traiter » en tête de TOUTES les pages, avant de
+ * découper. */
 export function EcranEntreprises() {
   const router = useRouter();
   const pathname = usePathname();
@@ -77,20 +71,22 @@ export function EcranEntreprises() {
   const etape = params.get("etape") ?? "toutes";
   const banque = params.get("banque") === COMPTES_A_CHOISIR ? COMPTES_A_CHOISIR : "toutes";
   const tag = params.get("tag") ?? TOUS_LES_TAGS;
-  const [reglageTags, setReglageTags] = useState<ReglageTags | null>(null);
-  const [coches, setCoches] = useState<string[]>([]);
   const tri = lireTri(params.get("tri"));
   const page = Math.max(1, Number(params.get("page")) || 1);
   const selection = params.get("ouvert");
+  const [reglageTags, setReglageTags] = useState<ReglageTags | null>(null);
+  const [coches, setCoches] = useState<string[]>([]);
   const [regles, setRegles] = useState<RegleRappel[]>([]);
-  const [infoRappel, setInfoRappel] = useState<string | null>(null);
-  const [confirmerRetrait, setConfirmerRetrait] = useState(false);
-  const [erreurRetrait, setErreurRetrait] = useState<string | null>(null);
   const [retires, setRetires] = useState<{ dossier_id: string; nom: string }[]>([]);
+  const [connexions, setConnexions] = useState<ConnexionDossier[]>([]);
 
   const charger = useCallback(() => {
     listerDossiers()
-      .then(setDossiers)
+      .then((liste) => {
+        // Un « Réessayer » réussi efface le message d'erreur.
+        setErreur(null);
+        setDossiers(liste);
+      })
       .catch((exception) => {
         if (exception instanceof ErreurAuthGestionnaire) {
           router.replace("/connexion");
@@ -100,6 +96,8 @@ export function EcranEntreprises() {
       });
   }, [router]);
 
+  const synchro = useSynchronisationPortefeuille(charger);
+
   useEffect(() => {
     const memo = lirePortefeuilleSession();
     // Lecture de sessionStorage avant le rafraîchissement réseau.
@@ -107,17 +105,16 @@ export function EcranEntreprises() {
     if (memo) setDossiers(memo);
     charger();
     listerRegles().then(setRegles).catch(() => setRegles([]));
-    lireTags().then(setReglageTags).catch(() => setReglageTags(null));
+    lireTags()
+      .then((reglage) => setReglageTags(Array.isArray(reglage?.tags) ? reglage : null))
+      .catch(() => setReglageTags(null));
     listerDossiersRetires().then(setRetires).catch(() => setRetires([]));
+    // Une seule lecture des connexions : elle sert l'avis « À savoir » et la
+    // raison « à traiter » de chaque ligne. Sans réponse, rien n'est signalé.
+    lireConnexionsBancaires()
+      .then((donnees) => setConnexions(Array.isArray(donnees.dossiers) ? donnees.dossiers : []))
+      .catch(() => setConnexions([]));
   }, [charger]);
-
-  useEffect(() => {
-    // Le message d'un rappel ne doit pas rester affiché sur l'entreprise suivante.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setInfoRappel(null);
-    setErreurRetrait(null);
-    setConfirmerRetrait(false);
-  }, [selection]);
 
   const formes = useMemo(
     () => [...new Set((dossiers ?? []).map((dossier) => dossier.forme_juridique))].sort(),
@@ -127,6 +124,7 @@ export function EcranEntreprises() {
     () => [...new Set((dossiers ?? []).map((dossier) => dossier.tva_recettes_regime))].sort(),
     [dossiers],
   );
+
   function ecrire(maj: Record<string, string | null>, garderPage = false) {
     const suivant = new URLSearchParams(params.toString());
     for (const [cle, valeur] of Object.entries(maj)) {
@@ -141,9 +139,19 @@ export function EcranEntreprises() {
     router.replace(requete ? `${pathname}?${requete}` : pathname, { scroll: false });
   }
 
+  // Chaque dossier avec ce que la règle en dit. Calculé sur tout le portefeuille :
+  // le titre d'accueil compte « à traiter » avant les filtres.
+  const analyses = useMemo(() => {
+    const parDossier = new Map(connexions.map((connexion) => [connexion.dossier_id, connexion]));
+    return (dossiers ?? []).map<LigneAnalysee>((dossier) => ({
+      dossier,
+      analyse: analyserLigne(dossier, parDossier.get(dossier.dossier_id)),
+    }));
+  }, [dossiers, connexions]);
+
   const visibles = useMemo(() => {
     const aiguille = recherche.trim().toLowerCase();
-    const filtres = (dossiers ?? []).filter((dossier) => {
+    const filtres = analyses.filter(({ dossier }) => {
       if (compte === "sans_compte" && dossier.statut_invitation !== null) return false;
       if (compte === "invite" && dossier.statut_invitation !== "invité") return false;
       if (compte === "ouvert" && dossier.statut_invitation !== "actif") return false;
@@ -157,120 +165,64 @@ export function EcranEntreprises() {
       if (!aiguille) return true;
       return `${dossier.nom} ${dossier.plateformes.join(" ")}`.toLowerCase().includes(aiguille);
     });
-    return filtres.sort((a, b) => {
-      if (tri === "resultat") return a.resultat_cts - b.resultat_cts;
+    const triees = [...filtres].sort((a, b) => {
+      if (tri === "resultat") return a.dossier.resultat_cts - b.dossier.resultat_cts;
       if (tri === "etape") {
         return (
-          rangEtape(a.etape_courante, a.statut_invitation === "actif") -
-          rangEtape(b.etape_courante, b.statut_invitation === "actif")
+          rangEtape(a.dossier.etape_courante, a.dossier.statut_invitation === "actif") -
+          rangEtape(b.dossier.etape_courante, b.dossier.statut_invitation === "actif")
         );
       }
-      return a.nom.localeCompare(b.nom, "fr");
+      return a.dossier.nom.localeCompare(b.dossier.nom, "fr");
     });
-  }, [banque, compte, dossiers, etape, forme, recherche, resultat, tag, tri, tva]);
+    // « À traiter » d'abord, le tri choisi s'applique dans chaque groupe.
+    return aTraiterEnPremier(triees, (ligne) => ligne.analyse.aTraiter);
+  }, [analyses, banque, compte, etape, forme, recherche, resultat, tag, tri, tva]);
 
+  const etatFiltres: EtatFiltres = { recherche, compte, resultat, forme, tva, etape, banque, tag, tri };
   const bandeau = useMemo(() => bandeauComptesAChoisir(dossiers ?? []), [dossiers]);
   const pages = Math.max(1, Math.ceil(visibles.length / PAR_PAGE));
   const pageCourante = Math.min(page, pages);
   const tranche = visibles.slice((pageCourante - 1) * PAR_PAGE, pageCourante * PAR_PAGE);
-  const filtresActifs =
-    recherche !== "" ||
-    compte !== "tous" ||
-    resultat !== "tous" ||
-    forme !== "toutes" ||
-    tva !== "toutes" ||
-    etape !== "toutes" ||
-    banque !== "toutes" ||
-    tag !== TOUS_LES_TAGS ||
-    tri !== "nom";
+  const totalATraiter = visibles.filter((ligne) => ligne.analyse.aTraiter).length;
+  const filtresActifs = recherche !== "" || nombreDeFiltres(etatFiltres) > 0;
 
   // Les entreprises qu'un tag sort des compteurs restent listées, grisées.
   const totaux = useMemo(
-    () => totauxPortefeuille(visibles.map((d) => ({ ...d, exclu_compteurs: d.exclu_compteurs ?? false }))),
+    () =>
+      totauxPortefeuille(
+        visibles.map(({ dossier }) => ({ ...dossier, exclu_compteurs: dossier.exclu_compteurs ?? false })),
+      ),
     [visibles],
   );
-  const comptees = useMemo(
-    () => (dossiers ?? []).filter((dossier) => !dossier.exclu_compteurs).length,
-    [dossiers],
-  );
+  const comptees = analyses.filter(({ dossier }) => !dossier.exclu_compteurs).length;
+  const aTraiterEnTout = analyses.filter(({ analyse }) => analyse.aTraiter).length;
+  const connexionsARenouveler = connexions.filter(connexionARenouveler).length;
 
-  const choisi = dossiers?.find((dossier) => dossier.dossier_id === selection) ?? null;
+  const choisi = analyses.find(({ dossier }) => dossier.dossier_id === selection) ?? null;
+
+  function reinitialiser() {
+    ecrire({
+      q: null, compte: null, resultat: null, forme: null, tva: null, etape: null, banque: null, tag: null,
+      tri: null,
+    });
+  }
 
   return (
-    <div className="sticky top-0 -m-8 flex h-screen overflow-hidden">
-    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-8">
-      <div className="flex items-start justify-between gap-6">
-        <h1 className="text-[28px] font-bold tracking-tight text-ink">Entreprises</h1>
-        <Link href="/invitations" className="mt-2 text-sm font-medium text-signal hover:underline">
-          Invitations
-        </Link>
-      </div>
-      <AlerteConnexions />
-      <SynchronisationPortefeuille ecriture={droit.ecriture} onTerminee={charger} />
-      {droit.admin && (
-        <Link href="/import-dossiers" className="mt-2 inline-block text-sm font-medium text-signal">
-          Importer des entreprises depuis un fichier
-        </Link>
-      )}
-      {retires.length > 0 && (
-        <section className="mt-6 rounded-lg border border-border bg-canvas p-4">
-          <h2 className="text-sm font-semibold text-ink">Retirées de la liste</h2>
-          <p className="mt-1 text-sm text-subtle">Les écritures sont gardées.</p>
-          <ul className="mt-3">
-            {retires.map((dossier) => (
-              <li
-                key={dossier.dossier_id}
-                className="flex items-center justify-between border-b border-hairline py-2"
-              >
-                <span className="text-sm text-ink">{dossier.nom}</span>
-                {droit.admin && (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      void restaurerDossier(dossier.dossier_id).then(async () => {
-                        setRetires(await listerDossiersRetires());
-                        charger();
-                      });
-                    }}
-                  >
-                    Remettre
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      {reglageTags && (
-        <ReglageExclusions
-          reglage={reglageTags}
-          ecriture={droit.ecriture}
-          onModifie={(reglage) => {
-            setReglageTags(reglage);
-            charger();
-          }}
-        />
-      )}
-      {dossiers ? (
-        <dl className="mt-8 flex flex-wrap gap-x-12 gap-y-4">
-          <Total
-            libelle="Entreprises"
-            valeur={totaux.nombre === comptees ? String(totaux.nombre) : `${totaux.nombre} sur ${comptees}`}
-          />
-          <Total libelle="Sans compte" valeur={String(totaux.sansCompte)} />
-          <Total libelle="Résultat" valeur={formatMontant(totaux.resultat)} montant={totaux.resultat} />
-        </dl>
-      ) : (
-        !erreur && (
-          <div className="mt-8 flex gap-12" aria-hidden>
-            <Squelette className="h-12 w-28" />
-            <Squelette className="h-12 w-28" />
-            <Squelette className="h-12 w-36" />
-          </div>
-        )
-      )}
+    <div>
+      <EnTete
+        charge={dossiers !== null}
+        erreur={erreur !== null}
+        aTraiter={aTraiterEnTout}
+        autres={comptees - aTraiterEnTout}
+        totaux={totaux}
+        comptees={comptees}
+        connexionsARenouveler={connexionsARenouveler}
+        admin={droit.admin}
+        ecriture={droit.ecriture}
+        synchro={synchro}
+      />
+      <NouveauxChauffeurs etat={synchro} ecriture={droit.ecriture} />
 
       {bandeau && banque !== COMPTES_A_CHOISIR && (
         <div
@@ -284,107 +236,19 @@ export function EcranEntreprises() {
         </div>
       )}
 
-      <div className="mt-8 flex items-center gap-2">
-        <Input
-          value={recherche}
-          onChange={(evenement) => ecrire({ q: evenement.target.value })}
-          placeholder="Rechercher une entreprise"
-          aria-label="Rechercher une entreprise"
+      <div className="mt-8">
+        <BarreOutils
+          charge={dossiers !== null}
+          visibles={visibles.length}
+          etat={etatFiltres}
+          formes={formes}
+          tvas={tvas}
+          reglageTags={reglageTags}
+          filtresActifs={filtresActifs}
+          onChanger={(maj) => ecrire(maj)}
+          onReinitialiser={reinitialiser}
         />
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Filtre
-          libelle="Compte"
-          valeur={compte}
-          options={ORDRE_COMPTE.map((id) => ({ id, libelle: LIBELLES_COMPTE[id] }))}
-          onChoisir={(valeur) => ecrire({ compte: valeur })}
-        />
-        <Filtre
-          libelle="Résultat"
-          valeur={resultat}
-          options={ORDRE_RESULTAT.map((id) => ({ id, libelle: LIBELLES_RESULTAT[id] }))}
-          onChoisir={(valeur) => ecrire({ resultat: valeur })}
-        />
-        <Filtre
-          libelle="Forme"
-          valeur={forme}
-          options={["toutes", ...formes].map((id) => ({ id, libelle: id === "toutes" ? "Toutes" : id }))}
-          onChoisir={(valeur) => ecrire({ forme: valeur })}
-        />
-        <Filtre
-          libelle="TVA"
-          valeur={tva}
-          options={["toutes", ...tvas].map((id) => ({
-            id,
-            libelle: id === "toutes" ? "Toutes" : libelleTvaRecettes(id),
-          }))}
-          onChoisir={(valeur) => ecrire({ tva: valeur })}
-        />
-        <Filtre
-          libelle="Étape restante"
-          valeur={etape}
-          options={["toutes", ...ETAPES_FRISE].map((id) => ({
-            id,
-            libelle: id === "toutes" ? "Toutes" : id,
-          }))}
-          onChoisir={(valeur) => ecrire({ etape: valeur })}
-        />
-        <Filtre
-          libelle="Comptes bancaires"
-          valeur={banque}
-          options={[
-            { id: "toutes", libelle: "Tous" },
-            { id: COMPTES_A_CHOISIR, libelle: "À choisir" },
-          ]}
-          onChoisir={(valeur) => ecrire({ banque: valeur })}
-        />
-        {reglageTags && (
-          <Filtre
-            libelle="Tag"
-            valeur={tag}
-            options={[
-              { id: TOUS_LES_TAGS, libelle: "Tous" },
-              { id: SANS_TAG, libelle: "Sans tag" },
-              ...reglageTags.tags.map((option) => ({ id: option.nom, libelle: libelleTag(option.nom) })),
-            ]}
-            onChoisir={(valeur) => ecrire({ tag: valeur })}
-          />
-        )}
-        <Filtre
-          libelle="Tri"
-          valeur={tri}
-          options={[
-            { id: "nom", libelle: "Nom" },
-            { id: "etape", libelle: "Étape bloquante" },
-            { id: "resultat", libelle: "Résultat" },
-          ]}
-          onChoisir={(valeur) => ecrire({ tri: valeur })}
-        />
-        {filtresActifs && (
-          <Button type="button" variant="ghost" size="sm" onClick={() => ecrire({
-            q: null, compte: null, resultat: null, forme: null, tva: null, etape: null, banque: null, tag: null,
-            tri: null,
-          })}>
-            Réinitialiser
-          </Button>
-        )}
-      </div>
-
-      {erreur && (
-        <div className="mt-6 flex items-center gap-3">
-          <p className="text-sm text-danger">{erreur}</p>
-          <Button type="button" variant="secondary" size="sm" onClick={charger}>
-            Réessayer
-          </Button>
-        </div>
-      )}
-      {!dossiers && !erreur && (
-        <div className="mt-8 space-y-3" aria-hidden>
-          <Squelette className="h-16 w-full" />
-          <Squelette className="h-16 w-full" />
-          <Squelette className="h-16 w-full" />
-        </div>
-      )}
 
       {droit.ecriture && (
         <PoseEnLot
@@ -396,433 +260,75 @@ export function EcranEntreprises() {
           }}
         />
       )}
-      <ul className="mt-4">
-        {tranche.map((dossier) => {
-          const bloque = etapeBloquante(dossier.etape_courante, dossier.statut_invitation === "actif");
-          return (
-          <li
-            key={dossier.dossier_id}
-            className={`flex items-start gap-2 border-b border-hairline ${dossier.exclu_compteurs ? "opacity-60" : ""}`}
-          >
-            {droit.ecriture && reglageTags && (
-              <input
-                type="checkbox"
-                className="mt-4 ml-1"
-                aria-label={`Cocher ${dossier.nom}`}
-                checked={coches.includes(dossier.dossier_id)}
-                onChange={(evenement) =>
-                  setCoches((avant) =>
-                    evenement.target.checked
-                      ? [...avant, dossier.dossier_id]
-                      : avant.filter((id) => id !== dossier.dossier_id),
-                  )
-                }
-              />
-            )}
-            <button
-              type="button"
-              aria-current={selection === dossier.dossier_id ? "true" : undefined}
-              className={`flex w-full items-start justify-between gap-6 rounded-lg px-3 py-2.5 text-left hover:bg-surface-soft ${
-                selection === dossier.dossier_id ? "bg-surface-soft" : ""
-              }`}
-              onClick={() => {
-                setConfirmerRetrait(false);
-                ecrire(
-                  { ouvert: selection === dossier.dossier_id ? null : dossier.dossier_id },
-                  true,
-                );
-              }}
-            >
-              <span className="min-w-0 flex-1">
-                <span className="flex items-baseline gap-2">
-                  <span className="truncate text-base font-semibold text-ink">{dossier.nom}</span>
-                  <span className="shrink-0 text-sm text-subtle">{libelleCompte(dossier.statut_invitation)}</span>
-                  <span className="shrink-0 text-sm font-medium text-ink">{bloque}</span>
-                  <PastillesTags tags={dossier.tags ?? []} />
-                </span>
-                <span className="mt-2 block space-y-1">
-                  <Frise
-                    annee={dossier.annee_courante}
-                    etape={dossier.etape_courante}
-                    compteOuvert={dossier.statut_invitation === "actif"}
-                  />
-                  <Frise
-                    annee={dossier.annee_precedente}
-                    etape={dossier.etape_precedente}
-                    compteOuvert={dossier.statut_invitation === "actif"}
-                  />
-                  {[
-                    dossier.alerte_regime,
-                    dossier.alerte_tva,
-                    phraseAConfirmer(dossier.a_confirmer ?? []),
-                    phraseComptesAChoisir(dossier),
-                    phraseTvaADeclarer(dossier.tva_a_declarer, dossier.tva_echeance),
-                  ]
-                    .filter((alerte): alerte is string => alerte !== null)
-                    .map((alerte) => (
-                      <span key={alerte} className="block text-sm text-subtle">
-                        {alerte}
-                      </span>
-                    ))}
-                </span>
-              </span>
-              <span
-                className={`shrink-0 text-lg font-semibold tabular-nums ${
-                  dossier.resultat_cts < 0 ? "text-amount-negative" : "text-amount-positive"
-                }`}
-              >
-                {formatMontant(dossier.resultat_cts)}
-              </span>
-            </button>
-          </li>
-          );
-        })}
-      </ul>
-      {dossiers && dossiers.length === 0 && (
-        <p className="py-10 text-sm text-subtle">Aucune entreprise dans ce portefeuille.</p>
+      <ListeEntreprises
+        charge={dossiers !== null}
+        erreur={erreur}
+        onReessayer={charger}
+        tranche={tranche}
+        totalATraiter={totalATraiter}
+        totalAutres={visibles.length - totalATraiter}
+        portefeuilleVide={dossiers !== null && dossiers.length === 0}
+        aucunResultat={dossiers !== null && dossiers.length > 0 && visibles.length === 0}
+        selection={selection}
+        cochees={coches}
+        peutCocher={droit.ecriture && reglageTags !== null}
+        onBasculerCoche={(dossierId, cochee) =>
+          setCoches((avant) =>
+            cochee ? [...avant, dossierId] : avant.filter((id) => id !== dossierId),
+          )
+        }
+        onOuvrir={(dossierId) => ecrire({ ouvert: selection === dossierId ? null : dossierId }, true)}
+        onOuvrirFiche={(dossierId) => ecrire({ ouvert: dossierId }, true)}
+        page={pageCourante}
+        pages={pages}
+        onPage={(suivante) => ecrire({ page: String(suivante) }, true)}
+        admin={droit.admin}
+        onReinitialiser={reinitialiser}
+      />
+
+      {/* Réglages rares, sous la liste : ils ne doivent pas repousser les dossiers. */}
+      <RetireesDeLaListe
+        retires={retires}
+        admin={droit.admin}
+        onRemettre={async (dossierId) => {
+          await restaurerDossier(dossierId);
+          setRetires(await listerDossiersRetires());
+          charger();
+        }}
+      />
+      {reglageTags && (
+        <ReglageExclusions
+          reglage={reglageTags}
+          ecriture={droit.ecriture}
+          onModifie={(reglage) => {
+            setReglageTags(reglage);
+            charger();
+          }}
+        />
       )}
-      {dossiers && dossiers.length > 0 && visibles.length === 0 && (
-        <p className="py-10 text-sm text-subtle">Aucune entreprise pour ces filtres.</p>
-      )}
-      {pages > 1 && (
-        <div className="mt-4 flex items-center gap-3 text-sm text-subtle">
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled={pageCourante <= 1}
-            onClick={() => ecrire({ page: String(pageCourante - 1) }, true)}
-          >
-            Page précédente
-          </Button>
-          <span>
-            Page {pageCourante} sur {pages}
-          </span>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled={pageCourante >= pages}
-            onClick={() => ecrire({ page: String(pageCourante + 1) }, true)}
-          >
-            Page suivante
-          </Button>
-        </div>
-      )}
-      </div>
-      {choisi ? (
-        <aside className="flex h-full w-96 shrink-0 flex-col overflow-hidden border-l border-border bg-canvas">
-          <div className="flex shrink-0 items-start justify-between gap-4 p-6 pb-4">
-            <h2 className="min-w-0 truncate text-lg font-semibold text-ink">{choisi.nom}</h2>
-            <span className="flex shrink-0 flex-nowrap gap-1">
-              {droit.admin && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="text-danger"
-                  onClick={() => setConfirmerRetrait(true)}
-                >
-                  Retirer
-                </Button>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => ecrire({ ouvert: null }, true)}
-              >
-                Fermer
-              </Button>
-            </span>
-          </div>
-          <p className="mt-1 px-6 text-sm text-subtle">{libelleCompte(choisi.statut_invitation)}</p>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
-          <Link
-            href={`/anomalies/${choisi.dossier_id}`}
-            className="mt-3 inline-block text-sm font-medium text-signal hover:underline"
-          >
-            Anomalies
-          </Link>
-          <TagsDuDossier
-            dossierId={choisi.dossier_id}
-            tags={choisi.tags ?? []}
-            reglage={reglageTags}
-            ecriture={droit.ecriture}
-            onModifie={charger}
-          />
-          <dl className="mt-6 space-y-4 text-sm">
-            <Ligne libelle="Résultat" valeur={formatMontant(choisi.resultat_cts)} />
-            <Ligne libelle="CA HT" valeur={formatMontant(choisi.ca_ht_cts)} />
-            <Ligne libelle="Charges" valeur={formatMontant(choisi.charges_cts)} />
-            <Ligne libelle="Forme" valeur={choisi.forme_juridique} />
-            <Ligne libelle="Imposition" valeur={libelleImposition(choisi.regime_imposition)} />
-            <Ligne libelle="Régime de TVA" valeur={libelleRegimeTva(choisi.regime_tva)} />
-            <Ligne libelle="TVA sur les recettes" valeur={libelleTvaRecettes(choisi.tva_recettes_regime)} />
-            <Ligne libelle="Banque" valeur={libelleBanque(choisi.mode_acces_bancaire)} />
-            {choisi.plateformes.length > 0 && (
-              <Ligne libelle="Plateformes" valeur={choisi.plateformes.join(", ")} />
-            )}
-            {choisi.exercice_debut && (
-              <Ligne
-                libelle="Exercice"
-                valeur={
-                  choisi.exercice_fin
-                    ? `${formatDate(choisi.exercice_debut)} au ${formatDate(choisi.exercice_fin)}`
-                    : formatDate(choisi.exercice_debut)
-                }
-              />
-            )}
-          </dl>
-          <div className="mt-8">
-            <p className="text-sm font-medium text-ink">
-              Rappels
-              <Aide texte={pourquoiEnvoi(canauxEnvoi)} />
-            </p>
-            {regles.length === 0 && (
-              <p className="mt-2 text-sm text-subtle">
-                Aucune règle. Elles se préparent dans Rappels.
-              </p>
-            )}
-            <div className="mt-2 flex flex-col gap-2">
-              {regles
-                .filter((regle) => regle.declencheur === "manuel")
-                .filter(
-                  (regle) =>
-                    regle.portee !== "selection" || regle.dossier_ids.includes(choisi.dossier_id),
-                )
-                .map((regle) => (
-                <div key={regle.id}>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    disabled={!droit.ecriture}
-                    onClick={async () => {
-                      setInfoRappel(null);
-                      try {
-                        await declencherRappel(regle.id, choisi.dossier_id);
-                        setInfoRappel(
-                          `${regle.libelle} enregistré. Envoi prévu quand le canal sera branché.`,
-                        );
-                      } catch (exception) {
-                        setInfoRappel(
-                          exception instanceof Error ? exception.message : "Échec du rappel.",
-                        );
-                      }
-                    }}
-                  >
-                    {regle.libelle}
-                  </Button>
-                  <p className="mt-1 text-xs text-subtle">
-                    {libelleCanaux(regle.canaux)} — {regle.message}
-                  </p>
-                </div>
-              ))}
-            </div>
-            {infoRappel && <p className="mt-2 text-sm text-subtle">{infoRappel}</p>}
-            <SuiviEnvois dossierId={choisi.dossier_id} />
-          </div>
-          {confirmerRetrait && (
-            <div className="mt-6 rounded-lg border border-border bg-canvas-app p-4">
-              <p className="text-sm text-ink">
-                Retirer {choisi.nom} de la liste ? Les écritures restent. Vous pourrez remettre
-                l&apos;entreprise dans la liste.
-              </p>
-              {erreurRetrait && <p className="mt-2 text-sm text-danger">{erreurRetrait}</p>}
-              <div className="mt-3 flex justify-end gap-2">
-                <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmerRetrait(false)}>
-                  Annuler
-                </Button>
-                <Button
-                  type="button"
-                  variant="danger"
-                  size="sm"
-                  onClick={async () => {
-                    setErreurRetrait(null);
-                    try {
-                      await retirerDossier(choisi.dossier_id);
-                      setConfirmerRetrait(false);
-                      ecrire({ ouvert: null }, true);
-                      charger();
-                      setRetires(await listerDossiersRetires());
-                    } catch (exception) {
-                      setErreurRetrait(
-                        exception instanceof Error ? exception.message : "Échec du retrait.",
-                      );
-                    }
-                  }}
-                >
-                  Retirer
-                </Button>
-              </div>
-            </div>
+
+      {choisi && (
+        <FicheEntreprise
+          key={choisi.dossier.dossier_id}
+          dossier={choisi.dossier}
+          raisons={toutesLesRaisons(
+            choisi.dossier,
+            connexions.find((connexion) => connexion.dossier_id === choisi.dossier.dossier_id),
           )}
-          </div>
-        </aside>
-      ) : null}
+          regles={regles}
+          aideRappels={pourquoiEnvoi(canauxEnvoi)}
+          reglageTags={reglageTags}
+          admin={droit.admin}
+          ecriture={droit.ecriture}
+          onFermer={() => ecrire({ ouvert: null }, true)}
+          onModifie={charger}
+          onRetire={() => {
+            ecrire({ ouvert: null }, true);
+            charger();
+            void listerDossiersRetires().then(setRetires).catch(() => undefined);
+          }}
+        />
+      )}
     </div>
-  );
-}
-
-function Total({ libelle, valeur, montant }: { libelle: string; valeur: string; montant?: number }) {
-  const couleur =
-    montant === undefined ? "text-ink" : montant < 0 ? "text-amount-negative" : "text-amount-positive";
-  return (
-    <div>
-      <dt className="text-sm text-subtle">{libelle}</dt>
-      <dd className={`mt-1 text-2xl font-bold tabular-nums tracking-tight ${couleur}`}>{valeur}</dd>
-    </div>
-  );
-}
-
-const ORDRE_COMPTE: FiltreCompte[] = ["tous", "sans_compte", "invite", "ouvert"];
-const ORDRE_RESULTAT: FiltreResultat[] = ["tous", "positif", "negatif"];
-const LIBELLES_COMPTE: Record<FiltreCompte, string> = {
-  tous: "Tous",
-  sans_compte: "Sans compte",
-  invite: "Invitation envoyée",
-  ouvert: "Compte ouvert",
-};
-const LIBELLES_RESULTAT: Record<FiltreResultat, string> = {
-  tous: "Tous",
-  positif: "Positif",
-  negatif: "Négatif",
-};
-
-function Filtre<T extends string>({
-  libelle,
-  valeur,
-  options,
-  onChoisir,
-}: {
-  libelle: string;
-  valeur: T;
-  options: { id: T; libelle: string }[];
-  onChoisir: (id: T) => void;
-}) {
-  return (
-    <label className="text-sm text-subtle">
-      {libelle}
-      <select
-        aria-label={libelle}
-        value={valeur}
-        onChange={(evenement) => onChoisir(evenement.target.value as T)}
-        className="ml-2 h-9 rounded-md border border-border bg-canvas px-2 text-sm text-ink"
-      >
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.libelle}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function lireCompte(valeur: string | null): FiltreCompte {
-  if (valeur === "sans_compte" || valeur === "invite" || valeur === "ouvert") return valeur;
-  return "tous";
-}
-
-function lireResultat(valeur: string | null): FiltreResultat {
-  if (valeur === "positif" || valeur === "negatif") return valeur;
-  return "tous";
-}
-
-function lireTri(valeur: string | null): "nom" | "etape" | "resultat" {
-  if (valeur === "etape" || valeur === "resultat") return valeur;
-  return "nom";
-}
-
-const CANAL: Record<string, string> = { mail: "E-mail", sms: "SMS", appel: "Appel" };
-
-function libelleCanaux(canaux: string[]): string {
-  return canaux.map((canal) => CANAL[canal] ?? canal).join(", ");
-}
-
-/** Le compte se prépare une fois. Ensuite, par exercice : clôture, signature
- * de validation, dépôt au greffe, dépôt aux impôts, signature légale
- * (doc 02 §4 et §6, doc 19 §5.3, doc 20 §4bis). */
-function Frise({
-  annee,
-  etape,
-  compteOuvert,
-}: {
-  annee: number;
-  etape: string;
-  compteOuvert: boolean;
-}) {
-  const index = rangEtape(etape, compteOuvert);
-  const lecture = ETAPES_FRISE.map((nom, rang) => `${nom} ${rang <= index ? "faite" : "à faire"}`).join(", ");
-  return (
-    <span role="img" className="flex items-start gap-3" aria-label={`${annee} : ${lecture}`}>
-      <span className="w-8 shrink-0 pt-px text-xs leading-none text-subtle">{annee}</span>
-      <span className="grid min-w-0 flex-1 grid-cols-6">
-        {ETAPES_FRISE.map((nom, rang) => {
-          const fait = rang <= index;
-          const traitFait = rang < index;
-          return (
-            <span key={nom} className="relative flex flex-col items-center">
-              {rang > 0 && (
-                <span
-                  className={`absolute right-1/2 top-[3px] left-0 h-px ${traitFait || fait ? "bg-primary" : "bg-border"}`}
-                />
-              )}
-              {rang < ETAPES_FRISE.length - 1 && (
-                <span
-                  className={`absolute top-[3px] right-0 left-1/2 h-px ${traitFait ? "bg-primary" : "bg-border"}`}
-                />
-              )}
-              <span className={`relative z-10 h-2 w-2 rounded-full ${fait ? "bg-primary" : "bg-border"}`} />
-              <span className={`mt-1 text-center text-[10px] leading-tight ${fait ? "text-ink" : "text-subtle"}`}>
-                {nom}
-              </span>
-            </span>
-          );
-        })}
-      </span>
-    </span>
-  );
-}
-
-function Ligne({ libelle, valeur }: { libelle: string; valeur: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <dt className="text-subtle">{libelle}</dt>
-      <dd className="text-right text-ink">{valeur}</dd>
-    </div>
-  );
-}
-
-/** doc 14 §2.2 : les connexions qui demandent une action se voient dès
- * l'arrivée, sans aller les chercher. */
-function AlerteConnexions() {
-  const [nombre, setNombre] = useState(0);
-  useEffect(() => {
-    lireConnexionsBancaires()
-      .then((donnees) =>
-        setNombre(
-          donnees.dossiers.filter(
-            (dossier) =>
-              dossier.statut === "expire" ||
-              dossier.statut === "a_renouveler" ||
-              dossier.sante === "auth_requise",
-          ).length,
-        ),
-      )
-      .catch(() => undefined);
-  }, []);
-  if (nombre === 0) return null;
-  return (
-    <Link
-      href="/connexions-bancaires"
-      className="mt-6 block rounded-md border border-warning/40 bg-pending-subtle px-4 py-3 text-sm text-ink hover:border-warning"
-    >
-      {nombre === 1
-        ? "Une connexion bancaire expire ou doit être confirmée."
-        : `${nombre} connexions bancaires expirent ou doivent être confirmées.`}{" "}
-      <span className="font-medium text-signal">Voir</span>
-    </Link>
   );
 }

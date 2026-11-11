@@ -1,6 +1,6 @@
 # 02 — Cadre réglementaire et juridique
 
-> Statut : brouillon à valider — Dernière mise à jour : 2026-11-05 (mode expert, §2.3)
+> Statut : brouillon à valider — Dernière mise à jour : 2026-11-10 (mode expert livré, §2.3)
 
 ## 1. Pourquoi ce document existe
 

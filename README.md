@@ -13,7 +13,7 @@ le premier.
 
 **Où lire l'état du projet :** dans le repo, un seul endroit, le
 [doc 12](docs/12-roadmap-todo.md) (fait, en cours, prévu ; à jour au
-2026-11-05). Le suivi au jour le jour est dans Linear, projet
+2026-11-10). Le suivi au jour le jour est dans Linear, projet
 [Axel Compta — V1 prod](https://linear.app/axel-project/project/axel-compta-v1-prod-api-ingestion-fiabilite-899778ce7b41),
 cible le 31/12/2026. Le passage en
 mode réel est dans le [doc 17](docs/17-plan-demo-backend.md), la carte du code le
@@ -46,6 +46,7 @@ met plus à jour.
 | [18 — Organisation du code](docs/18-organisation-code.md) | Carte de l'arborescence `backend/`/`frontend/` vers les modules du doc 03, graphe de dépendances | Avant de toucher au code, pour situer un module |
 | [19 — Parcours utilisateur](docs/19-parcours-utilisateur.md) | Compte chauffeur (mobile) relié à sa propre banque, onboarding et visibilité gestionnaire, deux modes de connexion bancaire par dossier, mono-compte | Avant tout code front — complète doc 11 et doc 14 |
 | [20 — Dépôt des comptes annuels (INPI)](docs/20-integration-inpi-depot-comptes.md) | Schéma de l'API de dépôt Guichet Unique, pièces jointes, signature qualifiée RGS obligatoire (recoupe ADR-004) | Avant tout code de génération du dossier greffe/INPI |
+| [Textes juridiques](docs/juridique/README.md) | Projets de mentions légales, CGU chauffeur, CGV gestionnaire, confidentialité et sous-traitance (art. 28), engagement de l'expert-comptable ; affichés sur `/legal/…` | Avant de brancher ou retirer un service externe |
 | [ADR 001-007](docs/adr/) | Architecture Decision Records : monolithe, file de jobs, hébergement, signature, OCR, PDF liasses, modèle ML de catégorisation | À lire avant de remettre en question une décision d'architecture |
 | [Archive](docs/archive/) | Journaux de sprint, notes de session, référence Revolut | Pour retrouver pourquoi une chose a été faite |
 
