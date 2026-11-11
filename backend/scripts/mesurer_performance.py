@@ -235,6 +235,8 @@ ROUTES: tuple[tuple[str, str, str], ...] = (
     ("/dossiers/{id}/dividendes", "chauffeur", f"/dossiers/{DOSSIER}/dividendes"),
     ("/dossiers/{id}/bulletins", "chauffeur", f"/dossiers/{DOSSIER}/bulletins"),
     ("/dossiers/{id}/acces", "chauffeur", f"/dossiers/{DOSSIER}/acces"),
+    ("/dossiers/{id}/affectation", "chauffeur", f"/dossiers/{DOSSIER}/affectation"),
+    ("/dossiers/{id}/identite", "chauffeur", f"/dossiers/{DOSSIER}/identite"),
     ("/portefeuille/moi", "gestionnaire", "/portefeuille/moi"),
     ("/dossiers", "gestionnaire", "/dossiers"),
     ("/portefeuille", "gestionnaire", "/portefeuille"),
@@ -248,10 +250,18 @@ ROUTES: tuple[tuple[str, str, str], ...] = (
     ("/regles-rappel", "gestionnaire", "/regles-rappel"),
     ("/tags", "gestionnaire", "/tags"),
     ("/dossiers/{id}/envois", "gestionnaire", f"/dossiers/{DOSSIER}/envois"),
+    ("/portefeuille/integrations/envoi", "gestionnaire", "/portefeuille/integrations/envoi"),
+    ("/portefeuille/import-dossiers", "gestionnaire", "/portefeuille/import-dossiers"),
+    (
+        "/portefeuille/import-dossiers/modele.csv",
+        "gestionnaire",
+        "/portefeuille/import-dossiers/modele.csv",
+    ),
     ("/expert/file", "expert", "/expert/file"),
     ("/expert/classees", "expert", "/expert/classees"),
     ("/dossiers/{id}/anomalies", "expert", f"/dossiers/{DOSSIER}/anomalies"),
     ("/dossiers/{id}/quarantaine", "expert", f"/dossiers/{DOSSIER}/quarantaine"),
+    ("/expert/engagement", "expert", "/expert/engagement"),
 )
 # Cibles du ticket AXE-843 : p95 < 1 s, file expert < 2 s.
 CIBLES_MS = {"/expert/file": 2000}
