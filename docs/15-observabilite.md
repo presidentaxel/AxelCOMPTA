@@ -48,6 +48,19 @@ Ces métriques prouvent que le produit fonctionne. Chacune a un seuil cible et d
 
 Ces métriques sont exposées comme compteurs/gauges Prometheus depuis le backend et affichées dans Grafana.
 
+**En place (AXE-900)** : le planificateur calcule chaque jour, à l'heure du contrôle de balance, sur les opérations écrites par la synchro ces 30 derniers jours, et les écrit dans le fichier de métriques (`AXELCOMPTA_METRIQUES_FICHIER`) :
+
+| Jauge | Sens |
+|-------|------|
+| `categorisation_part{etage}` | % d'opérations proposées par `regle`, `modele`, `banque`, ou sans proposition (`aucune`) |
+| `categorisation_part_imputee_seule` | % imputées sans regard humain |
+| `categorisation_part_tranchee_humain` | % mises au 471 puis tranchées par un humain |
+| `categorisation_part_en_attente` | % encore au 471 |
+| `transaction_vers_ecriture_p95_heures` | p95 du délai entre la date de l'opération et son imputation (synchro ou première décision ; âge à ce jour si encore en attente). Les recettes qui attendent leur rapprochement n'en font pas partie. |
+| `categorisation_operations_30j` | nombre d'opérations mesurées |
+
+Seules les opérations écrites depuis le 12/11/2026 sont mesurées : avant, la date de passage de la synchro n'était pas gardée. Le recours au LLM s'ajoutera quand l'IA passera dans la synchro (AXE-887).
+
 ## 3. Métriques techniques
 
 ### 3.1 API et workers

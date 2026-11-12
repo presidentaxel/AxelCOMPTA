@@ -97,6 +97,9 @@ propositions_categorisation = Table(
     Column("confiance", Float, nullable=False),
     # Carte, virement, prélèvement… (AXE-836, migration d1e7a3c9f264).
     Column("moyen_paiement", String, nullable=True),
+    # Quand la synchro a écrit l'opération (AXE-900, migration c4e8b2f6a1d7).
+    # Nul avant le 12/11/2026.
+    Column("cree_le", DateTime(timezone=True), nullable=True),
 )
 
 # Notifications internes de l'indiv (cloche de l'espace chauffeur). On
