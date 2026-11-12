@@ -8,6 +8,7 @@ import { AccesDossier } from "@/components/AccesDossier";
 import { ComptesBancaires } from "@/components/ComptesBancaires";
 import { Etat } from "@/components/Etat";
 import { FormulaireCompteChauffeur } from "@/components/FormulaireCompteChauffeur";
+import { PlateformesChauffeur } from "@/components/PlateformesChauffeur";
 import { Squelette } from "@/components/Squelette";
 import { TitreEcran } from "@/components/TitreEcran";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,7 @@ export default function CompteChauffeurPage() {
     <div>
       <TitreEcran titre="Compte" />
       {dossierId && <StatutDossier dossierId={dossierId} />}
+      {dossierId && <PlateformesChauffeur dossierId={dossierId} />}
       {dossierId && <ComptesBancaires dossierId={dossierId} />}
       {dossierId && <AccesDossier dossierId={dossierId} />}
       <FormulaireCompteChauffeur

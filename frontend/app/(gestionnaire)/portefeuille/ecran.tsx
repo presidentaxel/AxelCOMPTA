@@ -8,6 +8,7 @@ import { Aide, pourquoiEnvoi } from "@/components/Aide";
 import { useCanauxEnvoi } from "@/lib/use-canaux-envoi";
 import { IntegrationsDossier } from "@/components/IntegrationsDossier";
 import { SuiviEnvois } from "@/components/SuiviEnvois";
+import { SynthesePlateformes } from "@/components/SynthesePlateformes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -591,6 +592,7 @@ export function EcranEntreprises() {
               />
             )}
           </dl>
+          <SynthesePlateformes dossierId={choisi.dossier_id} />
           <IntegrationsDossier dossierId={choisi.dossier_id} admin={droit.admin} />
           <div className="mt-8">
             <p className="text-sm font-medium text-ink">

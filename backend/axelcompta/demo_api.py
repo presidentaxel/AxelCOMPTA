@@ -32,6 +32,7 @@ délègue à `create_app` ci-dessous : les routes sont encore ici.
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import functools
 import json
@@ -165,6 +166,8 @@ from axelcompta.ingestion.comptes_bancaires import (
     verifier_ecartable,
 )
 from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
+from axelcompta.ingestion.comptes_rollee import CompteRelie, synthese
+from axelcompta.ingestion.comptes_rollee_postgres import PostgresComptesRollee
 from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion, classer
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
 from axelcompta.ingestion.journal import EntreeQuarantaine, JournalIngestion
@@ -194,8 +197,15 @@ from axelcompta.nouveaux_contacts import fiche_sirene, recherche_entreprises
 from axelcompta.packs.vtc_demo import (
     charger_categories_banque,
     charger_compte_par_categorie,
+    charger_plateformes,
     charger_regles,
     plancher_de,
+)
+from axelcompta.plateformes_rollee import (
+    RolleeNonBranche,
+    ServicesRollee,
+    ouvrir_session,
+    relire_comptes,
 )
 from axelcompta.tenants.affectations import AffectationRepository
 from axelcompta.tenants.affectations_postgres import PostgresAffectationRepository
@@ -214,6 +224,7 @@ from axelcompta.tenants.branchements import (
     BranchementIntrouvable,
     BranchementsRepository,
     Modification,
+    garder_parametre,
     lecture_publique,
     modifier,
     nouveau,
@@ -6208,22 +6219,6 @@ def _admin_du_portefeuille(
     return tenant_id, str(identite.user_id)
 
 
-def _garder_jeton(
-    depot: BranchementsRepository, branchement: Branchement, par: str
-) -> Callable[[str], None]:
-    """Rollee renouvelle son jeton (AXE-818) : le nouveau remplace l'ancien
-    dans le branchement, sinon le prochain appel repartirait d'un jeton périmé."""
-
-    def garder(jeton: str) -> None:
-        parametres = {**branchement.parametres(), "jeton": jeton}
-        a_enregistrer = modifier(
-            depot.lister(branchement.tenant_id), branchement.id, Modification(parametres=parametres)
-        )
-        depot.enregistrer(a_enregistrer, par, datetime.now(UTC))
-
-    return garder
-
-
 def _enregistrer_routes_branchements(app: FastAPI) -> None:
     """AXE-872 : plusieurs intégrations de chaque type, une par défaut. Les
     identifiants sont chiffrés, et ne reviennent jamais à l'écran."""
@@ -6269,6 +6264,10 @@ def _enregistrer_routes_branchements(app: FastAPI) -> None:
         branchements.enregistrer(a_enregistrer, par, datetime.now(UTC))
         return [_vue_branchement(b) for b in branchements.lister(tenant_id)]
 
+
+def _enregistrer_route_tester_branchement(app: FastAPI) -> None:
+    """AXE-872 : « Tester » contacte le fournisseur sans rien envoyer."""
+
     @app.post("/portefeuille/integrations/{branchement_id}/tester", response_model=EssaiVue)
     def tester_un_branchement(
         branchement_id: str,
@@ -6282,7 +6281,9 @@ def _enregistrer_routes_branchements(app: FastAPI) -> None:
         )
         if branchement is None:
             raise BranchementIntrouvable(f"Branchement inconnu : {branchement_id}")
-        essai = tester_branchement(branchement, _garder_jeton(branchements, branchement, par))
+        essai = tester_branchement(
+            branchement, garder_parametre(branchements, branchement, "jeton", par)
+        )
         return EssaiVue(statut=essai.statut, message=essai.message)
 
 
@@ -6308,6 +6309,109 @@ def _enregistrer_routes_branchements_dossier(app: FastAPI) -> None:
         verifier_choix(branchements.lister(tenant_id), type_, entree.branchement_id)
         branchements.choisir_pour_dossier(tenant_id, dossier.id, type_, entree.branchement_id)
         return ChoixDossierVue(choix=branchements.choix_du_dossier(tenant_id, dossier.id))
+
+
+def get_services_rollee() -> ServicesRollee:
+    """AXE-819 : branchement Rollee du dossier et comptes reliés."""
+    return ServicesRollee(PostgresBranchements(_engine()), PostgresComptesRollee(_engine()))
+
+
+ServicesRolleeDep = Annotated[ServicesRollee, Depends(get_services_rollee)]
+
+
+class PlateformeVue(BaseModel):
+    nom: str
+    etat: str  # connecte | en_cours | a_reconnecter
+    relie_le: str | None
+
+
+class PlateformesVue(BaseModel):
+    """Côté chauffeur : ses comptes reliés, et ce que le gestionnaire attend."""
+
+    comptes: list[PlateformeVue]
+    manquantes: list[str]
+    erreur: str | None = None
+
+
+class SessionRolleeVue(BaseModel):
+    lien: str
+    expire_le: str | None
+
+
+class SyntheseRolleeVue(BaseModel):
+    """Côté gestionnaire (doc 19) : des nombres, jamais un montant."""
+
+    reliees: int
+    attendues: int
+    a_reconnecter: int
+    manquantes: list[str]
+
+
+def _vue_plateformes(
+    comptes: list[CompteRelie], dossier: Dossier, erreur: str | None
+) -> PlateformesVue:
+    resume = synthese(comptes, dossier.plateformes, charger_plateformes())
+    return PlateformesVue(
+        comptes=[
+            PlateformeVue(
+                nom=c.nom,
+                etat=c.etat,
+                relie_le=c.relie_le.isoformat() if c.relie_le else None,
+            )
+            for c in comptes
+        ],
+        manquantes=list(resume.manquantes),
+        erreur=erreur,
+    )
+
+
+def _enregistrer_routes_plateformes(app: FastAPI) -> None:
+    """AXE-819 : le chauffeur relie Uber, Bolt… dans Rollee Connect depuis
+    son espace ; le gestionnaire n'en voit qu'une synthèse."""
+
+    @app.get("/dossiers/{dossier_id}/plateformes", response_model=PlateformesVue)
+    def lire_plateformes(dossier: DossierDep, services: ServicesRolleeDep) -> PlateformesVue:
+        """Relit les comptes chez Rollee. Rollee injoignable : la dernière
+        liste connue, avec la raison."""
+        try:
+            comptes = asyncio.run(relire_comptes(services, dossier))
+        except RolleeNonBranche as exc:
+            return _vue_plateformes(services.comptes.comptes(dossier.id), dossier, str(exc))
+        except Exception as exc:  # noqa: BLE001 — Rollee en panne n'empêche pas l'écran
+            message = f"Rollee ne répond pas pour le moment ({type(exc).__name__})."
+            return _vue_plateformes(services.comptes.comptes(dossier.id), dossier, message)
+        return _vue_plateformes(comptes, dossier, None)
+
+    @app.post("/dossiers/{dossier_id}/plateformes/session", response_model=SessionRolleeVue)
+    def ouvrir_session_rollee(dossier: DossierDep, services: ServicesRolleeDep) -> SessionRolleeVue:
+        """Un lien Rollee Connect de 30 minutes. Le user Rollee est créé à la
+        première demande, avec le seul identifiant du dossier."""
+        session = asyncio.run(ouvrir_session(services, dossier))
+        return SessionRolleeVue(lien=session.lien, expire_le=session.expire_le)
+
+    @app.get("/dossiers/{dossier_id}/plateformes/synthese", response_model=SyntheseRolleeVue)
+    def synthese_plateformes(
+        dossier: DossierPortefeuilleDep, services: ServicesRolleeDep
+    ) -> SyntheseRolleeVue:
+        """Ce qui est connu en base, sans appeler Rollee."""
+        resume = synthese(
+            services.comptes.comptes(dossier.id), dossier.plateformes, charger_plateformes()
+        )
+        return SyntheseRolleeVue(
+            reliees=resume.reliees,
+            attendues=resume.attendues,
+            a_reconnecter=resume.a_reconnecter,
+            manquantes=list(resume.manquantes),
+        )
+
+
+def _enregistrer_routes_integrations(app: FastAPI) -> None:
+    """Branchements, envois et plateformes Rollee (AXE-872, AXE-808, AXE-819)."""
+    _enregistrer_routes_branchements(app)
+    _enregistrer_route_tester_branchement(app)
+    _enregistrer_routes_branchements_dossier(app)
+    _enregistrer_routes_envoi(app)
+    _enregistrer_routes_plateformes(app)
 
 
 def _enregistrer_routes_envoi(app: FastAPI) -> None:
@@ -6350,13 +6454,6 @@ def _enregistrer_routes_envoi(app: FastAPI) -> None:
         envois.desinscrire(DossierId(d), c)
         canal = "par e-mail" if c == "mail" else "par SMS"
         return DesinscriptionVue(message=f"Vous ne recevrez plus de rappels {canal}.")
-
-
-def _enregistrer_routes_integrations(app: FastAPI) -> None:
-    """Branchements du portefeuille et suivi des envois (AXE-872, AXE-808)."""
-    _enregistrer_routes_branchements(app)
-    _enregistrer_routes_branchements_dossier(app)
-    _enregistrer_routes_envoi(app)
 
 
 class NouveauChauffeurVue(BaseModel):

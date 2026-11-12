@@ -378,6 +378,22 @@ export async function choisirBranchementDossier(
   return ((await reponse.json()) as { choix: Record<string, string> }).choix;
 }
 
+/** AXE-819 : plateformes reliées par le chauffeur, en nombres (doc 19). */
+export type SynthesePlateformes = {
+  reliees: number;
+  attendues: number;
+  a_reconnecter: number;
+  manquantes: string[];
+};
+
+export async function lireSynthesePlateformes(dossierId: string): Promise<SynthesePlateformes> {
+  const reponse = await requeteGestionnaire(
+    `/dossiers/${encodeURIComponent(dossierId)}/plateformes/synthese`,
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as SynthesePlateformes;
+}
+
 export type EnvoiRappel = {
   canal: string;
   branchement?: string | null;
