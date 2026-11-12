@@ -38,6 +38,7 @@ from axelcompta.ledger.contrepassation import contrepasser, id_contrepassation
 from axelcompta.ledger.models import Ecriture
 from axelcompta.ledger.periodes import Periode, periode_close_de
 from axelcompta.ledger.service import LedgerService
+from axelcompta.packs.tva_deductible import RegleTva, regle_tva
 from axelcompta.tenants.models import Dossier
 
 from .auto_accept import construire_ecriture_categorisee
@@ -210,10 +211,7 @@ def _traiter_transactions(
         proposition = par_transaction[transaction.id]
         compte = choisir_compte(proposition, comptes)
         banque = _banque(dossier, transaction, comptes_bancaires)
-        ecriture = dataclasses.replace(
-            construire_ecriture_categorisee(transaction, proposition, compte, 0, banque),
-            id=ecriture_id,
-        )
+        ecriture = _ecriture_imputee(dossier, transaction, proposition, compte, banque, ecriture_id)
         propositions.enregistrer(
             ecriture_id,
             dataclasses.replace(proposition, moyen_paiement=transaction.type_operation),
@@ -222,6 +220,32 @@ def _traiter_transactions(
         compteurs.nouvelles += 1
         compteurs.a_trancher += compte == COMPTE_ATTENTE
     return compteurs
+
+
+def _ecriture_imputee(
+    dossier: Dossier,
+    transaction: NormalizedTransaction,
+    proposition: ProposedEntry,
+    compte: str,
+    banque: str,
+    ecriture_id: EcritureId,
+) -> Ecriture:
+    regle = _regle_tva(dossier, proposition, compte, transaction)
+    ecriture = construire_ecriture_categorisee(transaction, proposition, compte, 0, banque, regle)
+    return dataclasses.replace(ecriture, id=ecriture_id)
+
+
+def _regle_tva(
+    dossier: Dossier,
+    proposition: ProposedEntry,
+    compte: str,
+    transaction: NormalizedTransaction,
+) -> RegleTva | None:
+    """AXE-831 : la TVA déductible estimée, seulement sur une imputation
+    réelle. Au compte d'attente, la décision humaine la posera."""
+    if compte == COMPTE_ATTENTE:
+        return None
+    return regle_tva(proposition.categorie, transaction.date, dossier.regime_tva)
 
 
 def _banque(

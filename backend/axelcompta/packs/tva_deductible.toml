@@ -1,0 +1,120 @@
+# TVA déductible par défaut sur les dépenses venues de la banque (AXE-831).
+#
+# La banque ne donne pas la TVA. Sans justificatif, on l'estime par catégorie :
+# `taux` est le taux de TVA supposé de la dépense (en %), `recuperable` la part
+# de cette TVA qu'on déduit (en %). Le reste de la TVA reste en charge.
+#
+# Prudence : en cas de doute, rien n'est récupéré. Une TVA oubliée se rattrape
+# avec le justificatif ; une TVA déduite à tort se paie en redressement.
+#
+# Une catégorie absente d'une version ne récupère rien. Un dossier en franchise
+# de TVA ne récupère jamais rien (art. 293 B CGI), quelle que soit la table.
+#
+# Hypothèse du pack VTC : le véhicule est affecté exclusivement à l'activité de
+# transport de personnes. C'est la condition de l'exception qui ouvre la
+# déduction (BOI-TVA-DED-30-30-20, transport public de voyageurs). Un véhicule
+# à usage mixte relève de l'exclusion : ces lignes passent alors à 0, ou à 80 %
+# pour le carburant (art. 298, 4-1° CGI).
+#
+# Données versionnées : une nouvelle règle s'ajoute dans une nouvelle version,
+# datée, jamais en réécrivant une version passée. Le montant posé avec le code
+# « deductible_estimee_… » reste celui calculé ici. Un montant lu plus tard sur
+# un justificatif est une autre valeur, code « deductible_relevee_… » : il
+# remplace l'estimation, il ne modifie pas cette table.
+# À valider par l'expert-comptable (AXE-815) avant la première liasse réelle.
+
+[[versions]]
+debut = 2025-01-01
+
+[versions.categories.carburant]
+taux = "20"
+recuperable = 100
+source = "CGI art. 298, 4-1° : gazole et essence 100 % déductibles pour un véhicule non exclu ; électricité de recharge, même règle. VTC non exclu : BOI-TVA-DED-30-30-20."
+
+[versions.categories.entretien_reparation_vehicule]
+taux = "20"
+recuperable = 100
+source = "Services liés à un véhicule qui ouvre droit à déduction (BOI-TVA-DED-30-30-20, exception transport public de voyageurs)."
+
+[versions.categories.peage_stationnement]
+taux = "20"
+recuperable = 100
+source = "Péages autoroutiers et parkings soumis à 20 % ; déductibles car rattachés à un véhicule non exclu (BOI-TVA-DED-30-30-20)."
+
+[versions.categories.loa_credit_bail_vehicule]
+taux = "20"
+recuperable = 100
+source = "Loyers de LOA soumis à 20 % ; déductibles pour un véhicule non exclu (BOI-TVA-DED-30-30-20). La part non déductible à l'IS est traitée ailleurs (AXE-803)."
+
+[versions.categories.immobilisation_vehicule]
+taux = "20"
+recuperable = 100
+compte = "44562"
+source = "Achat du véhicule : TVA sur immobilisation (44562), déductible pour un véhicule affecté exclusivement au transport de voyageurs (BOI-TVA-DED-30-30-20)."
+
+[versions.categories.telecommunications]
+taux = "20"
+recuperable = 100
+source = "Téléphone et internet professionnels, 20 % (CGI art. 278), déductibles (CGI art. 271)."
+
+[versions.categories.abonnements_logiciels]
+taux = "20"
+recuperable = 100
+source = "Logiciels et abonnements professionnels, 20 % (CGI art. 278), déductibles (CGI art. 271)."
+
+[versions.categories.fournitures_administratives]
+taux = "20"
+recuperable = 100
+source = "Fournitures de bureau, 20 % (CGI art. 278), déductibles (CGI art. 271)."
+
+[versions.categories.honoraires_comptable_juridique]
+taux = "20"
+recuperable = 100
+source = "Honoraires d'expert-comptable ou d'avocat, 20 % (CGI art. 278), déductibles (CGI art. 271)."
+
+# Explicitement à 0, pour la traçabilité.
+
+[versions.categories.repas_et_receptions]
+taux = "10"
+recuperable = 0
+source = "Restauration à 10 % (CGI art. 279 a bis). Repas du dirigeant : dépense personnelle, TVA non déductible. Un repas d'affaires justifié se corrige avec le justificatif."
+
+[versions.categories.assurance_vehicule]
+taux = "0"
+recuperable = 0
+source = "Opérations d'assurance exonérées (CGI art. 261 C, 2°)."
+
+[versions.categories.assurance_personnelle_sante]
+taux = "0"
+recuperable = 0
+source = "Opérations d'assurance exonérées (CGI art. 261 C, 2°)."
+
+[versions.categories.frais_bancaires]
+taux = "0"
+recuperable = 0
+source = "Opérations bancaires et financières exonérées (CGI art. 261 C, 1°). Quelques frais sont taxables : ils se corrigent avec le justificatif."
+
+[versions.categories.interets_emprunts]
+taux = "0"
+recuperable = 0
+source = "Intérêts d'emprunt exonérés (CGI art. 261 C, 1°)."
+
+[versions.categories.charges_sociales_impots]
+taux = "0"
+recuperable = 0
+source = "Cotisations et impôts : hors champ de la TVA."
+
+[versions.categories.visite_medicale_vtc]
+taux = "0"
+recuperable = 0
+source = "Soins et examens médicaux exonérés (CGI art. 261, 4-1°)."
+
+[versions.categories.sous_traitance_chauffeurs]
+taux = "0"
+recuperable = 0
+source = "Le sous-traitant peut être en franchise : la TVA ne se déduit que sur facture (CGI art. 271, II-1). Prudence : 0 sans justificatif."
+
+[versions.categories.loyers_locations]
+taux = "0"
+recuperable = 0
+source = "Location nue de locaux exonérée (CGI art. 261 D, 2°) ; location de véhicule taxable. Trop variable : 0 sans justificatif."

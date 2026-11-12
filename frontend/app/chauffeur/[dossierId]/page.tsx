@@ -45,6 +45,7 @@ import { formatDate, formatMontant } from "@/lib/format";
 import { libelleCategorie, phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import { estRetrait } from "@/lib/retrait-especes";
 import { ticketPrioritaire } from "@/lib/tickets";
+import { phraseTva } from "@/lib/tva-estimee";
 import type { DossierResume, TransactionVue } from "@/lib/types";
 
 const MOIS = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
@@ -810,6 +811,7 @@ function LigneMontant({
       <span className="min-w-0">
         <span className="block truncate text-base font-semibold text-ink">{nom}</span>
         {detail && <span className="mt-0.5 block text-sm text-subtle">{detail}</span>}
+        {phraseTvaLigne(transaction)}
       </span>
       <span
         className={`shrink-0 text-base font-semibold tabular-nums ${
@@ -820,6 +822,17 @@ function LigneMontant({
       </span>
     </div>
   );
+}
+
+function phraseTvaLigne(transaction: TransactionVue) {
+  if (transaction.montant_cts >= 0) return null;
+  const phrase = phraseTva(
+    transaction.tva_estimee_cts,
+    transaction.tva_relevee_cts,
+    transaction.montant_cts,
+    !transaction.a_justificatif,
+  );
+  return phrase ? <span className="mt-0.5 block text-sm text-subtle">{phrase}</span> : null;
 }
 
 /** Le bouton reste inactif. L'explication est un texte : un `title` ne se lit pas au doigt. */

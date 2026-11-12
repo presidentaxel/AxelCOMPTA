@@ -23,6 +23,7 @@ from axelcompta.ledger.contrepassation import annulees, origine
 from axelcompta.ledger.models import Ecriture, Sens
 
 from .synchro import COMPTE_ATTENTE
+from .tva_imputation import tva_affichee
 
 Statut = Literal["auto", "chauffeur", "expert"]
 Verdict = Literal["juste", "faux"]
@@ -49,6 +50,8 @@ class OperationClassee:
     confiance: float | None
     statut: Statut
     verdict: Verdict | None = None
+    tva_estimee_cts: int | None = None
+    tva_relevee_cts: int | None = None
 
     @property
     def sens(self) -> str:
@@ -122,6 +125,7 @@ def classer(
     propositions: Mapping[EcritureId, ProposedEntry],
     decisions: Mapping[EcritureId, str],
     verdicts: Mapping[EcritureId, Verdict],
+    regime_tva: str = "franchise",
 ) -> list[OperationClassee]:
     """Une opération par écriture classée. `ecritures` : le grand livre avec
     les décisions du chauffeur déjà appliquées. Sont écartées : les paires
@@ -131,7 +135,7 @@ def classer(
     for ecriture in ecritures:
         if ecriture.id in exclues or origine(ecriture.id) is not None:
             continue
-        operation = _operation(ecriture, propositions, decisions, verdicts)
+        operation = _operation(ecriture, propositions, decisions, verdicts, regime_tva)
         if operation is not None:
             resultat.append(operation)
     return resultat
@@ -142,6 +146,7 @@ def _operation(
     propositions: Mapping[EcritureId, ProposedEntry],
     decisions: Mapping[EcritureId, str],
     verdicts: Mapping[EcritureId, Verdict],
+    regime_tva: str,
 ) -> OperationClassee | None:
     compte = _compte(ecriture)
     if compte is None or compte == COMPTE_ATTENTE:
@@ -159,6 +164,7 @@ def _operation(
         categorie, confiance = proposition.categorie, proposition.confiance
     else:
         statut, origine_, categorie, confiance = "auto", "inconnue", None, None
+    estimee, relevee = _tva(ecriture, categorie, regime_tva)
     return OperationClassee(
         dossier_id=ecriture.dossier_id,
         ecriture_id=ecriture.id,
@@ -171,7 +177,27 @@ def _operation(
         confiance=confiance,
         statut=statut,
         verdict=verdicts.get(ecriture.id),
+        tva_estimee_cts=estimee,
+        tva_relevee_cts=relevee,
     )
+
+
+def _tva(
+    ecriture: Ecriture, categorie: str | None, regime_tva: str
+) -> tuple[int | None, int | None]:
+    """(estimation de la table, montant relevé). Le montant écrit fait foi."""
+    tva = tva_affichee(
+        ecriture.lignes,
+        montant_ttc_cts=_banque(ecriture),
+        categorie=categorie,
+        jour=ecriture.date,
+        regime_tva=regime_tva,
+    )
+    if tva is None:
+        return None, None
+    if tva.origine == "relevee":
+        return None, tva.centimes
+    return tva.centimes, None
 
 
 def trier(operations: Iterable[OperationClassee], tri: str) -> list[OperationClassee]:

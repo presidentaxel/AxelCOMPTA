@@ -223,6 +223,10 @@ export type TransactionVue = {
   reclassee_par?: string | null;
   reclassee_le?: string | null;
   motif_reclassement?: string | null;
+  /** AXE-831 : estimation de la table, en centimes. Absente si une TVA relevée existe. */
+  tva_estimee_cts?: number | null;
+  /** AXE-831 : montant lu sur un justificatif. Remplace l'estimation. */
+  tva_relevee_cts?: number | null;
 };
 
 /** Clôture de l'exercice, préparée par l'API et validée par le chauffeur
@@ -325,6 +329,8 @@ export type OperationClassee = {
   statut: string;
   sens: string;
   verdict: "juste" | "faux" | null;
+  tva_estimee_cts?: number | null;
+  tva_relevee_cts?: number | null;
 };
 
 export type OperationsClassees = {

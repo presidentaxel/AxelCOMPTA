@@ -178,3 +178,78 @@ def test_la_reprise_rejoue_les_decisions_et_ne_se_repete_pas() -> None:
     assert reclassements_a_reprendre(ecritures, decisions, COMPTES) == []  # idempotent
     ancienne = appliquer_decisions((_source(), _source("s2")), tuple(decisions), *COMPTES)
     assert _soldes(ecritures) == _soldes(list(ancienne))
+
+
+# AXE-831 : la décision sépare la TVA déductible estimée.
+
+COMPTES_PACK: tuple[dict[str, str | None], dict[str, str]] = (
+    {"usage_personnel": "455"},
+    {"carburant": "6061", "repas_et_receptions": "6257"},
+)
+
+
+def test_une_decision_carburant_separe_la_tva() -> None:
+    source = _source()
+    od = reclasser(source, "carburant", [source], COMPTES_PACK, (), "reel_normal")
+    assert od is not None
+    verifier_equilibre(od)
+    assert _soldes([source, od]) == Counter({"5121": -60_00, "6061": 50_00, "44566": 10_00})
+    (vue,) = projeter([source, od])
+    assert [(x.compte, x.montant.centimes) for x in vue.lignes] == [
+        ("5121", 60_00),
+        ("6061", 50_00),
+        ("44566", 10_00),
+    ]
+    assert compte_en_vigueur(source.id, [source, od]) == "6061"
+
+
+def test_sans_regime_la_decision_reste_ttc() -> None:
+    source = _source()
+    od = reclasser(source, "carburant", [source], COMPTES_PACK)
+    assert od is not None
+    assert _soldes([source, od]) == Counter({"5121": -60_00, "6061": 60_00})
+
+
+def test_une_nouvelle_decision_defait_aussi_la_tva() -> None:
+    source = _source()
+    ecritures: list[Ecriture] = [source]
+    for categorie in ("carburant", "repas_et_receptions"):
+        od = reclasser(source, categorie, ecritures, COMPTES_PACK, (), "reel_normal")
+        assert od is not None
+        verifier_equilibre(od)
+        ecritures.append(od)
+    assert _soldes(ecritures) == Counter({"5121": -60_00, "6257": 60_00})
+
+
+def test_l_annulation_ramene_tout_au_471() -> None:
+    source = _source()
+    ecritures: list[Ecriture] = [source]
+    for categorie in ("carburant", CATEGORIE_ANNULATION):
+        od = reclasser(source, categorie, ecritures, COMPTES_PACK, (), "reel_normal")
+        assert od is not None
+        ecritures.append(od)
+    assert _soldes(ecritures) == Counter({"5121": -60_00, "471": 60_00})
+
+
+def test_la_meme_decision_ne_reecrit_rien() -> None:
+    source = _source()
+    od = reclasser(source, "carburant", [source], COMPTES_PACK, (), "reel_normal")
+    assert od is not None
+    assert reclasser(source, "carburant", [source, od], COMPTES_PACK, (), "reel_normal") is None
+
+
+def test_un_remboursement_reprend_la_tva() -> None:
+    source = _source(sortie=False)
+    od = reclasser(source, "carburant", [source], COMPTES_PACK, (), "reel_normal")
+    assert od is not None
+    assert _soldes([source, od]) == Counter({"5121": 60_00, "6061": -50_00, "44566": -10_00})
+
+
+def test_la_contrepassation_de_la_source_annule_aussi_la_tva() -> None:
+    source = _source()
+    od = reclasser(source, "carburant", [source], COMPTES_PACK, (), "reel_normal")
+    assert od is not None
+    inverse = contrepasser(source)
+    annulations = annuler_reclassements(source.id, [source, od])
+    tout = [source, od, inverse, *annulations]
+    assert _soldes(tout) == Counter()

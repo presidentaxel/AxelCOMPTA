@@ -708,3 +708,20 @@ def test_retenir_un_compte_apres_coup_importe_son_passe() -> None:
     assert _banques(env) == {"t1": "5121", "t2": "5122"}
     assert (rapport.nouvelles, rapport.deja_connues) == (1, 1)
     assert not any(c.a_relire for c in comptes.lister(DOSSIER.id))
+
+
+def test_un_plein_impute_par_la_synchro_separe_sa_tva() -> None:
+    """AXE-831 : 60,00 € TTC chez Total → 50,00 € en 6061 et 10,00 € en 44566."""
+    env = Env()
+    env.synchroniser()
+    ecriture = next(e for e in env.ledger.grand_livre(DOSSIER.id) if e.id.endswith("-t1"))
+    montants = {ligne.compte: ligne.montant.centimes for ligne in ecriture.lignes}
+    assert DOSSIER.regime_tva == "reel_normal"
+    assert montants == {"512": 60_00, "6061": 50_00, "44566": 10_00}
+
+
+def test_un_dossier_en_franchise_garde_le_ttc() -> None:
+    env = Env(dossier=dataclasses.replace(DOSSIER, regime_tva="franchise"))
+    env.synchroniser()
+    ecriture = next(e for e in env.ledger.grand_livre(DOSSIER.id) if e.id.endswith("-t1"))
+    assert {ligne.compte for ligne in ecriture.lignes} == {"512", "6061"}
