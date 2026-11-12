@@ -13,6 +13,9 @@ from axelcompta.core.money import Money
 from axelcompta.core.pcg import COMPTE_BANQUE
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
+from axelcompta.packs.tva_deductible import RegleTva
+
+from .tva_imputation import lignes_imputees
 
 
 def construire_ecriture_categorisee(
@@ -21,13 +24,14 @@ def construire_ecriture_categorisee(
     compte: str,
     numero: int,
     compte_banque: str = COMPTE_BANQUE,
+    regle_tva: RegleTva | None = None,
 ) -> Ecriture:
     """Banque (512, ou le sous-compte 512x du compte bancaire de l'opération,
     AXE-832) en contrepartie du compte de la catégorie (doc 06 §2). Le sens de
     chaque ligne suit le signe de la transaction (positif = argent reçu),
     pas la nature du compte — les deux s'accordent toujours en partie
-    double. Pas de ventilation TVA ici : réservée au settlement plateforme
-    (doc 13 §5.3), hors scope pour les dépenses courantes (doc 17 §3).
+    double. `regle_tva` (AXE-831) sépare la TVA déductible estimée du compte
+    de la catégorie ; sans elle, tout le montant va au compte.
     """
     montant = Money(abs(transaction.montant_cts))
     sens_512 = Sens.DEBIT if transaction.montant_cts > 0 else Sens.CREDIT
@@ -43,6 +47,6 @@ def construire_ecriture_categorisee(
         reference_piece=None,
         lignes=(
             LigneEcriture(compte=compte_banque, sens=sens_512, montant=montant),
-            LigneEcriture(compte=compte, sens=sens_compte, montant=montant),
+            *lignes_imputees(compte, sens_compte, montant, regle_tva),
         ),
     )

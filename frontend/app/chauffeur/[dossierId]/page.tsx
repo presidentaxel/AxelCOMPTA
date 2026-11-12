@@ -45,6 +45,7 @@ import { formatDate, formatMontant } from "@/lib/format";
 import { libelleCategorie, phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import { estRetrait } from "@/lib/retrait-especes";
 import { ticketPrioritaire } from "@/lib/tickets";
+import { phraseTvaEstimee } from "@/lib/tva-estimee";
 import type { DossierResume, TransactionVue } from "@/lib/types";
 
 const MOIS = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
@@ -683,6 +684,9 @@ function Mouvements({
                       </p>
                     )}
                     {sens === "sorties" && (
+                      <PhraseTvaEstimee transaction={transaction} />
+                    )}
+                    {sens === "sorties" && (
                       <AjouterTicketSortie
                         dossierId={dossierId}
                         transaction={transaction}
@@ -726,6 +730,15 @@ function Mouvements({
       )}
     </div>
   );
+}
+
+function PhraseTvaEstimee({ transaction }: { transaction: TransactionVue }) {
+  const phrase = phraseTvaEstimee(
+    transaction.tva_estimee_cts,
+    transaction.montant_cts,
+    transaction.a_justificatif,
+  );
+  return phrase ? <p className="mt-1 text-sm text-subtle">{phrase}</p> : null;
 }
 
 function AjouterTicketSortie({

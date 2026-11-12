@@ -70,3 +70,28 @@ def test_un_mouvement_entre_banques_est_un_reclassement() -> None:
     )
     assert est_reclassement_bancaire(ventilation)
     assert comptes_hors_banque(ventilation) == []
+
+
+def test_la_tva_deductible_n_est_pas_une_contrepartie() -> None:
+    """AXE-831 : un plein avec sa TVA reste « en 6061 » pour les écrans."""
+    from datetime import date
+
+    from axelcompta.core.ids import DossierId, EcritureId
+    from axelcompta.core.money import Money
+    from axelcompta.ledger.banque import comptes_hors_banque
+    from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
+
+    plein = Ecriture(
+        id=EcritureId("e1"),
+        dossier_id=DossierId("d1"),
+        journal=Journal.BQ,
+        date=date(2026, 3, 1),
+        libelle="CB TOTAL",
+        reference_piece=None,
+        lignes=(
+            LigneEcriture("5121", Sens.CREDIT, Money(60_00)),
+            LigneEcriture("6061", Sens.DEBIT, Money(50_00)),
+            LigneEcriture("44566", Sens.DEBIT, Money(10_00)),
+        ),
+    )
+    assert comptes_hors_banque(plein) == ["6061"]

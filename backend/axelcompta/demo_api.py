@@ -122,7 +122,7 @@ from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.identite import Adresse, Associe, IdentiteEntreprise
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, UserId
 from axelcompta.core.libelles import categorie_du_suffixe, sans_categorie
-from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
+from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque, est_compte_tva_deductible
 from axelcompta.core.rls import appliquer_rls, contexte_identite
 from axelcompta.demo_auth import (
     IdentiteAuthentifiee,
@@ -608,6 +608,8 @@ class TransactionVue(BaseModel):
     reclassee_par: str | None = None
     reclassee_le: str | None = None
     motif_reclassement: str | None = None
+    # AXE-831 : TVA déductible estimée d'après la catégorie, faute de ticket.
+    tva_estimee_cts: int | None = None
 
 
 class DecisionEntree(BaseModel):
@@ -1278,7 +1280,20 @@ def _transaction_vue(ecriture: Ecriture, a_justificatif: bool, annulee: bool) ->
         compte=_compte_affiche(ecriture),
         statut="à trancher" if a_trancher else "validé",
         a_justificatif=a_justificatif,
+        tva_estimee_cts=_tva_estimee(ecriture),
     )
+
+
+def _tva_estimee(ecriture: Ecriture) -> int | None:
+    """AXE-831 : la TVA déductible posée d'après la catégorie, pas lue sur un
+    ticket. `None` quand il n'y en a pas."""
+    total = sum(
+        ligne.montant.centimes
+        for ligne in ecriture.lignes
+        if est_compte_tva_deductible(ligne.compte)
+        and (ligne.code_tva or "").startswith("deductible_estimee")
+    )
+    return total or None
 
 
 def _categories_par_compte() -> dict[str, str]:
@@ -1900,7 +1915,9 @@ def _reclassements(
         source = par_id.get(ecriture_id)
         if source is None:
             continue
-        reclassement = reclasser(source, categorie, ecritures, _comptes(dossier), periodes)
+        reclassement = reclasser(
+            source, categorie, ecritures, _comptes(dossier), periodes, dossier.regime_tva
+        )
         if reclassement is not None:
             calculees.append(reclassement)
             ecritures.append(reclassement)

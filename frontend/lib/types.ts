@@ -223,6 +223,8 @@ export type TransactionVue = {
   reclassee_par?: string | null;
   reclassee_le?: string | null;
   motif_reclassement?: string | null;
+  /** AXE-831 : TVA déductible estimée (sans ticket), en centimes. */
+  tva_estimee_cts?: number | null;
 };
 
 /** Clôture de l'exercice, préparée par l'API et validée par le chauffeur

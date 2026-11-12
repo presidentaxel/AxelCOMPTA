@@ -7,7 +7,7 @@ Depuis qu'un dossier a un sous-compte de banque par compte bancaire (5121,
 
 from __future__ import annotations
 
-from axelcompta.core.pcg import est_compte_banque
+from axelcompta.core.pcg import est_compte_banque, est_compte_tva_deductible
 
 from .models import Ecriture, LigneEcriture, Sens
 
@@ -28,8 +28,14 @@ def montant_bancaire(ecriture: Ecriture) -> int:
 
 
 def comptes_hors_banque(ecriture: Ecriture) -> list[str]:
-    """Les contreparties de la banque, dans l'ordre des lignes."""
-    return [ligne.compte for ligne in ecriture.lignes if not est_compte_banque(ligne.compte)]
+    """Les contreparties de la banque, dans l'ordre des lignes, sans la TVA
+    déductible (4456x) : une dépense de carburant reste « en 6061 » même
+    quand sa TVA est séparée (AXE-831)."""
+    return [
+        ligne.compte
+        for ligne in ecriture.lignes
+        if not est_compte_banque(ligne.compte) and not est_compte_tva_deductible(ligne.compte)
+    ]
 
 
 def est_reclassement_bancaire(ecriture: Ecriture) -> bool:

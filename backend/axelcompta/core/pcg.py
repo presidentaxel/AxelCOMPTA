@@ -25,3 +25,9 @@ def est_compte_banque(compte: str) -> bool:
     """`512` et ses sous-comptes. Seule définition du compte de banque : ne
     jamais comparer à la chaîne `"512"` ailleurs."""
     return compte.startswith(COMPTE_BANQUE)
+
+
+def est_compte_tva_deductible(compte: str) -> bool:
+    """TVA déductible (4456) et ses sous-comptes : 44562 sur immobilisations,
+    44566 sur autres biens et services (AXE-831)."""
+    return compte.startswith("4456")

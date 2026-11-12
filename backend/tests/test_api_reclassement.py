@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 
+import pytest
 from fastapi.testclient import TestClient
 
 from axelcompta.core.ids import DossierId
@@ -80,12 +81,14 @@ def test_une_correction_ecrit_un_second_reclassement() -> None:
     premier, second = _reclassements(client, ecriture_id)
     assert premier.lignes[0].compte == "455"
     assert second.id.endswith(":decision-2")
-    assert {ligne.compte for ligne in second.lignes} == {"455", "6061"}
+    # AXE-831 : le carburant sépare sa TVA déductible estimée.
+    assert {ligne.compte for ligne in second.lignes} == {"455", "6061", "44566"}
     brut = _ledger_du_client(client).grand_livre(DossierId(SOPHIE))
     operation = tuple(e for e in brut if e.id == ecriture_id) + (premier, second)
     soldes = _soldes(operation)
     assert soldes["471"] == 0 and soldes["455"] == 0  # tout est passé en 6061
     assert soldes["6061"] != 0
+    assert soldes["44566"] * 6 == pytest.approx(soldes["6061"] + soldes["44566"], abs=6)
 
 
 def test_l_imputation_de_l_expert_contre_passe_aussi_le_reclassement() -> None:
@@ -111,3 +114,14 @@ def test_l_imputation_de_l_expert_contre_passe_aussi_le_reclassement() -> None:
     assert montant > 0  # 455 n'est plus chargé de cette opération
     assert apres["6061"] - avant["6061"] == montant  # elle est en 6061, une seule fois
     assert apres["471"] == avant["471"]
+
+
+def test_une_depense_carburant_montre_sa_tva_estimee() -> None:
+    """AXE-831 : le chauffeur voit la TVA estimée d'une dépense tranchée."""
+    client = _client()
+    ecriture_id = _premiere_a_trancher(client, SOPHIE)
+    _decider(client, ecriture_id, "carburant")
+    vues = client.get(f"/dossiers/{SOPHIE}/transactions", headers=_en_tete(SOPHIE)).json()
+    vue = next(t for t in vues if t["ecriture_id"] == ecriture_id)
+    assert vue["compte"] == "6061"
+    assert vue["tva_estimee_cts"] and vue["tva_estimee_cts"] > 0

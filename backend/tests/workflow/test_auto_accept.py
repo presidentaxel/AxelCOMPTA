@@ -60,3 +60,21 @@ def test_le_libelle_est_celui_de_la_banque_sans_la_categorie() -> None:
         _transaction(-45_00), _proposition("carburant"), compte="6061", numero=1
     )
     assert ecriture.libelle == "TOTAL ACCESS A6"
+
+
+def test_la_tva_separee_remonte_dans_la_ca3() -> None:
+    """AXE-831 : la CA3 du mois montre une TVA déductible non nulle."""
+    from axelcompta.closing.tva_periodique import ca3_periode, periodes
+    from axelcompta.packs.tva_deductible import regle_tva
+
+    regle = regle_tva("carburant", date(2026, 9, 3), "reel_normal")
+    ecriture = construire_ecriture_categorisee(
+        _transaction(-60_00), _proposition("carburant"), "6061", 1, regle_tva=regle
+    )
+    verifier_equilibre(ecriture)
+    (septembre,) = [
+        p
+        for p in periodes(date(2026, 1, 1), date(2026, 12, 31), "mensuelle")
+        if p.contient(date(2026, 9, 3))
+    ]
+    assert ca3_periode([ecriture], septembre).deductible == 10_00
