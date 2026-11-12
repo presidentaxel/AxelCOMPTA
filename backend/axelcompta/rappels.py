@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import uuid
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import datetime
 
 from sqlalchemy import select
@@ -23,9 +24,11 @@ from sqlalchemy.engine import Engine
 
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.demo_comptes import SupabaseCompteRepository, SupabaseConfig
+from axelcompta.ingestion.comptes_rollee_postgres import PostgresComptesRollee
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.tenants.branchements import types_branches
 from axelcompta.tenants.branchements_postgres import PostgresBranchements
+from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.orm import rappels, regles_rappel
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
@@ -76,6 +79,16 @@ def _deja(engine: Engine, tenant_id: str) -> dict[tuple[str, str], list[datetime
     return deja
 
 
+def _sans_plateforme(
+    engine: Engine, dossiers: Sequence[Dossier], branches: list[str]
+) -> frozenset[DossierId]:
+    """AXE-890 : les dossiers sans compte Rollee relié, si Rollee est branché."""
+    if "rollee" not in branches:
+        return frozenset()
+    comptes = PostgresComptesRollee(engine)
+    return frozenset(d.id for d in dossiers if not any(c.connecte for c in comptes.comptes(d.id)))
+
+
 def planifier(engine: Engine, maintenant: datetime) -> int:
     """Crée les rappels automatiques dus, et leurs envois. Renvoie leur nombre."""
     depot_dossiers, envois = PostgresDossierRepository(engine), PostgresEnvois(engine)
@@ -93,8 +106,14 @@ def planifier(engine: Engine, maintenant: datetime) -> int:
             if en_attente:
                 a_traiter[dossier.id] = min(en_attente)
         branches = list(types_branches(PostgresBranchements(engine).lister(tenant.id)))
+        sans_plateforme = _sans_plateforme(engine, dossiers, branches)
         for rappel in rappels_a_creer(
-            regles, dossiers, _deja(engine, tenant.id), a_traiter, maintenant.date()
+            regles,
+            dossiers,
+            _deja(engine, tenant.id),
+            a_traiter,
+            maintenant.date(),
+            sans_plateforme,
         ):
             _enregistrer(
                 engine,
