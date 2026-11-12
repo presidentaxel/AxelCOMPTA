@@ -43,20 +43,31 @@ export function BranchementsType({
   const config = TYPES_BRANCHEMENT[type];
   const [edition, setEdition] = useState<Edition>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [infoEphemere, setInfoEphemere] = useState(false);
   const [enCours, setEnCours] = useState(false);
   const tries = [...branchements].sort(comparer);
+
+  useEffect(() => {
+    if (!info || !infoEphemere) return;
+    const delai = window.setTimeout(() => setInfo(null), 3000);
+    return () => window.clearTimeout(delai);
+  }, [info, infoEphemere]);
 
   async function agir(action: () => Promise<Branchement[] | string>) {
     setEnCours(true);
     setInfo(null);
     try {
       const resultat = await action();
-      if (typeof resultat === "string") setInfo(resultat);
-      else {
+      if (typeof resultat === "string") {
+        setInfoEphemere(true);
+        setInfo(resultat);
+      } else {
+        setInfoEphemere(false);
         onChange(resultat);
         setEdition(null);
       }
     } catch (exception) {
+      setInfoEphemere(false);
       setInfo(message(exception, "L'opération n'a pas abouti."));
     } finally {
       setEnCours(false);
@@ -399,13 +410,6 @@ function FormulaireBranchement({
           return (
             <label key={champ.cle} className="block text-sm text-ink">
               {champ.libelle}
-              {champ.secret && (
-                <span className="mt-0.5 block text-xs font-normal text-subtle">
-                  {dejaEnregistre
-                    ? "Déjà chiffré, plus affiché. Retapez-le seulement pour le changer."
-                    : "Visible pendant la saisie. Il ne reviendra pas à l'écran."}
-                </span>
-              )}
               {champ.secret ? (
                 <SaisieSecrete
                   value={valeurs[champ.cle] ?? ""}

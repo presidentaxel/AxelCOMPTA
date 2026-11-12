@@ -29,7 +29,7 @@ export const TYPES_BRANCHEMENT: Record<
       },
       {
         cle: "url",
-        libelle: "Adresse de l'API (vide : celle par défaut)",
+        libelle: "Adresse de l'API",
         type: "url",
         facultatif: true,
       },
