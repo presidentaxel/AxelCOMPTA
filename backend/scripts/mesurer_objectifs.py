@@ -1,8 +1,11 @@
 """Mesure les objectifs V1 de la catégorisation sur un jeu étiqueté (AXE-816).
 
 Le jeu est un CSV, une opération par ligne :
-    libelle,montant_cts,categorie[,type_operation,categorie_banque]
-`categorie` est la catégorie juste. Le jeu gelé (AXE-423) ne sert jamais à
+    libelle,montant_cts,categorie[,type_operation,categorie_banque,date,compte_bancaire]
+`categorie` est la catégorie juste. Sans `compte_bancaire`, les virements
+entre deux comptes du dossier (enveloppes « cotisation TVA », « carburant »)
+ne sont pas appariés comme dans la synchro et passent pour des erreurs : le
+script le signale. Le jeu gelé (AXE-423) ne sert jamais à
 entraîner ni à choisir un seuil.
 
 Le pipeline est celui de la synchro : règles du pack, puis modèle (si
@@ -46,6 +49,11 @@ from axelcompta.packs.vtc_demo import (
 )
 from axelcompta.workflow.synchro import COMPTE_ATTENTE, choisir_compte
 
+_JOUR_PAR_DEFAUT = date(2026, 1, 1)
+AVERTISSEMENT_SANS_COMPTE = (
+    "> Jeu sans colonne `compte_bancaire` : les virements internes ne sont pas "
+    "appariés, la précision est sous-estimée."
+)
 _ETAGES = {Etage.REGLE: ETAGE_REGLE, Etage.ML: ETAGE_MODELE, Etage.BANQUE: "banque"}
 
 
@@ -59,13 +67,14 @@ def _transactions(lignes: list[dict[str, str]]) -> list[NormalizedTransaction]:
         NormalizedTransaction(
             id=TransactionId(f"t{rang}"),
             dossier_id=DossierId("mesure"),
-            date=date(2026, 1, 1),
+            date=date.fromisoformat(ligne["date"]) if ligne.get("date") else _JOUR_PAR_DEFAUT,
             montant_cts=int(ligne["montant_cts"]),
             libelle=ligne["libelle"],
             source_provider="mesure",
             raw_payload={},
             type_operation=ligne.get("type_operation") or None,
             categorie_banque=ligne.get("categorie_banque") or None,
+            compte_bancaire=ligne.get("compte_bancaire") or None,
         )
         for rang, ligne in enumerate(lignes)
     ]
@@ -106,9 +115,12 @@ def main() -> int:
         calibration=calibration,
         categories_banque=charger_categories_banque(),
     )
-    observations = observer(_lire(arguments.jeu), pipeline)
+    lignes = _lire(arguments.jeu)
+    observations = observer(lignes, pipeline)
     entete = f"{len(observations)} opérations, jeu {arguments.jeu.name}"
     print(f"Mesure du {date.today():%d/%m/%Y} — {entete}", end="\n\n")
+    if not any(ligne.get("compte_bancaire") for ligne in lignes):
+        print(AVERTISSEMENT_SANS_COMPTE, end="\n\n")
     print(tableau(mesurer(observations), "Objectifs V1 (doc 01 §6)"), "\n")
     print(
         _detail(
