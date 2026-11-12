@@ -44,9 +44,12 @@ CHAMPS: dict[str, tuple[str, ...]] = {
 }
 # Valeurs permises, quand un champ n'accepte qu'une liste.
 VALEURS: dict[str, tuple[str, ...]] = {"environnement": ("sandbox", "production")}
-# AXE-820 : le secret de signature est posé par `python -m axelcompta.webhooks_rollee`,
-# jamais saisi. Il reste au changement de jeton.
-CHAMPS_FACULTATIFS: dict[str, tuple[str, ...]] = {"rollee": ("secret_webhook",)}
+# AXE-820 : l'adresse publique est saisie sur chaque compte (pas une variable
+# d'environnement). Le secret de signature est posé par « Déclarer le webhook »,
+# jamais saisi, et il reste au changement de jeton.
+CHAMPS_FACULTATIFS: dict[str, tuple[str, ...]] = {
+    "rollee": ("url_webhook", "secret_webhook"),
+}
 # Jamais renvoyés à l'écran. Un champ vide à la mise à jour garde la valeur
 # déjà chiffrée : on retape le jeton seulement pour le remplacer.
 SECRETS = frozenset({"mot_de_passe", "cle_api", "jeton", "secret_webhook"})

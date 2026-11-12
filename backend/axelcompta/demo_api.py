@@ -295,6 +295,7 @@ from axelcompta.tenants.tags import (
 )
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.tester_branchement import tester as tester_branchement
+from axelcompta.webhooks_rollee import preparer as preparer_webhook
 from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT
 from axelcompta.workflow.classees import (
     Filtres,
@@ -6174,6 +6175,17 @@ class EssaiVue(BaseModel):
     message: str
 
 
+class FicheWebhookVue(BaseModel):
+    """Valeurs à reporter dans le formulaire Rollee. Le secret est chiffré
+    au repos ; il ne sort qu'ici, pour l'admin qui relie ce compte."""
+
+    url: str
+    secret: str
+    methode: str
+    evenements: list[str]
+    joignable: bool
+
+
 class ChoixDossierEntree(BaseModel):
     """`None` : le dossier revient au branchement par défaut."""
 
@@ -6289,6 +6301,35 @@ def _enregistrer_route_tester_branchement(app: FastAPI) -> None:
             branchement, garder_parametre(branchements, branchement, "jeton", par)
         )
         return EssaiVue(statut=essai.statut, message=essai.message)
+
+
+def _enregistrer_route_fiche_webhook(app: FastAPI) -> None:
+    """AXE-820 : le popup « Relier » donne l'adresse et le secret de ce compte."""
+
+    @app.post(
+        "/portefeuille/integrations/{branchement_id}/webhook", response_model=FicheWebhookVue
+    )
+    def preparer_fiche_webhook(
+        branchement_id: str,
+        request: Request,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        branchements: BranchementsDep,
+    ) -> FicheWebhookVue:
+        tenant_id, _par = _admin_du_portefeuille(identite, role)
+        branchement = next(
+            (b for b in branchements.lister(tenant_id) if b.id == branchement_id), None
+        )
+        if branchement is None or branchement.type != "rollee":
+            raise BranchementIntrouvable(f"Branchement Rollee inconnu : {branchement_id}")
+        fiche = preparer_webhook(branchements, branchement, str(request.base_url))
+        return FicheWebhookVue(
+            url=fiche.url,
+            secret=fiche.secret,
+            methode=fiche.methode,
+            evenements=list(fiche.evenements),
+            joignable=fiche.joignable,
+        )
 
 
 def _enregistrer_routes_branchements_dossier(app: FastAPI) -> None:
@@ -6439,6 +6480,7 @@ def _enregistrer_routes_integrations(app: FastAPI) -> None:
     """Branchements, envois et plateformes Rollee (AXE-872, AXE-808, AXE-819)."""
     _enregistrer_routes_branchements(app)
     _enregistrer_route_tester_branchement(app)
+    _enregistrer_route_fiche_webhook(app)
     _enregistrer_routes_branchements_dossier(app)
     _enregistrer_routes_envoi(app)
     _enregistrer_routes_plateformes(app)

@@ -165,3 +165,36 @@ def test_tester_un_branchement_ne_renvoie_qu_un_statut_et_un_message(
         f"/portefeuille/integrations/{branchement}/tester", headers=_en_tete_gestionnaire()
     )
     assert reponse.json()["statut"] == "ok" and vus == ["A"]
+
+
+def test_la_fiche_webhook_montre_le_secret_que_la_liste_cache() -> None:
+    client, _depot = _client()
+    liste = client.post(
+        "/portefeuille/integrations",
+        json={
+            "type": "rollee",
+            "fournisseur": "rollee",
+            "nom": "Rollee Serenity",
+            "parametres": {"jeton": "j", "environnement": "production"},
+        },
+        headers=_en_tete_gestionnaire(),
+    )
+    assert liste.status_code == 200, liste.text
+    branchement = _id(liste.json(), "Rollee Serenity")
+    fiche = client.post(
+        f"/portefeuille/integrations/{branchement}/webhook", headers=_en_tete_gestionnaire()
+    )
+    assert fiche.status_code == 200, fiche.text
+    corps = fiche.json()
+    assert corps["methode"] == "POST"
+    assert corps["url"].endswith(f"/webhooks/rollee/{branchement}")
+    assert corps["evenements"] == ["Endpoints", "Multi Endpoints", "Rollee Connect Events"]
+    assert len(corps["secret"]) == 64
+    encore = client.post(
+        f"/portefeuille/integrations/{branchement}/webhook", headers=_en_tete_gestionnaire()
+    )
+    assert encore.json()["secret"] == corps["secret"]
+    lue = client.get("/portefeuille/integrations", headers=_en_tete_gestionnaire())
+    assert corps["secret"] not in lue.text
+    compte = next(b for b in lue.json() if b["id"] == branchement)
+    assert "secret_webhook" in compte["secrets"]
