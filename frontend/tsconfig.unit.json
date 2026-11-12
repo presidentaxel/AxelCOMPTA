@@ -16,6 +16,8 @@
   "include": [
     "lib/tva-estimee.ts",
     "lib/tva-estimee.test.ts",
+    "lib/immobilisations.ts",
+    "lib/immobilisations.test.ts",
     "lib/messages-auth.ts",
     "lib/messages-mfa.ts",
     "lib/messages-mfa.test.ts",

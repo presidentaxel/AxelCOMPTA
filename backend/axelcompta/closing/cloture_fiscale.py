@@ -30,6 +30,7 @@ from .ecritures_cloture import (
     id_cloture_is,
     id_cloture_tva,
 )
+from .immobilisations import ecritures_immobilisations, prefixe_immobilisations
 from .impot_societes import arrondir_euros, calculer_is
 from .liasse_2033 import Balance, bilan, compte_de_resultat, net_actif, resultat_fiscal
 from .liasse_2033_annexes import (
@@ -89,17 +90,21 @@ def hors_inventaire(
     les soldes « avant inventaire » (TVA de la 2033-D)."""
     annee = parametres.exercice_fin.year
     exclues = {id_cloture_tva(dossier_id, annee), id_cloture_is(dossier_id, annee)}
-    prefixe = prefixe_provisions(dossier_id, annee)
-    return tuple(e for e in ecritures if e.id not in exclues and not e.id.startswith(prefixe))
+    prefixes = (prefixe_provisions(dossier_id, annee), prefixe_immobilisations(dossier_id, annee))
+    return tuple(e for e in ecritures if e.id not in exclues and not e.id.startswith(prefixes))
 
 
 def ecritures_de_cloture(
     dossier_id: DossierId, ecritures: tuple[Ecriture, ...], parametres: ParametresCloture
 ) -> tuple[Ecriture, ...]:
-    """Provisions saisies, puis TVA, puis IS. `ecritures` : celles de l'exercice."""
+    """Provisions saisies et amortissements (AXE-802), puis TVA, puis IS.
+    `ecritures` : celles de l'exercice."""
     ecritures = hors_inventaire(dossier_id, ecritures, parametres)
     fin = parametres.exercice_fin
     provisions = ecritures_provisions(dossier_id, parametres.provisions, fin)
+    provisions += ecritures_immobilisations(
+        dossier_id, parametres.immobilisations, parametres.exercice_debut, fin
+    )
     avant_tva = ecritures + provisions
     tva = ecriture_liquidation_tva(dossier_id, soldes(avant_tva), fin)
     avec_tva = avant_tva + ((tva,) if tva else ())

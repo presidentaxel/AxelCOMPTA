@@ -81,10 +81,9 @@ def plancher_de(categorie: str, regles: tuple[RegleCategorisation, ...]) -> int 
 # existe, ce qui exclut silencieusement la catégorie du compte de résultat.
 # `recettes_plateformes` est le cas le plus grave : c'est le revenu principal
 # d'un chauffeur, exclu du CA s'il tombe sur 418 (créance temporaire) au lieu
-# de 706 (produit réel). `immobilisation_vehicule` n'est PAS corrigée ici :
-# son premier choix (218, hors compte de résultat) est correct pour l'achat
-# d'un véhicule (le cas courant) — la seule alternative 6/7 (775, produit de
-# cession) ne s'applique qu'à la revente ; la forcer casserait le cas normal.
+# de 706 (produit réel). `immobilisation_vehicule` : 2182 (matériel de
+# transport) plutôt que 218, trop large — la 2033-C le range ligne 460 et ses
+# amortissements (28182) ligne 550, au lieu de « autres » (AXE-802).
 CORRECTIONS_COMPTE_PAR_CATEGORIE = {
     "recettes_plateformes": "706",  # produit réel, pas 418 (créance temporaire)
     "honoraires_comptable_juridique": "6226",  # charge réelle, pas 201 (immobilisation)
@@ -93,6 +92,7 @@ CORRECTIONS_COMPTE_PAR_CATEGORIE = {
     # large : c'est ce compte précis que la clôture réintègre au résultat
     # fiscal (CGI art. 39-2, 2033-B ligne 330).
     "amendes_infractions": "6712",
+    "immobilisation_vehicule": "2182",
 }
 
 

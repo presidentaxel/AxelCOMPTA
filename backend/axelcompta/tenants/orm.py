@@ -163,6 +163,33 @@ provisions_cloture = Table(
     Column("libelle", String, nullable=False),
 )
 
+# Registre des immobilisations (AXE-802), append-only : une fiche ne se
+# modifie pas, une cession s'ajoute (migration b3f7d1a9c4e2).
+immobilisations = Table(
+    "immobilisations",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("designation", String, nullable=False),
+    Column("compte", String, nullable=False),
+    Column("mise_en_service", Date, nullable=False),
+    Column("base_cts", BigInteger, nullable=False),
+    Column("duree_mois", Integer, nullable=False),
+    Column("ecriture_acquisition", String, nullable=True),
+    Column("cree_le", DateTime(timezone=True), nullable=False),
+)
+
+cessions_immobilisations = Table(
+    "cessions_immobilisations",
+    metadata,
+    Column("immobilisation_id", String, ForeignKey("immobilisations.id"), primary_key=True),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False),
+    Column("le", Date, nullable=False),
+    Column("prix_cts", BigInteger, nullable=False),
+    Column("cree_le", DateTime(timezone=True), nullable=False),
+)
+
 # Avenants de régime d'imposition (doc 06 §7), append-only : verrou en base
 # contre UPDATE et DELETE (migration `a4d7e2c9b518`).
 avenants_regime = Table(
