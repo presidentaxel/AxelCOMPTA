@@ -20,6 +20,15 @@ def verifier_mode_relance(mode: str) -> None:
 
 
 @dataclass(frozen=True, slots=True)
+class EcartRegistre:
+    """Une valeur déclarée qui diffère du registre officiel (AXE-849)."""
+
+    champ: str  # etat, forme_juridique, denomination, siege, capital, dirigeant
+    declare: str
+    officiel: str
+
+
+@dataclass(frozen=True, slots=True)
 class Tenant:
     """Mode portefeuille (1 → N dossiers) ou mono-entreprise (1 → 1), doc 01 §1."""
 
@@ -83,6 +92,18 @@ class Dossier:
     # le SIREN et la forme). `None` : pas encore réglé, rien n'est rappelé.
     tva_periodicite: str | None = None
     tva_jour_echeance: int | None = None
+    # SIREN, gardé pour relire les registres officiels (AXE-849). `None` :
+    # inconnu (le dossier n'en a pas encore reçu).
+    siren: str | None = None
+    # Écarts non tranchés entre la déclaration et les registres officiels
+    # (AXE-849), recalculés à chaque relecture. La clôture et la liasse les
+    # attendent, comme `a_confirmer`.
+    ecarts_registre: tuple[EcartRegistre, ...] = ()
+    # Déficits fiscaux reportables à l'ouverture de l'exercice en cours, en
+    # euros comme la liasse (2033-D ligne 870 de l'exercice précédent).
+    # Posés par la reprise d'une société existante (AXE-804), puis reportés à
+    # chaque passage d'exercice ; 0 sinon.
+    deficits_anterieurs_euros: int = 0
 
     def fin_exercice(self) -> date:
         if self.exercice_fin is not None:

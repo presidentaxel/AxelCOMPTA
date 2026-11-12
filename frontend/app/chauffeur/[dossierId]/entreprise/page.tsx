@@ -174,7 +174,9 @@ function Registre({
     try {
       const trouve = await lireRegistre(dossierId, formulaire.siren);
       onChange(appliquerRegistre(formulaire, trouve));
-      setRetour("Rempli depuis le registre des entreprises. Vérifiez chaque ligne.");
+      setRetour(
+        "Rempli depuis le registre. Vérifiez chaque ligne : civilité, date de naissance, rue et nombre de titres restent à saisir.",
+      );
     } catch (exception) {
       setRetour(message(exception, "Le registre n'a pas répondu. Saisissez à la main."));
     } finally {

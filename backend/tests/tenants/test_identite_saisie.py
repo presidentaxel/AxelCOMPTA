@@ -12,6 +12,8 @@ from axelcompta.core.identite import Adresse, Associe, IdentiteEntreprise
 from axelcompta.demo_identites import IDENTITE_KARIM
 from axelcompta.tenants.identite_saisie import (
     IdentiteInvalide,
+    PersonneConnue,
+    completer_pre_remplissage,
     pre_remplissage,
     qualite_par_defaut,
     verifier_identite,
@@ -113,3 +115,20 @@ def test_une_valeur_absente_du_registre_reste_vide() -> None:
     assert pre is not None
     assert (pre.denomination, pre.nic, pre.code_ape) == ("X", "", "")
     assert pre.adresse_siege == Adresse("", "", "", "")
+    assert pre.capital_social_cts is None
+    assert pre.personnes == ()
+
+
+def test_le_rne_ajoute_le_capital_et_la_personne_sans_inventer_le_reste() -> None:
+    pre = pre_remplissage(REPONSE_REGISTRE, "987142031")
+    complet = completer_pre_remplissage(
+        pre,
+        "987142031",
+        capital_social_cts=10000,
+        personnes=(PersonneConnue("REICHARD", "Arthur", "92160", "ANTONY"),),
+    )
+    assert complet is not None
+    assert complet.capital_social_cts == 10000
+    assert complet.nic == "00010"
+    assert complet.personnes == (PersonneConnue("REICHARD", "Arthur", "92160", "ANTONY"),)
+    assert completer_pre_remplissage(None, "987142031") is None

@@ -10,18 +10,21 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
     Identity,
+    Index,
     Integer,
     String,
     Table,
     Text,
     UniqueConstraint,
     false,
+    text,
     true,
 )
 
@@ -63,6 +66,58 @@ dossiers = Table(
     Column("a_confirmer", JSON, nullable=False, server_default="[]"),
     Column("tva_periodicite", String, nullable=True),
     Column("tva_jour_echeance", Integer, nullable=True),
+    # AXE-849 : SIREN (relecture des registres) et écarts non tranchés.
+    Column("siren", String, nullable=True),
+    Column("ecarts_registre", JSON, nullable=False, server_default="[]"),
+    Column("deficits_anterieurs_euros", BigInteger, nullable=False, server_default="0"),
+)
+
+# Lectures des registres officiels (INSEE, RNE), append-only (AXE-849).
+lectures_registre = Table(
+    "lectures_registre",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("siren", String, nullable=False),
+    Column("sources", JSON, nullable=False),
+    Column("fiche", JSON, nullable=False),
+    Column("lu_le", DateTime(timezone=True), nullable=False),
+)
+
+# Écarts tranchés : qui, quand, quelle valeur retenue. Append-only (AXE-849).
+resolutions_ecart = Table(
+    "resolutions_ecart",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("champ", String, nullable=False),
+    Column("declare", String, nullable=False),
+    Column("officiel", String, nullable=False),
+    Column("retenue", String, nullable=False),
+    Column("par", String, nullable=False),
+    Column("le", DateTime(timezone=True), nullable=False),
+    CheckConstraint("retenue IN ('declaree', 'officielle')", name="resolutions_ecart_retenue"),
+)
+
+# Bilans d'ouverture repris d'un FEC (AXE-804) : un par dossier, ajout seul.
+ouvertures_importees = Table(
+    "ouvertures_importees",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, unique=True),
+    Column("nom_fichier", String, nullable=False),
+    Column("empreinte", String, nullable=False),
+    Column("cloture", Date, nullable=False),
+    Column("ouverture", Date, nullable=False),
+    Column("role", String, nullable=False),
+    Column("par", String, nullable=False),
+    Column("auteur_nom", String, nullable=True),
+    Column("motif", String, nullable=True),
+    Column("attestation", Text, nullable=False),
+    Column("correspondance", JSON, nullable=False),
+    Column("deficits_euros", BigInteger, nullable=False),
+    Column("ecriture_id", String, nullable=False),
+    Column("le", DateTime(timezone=True), nullable=False),
 )
 
 # Exercices clos, append-only (verrou en base, migration `b8e3f5a1c762`).
@@ -266,4 +321,42 @@ decisions_contacts = Table(
     Column("decision", String, nullable=False),
     Column("par", String, nullable=False),
     Column("le", DateTime(timezone=True), nullable=False),
+)
+
+# AXE-872 : les intégrations du portefeuille, plusieurs par type (SMTP, SMS,
+# Digifactory…). Remplace `integrations_envoi`, qui n'en gardait qu'une par
+# canal. Paramètres chiffrés (`core.chiffrement`), jamais relus à l'écran.
+branchements = Table(
+    "branchements",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False),
+    Column("type", String, nullable=False),  # mail | sms | digifactory
+    Column("fournisseur", String, nullable=False),  # smtp | http | digifactory
+    Column("nom", String, nullable=False),
+    Column("parametres_chiffres", String, nullable=False),
+    Column("par_defaut", Boolean, nullable=False),
+    Column("actif", Boolean, nullable=False),
+    Column("maj_par", String, nullable=False),
+    Column("maj_le", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("tenant_id", "type", "nom", name="uq_branchements_nom"),
+)
+# Un seul défaut par type et par portefeuille.
+Index(
+    "uq_branchements_defaut",
+    branchements.c.tenant_id,
+    branchements.c.type,
+    unique=True,
+    postgresql_where=text("par_defaut"),
+)
+
+# Le branchement qu'un dossier utilise pour un type, quand ce n'est pas
+# celui par défaut. Pas de ligne : le défaut.
+branchements_dossier = Table(
+    "branchements_dossier",
+    metadata,
+    Column("dossier_id", String, ForeignKey("dossiers.id"), primary_key=True),
+    Column("type", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False),
+    Column("branchement_id", String, ForeignKey("branchements.id"), nullable=False),
 )

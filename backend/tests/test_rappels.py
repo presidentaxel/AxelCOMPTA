@@ -11,7 +11,8 @@ import pytest
 from axelcompta import rappels
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.demo_comptes import Invitation, StatutInvitation, SupabaseConfig
-from axelcompta.workflow.rappels_envoi import EnvoisMemoire, envois_du_rappel, preparer_integration
+from axelcompta.tenants.branchements import BranchementsMemoire, nouveau
+from axelcompta.workflow.rappels_envoi import EnvoisMemoire, envois_du_rappel
 
 T, D = TenantId("t"), DossierId("d1")
 LE = datetime(2026, 11, 9, 10, 0)
@@ -38,8 +39,9 @@ def test_envoyer_lit_l_adresse_du_chauffeur_et_ignore_le_sms(
     depot = EnvoisMemoire()
     smtp = {"hote": "h", "port": "587", "utilisateur": "u", "mot_de_passe": "p", "expediteur": "e"}
     sms = {"url": "https://sms", "cle_api": "k", "expediteur": "SERENITY"}
-    depot.brancher(preparer_integration(T, "mail", "smtp", smtp), "a", LE)
-    depot.brancher(preparer_integration(T, "sms", "http", sms), "a", LE)
+    branchements = BranchementsMemoire()
+    branchements.enregistrer([nouveau([], T, "mail", "smtp", "E-mail", smtp)], "a", LE)
+    branchements.enregistrer([nouveau([], T, "sms", "http", "SMS", sms)], "a", LE)
     depot.creer(envois_du_rappel("r1", T, D, "Message", ["mail", "sms"], ["mail", "sms"], LE))
     expediteur = _Expediteur()
 
@@ -47,6 +49,7 @@ def test_envoyer_lit_l_adresse_du_chauffeur_et_ignore_le_sms(
         return None
 
     monkeypatch.setattr(rappels, "PostgresEnvois", lambda _e: depot)
+    monkeypatch.setattr(rappels, "PostgresBranchements", lambda _e: branchements)
     monkeypatch.setattr(rappels, "SupabaseCompteRepository", lambda _c: _Comptes())
     monkeypatch.setattr(SupabaseConfig, "depuis_env", staticmethod(fabrique))
     monkeypatch.setattr(rappels, "PostgresLedgerService", fabrique)

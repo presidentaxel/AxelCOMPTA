@@ -1,24 +1,25 @@
-"""AXE-808 : les rappels partent par l'e-mail ou le SMS du gestionnaire."""
+"""AXE-808 : les rappels partent par l'e-mail ou le SMS du gestionnaire ;
+AXE-872 : par le branchement du dossier, sinon par celui par défaut."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime
 
 import pytest
 
 from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.tenants.branchements import Branchement, BranchementsMemoire, nouveau
 from axelcompta.tenants.models import Dossier
 from axelcompta.workflow.rappels_auto import Regle, rappels_a_creer
 from axelcompta.workflow.rappels_envoi import (
     Contexte,
     EnvoisMemoire,
-    IntegrationInvalide,
     contenu,
     desinscription_valide,
     envois_du_rappel,
     envoyer_en_attente,
     lien_desinscription,
-    preparer_integration,
 )
 
 T = TenantId("t")
@@ -43,17 +44,25 @@ class _Smtp:
         self.messages.append((destinataire, sujet, texte))
 
 
-def _depot() -> EnvoisMemoire:
-    depot = EnvoisMemoire()
-    smtp = {
-        "hote": "smtp.x",
-        "port": "587",
-        "utilisateur": "u",
-        "mot_de_passe": "secret",
-        "expediteur": "rappels@serenity.fr",
-    }
-    depot.brancher(preparer_integration(T, "mail", "smtp", smtp), "admin", LE)
-    return depot
+SMTP = {
+    "hote": "smtp.x",
+    "port": "587",
+    "utilisateur": "u",
+    "mot_de_passe": "secret",
+    "expediteur": "rappels@serenity.fr",
+}
+
+
+def _smtp(branchements: BranchementsMemoire, nom: str) -> Branchement:
+    cree = nouveau(branchements.lister(T), T, "mail", "smtp", nom, SMTP)
+    branchements.enregistrer([cree], "admin", LE)
+    return cree
+
+
+def _depots() -> tuple[EnvoisMemoire, BranchementsMemoire]:
+    branchements = BranchementsMemoire()
+    _smtp(branchements, "SMTP principal")
+    return EnvoisMemoire(), branchements
 
 
 def _contexte(email: str | None = "karim@example.com") -> Contexte:
@@ -62,23 +71,14 @@ def _contexte(email: str | None = "karim@example.com") -> Contexte:
     )
 
 
-def test_les_identifiants_sont_chiffres_et_les_champs_verifies() -> None:
-    integration = _depot().integration(T, "mail")
-    assert integration is not None and "secret" not in integration.parametres_chiffres
-    with pytest.raises(IntegrationInvalide):
-        preparer_integration(T, "mail", "smtp", {"hote": "smtp.x"})
-    with pytest.raises(IntegrationInvalide):
-        preparer_integration(T, "mail", "http", {})
-
-
 def test_un_rappel_part_une_fois_sans_montant_avec_le_lien_de_desinscription() -> None:
-    depot, smtp = _depot(), _Smtp()
+    (depot, branchements), smtp = _depots(), _Smtp()
     depot.creer(
         envois_du_rappel("r1", T, D, "Pensez à vos opérations.", ["mail", "appel"], ["mail"], LE)
     )
 
-    premier = envoyer_en_attente(depot, _contexte(), lambda _i: smtp, LE)
-    second = envoyer_en_attente(depot, _contexte(), lambda _i: smtp, LE)
+    premier = envoyer_en_attente(depot, branchements, _contexte(), lambda _b: smtp, LE)
+    second = envoyer_en_attente(depot, branchements, _contexte(), lambda _b: smtp, LE)
 
     assert premier["envoye"] == 1 and second["envoye"] == 0
     ((destinataire, _sujet, texte),) = smtp.messages
@@ -88,34 +88,79 @@ def test_un_rappel_part_une_fois_sans_montant_avec_le_lien_de_desinscription() -
 
 
 def test_un_fournisseur_en_panne_donne_trois_essais_puis_echec() -> None:
-    depot, panne = _depot(), _Smtp(panne=True)
+    (depot, branchements), panne = _depots(), _Smtp(panne=True)
     depot.creer(envois_du_rappel("r1", T, D, "Message", ["mail"], ["mail"], LE))
     for _ in range(3):
-        envoyer_en_attente(depot, _contexte(), lambda _i: panne, LE)
+        envoyer_en_attente(depot, branchements, _contexte(), lambda _b: panne, LE)
     (envoi,) = depot.envois.values()
     assert (envoi.statut, envoi.tentatives) == ("echec", 3)
     assert envoi.raison is not None and "injoignable" in envoi.raison
 
 
 def test_la_desinscription_est_respectee_et_le_lien_signe() -> None:
-    depot, smtp = _depot(), _Smtp()
+    (depot, branchements), smtp = _depots(), _Smtp()
     lien = lien_desinscription("https://app", D, "mail")
     jeton = lien.rsplit("j=", 1)[1]
     assert desinscription_valide("d1", "mail", jeton)
     assert not desinscription_valide("d2", "mail", jeton)
     depot.desinscrire(D, "mail")
     depot.creer(envois_du_rappel("r1", T, D, "Message", ["mail"], ["mail"], LE))
-    envoyer_en_attente(depot, _contexte(), lambda _i: smtp, LE)
+    envoyer_en_attente(depot, branchements, _contexte(), lambda _b: smtp, LE)
     (envoi,) = depot.envois.values()
     assert (envoi.statut, envoi.raison, smtp.messages) == ("ignore", "désinscrit", [])
 
 
 def test_sans_adresse_connue_l_envoi_est_ignore_avec_la_raison() -> None:
-    depot = _depot()
+    depot, branchements = _depots()
     depot.creer(envois_du_rappel("r1", T, D, "Message", ["mail"], ["mail"], LE))
-    envoyer_en_attente(depot, _contexte(email=None), lambda _i: _Smtp(), LE)
+    envoyer_en_attente(depot, branchements, _contexte(email=None), lambda _b: _Smtp(), LE)
     (envoi,) = depot.envois.values()
     assert envoi.raison == "e-mail du chauffeur inconnu"
+
+
+def test_le_dossier_part_par_son_smtp_et_les_autres_par_celui_par_defaut() -> None:
+    """Critère AXE-872 : les rappels partent par le branchement du dossier,
+    sinon par celui par défaut ; l'envoi garde lequel."""
+    depot, branchements = _depots()
+    nord = _smtp(branchements, "SMTP agence Nord")
+    branchements.choisir_pour_dossier(T, D, "mail", nord.id)
+    autre = DossierId("d2")
+    depot.creer(envois_du_rappel("r1", T, D, "M", ["mail"], ["mail"], LE))
+    depot.creer(envois_du_rappel("r2", T, autre, "M", ["mail"], ["mail"], LE))
+    utilises: list[str] = []
+
+    def expediteur(branchement: Branchement) -> _Smtp:
+        utilises.append(branchement.nom)
+        return _Smtp()
+
+    envoyer_en_attente(depot, branchements, _contexte(), expediteur, LE)
+
+    assert sorted(utilises) == ["SMTP agence Nord", "SMTP principal"]
+    assert depot.envois["r1:mail"].branchement_id == nord.id
+    assert depot.envois["r2:mail"].branchement_id != nord.id
+
+
+def test_un_choix_desactive_revient_au_branchement_par_defaut() -> None:
+    depot, branchements = _depots()
+    nord = _smtp(branchements, "SMTP agence Nord")
+    branchements.choisir_pour_dossier(T, D, "mail", nord.id)
+    branchements.enregistrer([replace(nord, actif=False)], "admin", LE)
+    depot.creer(envois_du_rappel("r1", T, D, "M", ["mail"], ["mail"], LE))
+    utilises: list[str] = []
+
+    def expediteur(branchement: Branchement) -> _Smtp:
+        utilises.append(branchement.nom)
+        return _Smtp()
+
+    envoyer_en_attente(depot, branchements, _contexte(), expediteur, LE)
+    assert utilises == ["SMTP principal"]
+
+
+def test_sans_aucun_branchement_l_envoi_est_ignore() -> None:
+    depot = EnvoisMemoire()
+    depot.creer(envois_du_rappel("r1", T, D, "M", ["mail"], ["mail"], LE))
+    envoyer_en_attente(depot, BranchementsMemoire(), _contexte(), lambda _b: _Smtp(), LE)
+    assert depot.envois["r1:mail"].raison == "intégration retirée"
 
 
 def test_un_sms_tient_en_une_ligne_avec_stop() -> None:

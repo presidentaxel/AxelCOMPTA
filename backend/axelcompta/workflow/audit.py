@@ -28,6 +28,10 @@ ACTE_COMPTE_ECARTE = "compte_bancaire_ecarte"
 ACTE_PARAMETRES_TVA = "parametres_tva"
 # Siège, capital et associés saisis par le dirigeant (AXE-846).
 ACTE_IDENTITE = "identite_saisie"
+# Écart avec un registre officiel tranché par le dirigeant (AXE-849).
+ACTE_ECART_REGISTRE = "ecart_registre_tranche"
+# Bilan d'ouverture repris d'un FEC, par le dirigeant ou l'expert (AXE-804).
+ACTE_OUVERTURE_FEC = "ouverture_fec"
 
 
 def noter(

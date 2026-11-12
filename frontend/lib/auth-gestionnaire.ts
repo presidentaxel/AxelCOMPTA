@@ -43,6 +43,7 @@ import type {
   Synchronisation,
 } from "./types";
 
+import type { AnalyseFec, OuvertureVue } from "./ouverture";
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
 export type SessionGestionnaire = {
@@ -277,22 +278,109 @@ export async function lireIntegrationsEnvoi(): Promise<Record<string, string>> {
   return ((await reponse.json()) as { canaux: Record<string, string> }).canaux;
 }
 
-export async function brancherIntegrationEnvoi(
-  canal: "mail" | "sms",
+/** AXE-872 : une intégration nommée du portefeuille. Jamais d'identifiant. */
+export type Branchement = {
+  id: string;
+  type: "mail" | "sms" | "digifactory";
+  fournisseur: string;
+  nom: string;
+  par_defaut: boolean;
+  actif: boolean;
+  maj_le: string | null;
+  /** Champs non secrets (serveur, expéditeur…). Jamais un jeton. */
+  champs: Record<string, string>;
+  /** Noms des secrets déjà chiffrés. La valeur ne revient pas. */
+  secrets: string[];
+};
+
+export type EssaiBranchement = {
+  statut: "ok" | "echec" | "indisponible";
+  message: string;
+};
+
+export async function listerBranchements(): Promise<Branchement[]> {
+  const reponse = await requeteGestionnaire("/portefeuille/integrations");
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as Branchement[];
+}
+
+export async function ajouterBranchement(
+  type: Branchement["type"],
   fournisseur: string,
+  nom: string,
   parametres: Record<string, string>,
-): Promise<Record<string, string>> {
-  const reponse = await requeteGestionnaire(`/portefeuille/integrations/envoi/${canal}`, {
-    method: "PUT",
+): Promise<Branchement[]> {
+  const reponse = await requeteGestionnaire("/portefeuille/integrations", {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fournisseur, parametres }),
+    body: JSON.stringify({ type, fournisseur, nom, parametres }),
   });
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
-  return ((await reponse.json()) as { canaux: Record<string, string> }).canaux;
+  return (await reponse.json()) as Branchement[];
+}
+
+/** Champs absents : inchangés. `parametres` remplace tous les identifiants. */
+export async function modifierBranchement(
+  id: string,
+  modification: {
+    nom?: string;
+    parametres?: Record<string, string>;
+    par_defaut?: boolean;
+    actif?: boolean;
+  },
+): Promise<Branchement[]> {
+  const reponse = await requeteGestionnaire(
+    `/portefeuille/integrations/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(modification),
+    },
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as Branchement[];
+}
+
+export async function testerBranchement(id: string): Promise<EssaiBranchement> {
+  const reponse = await requeteGestionnaire(
+    `/portefeuille/integrations/${encodeURIComponent(id)}/tester`,
+    { method: "POST" },
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as EssaiBranchement;
+}
+
+/** Type → branchement choisi pour ce dossier (absent : celui par défaut). */
+export async function lireBranchementsDossier(
+  dossierId: string,
+): Promise<Record<string, string>> {
+  const reponse = await requeteGestionnaire(
+    `/dossiers/${encodeURIComponent(dossierId)}/integrations`,
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return ((await reponse.json()) as { choix: Record<string, string> }).choix;
+}
+
+export async function choisirBranchementDossier(
+  dossierId: string,
+  type: Branchement["type"],
+  branchementId: string | null,
+): Promise<Record<string, string>> {
+  const reponse = await requeteGestionnaire(
+    `/dossiers/${encodeURIComponent(dossierId)}/integrations/${type}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ branchement_id: branchementId }),
+    },
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return ((await reponse.json()) as { choix: Record<string, string> }).choix;
 }
 
 export type EnvoiRappel = {
   canal: string;
+  branchement?: string | null;
   statut: "en_attente" | "envoye" | "echec" | "ignore";
   tentatives: number;
   raison: string | null;
@@ -1033,3 +1121,47 @@ export async function telechargerModeleImport(): Promise<Blob> {
   if (!reponse.ok) throw new ApiError("Modèle indisponible.", reponse.status);
   return reponse.blob();
 }
+
+/** AXE-804 : l'expert-comptable habilité reprend le bilan d'ouverture d'un
+ * dossier de sa lettre de mission, avec un motif. */
+export async function lireOuvertureExpert(dossierId: string): Promise<OuvertureVue> {
+  return lireJson(
+    await requeteGestionnaire(`/expert/dossiers/${dossierId}/ouverture`),
+    "Le bilan d'ouverture n'a pas pu être lu.",
+  );
+}
+
+function corpsFec(fichier: File, champs: Record<string, string>): FormData {
+  const corps = corpsFichier(fichier);
+  for (const [nom, valeur] of Object.entries(champs)) corps.append(nom, valeur);
+  return corps;
+}
+
+export async function analyserFecExpert(
+  dossierId: string,
+  fichier: File,
+  correspondance: string,
+): Promise<AnalyseFec> {
+  return lireJson(
+    await requeteGestionnaire(`/expert/dossiers/${dossierId}/ouverture/fec/analyse`, {
+      method: "POST",
+      body: corpsFec(fichier, { correspondance }),
+    }),
+    "Le FEC n'a pas pu être analysé.",
+  );
+}
+
+export async function reprendreFecExpert(
+  dossierId: string,
+  fichier: File,
+  champs: { correspondance: string; attestation: string; deficits_euros: string; motif: string },
+): Promise<OuvertureVue> {
+  return lireJson(
+    await requeteGestionnaire(`/expert/dossiers/${dossierId}/ouverture/fec`, {
+      method: "POST",
+      body: corpsFec(fichier, champs),
+    }),
+    "Le bilan d'ouverture n'a pas pu être repris.",
+  );
+}
+

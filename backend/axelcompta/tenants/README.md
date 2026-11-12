@@ -24,6 +24,17 @@ d'héritage implicite (doc 03 §3bis, doc 06 §7).
 
 ## Fichiers
 
+- `branchements.py`, `branchements_postgres.py` (AXE-872) — les
+  intégrations du portefeuille, plusieurs par type (SMTP, SMS,
+  Digifactory). Un seul branchement par défaut par type (index unique
+  partiel), un choix possible par dossier (`branchements_dossier`). Le
+  défaut ne se désactive pas tant qu'un autre peut le remplacer : on
+  choisit d'abord le nouveau. Identifiants chiffrés (`core.chiffrement`),
+  jamais relus à l'écran. La clé Fernet `AXELCOMPTA_CLE_INTEGRATIONS` reste
+  dans l'environnement, pas dans Supabase : la colonne ne contient que le
+  texte chiffré. Un secret laissé vide à la mise à jour garde l'ancien.
+  Migration `b8d4e1f7a2c6`, qui reprend `integrations_envoi`.
+
 - `tags.py`, `tags_memoire.py`, `tags_postgres.py` (AXE-829) — tags
   d'entreprises et exclusion des traitements. Un réglage par portefeuille
   dit quels tags sortent un dossier de : synchro, classement automatique,
@@ -42,13 +53,27 @@ d'héritage implicite (doc 03 §3bis, doc 06 §7).
 
 - `identite_saisie.py` (AXE-846) — le dirigeant saisit le siège, le
   capital et les associés de sa société (écran « Ma société »), pré-remplis
-  depuis Recherche d'entreprises à partir du SIREN. Pur : vérifications
+  depuis Recherche d'entreprises (siège, NIC, activité) et, quand le RNE
+  les donne, le capital et le nom, les prénoms et la commune de chaque
+  personne. La civilité, la date de naissance complète, la rue et le
+  nombre de titres restent à saisir. Pur : vérifications
   (SIREN, NIC, code postal, capital, un seul associé pour une SASU ou une
   EURL) et lecture du registre. Enregistré par
   `DossierRepository.enregistrer_identite`, tracé au journal d'audit
   (`identite_saisie`). La migration `a3f8c2d71e46` donne au rôle web
   l'UPDATE de `identite`, `forme_juridique` et `a_confirmer` : sans elle,
   la confirmation d'AXE-730 échouait en production.
+- `registres.py` (AXE-849) — ce que disent l'INSEE (Sirene) et le RNE
+  (INPI) : lecture des réponses, fusion (le RNE fait foi pour la forme, le
+  capital et les dirigeants ; l'INSEE pour l'état et l'activité), écarts
+  champ par champ avec la déclaration (`Dossier.ecarts_registre`), et
+  `trancher`. Les écarts bloquent la clôture et la liasse
+  (`confirmation.raison_ambiguite`) ; une société cessée passe en premier.
+  Un écart non tranché est aussi un sujet de la file expert, sans le nom
+  des personnes. Lectures et résolutions en ajout seul (`registres_depot.py`, migration
+  `c7e4a9d2f518`). Appels HTTP et relecture hebdomadaire :
+  `axelcompta/registres_officiels.py`. Sirene 3.11 et le RNE ont été lus
+  sur un SIREN réel le 2026-11-11.
 
 - `models.py` — domaine pur (`Tenant`, `Dossier`).
 - `agregats.py` / `agregats_postgres.py` (**fait, AXE-566**) : les agrégats de

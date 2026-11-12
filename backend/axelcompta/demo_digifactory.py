@@ -70,6 +70,7 @@ def dossier_depuis_contact(contact: Mapping[str, object], aujourd_hui: date) -> 
         mode_acces_bancaire="gestionnaire",
         contact_nr=numero,
         pack_metier="vtc",
+        siren=siren_contact(contact),
     )
 
 

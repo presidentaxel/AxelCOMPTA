@@ -49,6 +49,7 @@ const NATURE: Record<SujetExpert["nature"], string> = {
   a_trancher: "Opération",
   ticket: "Ticket",
   anomalie: "Anomalie",
+  registre: "Registre",
 };
 const SENS = { debit: "Débit", credit: "Crédit" } as const;
 
@@ -326,6 +327,14 @@ export default function ModeExpertPage() {
                 className="w-56"
               />
             </div>
+            {entreprise !== "toutes" && (
+              <Link
+                href={`/expert/ouverture/${entreprise}`}
+                className="text-sm font-medium text-signal hover:underline"
+              >
+                Bilan d&apos;ouverture
+              </Link>
+            )}
             <div className="flex items-center gap-2 text-sm text-subtle">
               Nature
               <Select

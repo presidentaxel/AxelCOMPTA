@@ -43,7 +43,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol, cast
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, insert, select, update
@@ -95,6 +95,16 @@ from axelcompta.closing.bilan_simplifie import ClotureSimplifieeService
 from axelcompta.closing.cloture_fiscale import chiffre_affaires_ht
 from axelcompta.closing.dividendes import RetenuesDividendes, retenues
 from axelcompta.closing.models import LiassePivot, ParametresCloture, ProvisionCloture
+from axelcompta.closing.ouverture import id_a_nouveaux
+from axelcompta.closing.ouverture_depot import (
+    ROLE_DIRIGEANT,
+    OuvertureDejaFaite,
+    OuvertureImportee,
+    OuverturesPostgres,
+    OuverturesRepository,
+)
+from axelcompta.closing.ouverture_fec import Analyse, FecRefuse
+from axelcompta.closing.ouverture_fec import analyser as analyser_fec
 from axelcompta.closing.paie import Bulletin
 from axelcompta.closing.provisions import valider_provision
 from axelcompta.closing.tva_periodique import (
@@ -199,6 +209,18 @@ from axelcompta.tenants.avenants import (
     alerte_option_ir,
 )
 from axelcompta.tenants.avenants_postgres import PostgresAvenantRegimeRepository
+from axelcompta.tenants.branchements import (
+    Branchement,
+    BranchementIntrouvable,
+    BranchementsRepository,
+    Modification,
+    lecture_publique,
+    modifier,
+    nouveau,
+    types_branches,
+    verifier_choix,
+)
+from axelcompta.tenants.branchements_postgres import PostgresBranchements
 from axelcompta.tenants.confirmation import (
     ConfirmationRefusee,
     confirmer,
@@ -215,6 +237,8 @@ from axelcompta.tenants.identite_json import identite_vers_json
 from axelcompta.tenants.identite_saisie import (
     FORMES_UNIPERSONNELLES,
     IdentiteInvalide,
+    PersonneConnue,
+    completer_pre_remplissage,
     pre_remplissage,
     qualite_par_defaut,
     verifier_identite,
@@ -232,6 +256,12 @@ from axelcompta.tenants.orm import droits_membre, rappels, regles_rappel
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.provisions_cloture import ProvisionsClotureRepository
 from axelcompta.tenants.provisions_cloture_postgres import PostgresProvisionsClotureRepository
+from axelcompta.tenants.registres import FicheOfficielle, phrase, phrase_gestionnaire, trancher
+from axelcompta.tenants.registres_depot import (
+    RegistresPostgres,
+    RegistresRepository,
+    ResolutionEcart,
+)
 from axelcompta.tenants.repository import DossierRepository
 from axelcompta.tenants.statuts import (
     ColonneMatrice,
@@ -249,6 +279,7 @@ from axelcompta.tenants.tags import (
     nom_de_tag,
 )
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
+from axelcompta.tester_branchement import tester as tester_branchement
 from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT
 from axelcompta.workflow.classees import (
     Filtres,
@@ -318,7 +349,6 @@ from axelcompta.workflow.rappels_envoi import (
     EnvoisRepository,
     desinscription_valide,
     envois_du_rappel,
-    preparer_integration,
 )
 from axelcompta.workflow.rappels_envoi_postgres import PostgresEnvois
 from axelcompta.workflow.reclassement import (
@@ -478,6 +508,8 @@ class DossierAgregat(BaseModel):
     # Configuration proposée sans certitude (AXE-834) : « forme_juridique »,
     # « exercice ». Une information de configuration, pas un détail comptable.
     a_confirmer: list[str] = []
+    # AXE-849 : écarts non tranchés avec les registres officiels, en phrases.
+    ecarts_registre: list[str] = []
     # AXE-851 : comptes bancaires qui attendent le choix du dirigeant. Leurs
     # opérations sont écartées par la synchro tant qu'il n'a pas choisi. Des
     # nombres et une date, jamais les comptes ni les opérations (doc 19 §2.4).
@@ -581,7 +613,7 @@ class SujetExpertVue(BaseModel):
     dossier_id: str
     dossier_nom: str
     cote: Literal["chauffeur", "gestionnaire"]
-    nature: Literal["a_trancher", "ticket", "anomalie"]
+    nature: Literal["a_trancher", "ticket", "anomalie", "registre"]
     libelle: str
     detail: str
     montant_cts: int | None
@@ -747,6 +779,7 @@ def _parametres(
         soumis_is=_colonne(dossier).soumis_is,
         associes=_colonne(dossier).associes,
         provisions=provisions,
+        deficits_anterieurs=dossier.deficits_anterieurs_euros,
     )
 
 
@@ -1002,6 +1035,7 @@ def _agregat(
         alerte_regime=alerte_option_ir(dossier),
         alerte_tva=stocke.alerte_tva,
         a_confirmer=list(dossier.a_confirmer),
+        ecarts_registre=[phrase_gestionnaire(e) for e in dossier.ecarts_registre],
         comptes_a_choisir=comptes_a_choisir.nombre if comptes_a_choisir else 0,
         comptes_a_choisir_depuis=(
             comptes_a_choisir.depuis.date().isoformat() if comptes_a_choisir else None
@@ -2965,6 +2999,7 @@ def _enregistrer_route_declencher_rappel(app: FastAPI) -> None:
         identite: IdentiteDep,
         role: RoleMembreDep,
         envois: EnvoisDep,
+        branchements: BranchementsDep,
         file: DemandesJobsDep,
     ) -> RappelVue:
         """Enregistre le rappel, et un envoi par canal branché (AXE-808) que
@@ -3008,7 +3043,7 @@ def _enregistrer_route_declencher_rappel(app: FastAPI) -> None:
             DossierId(entree.dossier_id),
             regle.message,
             list(regle.canaux),
-            list(envois.canaux_branches(tenant_id)),
+            list(types_branches(branchements.lister(tenant_id))),
             datetime.now(UTC),
         )
         if a_envoyer:
@@ -4052,12 +4087,22 @@ class IdentiteDossierVue(BaseModel):
     siren_connu: str | None  # pour pré-remplir sans le redemander
 
 
+class PersonneConnueVue(BaseModel):
+    nom: str
+    prenoms: str
+    code_postal: str = ""
+    commune: str = ""
+    pays: str = "France"
+
+
 class PreRemplissageVue(BaseModel):
     siren: str
     denomination: str
     nic: str
     adresse_siege: AdresseModele
     code_ape: str
+    capital_social_cts: int | None = None
+    personnes: list[PersonneConnueVue] = []
 
 
 def _identite_depuis_modele(modele: IdentiteModele) -> IdentiteEntreprise:
@@ -4085,6 +4130,61 @@ def _siren_connu(dossier: Dossier) -> str | None:
     return None
 
 
+class LigneOuvertureVue(BaseModel):
+    compte: str
+    debit_cts: int
+    credit_cts: int
+
+
+class AnalyseFecVue(BaseModel):
+    """Ce que voit la personne qui reprend le bilan d'ouverture, avant de
+    valider (AXE-804). Rien n'est écrit."""
+
+    possible: bool
+    siren: str
+    cloture: str
+    ouverture: str
+    nb_lignes: int
+    nb_ecritures: int
+    total_debit_cts: int
+    resultat_cts: int
+    solde_banque_cts: int
+    capital_cts: int
+    comptes_inconnus: list[str]
+    refus: list[str]
+    alertes: list[str]
+    attestation: str  # à renvoyer telle quelle pour valider
+    a_nouveaux: list[LigneOuvertureVue]
+
+
+class OuvertureVue(BaseModel):
+    faite: bool
+    nom_fichier: str | None = None
+    cloture: str | None = None
+    role: str | None = None
+    auteur: str | None = None
+    le: str | None = None
+    deficits_euros: int = 0
+
+
+def get_ouvertures() -> OuverturesRepository:
+    """Dépendance FastAPI : bilans d'ouverture repris d'un FEC (AXE-804)."""
+    return OuverturesPostgres(_engine())
+
+
+OuverturesDep = Annotated[OuverturesRepository, Depends(get_ouvertures)]
+
+
+def _siren_du_dossier(dossier: Dossier) -> str | None:
+    if dossier.identite is not None:
+        return dossier.identite.siren
+    if dossier.siren:
+        return dossier.siren
+    if dossier.id.startswith("SIREN_"):
+        return dossier.id.removeprefix("SIREN_")
+    return None
+
+
 def _vue_identite(dossier: Dossier) -> IdentiteDossierVue:
     actuelle = identite_vers_json(dossier.identite)
     return IdentiteDossierVue(
@@ -4097,11 +4197,21 @@ def _vue_identite(dossier: Dossier) -> IdentiteDossierVue:
 
 
 LireRegistre = Callable[[str], Mapping[str, object]]
+LireFicheOfficielle = Callable[[str], FicheOfficielle | None]
 
 
 def get_lire_registre() -> LireRegistre:
     """Dépendance FastAPI : Recherche d'entreprises (remplacée en test)."""
     return recherche_entreprises
+
+
+def get_lire_fiche_officielle() -> LireFicheOfficielle | None:
+    """INSEE et RNE quand les clés sont dans le `.env`. `None` sinon.
+    Remplacée en test, pour ne jamais appeler les registres réels."""
+    from axelcompta.registres_officiels import charger_env, lecteur_depuis_env
+
+    charger_env()
+    return lecteur_depuis_env()
 
 
 def _enregistrer_routes_identite(app: FastAPI) -> None:
@@ -4120,17 +4230,31 @@ def _enregistrer_routes_identite(app: FastAPI) -> None:
         dossier: DossierDep,
         identite: IdentiteDep,
         lire: Annotated[LireRegistre, Depends(get_lire_registre)],
+        lire_fiche: Annotated[LireFicheOfficielle | None, Depends(get_lire_fiche_officielle)],
     ) -> PreRemplissageVue:
         _verifier_acces_dossier(dossier.id, identite)
         siren = siren.replace(" ", "")
         if not siren_valide(siren):
             raise IdentiteInvalide("Le SIREN doit compter 9 chiffres valides.")
         trouve = pre_remplissage(lire(siren), siren)
-        if trouve is None:
+        fiche = lire_fiche(siren) if lire_fiche is not None else None
+        complet = completer_pre_remplissage(
+            trouve,
+            siren,
+            denomination=fiche.denomination if fiche else None,
+            siege=fiche.siege if fiche else None,
+            code_ape=fiche.code_naf if fiche else None,
+            capital_social_cts=fiche.capital_cts if fiche else None,
+            personnes=tuple(
+                PersonneConnue(p.nom, p.prenoms, p.code_postal, p.commune, p.pays)
+                for p in (fiche.personnes if fiche else ())
+            ),
+        )
+        if complet is None:
             raise HTTPException(
                 status_code=404, detail="Aucune société à ce SIREN dans le registre."
             )
-        return PreRemplissageVue.model_validate(dataclasses.asdict(trouve))
+        return PreRemplissageVue.model_validate(dataclasses.asdict(complet))
 
     @app.put("/dossiers/{dossier_id}/identite", response_model=ConfigurationDossierVue)
     def saisir_identite(
@@ -4144,6 +4268,325 @@ def _enregistrer_routes_identite(app: FastAPI) -> None:
         verifier_identite(saisie, dossier.forme_juridique, date.today())
         dossiers.enregistrer_identite(dossier.id, saisie, identite.user_id, datetime.now(UTC))
         return _vue_configuration(dataclasses.replace(dossier, identite=saisie))
+
+
+class EcartRegistreVue(BaseModel):
+    champ: str
+    declare: str
+    officiel: str
+    phrase: str
+
+
+class RegistreDossierVue(BaseModel):
+    """Ce que disent les registres officiels du dossier (AXE-849)."""
+
+    siren: str | None
+    lu_le: str | None
+    sources: list[str]
+    denomination: str | None
+    forme_juridique: str | None
+    siege: str | None
+    capital_cts: int | None
+    dirigeants: list[str]
+    cessee: bool | None
+    ecarts: list[EcartRegistreVue]
+
+
+class TrancherEcartEntree(BaseModel):
+    retenue: Literal["declaree", "officielle"]
+
+
+def get_registres() -> RegistresRepository:
+    """Dépendance FastAPI : lectures des registres et écarts tranchés."""
+    return RegistresPostgres(_engine())
+
+
+RegistresDep = Annotated[RegistresRepository, Depends(get_registres)]
+
+
+def _vue_registre(dossier: Dossier, registres: RegistresRepository) -> RegistreDossierVue:
+    lue = registres.derniere_lecture(dossier.id)
+    fiche = lue[0] if lue else None
+    return RegistreDossierVue(
+        siren=dossier.siren,
+        lu_le=lue[1].isoformat() if lue else None,
+        sources=list(fiche.sources) if fiche else [],
+        denomination=fiche.denomination if fiche else None,
+        forme_juridique=fiche.forme_juridique if fiche else None,
+        siege=fiche.siege.sur_une_ligne() if fiche and fiche.siege else None,
+        capital_cts=fiche.capital_cts if fiche else None,
+        dirigeants=list(fiche.dirigeants) if fiche else [],
+        cessee=fiche.cessee if fiche else None,
+        ecarts=[
+            EcartRegistreVue(
+                champ=e.champ, declare=e.declare, officiel=e.officiel, phrase=phrase(e)
+            )
+            for e in dossier.ecarts_registre
+        ],
+    )
+
+
+def _correspondance(brute: str) -> dict[str, str]:
+    try:
+        lue = json.loads(brute or "{}")
+    except json.JSONDecodeError as erreur:
+        raise FecRefuse("Correspondance des comptes illisible.") from erreur
+    if not isinstance(lue, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in lue.items()
+    ):
+        raise FecRefuse("Correspondance des comptes illisible.")
+    return {k.strip(): v.strip() for k, v in lue.items() if v.strip()}
+
+
+def _analyser_fec(
+    dossier: Dossier,
+    contenu: bytes,
+    nom_fichier: str,
+    correspondance: str,
+    ouvertures: OuverturesRepository,
+    ledger: LedgerService,
+) -> Analyse:
+    analyse = analyser_fec(
+        contenu,
+        nom_fichier,
+        dossier.id,
+        _siren_du_dossier(dossier),
+        dossier.exercice_debut,
+        _correspondance(correspondance),
+        date.today(),
+    )
+    deja = ouvertures.obtenir(dossier.id) is not None or any(
+        e.id == id_a_nouveaux(dossier.id, dossier.exercice_debut.year)
+        for e in ledger.grand_livre(dossier.id)
+    )
+    if deja:
+        refus = (*analyse.refus, str(OuvertureDejaFaite()))
+        return dataclasses.replace(analyse, refus=refus, a_nouveaux=None)
+    return analyse
+
+
+def _vue_analyse(analyse: Analyse) -> AnalyseFecVue:
+    lignes = analyse.a_nouveaux.lignes if analyse.a_nouveaux else ()
+    return AnalyseFecVue(
+        possible=analyse.a_nouveaux is not None,
+        siren=analyse.siren,
+        cloture=analyse.cloture.isoformat(),
+        ouverture=analyse.ouverture.isoformat(),
+        nb_lignes=analyse.nb_lignes,
+        nb_ecritures=analyse.nb_ecritures,
+        total_debit_cts=analyse.total_debit,
+        resultat_cts=analyse.resultat,
+        solde_banque_cts=analyse.solde_banque,
+        capital_cts=analyse.capital,
+        comptes_inconnus=list(analyse.comptes_inconnus),
+        refus=list(analyse.refus),
+        alertes=list(analyse.alertes),
+        attestation=analyse.attestation,
+        a_nouveaux=[
+            LigneOuvertureVue(
+                compte=ligne.compte,
+                debit_cts=ligne.montant.centimes if ligne.sens is Sens.DEBIT else 0,
+                credit_cts=ligne.montant.centimes if ligne.sens is Sens.CREDIT else 0,
+            )
+            for ligne in lignes
+        ],
+    )
+
+
+def _enregistrer_routes_registre(app: FastAPI) -> None:
+    """Le dirigeant voit ce que disent les registres et tranche chaque écart
+    (AXE-849). Tracé au journal d'audit."""
+
+    @app.get("/dossiers/{dossier_id}/registre", response_model=RegistreDossierVue)
+    def lire_registre_officiel(
+        dossier: DossierDep, registres: RegistresDep, identite: IdentiteDep
+    ) -> RegistreDossierVue:
+        _verifier_acces_dossier(dossier.id, identite)
+        return _vue_registre(dossier, registres)
+
+    @app.post(
+        "/dossiers/{dossier_id}/registre/ecarts/{champ}", response_model=ConfigurationDossierVue
+    )
+    def trancher_ecart(
+        champ: str,
+        corps: TrancherEcartEntree,
+        dossier: DossierDep,
+        registres: RegistresDep,
+        identite: IdentiteDep,
+    ) -> ConfigurationDossierVue:
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        ecart, reste, forme = trancher(dossier, champ, corps.retenue)
+        apres = dataclasses.replace(
+            dossier, ecarts_registre=reste, forme_juridique=forme or dossier.forme_juridique
+        )
+        configuration_de(apres)  # une forme du registre hors matrice est refusée (422)
+        tranche = ResolutionEcart(
+            dossier.id, ecart, corps.retenue, identite.user_id, datetime.now(UTC)
+        )
+        registres.resoudre(tranche, reste, forme)
+        return _vue_configuration(apres)
+
+
+def _vue_ouverture(ouverture: OuvertureImportee | None) -> OuvertureVue:
+    if ouverture is None:
+        return OuvertureVue(faite=False)
+    return OuvertureVue(
+        faite=True,
+        nom_fichier=ouverture.nom_fichier,
+        cloture=ouverture.cloture.isoformat(),
+        role=ouverture.role,
+        auteur=ouverture.auteur_nom,
+        le=ouverture.le.isoformat(),
+        deficits_euros=ouverture.deficits_euros,
+    )
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _Importeur:
+    role: str
+    par: UserId
+    nom: str | None
+    motif: str | None
+
+
+def _importer_fec(
+    dossier: Dossier,
+    contenu: bytes,
+    nom_fichier: str,
+    formulaire: tuple[str, str, int],
+    importeur: _Importeur,
+    depots: tuple[OuverturesRepository, LedgerService],
+) -> OuvertureVue:
+    """`formulaire` : (correspondance, attestation, déficits en euros). Tout
+    refus de l'analyse empêche l'import ; l'attestation doit être celle
+    présentée, mot pour mot."""
+    correspondance, attestation, deficits = formulaire
+    ouvertures, ledger = depots
+    analyse = _analyser_fec(dossier, contenu, nom_fichier, correspondance, ouvertures, ledger)
+    if analyse.a_nouveaux is None:
+        raise FecRefuse(" ".join(analyse.refus) or "Rien à reprendre.")
+    if attestation.strip() != analyse.attestation:
+        raise FecRefuse("Cochez l'attestation présentée avant de valider.")
+    if deficits < 0:
+        raise FecRefuse("Les déficits reportables ne peuvent pas être négatifs.")
+    ouverture = OuvertureImportee(
+        dossier_id=dossier.id,
+        nom_fichier=nom_fichier,
+        empreinte=analyse.empreinte,
+        cloture=analyse.cloture,
+        ouverture=analyse.ouverture,
+        role=importeur.role,
+        par=importeur.par,
+        auteur_nom=importeur.nom,
+        motif=importeur.motif,
+        attestation=analyse.attestation,
+        correspondance=_correspondance(correspondance),
+        deficits_euros=deficits,
+        ecriture_id=analyse.a_nouveaux.id,
+        le=datetime.now(UTC),
+    )
+    ouvertures.importer(ouverture, analyse.a_nouveaux)
+    return _vue_ouverture(ouverture)
+
+
+def _enregistrer_routes_ouverture(app: FastAPI) -> None:
+    """Bilan d'ouverture d'une société existante, repris du FEC de l'outil
+    précédent (AXE-804) : par le dirigeant, ou par l'expert-comptable
+    habilité, jamais par le logiciel seul."""
+
+    @app.get("/dossiers/{dossier_id}/ouverture", response_model=OuvertureVue)
+    def lire_ouverture(
+        dossier: DossierDep, ouvertures: OuverturesDep, identite: IdentiteDep
+    ) -> OuvertureVue:
+        _verifier_acces_dossier(dossier.id, identite)
+        return _vue_ouverture(ouvertures.obtenir(dossier.id))
+
+    @app.post("/dossiers/{dossier_id}/ouverture/fec/analyse", response_model=AnalyseFecVue)
+    async def analyser_ouverture(
+        fichier: UploadFile,
+        dossier: DossierDep,
+        ouvertures: OuverturesDep,
+        ledger: LedgerBaseDep,
+        identite: IdentiteDep,
+        correspondance: Annotated[str, Form()] = "{}",
+    ) -> AnalyseFecVue:
+        _verifier_acces_dossier(dossier.id, identite)
+        contenu = await fichier.read()
+        nom = fichier.filename or ""
+        return _vue_analyse(
+            _analyser_fec(dossier, contenu, nom, correspondance, ouvertures, ledger)
+        )
+
+    @app.post("/dossiers/{dossier_id}/ouverture/fec", response_model=OuvertureVue)
+    async def importer_ouverture(
+        fichier: UploadFile,
+        dossier: DossierDep,
+        ouvertures: OuverturesDep,
+        ledger: LedgerBaseDep,
+        identite: IdentiteDep,
+        attestation: Annotated[str, Form()],
+        correspondance: Annotated[str, Form()] = "{}",
+        deficits_euros: Annotated[int, Form()] = 0,
+    ) -> OuvertureVue:
+        identite = _verifier_acces_dossier(dossier.id, identite)
+        importeur = _Importeur(ROLE_DIRIGEANT, identite.user_id, None, None)
+        return _importer_fec(
+            dossier,
+            await fichier.read(),
+            fichier.filename or "",
+            (correspondance, attestation, deficits_euros),
+            importeur,
+            (ouvertures, ledger),
+        )
+
+    _enregistrer_routes_ouverture_expert(app)
+
+
+def _enregistrer_routes_ouverture_expert(app: FastAPI) -> None:
+    @app.get("/expert/dossiers/{dossier_id}/ouverture", response_model=OuvertureVue)
+    def lire_ouverture_expert(dossier: DossierExpertDep, ouvertures: OuverturesDep) -> OuvertureVue:
+        return _vue_ouverture(ouvertures.obtenir(dossier.id))
+
+    @app.post("/expert/dossiers/{dossier_id}/ouverture/fec/analyse", response_model=AnalyseFecVue)
+    async def analyser_ouverture_expert(
+        fichier: UploadFile,
+        dossier: DossierExpertDep,
+        ouvertures: OuverturesDep,
+        ledger: LedgerBaseDep,
+        correspondance: Annotated[str, Form()] = "{}",
+    ) -> AnalyseFecVue:
+        contenu = await fichier.read()
+        nom = fichier.filename or ""
+        return _vue_analyse(
+            _analyser_fec(dossier, contenu, nom, correspondance, ouvertures, ledger)
+        )
+
+    @app.post("/expert/dossiers/{dossier_id}/ouverture/fec", response_model=OuvertureVue)
+    async def importer_ouverture_expert(
+        fichier: UploadFile,
+        dossier: DossierExpertDep,
+        ouvertures: OuverturesDep,
+        ledger: LedgerBaseDep,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        experts: ExpertsDep,
+        attestation: Annotated[str, Form()],
+        motif: Annotated[str, Form()],
+        correspondance: Annotated[str, Form()] = "{}",
+        deficits_euros: Annotated[int, Form()] = 0,
+    ) -> OuvertureVue:
+        _tenant, identite, actif = _expert(identite, role, experts)
+        importeur = _Importeur(
+            ROLE_EXPERT, identite.user_id, actif.habilitation.nom, motif_valide(motif)
+        )
+        return _importer_fec(
+            dossier,
+            await fichier.read(),
+            fichier.filename or "",
+            (correspondance, attestation, deficits_euros),
+            importeur,
+            (ouvertures, ledger),
+        )
 
 
 def _signataire(dossier: Dossier, identite: IdentiteAuthentifiee) -> str:
@@ -4939,6 +5382,27 @@ SourcesExpert = tuple[
 ]
 
 
+def _sujets_ecarts(dossier: Dossier) -> list[SujetExpertVue]:
+    """Un écart de registre non tranché, visible dans la file. Calculé à
+    l'affichage : le résoudre ne change pas la version des agrégats, donc
+    un sujet gardé en cache resterait affiché après la décision."""
+    return [
+        SujetExpertVue(
+            id=f"registre:{dossier.id}:{ecart.champ}",
+            dossier_id=str(dossier.id),
+            dossier_nom=dossier.nom,
+            cote="gestionnaire",
+            nature="registre",
+            libelle="Le registre officiel dit autre chose",
+            detail=phrase_gestionnaire(ecart),
+            montant_cts=None,
+            ecriture_id=None,
+            imputable=False,
+        )
+        for ecart in dossier.ecarts_registre
+    ]
+
+
 def _sujets_du_portefeuille(
     portefeuille: Sequence[Dossier],
     sources: SourcesExpert,
@@ -4957,13 +5421,14 @@ def _sujets_du_portefeuille(
         version = versions.get(dossier.id, 0)
         garde = gardes.get(dossier.id)
         if garde is not None and garde.valables(version):
-            sujets.extend(SujetExpertVue.model_validate(s) for s in garde.sujets)
-            continue
-        calcules = _sujets_expert(
-            dossier, base, decisions, justificatifs, None, propositions=propositions
-        )
-        cache.enregistrer(dossier.id, version, [s.model_dump() for s in calcules])
+            calcules = [SujetExpertVue.model_validate(s) for s in garde.sujets]
+        else:
+            calcules = _sujets_expert(
+                dossier, base, decisions, justificatifs, None, propositions=propositions
+            )
+            cache.enregistrer(dossier.id, version, [s.model_dump() for s in calcules])
         sujets.extend(calcules)
+        sujets.extend(_sujets_ecarts(dossier))
     return sujets
 
 
@@ -4999,7 +5464,7 @@ def _sujet(
     dossier: Dossier,
     sujet_id: str,
     cote: Literal["chauffeur", "gestionnaire"],
-    nature: Literal["a_trancher", "ticket", "anomalie"],
+    nature: Literal["a_trancher", "ticket", "anomalie", "registre"],
     libelle: str,
     detail: str,
     montant_cts: int,
@@ -5064,6 +5529,7 @@ def imputer_ecriture(
         ),
         propositions,
     )
+    sujets = [*sujets, *_sujets_ecarts(dossier)]
     return ImputationVue(
         ecriture_id=nouvelle.id,
         contrepassation_id=inverse.id,
@@ -5643,9 +6109,12 @@ def get_envois() -> EnvoisRepository:
 EnvoisDep = Annotated[EnvoisRepository, Depends(get_envois)]
 
 
-class IntegrationEnvoiEntree(BaseModel):
-    fournisseur: str
-    parametres: dict[str, str]
+def get_branchements() -> BranchementsRepository:
+    """Intégrations du portefeuille, plusieurs par type (AXE-872)."""
+    return PostgresBranchements(_engine())
+
+
+BranchementsDep = Annotated[BranchementsRepository, Depends(get_branchements)]
 
 
 class IntegrationsEnvoiVue(BaseModel):
@@ -5654,52 +6123,197 @@ class IntegrationsEnvoiVue(BaseModel):
     canaux: dict[str, str]
 
 
+class BranchementEntree(BaseModel):
+    type: str
+    fournisseur: str
+    nom: str
+    parametres: dict[str, str]
+
+
+class BranchementModification(BaseModel):
+    """Champs absents : inchangés. `parametres` remplace tous les identifiants."""
+
+    nom: str | None = None
+    parametres: dict[str, str] | None = None
+    par_defaut: bool | None = None
+    actif: bool | None = None
+
+
+class BranchementVue(BaseModel):
+    """Jamais un jeton, une clé ou un mot de passe. `secrets` ne porte que
+    les noms des champs déjà chiffrés."""
+
+    id: str
+    type: str
+    fournisseur: str
+    nom: str
+    par_defaut: bool
+    actif: bool
+    maj_le: str | None
+    champs: dict[str, str] = {}
+    secrets: list[str] = []
+
+
+class EssaiVue(BaseModel):
+    statut: str  # ok | echec | indisponible
+    message: str
+
+
+class ChoixDossierEntree(BaseModel):
+    """`None` : le dossier revient au branchement par défaut."""
+
+    branchement_id: str | None
+
+
+class ChoixDossierVue(BaseModel):
+    """Type → branchement choisi pour ce dossier (absent : celui par défaut)."""
+
+    choix: dict[str, str]
+
+
 class EnvoiVue(BaseModel):
     canal: str
     statut: str
     tentatives: int
     raison: str | None
     le: str | None
+    branchement: str | None = None  # nom du branchement par lequel il est parti
 
 
 class DesinscriptionVue(BaseModel):
     message: str
 
 
-def _integrations_vue(envois: EnvoisRepository, tenant_id: TenantId) -> IntegrationsEnvoiVue:
-    return IntegrationsEnvoiVue(
-        canaux={c: le.isoformat() for c, le in envois.canaux_branches(tenant_id).items()}
+def _vue_branchement(b: Branchement) -> BranchementVue:
+    champs, secrets = lecture_publique(b)
+    return BranchementVue(
+        id=b.id,
+        type=b.type,
+        fournisseur=b.fournisseur,
+        nom=b.nom,
+        par_defaut=b.par_defaut,
+        actif=b.actif,
+        maj_le=b.maj_le.isoformat() if b.maj_le else None,
+        champs=champs,
+        secrets=list(secrets),
     )
 
 
-def _enregistrer_routes_envoi(app: FastAPI) -> None:
-    """AXE-808 : brancher l'e-mail et le SMS du gestionnaire, suivre les envois."""
+def _admin_du_portefeuille(
+    identite: IdentiteAuthentifiee | None, role: str
+) -> tuple[TenantId, str]:
+    tenant_id, identite = _verifier_acces_gestionnaire(identite)
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="Réservé à un administrateur.")
+    return tenant_id, str(identite.user_id)
 
-    @app.get("/portefeuille/integrations/envoi", response_model=IntegrationsEnvoiVue)
-    def lire_integrations_envoi(identite: IdentiteDep, envois: EnvoisDep) -> IntegrationsEnvoiVue:
+
+def _enregistrer_routes_branchements(app: FastAPI) -> None:
+    """AXE-872 : plusieurs intégrations de chaque type, une par défaut. Les
+    identifiants sont chiffrés, et ne reviennent jamais à l'écran."""
+
+    @app.get("/portefeuille/integrations", response_model=list[BranchementVue])
+    def lister_branchements(
+        identite: IdentiteDep, branchements: BranchementsDep
+    ) -> list[BranchementVue]:
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
-        return _integrations_vue(envois, tenant_id)
+        return [_vue_branchement(b) for b in branchements.lister(tenant_id)]
 
-    @app.put("/portefeuille/integrations/envoi/{canal}", response_model=IntegrationsEnvoiVue)
-    def brancher_integration_envoi(
-        canal: str,
-        entree: IntegrationEnvoiEntree,
+    @app.post("/portefeuille/integrations", response_model=list[BranchementVue])
+    def ajouter_branchement(
+        entree: BranchementEntree,
         identite: IdentiteDep,
         role: RoleMembreDep,
-        envois: EnvoisDep,
+        branchements: BranchementsDep,
+    ) -> list[BranchementVue]:
+        tenant_id, par = _admin_du_portefeuille(identite, role)
+        existants = branchements.lister(tenant_id)
+        cree = nouveau(
+            existants, tenant_id, entree.type, entree.fournisseur, entree.nom, entree.parametres
+        )
+        branchements.enregistrer([cree], par, datetime.now(UTC))
+        return [_vue_branchement(b) for b in branchements.lister(tenant_id)]
+
+    @app.patch("/portefeuille/integrations/{branchement_id}", response_model=list[BranchementVue])
+    def modifier_branchement(
+        branchement_id: str,
+        entree: BranchementModification,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        branchements: BranchementsDep,
+    ) -> list[BranchementVue]:
+        tenant_id, par = _admin_du_portefeuille(identite, role)
+        modification = Modification(
+            nom=entree.nom,
+            parametres=entree.parametres,
+            par_defaut=entree.par_defaut,
+            actif=entree.actif,
+        )
+        a_enregistrer = modifier(branchements.lister(tenant_id), branchement_id, modification)
+        branchements.enregistrer(a_enregistrer, par, datetime.now(UTC))
+        return [_vue_branchement(b) for b in branchements.lister(tenant_id)]
+
+    @app.post("/portefeuille/integrations/{branchement_id}/tester", response_model=EssaiVue)
+    def tester_un_branchement(
+        branchement_id: str,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        branchements: BranchementsDep,
+    ) -> EssaiVue:
+        tenant_id, _par = _admin_du_portefeuille(identite, role)
+        branchement = next(
+            (b for b in branchements.lister(tenant_id) if b.id == branchement_id), None
+        )
+        if branchement is None:
+            raise BranchementIntrouvable(f"Branchement inconnu : {branchement_id}")
+        essai = tester_branchement(branchement)
+        return EssaiVue(statut=essai.statut, message=essai.message)
+
+
+def _enregistrer_routes_branchements_dossier(app: FastAPI) -> None:
+    """AXE-872 : le branchement qu'un dossier utilise, type par type."""
+
+    @app.get("/dossiers/{dossier_id}/integrations", response_model=ChoixDossierVue)
+    def lire_choix_dossier(
+        dossier: DossierPortefeuilleDep, branchements: BranchementsDep
+    ) -> ChoixDossierVue:
+        return ChoixDossierVue(choix=branchements.choix_du_dossier(dossier.tenant_id, dossier.id))
+
+    @app.put("/dossiers/{dossier_id}/integrations/{type_}", response_model=ChoixDossierVue)
+    def choisir_pour_le_dossier(
+        type_: str,
+        entree: ChoixDossierEntree,
+        dossier: DossierPortefeuilleDep,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        branchements: BranchementsDep,
+    ) -> ChoixDossierVue:
+        tenant_id, _par = _admin_du_portefeuille(identite, role)
+        verifier_choix(branchements.lister(tenant_id), type_, entree.branchement_id)
+        branchements.choisir_pour_dossier(tenant_id, dossier.id, type_, entree.branchement_id)
+        return ChoixDossierVue(choix=branchements.choix_du_dossier(tenant_id, dossier.id))
+
+
+def _enregistrer_routes_envoi(app: FastAPI) -> None:
+    """AXE-808 : suivre les envois, se désinscrire. Les canaux branchés se
+    lisent ici pour les écrans qui n'ont besoin que de savoir « branché »."""
+
+    @app.get("/portefeuille/integrations/envoi", response_model=IntegrationsEnvoiVue)
+    def lire_integrations_envoi(
+        identite: IdentiteDep, branchements: BranchementsDep
     ) -> IntegrationsEnvoiVue:
-        """Admin seulement. Les identifiants sont chiffrés avant d'être
-        écrits, et ne reviennent jamais à l'écran."""
-        tenant_id, identite = _verifier_acces_gestionnaire(identite)
-        if role != "admin":
-            raise HTTPException(status_code=403, detail="Réservé à un administrateur.")
-        integration = preparer_integration(tenant_id, canal, entree.fournisseur, entree.parametres)
-        envois.brancher(integration, str(identite.user_id), datetime.now(UTC))
-        return _integrations_vue(envois, tenant_id)
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        branches = types_branches(branchements.lister(tenant_id))
+        return IntegrationsEnvoiVue(
+            canaux={t: le.isoformat() for t, le in branches.items() if t in ("mail", "sms")}
+        )
 
     @app.get("/dossiers/{dossier_id}/envois", response_model=list[EnvoiVue])
-    def lire_envois(dossier: DossierPortefeuilleDep, envois: EnvoisDep) -> list[EnvoiVue]:
+    def lire_envois(
+        dossier: DossierPortefeuilleDep, envois: EnvoisDep, branchements: BranchementsDep
+    ) -> list[EnvoiVue]:
         """Suivi des rappels envoyés à cette entreprise : un statut, pas un contenu."""
+        noms = {b.id: b.nom for b in branchements.lister(dossier.tenant_id)}
         return [
             EnvoiVue(
                 canal=e.canal,
@@ -5707,6 +6321,7 @@ def _enregistrer_routes_envoi(app: FastAPI) -> None:
                 tentatives=e.tentatives,
                 raison=e.raison,
                 le=e.maj_le.isoformat() if e.maj_le else None,
+                branchement=noms.get(e.branchement_id or ""),
             )
             for e in envois.du_dossier(dossier.id, 50)
         ]
@@ -5719,6 +6334,13 @@ def _enregistrer_routes_envoi(app: FastAPI) -> None:
         envois.desinscrire(DossierId(d), c)
         canal = "par e-mail" if c == "mail" else "par SMS"
         return DesinscriptionVue(message=f"Vous ne recevrez plus de rappels {canal}.")
+
+
+def _enregistrer_routes_integrations(app: FastAPI) -> None:
+    """Branchements du portefeuille et suivi des envois (AXE-872, AXE-808)."""
+    _enregistrer_routes_branchements(app)
+    _enregistrer_routes_branchements_dossier(app)
+    _enregistrer_routes_envoi(app)
 
 
 class NouveauChauffeurVue(BaseModel):
@@ -6353,6 +6975,13 @@ def _enregistrer_route_declaration_tva(app: FastAPI) -> None:
         return _tva_vue(dossier, _etats_tva(dossier, ledger, base, decisions, signatures))
 
 
+def _enregistrer_routes_societe(app: FastAPI) -> None:
+    """Identité, registres officiels et bilan d'ouverture (AXE-846, 849, 804)."""
+    _enregistrer_routes_identite(app)
+    _enregistrer_routes_registre(app)
+    _enregistrer_routes_ouverture(app)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="AxeLCompta — API",
@@ -6376,7 +7005,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_engagement(app)
     _enregistrer_routes_tva(app)
     _enregistrer_route_declaration_tva(app)
-    _enregistrer_routes_envoi(app)
+    _enregistrer_routes_integrations(app)
     _enregistrer_routes_transactions(app)
     _enregistrer_route_correction(app)
     _enregistrer_routes_annulation(app)
@@ -6407,7 +7036,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_notifications(app)
     _enregistrer_routes_cloture_exercice(app)
     _enregistrer_routes_configuration(app)
-    _enregistrer_routes_identite(app)
+    _enregistrer_routes_societe(app)
     _enregistrer_routes_affectation(app)
     _enregistrer_routes_dividendes_paie(app)
     _enregistrer_routes_paie(app)

@@ -48,6 +48,7 @@ from axelcompta.nouveaux_contacts import fiche_sirene
 from axelcompta.synchro_digifactory import synchroniser_portefeuille
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.postgres import PostgresDossierRepository
+from axelcompta.tenants.registres_depot import RegistresPostgres
 from axelcompta.tenants.sirene import FicheSirene, configurer_depuis_sirene
 from axelcompta.tenants.tags import POSE_PAR_IMPORT, TAG_CHAUFFEUR, a_taguer_chauffeur
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
@@ -74,7 +75,11 @@ def _aligner_sirene(depot: PostgresDossierRepository) -> None:
         dossier = depot.par_contact_nr(numero_contact(contact))
         if dossier is None:
             continue
-        fiche = _fiche_sirene(siren_contact(contact))
+        siren = siren_contact(contact)
+        if siren and dossier.siren != siren:
+            # AXE-849 : le SIREN, gardé pour relire les registres officiels.
+            RegistresPostgres(engine_depuis_env()).poser_siren(dossier.id, siren)
+        fiche = _fiche_sirene(siren)
         if fiche is None:
             print(f"{dossier.id} : pas de fiche Sirene, laissé tel quel", flush=True)
             continue

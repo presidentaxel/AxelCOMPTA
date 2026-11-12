@@ -57,6 +57,12 @@ export default function ExerciceChauffeurPage({
           Ma TVA : déclaration de la période →
         </Link>
       )}
+      <Link
+        href={`/chauffeur/${dossierId}/ouverture`}
+        className="mt-1 flex min-h-11 items-center text-sm font-medium text-signal"
+      >
+        Votre société existait avant ? Reprendre vos comptes →
+      </Link>
       {dossier.statut === "erreur" && (
         <Etat type="erreur" message={dossier.message} onReessayer={reessayer} />
       )}

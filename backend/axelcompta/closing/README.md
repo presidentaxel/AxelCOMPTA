@@ -61,6 +61,22 @@ pivot de liasse (`LiassePivot`) avant rendu par `filings/`.
 
 [doc 06 §5](../../../docs/06-moteur-comptable.md#5-clôture-dexercice-closing).
 
+## Bilan d'ouverture repris d'un FEC (AXE-804)
+
+`ouverture_fec.py` (pur) lit le FEC de l'outil précédent, tolérant aux
+variantes réelles (tabulation ou `|`, CR+LF ou LF, UTF-8 ou Windows-1252,
+Debit/Credit ou Montant/Sens, numéros par journal), le contrôle, et en tire
+l'écriture d'à-nouveaux avec `ecriture_a_nouveaux` (le même calcul qu'un
+passage d'exercice). Garde-fous : nom `SIRENFECAAAAMMJJ`, SIREN du dossier,
+clôture la veille de l'ouverture, équilibre, dates dans l'exercice et pas de
+validation future, comptes inconnus à faire correspondre ; alertes sans
+capital, sans banque, et solde de banque à comparer au relevé. Attestation
+de la personne qui importe (dirigeant, ou expert-comptable habilité avec un
+motif), empreinte du fichier, une seule reprise par dossier
+(`ouverture_depot.py`, table `ouvertures_importees`, tout ou rien avec
+l'à-nouveaux et les déficits). `Dossier.deficits_anterieurs_euros` alimente
+la liasse et l'IS, et passe à l'exercice suivant (2033-D ligne 870).
+
 ## TVA en cours d'année (AXE-805)
 
 `tva_periodique.py` (pur) : périodes mensuelles ou trimestrielles de

@@ -1,69 +1,25 @@
-"""Intégrations d'envoi, envois de rappel et désinscriptions en Postgres
-(AXE-808, migration `e6b2d9f4a371`)."""
+"""Envois de rappel et désinscriptions en Postgres (AXE-808, migration
+`e6b2d9f4a371`). Les intégrations sont des branchements du portefeuille
+(`tenants.branchements_postgres`, AXE-872)."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select, text, update
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine, Row
 
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.core.rls import appliquer_rls
 
-from .orm import desinscriptions, envois_rappel, integrations_envoi
-from .rappels_envoi import EnvoiRappel, Integration
+from .orm import desinscriptions, envois_rappel
+from .rappels_envoi import EnvoiRappel
 
 
 class PostgresEnvois:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
-
-    def integration(self, tenant_id: TenantId, canal: str) -> Integration | None:
-        with self._engine.connect() as connexion:
-            appliquer_rls(connexion)
-            ligne = connexion.execute(
-                select(integrations_envoi).where(
-                    integrations_envoi.c.tenant_id == tenant_id,
-                    integrations_envoi.c.canal == canal,
-                )
-            ).first()
-        if ligne is None:
-            return None
-        return Integration(
-            TenantId(ligne.tenant_id), ligne.canal, ligne.fournisseur, ligne.parametres_chiffres
-        )
-
-    def canaux_branches(self, tenant_id: TenantId) -> dict[str, datetime]:
-        with self._engine.connect() as connexion:
-            appliquer_rls(connexion)
-            lignes = connexion.execute(
-                select(integrations_envoi.c.canal, integrations_envoi.c.maj_le).where(
-                    integrations_envoi.c.tenant_id == tenant_id
-                )
-            ).all()
-        return {ligne.canal: ligne.maj_le for ligne in lignes}
-
-    def brancher(self, integration: Integration, par: str, le: datetime) -> None:
-        valeurs = {
-            "fournisseur": integration.fournisseur,
-            "parametres_chiffres": integration.parametres_chiffres,
-            "maj_par": par,
-            "maj_le": le,
-        }
-        with self._engine.begin() as connexion:
-            appliquer_rls(connexion)
-            connexion.execute(
-                insert(integrations_envoi)
-                .values(tenant_id=integration.tenant_id, canal=integration.canal, **valeurs)
-                .on_conflict_do_update(
-                    index_elements=[integrations_envoi.c.tenant_id, integrations_envoi.c.canal],
-                    set_=valeurs,
-                )
-            )
 
     def creer(self, envois: Sequence[EnvoiRappel]) -> None:
         if not envois:
@@ -84,6 +40,7 @@ class PostgresEnvois:
                         "tentatives": e.tentatives,
                         "raison": e.raison,
                         "maj_le": e.maj_le,
+                        "branchement_id": e.branchement_id,
                     }
                     for e in envois
                 ],
@@ -109,6 +66,7 @@ class PostgresEnvois:
                     tentatives=envoi.tentatives,
                     raison=envoi.raison,
                     maj_le=envoi.maj_le,
+                    branchement_id=envoi.branchement_id,
                 )
             )
 
@@ -155,4 +113,5 @@ def _envoi(ligne: Row[Any]) -> EnvoiRappel:
         tentatives=ligne.tentatives,
         raison=ligne.raison,
         maj_le=ligne.maj_le,
+        branchement_id=ligne.branchement_id,
     )

@@ -36,7 +36,8 @@ export function SuiviEnvois({ dossierId }: { dossierId: string }) {
     <ul className="mt-3 space-y-1" aria-label="Rappels envoyés">
       {envois.slice(0, 5).map((envoi, index) => (
         <li key={`${envoi.le}-${index}`} className="text-xs text-subtle">
-          {envoi.canal === "mail" ? "E-mail" : "SMS"} · {STATUTS[envoi.statut]}
+          {envoi.canal === "mail" ? "E-mail" : "SMS"}
+          {envoi.branchement ? ` (${envoi.branchement})` : ""} · {STATUTS[envoi.statut]}
           {envoi.le ? ` · ${formatDate(envoi.le.slice(0, 10))}` : ""}
           {envoi.raison ? ` · ${envoi.raison}` : ""}
         </li>

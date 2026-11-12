@@ -12,8 +12,8 @@ des opérations en attente depuis un passage précédent. Le code de sortie
 vaut 1 dès qu'une étape a échoué quelque part, pour que le planificateur le
 signale.
 
-Usage, depuis backend/ (DATABASE_URL, DIGIFACTORY_BASE_URL et
-DIGIFACTORY_TOKEN définis) :
+Usage, depuis backend/ (DATABASE_URL et AXELCOMPTA_CLE_INTEGRATIONS définis).
+L'adresse Digifactory est celle saisie dans Intégrations :
 
     python -m axelcompta.taches
     python -m axelcompta.taches --sans-synchro
@@ -41,6 +41,7 @@ from axelcompta.ledger.repository import soldes_par_journal
 from axelcompta.modeles_distants import assurer_modele
 from axelcompta.notifier import notifier_depuis_base
 from axelcompta.rappels import envoyer, planifier
+from axelcompta.registres_officiels import relire_si_configure
 from axelcompta.synchro_digifactory import ResultatDossier, synchroniser_portefeuille
 from axelcompta.tenants.avenants import programmer_bascules
 from axelcompta.tenants.avenants_postgres import PostgresAvenantRegimeRepository
@@ -239,6 +240,12 @@ def main() -> int:
         bilan.lignes += detecter_portefeuilles(dependances_reelles(), debut.date())
     except Exception as exc:  # noqa: BLE001 — la détection n'arrête pas le passage
         bilan.lignes.append(f"nouveaux chauffeurs : échec ({type(exc).__name__})")
+    try:
+        # AXE-849 : chaque dossier au plus une fois par semaine ; rien sans clés.
+        if (ligne := relire_si_configure()) is not None:
+            bilan.lignes.append(ligne)
+    except Exception as exc:  # noqa: BLE001 — la relecture n'arrête pas le passage
+        bilan.lignes.append(f"registres : échec ({type(exc).__name__})")
     if debut.hour == HEURE_CONTROLE_BALANCE:
         installer_sentry()
         controler_balance(bilan, lambda: soldes_par_journal(engine), _alerter_sentry)
