@@ -20,6 +20,7 @@ carrefour|auchan|franprix|mcdonald|\bquick\b|pizza|\bkfc\b|leclerc(?!.*\bgo\b),r
 urssaf,charges_sociales_impots,haute,,libellés réels échantillon URSSAF
 (?i)\b(dgfip|impots?|sie)\b.*\btva\b|\btva\b.*\b(dgfip|impots?|sie)\b,tva_payee,haute,,"ajoutée le 2026-11-09 (AXE-805) : paiement de la CA3, solde la TVA à décaisser (44551)"
 dgfip,charges_sociales_impots,moyenne,,"peut aussi être une subvention (compte 741) — trancher par le compte PCG, pas le libellé seul"
-\bald\b|arval|leaseplan|\bloa\b|location longue dur[ée]e,loyers_locations,haute,,"absente du pack réduit initial — ajoutée pour le financement véhicule en LOA (doc 06 §3.5, doc 17 §4.3 profil Yanis)"
+\bald\b|arval|leaseplan|location longue dur[ée]e,loyers_locations,haute,,"LLD : location sans option d'achat, compte 613 (doc 06 §3.5)"
+\bloa\b|location avec option,loa_credit_bail_vehicule,haute,,"LOA : crédit-bail, compte 612 ; séparée de la LLD (AXE-803, profil Yanis doc 17 §4.3)"
 virement interne|\binterne\b|transfert entre (vos|mes) comptes|vir(ement)? (de|vers) (mon|votre) compte,virement_interne,basse,,"ajoutée le 2026-09-27 : vocabulaire bancaire générique ; le compte d'en face n'est pas toujours connecté, donc proposée, jamais imputée seule"
 compte courant d.associ|\bcca\b|apport en compte courant,compte_courant_associe,basse,,"ajoutée le 2026-09-27 : vocabulaire générique ; compte selon le statut (455 ou 108), donc proposée, jamais imputée seule"

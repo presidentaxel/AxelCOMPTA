@@ -37,3 +37,19 @@ def test_declarer_lire_et_ceder_une_seule_fois(
         depot.enregistrer_cession(T, D, "v1", cession)
     with pytest.raises(ImmobilisationConnue):
         depot.enregistrer_cession(T, D, "inconnu", cession)
+
+
+def test_un_contrat_de_loa_s_enregistre_une_fois(
+    engine: Engine, creer_dossier: Callable[[str], None]
+) -> None:
+    from axelcompta.closing.loa import ContratLoa
+
+    creer_dossier("d1")
+    depot = PostgresProvisionsClotureRepository(engine)
+    contrat = ContratLoa(
+        "c1", "DIAC", "Austral", date(2026, 4, 1), 36, 450_00, 3_000_00, 9_000_00, 120
+    )
+    depot.ajouter_contrat_loa(T, D, contrat)
+    assert depot.lister_contrats_loa(T, D) == (contrat,)
+    with pytest.raises(ImmobilisationConnue):
+        depot.ajouter_contrat_loa(T, D, contrat)

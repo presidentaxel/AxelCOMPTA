@@ -14,6 +14,7 @@ import dataclasses
 from abc import ABC, abstractmethod
 
 from axelcompta.closing.immobilisations import Cession, Immobilisation
+from axelcompta.closing.loa import ContratLoa
 from axelcompta.closing.models import ProvisionCloture
 from axelcompta.core.errors import Conflit
 from axelcompta.core.ids import DossierId, TenantId
@@ -58,11 +59,24 @@ class ProvisionsClotureRepository(ABC):
     ) -> None:
         """Lève `ImmobilisationConnue` si le bien est déjà cédé ou inconnu."""
 
+    @abstractmethod
+    def lister_contrats_loa(
+        self, tenant_id: TenantId, dossier_id: DossierId
+    ) -> tuple[ContratLoa, ...]:
+        """Les contrats de LOA du dossier (AXE-803), par date de début."""
+
+    @abstractmethod
+    def ajouter_contrat_loa(
+        self, tenant_id: TenantId, dossier_id: DossierId, contrat: ContratLoa
+    ) -> None:
+        """Lève `ImmobilisationConnue` si l'identifiant existe déjà."""
+
 
 class InMemoryProvisionsClotureRepository(ProvisionsClotureRepository):
     def __init__(self) -> None:
         self._par_exercice: dict[tuple[str, str, int], tuple[ProvisionCloture, ...]] = {}
         self._immobilisations: dict[tuple[str, str], dict[str, Immobilisation]] = {}
+        self._contrats: dict[tuple[str, str], dict[str, ContratLoa]] = {}
 
     def lister(
         self, tenant_id: TenantId, dossier_id: DossierId, annee: int
@@ -104,3 +118,17 @@ class InMemoryProvisionsClotureRepository(ProvisionsClotureRepository):
         if fiche is None or fiche.cession is not None:
             raise ImmobilisationConnue("Ce bien est inconnu ou déjà cédé.")
         registre[immobilisation_id] = dataclasses.replace(fiche, cession=cession)
+
+    def lister_contrats_loa(
+        self, tenant_id: TenantId, dossier_id: DossierId
+    ) -> tuple[ContratLoa, ...]:
+        contrats = self._contrats.get((tenant_id, dossier_id), {}).values()
+        return tuple(sorted(contrats, key=lambda c: (c.debut, c.id)))
+
+    def ajouter_contrat_loa(
+        self, tenant_id: TenantId, dossier_id: DossierId, contrat: ContratLoa
+    ) -> None:
+        contrats = self._contrats.setdefault((tenant_id, dossier_id), {})
+        if contrat.id in contrats:
+            raise ImmobilisationConnue("Ce contrat est déjà enregistré.")
+        contrats[contrat.id] = contrat

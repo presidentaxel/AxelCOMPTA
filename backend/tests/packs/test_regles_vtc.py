@@ -51,6 +51,7 @@ EXEMPLES: tuple[tuple[str, str], ...] = (
     ("PRLV URSSAF IDF", "charges_sociales_impots"),
     ("DGFIP IMPOT", "charges_sociales_impots"),
     ("ARVAL SERVICE LEASE", "loyers_locations"),
+    ("PRLV SEPA DIAC LOA 0123", "loa_credit_bail_vehicule"),  # AXE-803 : LOA ≠ LLD
     ("VIREMENT INTERNE", "virement_interne"),
     ("APPORT EN COMPTE COURANT", "compte_courant_associe"),
 )
