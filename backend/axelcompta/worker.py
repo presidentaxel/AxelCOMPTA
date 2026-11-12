@@ -26,7 +26,6 @@ from datetime import UTC, date, datetime
 
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.ingestion.providers.digifactory import DigifactoryHttpClient
 from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, TYPE_RAPPELS, TYPE_SYNCHRO, Job
 from axelcompta.jobs.postgres import FilePostgres
 from axelcompta.modeles_distants import assurer_modele
@@ -38,7 +37,14 @@ from axelcompta.nouveaux_contacts import (
     proposer,
 )
 from axelcompta.rappels import envoyer
-from axelcompta.synchro_digifactory import ResultatDossier, synchroniser_portefeuille
+from axelcompta.synchro_digifactory import (
+    TYPE_DIGIFACTORY,
+    ResultatDossier,
+    client_digifactory,
+    synchroniser_portefeuille,
+)
+from axelcompta.tenants.branchements import Branchement
+from axelcompta.tenants.branchements_postgres import PostgresBranchements
 from axelcompta.tenants.contacts_proposes import ContactsProposesRepository, PropositionStockee
 from axelcompta.tenants.contacts_proposes_postgres import PostgresContactsProposes
 from axelcompta.tenants.import_dossiers import rapport as rapport_import
@@ -57,6 +63,9 @@ from axelcompta.tenants.tags import (
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 
 Contacts = Mapping[str, Mapping[str, object]]
+# AXE-872 : un contact lu par un branchement Digifactory qui n'est pas celui
+# par défaut porte son identifiant ; le dossier créé y est rattaché.
+CLE_BRANCHEMENT = "_branchement"
 Synchroniser = Callable[[tuple[Dossier, ...], frozenset[DossierId]], list[ResultatDossier]]
 
 
@@ -65,12 +74,14 @@ class Dependances:
     dossiers: DossierRepository
     contacts_proposes: ContactsProposesRepository
     tags: TagsRepository
-    lire_contacts: Callable[[], Contacts]
+    lire_contacts: Callable[[TenantId], Contacts]
     lire_fiche: LireFiche
     synchroniser: Synchroniser
     prechauffer: Callable[[tuple[Dossier, ...]], int]
     # AXE-808 : une passe d'envoi des rappels ; bilan par statut.
     envoyer_rappels: Callable[[], dict[str, int]] | None = None
+    # AXE-872 : rattache un dossier créé à son branchement Digifactory.
+    choisir_branchement: Callable[[TenantId, DossierId, str], None] | None = None
 
 
 def _stockee(proposition: Proposition, maintenant: datetime) -> PropositionStockee:
@@ -105,6 +116,9 @@ def creer_les_acceptes(
             continue
         dossier = replace(proposition.dossier, tenant_id=tenant_id)
         deps.dossiers.enregistrer(dossier)
+        origine = contacts.get(proposition.contact_nr, {}).get(CLE_BRANCHEMENT)
+        if isinstance(origine, str) and deps.choisir_branchement is not None:
+            deps.choisir_branchement(tenant_id, dossier.id, origine)
         if tag_depuis_naf(dossier.code_naf) == TAG_CHAUFFEUR:
             deps.tags.poser(
                 tenant_id, dossier.id, TAG_CHAUFFEUR, POSE_PAR_IMPORT, datetime.now(UTC)
@@ -133,11 +147,10 @@ def detecter_portefeuilles(deps: Dependances, aujourd_hui: date) -> list[str]:
     """Passage planifié : propose les nouveaux contacts de chaque portefeuille
     branché sur Digifactory (au moins un dossier avec un contact)."""
     lignes = []
-    contacts: Contacts | None = None
     for tenant in deps.dossiers.lister_tenants():
         if not any(d.contact_nr for d in deps.dossiers.lister_par_tenant(tenant.id)):
             continue
-        contacts = contacts if contacts is not None else deps.lire_contacts()
+        contacts = deps.lire_contacts(tenant.id)
         nouveaux = [p for p in detecter(tenant.id, contacts, deps, aujourd_hui) if p.dossier]
         lignes.append(f"{tenant.id} nouveaux chauffeurs à valider : {len(nouveaux)}")
     return lignes
@@ -147,7 +160,7 @@ def synchroniser_portefeuille_suivi(
     tenant_id: TenantId, deps: Dependances, aujourd_hui: date
 ) -> str:
     """Les trois étapes, et le résumé affiché sous le bouton."""
-    contacts = deps.lire_contacts()
+    contacts = deps.lire_contacts(tenant_id)
     crees = creer_les_acceptes(tenant_id, contacts, deps, aujourd_hui)
     propositions = detecter(tenant_id, contacts, deps, aujourd_hui)
     tous = deps.dossiers.lister_par_tenant(tenant_id)
@@ -216,27 +229,55 @@ def executer_job(job: Job, deps: Dependances, aujourd_hui: date) -> str:
     return synchroniser_portefeuille_suivi(TenantId(job.tenant_id), deps, aujourd_hui)
 
 
-def dependances_reelles() -> Dependances:
-    engine = engine_depuis_env()
-    from axelcompta.demo_api import prechauffer_caches
-
-    async def contacts() -> dict[str, dict[str, object]]:
-        client = DigifactoryHttpClient.depuis_env()
+async def contacts_du_portefeuille(
+    branchements: list[Branchement],
+) -> dict[str, dict[str, object]]:
+    """AXE-872 : les contacts de chaque branchement Digifactory actif, celui
+    par défaut d'abord. Aucun branchement : le jeton de l'environnement."""
+    actifs = sorted((b for b in branchements if b.actif), key=lambda b: not b.par_defaut)
+    sources: list[Branchement | None] = list(actifs) or [None]
+    tous: dict[str, dict[str, object]] = {}
+    for branchement in sources:
+        client = client_digifactory(branchement)
         try:
             brut = await client.contacts()
         finally:
             await client.aclose()
-        return {str(nr): c for nr, c in brut.items() if isinstance(c, dict)}
+        for nr, contact in brut.items():
+            if not isinstance(contact, dict) or str(nr) in tous:
+                continue
+            secondaire = branchement is not None and not branchement.par_defaut
+            tous[str(nr)] = (
+                {**contact, CLE_BRANCHEMENT: branchement.id}
+                if secondaire and branchement
+                else contact
+            )
+    return tous
+
+
+def dependances_reelles() -> Dependances:
+    engine = engine_depuis_env()
+    from axelcompta.demo_api import prechauffer_caches
+
+    branchements = PostgresBranchements(engine)
+
+    async def contacts(tenant_id: TenantId) -> dict[str, dict[str, object]]:
+        return await contacts_du_portefeuille(
+            [b for b in branchements.lister(tenant_id) if b.type == TYPE_DIGIFACTORY]
+        )
 
     return Dependances(
         dossiers=PostgresDossierRepository(engine),
         contacts_proposes=PostgresContactsProposes(engine),
         tags=PostgresTagsRepository(engine),
-        lire_contacts=lambda: asyncio.run(contacts()),
+        lire_contacts=lambda tenant_id: asyncio.run(contacts(tenant_id)),
         lire_fiche=fiche_sirene,
         synchroniser=lambda d, s: synchroniser_portefeuille(engine, d, s),
         prechauffer=lambda d: prechauffer_caches(engine, d),
         envoyer_rappels=lambda: envoyer(engine, datetime.now(UTC)),
+        choisir_branchement=lambda t, d, b: branchements.choisir_pour_dossier(
+            t, d, TYPE_DIGIFACTORY, b
+        ),
     )
 
 

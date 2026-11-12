@@ -42,6 +42,8 @@ from axelcompta.tenants.affectations import AffectationDejaDecidee, DecisionAffe
 from axelcompta.tenants.affectations_postgres import PostgresAffectationRepository
 from axelcompta.tenants.avenants import AvenantRegime, MotifAvenant
 from axelcompta.tenants.avenants_postgres import PostgresAvenantRegimeRepository
+from axelcompta.tenants.branchements import Modification, modifier, nouveau
+from axelcompta.tenants.branchements_postgres import PostgresBranchements
 from axelcompta.tenants.exercices import ExerciceClos, ExerciceDejaClos
 from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
 from axelcompta.tenants.journal_portefeuille_postgres import PostgresJournalPortefeuille
@@ -714,3 +716,41 @@ def test_les_envois_sont_isoles_et_la_desinscription_publique_n_ecrit_qu_elle(
     assert PostgresEnvois(engine).desinscrits([DossierId("karim")]) == {("karim", "mail")}
     (attente,) = PostgresEnvois(engine).en_attente(10)
     assert attente.message == "M"
+
+
+def test_les_branchements_d_un_portefeuille_restent_les_siens(
+    engine: Engine,
+    engine_web: Engine,
+    deux_tenants_trois_dossiers: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AXE-872 (migration `b8d4e1f7a2c6`) : un portefeuille ne lit ni ne
+    choisit les branchements d'un autre ; changer le défaut ne heurte pas
+    l'index « un seul défaut par type »."""
+    monkeypatch.setenv(
+        "AXELCOMPTA_CLE_INTEGRATIONS", "8HzGpdBIGgfDOSnOFZjfeI0MiLgqAkpdHFEDrKZ0KNI="
+    )
+    le = datetime(2026, 11, 11, 10, 0, tzinfo=UTC)
+    smtp = {"hote": "h", "port": "587", "utilisateur": "u", "mot_de_passe": "p", "expediteur": "e"}
+    web = PostgresBranchements(engine_web)
+    with contexte_identite(dossier_id=None, tenant_id="tenant-a"):
+        premier = nouveau([], TenantId("tenant-a"), "mail", "smtp", "A", smtp)
+        web.enregistrer([premier], "admin", le)
+        second = nouveau(
+            web.lister(TenantId("tenant-a")), TenantId("tenant-a"), "mail", "smtp", "B", smtp
+        )
+        web.enregistrer([second], "admin", le)
+        web.enregistrer(
+            modifier(web.lister(TenantId("tenant-a")), second.id, Modification(par_defaut=True)),
+            "admin",
+            le,
+        )
+        web.choisir_pour_dossier(TenantId("tenant-a"), DossierId("karim"), "mail", premier.id)
+        lus = web.lister(TenantId("tenant-a"))
+    assert {(b.nom, b.par_defaut) for b in lus} == {("A", False), ("B", True)}
+    with contexte_identite(dossier_id=None, tenant_id="tenant-b"):
+        assert web.lister(TenantId("tenant-a")) == []
+        assert web.choix_du_dossier(TenantId("tenant-a"), DossierId("karim")) == {}
+    assert PostgresBranchements(engine).choix_du_dossier(
+        TenantId("tenant-a"), DossierId("karim")
+    ) == {"mail": premier.id}

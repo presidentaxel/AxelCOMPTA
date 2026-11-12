@@ -70,3 +70,7 @@ def test_l_api_demarre_sur_une_base_a_jour_et_refuse_une_base_en_retard(
     monkeypatch.setenv(VARIABLE_SANS_VERIFICATION, "1")
     with TestClient(create_app()) as client:  # poste de dev : vérification sautée
         assert client.get("/sante").status_code == 200
+    # Remonte à la tête : une révision qui retire une table (AXE-872 retire
+    # `integrations_envoi`) la recréerait sinon, et le nettoyage du test
+    # (`metadata.drop_all`) ne pourrait plus supprimer `tenants`.
+    command.upgrade(_config(), "head")

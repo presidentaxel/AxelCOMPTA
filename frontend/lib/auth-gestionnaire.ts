@@ -278,22 +278,109 @@ export async function lireIntegrationsEnvoi(): Promise<Record<string, string>> {
   return ((await reponse.json()) as { canaux: Record<string, string> }).canaux;
 }
 
-export async function brancherIntegrationEnvoi(
-  canal: "mail" | "sms",
+/** AXE-872 : une intégration nommée du portefeuille. Jamais d'identifiant. */
+export type Branchement = {
+  id: string;
+  type: "mail" | "sms" | "digifactory";
+  fournisseur: string;
+  nom: string;
+  par_defaut: boolean;
+  actif: boolean;
+  maj_le: string | null;
+  /** Champs non secrets (serveur, expéditeur…). Jamais un jeton. */
+  champs: Record<string, string>;
+  /** Noms des secrets déjà chiffrés. La valeur ne revient pas. */
+  secrets: string[];
+};
+
+export type EssaiBranchement = {
+  statut: "ok" | "echec" | "indisponible";
+  message: string;
+};
+
+export async function listerBranchements(): Promise<Branchement[]> {
+  const reponse = await requeteGestionnaire("/portefeuille/integrations");
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as Branchement[];
+}
+
+export async function ajouterBranchement(
+  type: Branchement["type"],
   fournisseur: string,
+  nom: string,
   parametres: Record<string, string>,
-): Promise<Record<string, string>> {
-  const reponse = await requeteGestionnaire(`/portefeuille/integrations/envoi/${canal}`, {
-    method: "PUT",
+): Promise<Branchement[]> {
+  const reponse = await requeteGestionnaire("/portefeuille/integrations", {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fournisseur, parametres }),
+    body: JSON.stringify({ type, fournisseur, nom, parametres }),
   });
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
-  return ((await reponse.json()) as { canaux: Record<string, string> }).canaux;
+  return (await reponse.json()) as Branchement[];
+}
+
+/** Champs absents : inchangés. `parametres` remplace tous les identifiants. */
+export async function modifierBranchement(
+  id: string,
+  modification: {
+    nom?: string;
+    parametres?: Record<string, string>;
+    par_defaut?: boolean;
+    actif?: boolean;
+  },
+): Promise<Branchement[]> {
+  const reponse = await requeteGestionnaire(
+    `/portefeuille/integrations/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(modification),
+    },
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as Branchement[];
+}
+
+export async function testerBranchement(id: string): Promise<EssaiBranchement> {
+  const reponse = await requeteGestionnaire(
+    `/portefeuille/integrations/${encodeURIComponent(id)}/tester`,
+    { method: "POST" },
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as EssaiBranchement;
+}
+
+/** Type → branchement choisi pour ce dossier (absent : celui par défaut). */
+export async function lireBranchementsDossier(
+  dossierId: string,
+): Promise<Record<string, string>> {
+  const reponse = await requeteGestionnaire(
+    `/dossiers/${encodeURIComponent(dossierId)}/integrations`,
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return ((await reponse.json()) as { choix: Record<string, string> }).choix;
+}
+
+export async function choisirBranchementDossier(
+  dossierId: string,
+  type: Branchement["type"],
+  branchementId: string | null,
+): Promise<Record<string, string>> {
+  const reponse = await requeteGestionnaire(
+    `/dossiers/${encodeURIComponent(dossierId)}/integrations/${type}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ branchement_id: branchementId }),
+    },
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return ((await reponse.json()) as { choix: Record<string, string> }).choix;
 }
 
 export type EnvoiRappel = {
   canal: string;
+  branchement?: string | null;
   statut: "en_attente" | "envoye" | "echec" | "ignore";
   tentatives: number;
   raison: string | null;

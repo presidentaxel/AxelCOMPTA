@@ -8,7 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.demo_api import get_envois
+from axelcompta.demo_api import get_branchements, get_envois
+from axelcompta.tenants.branchements import BranchementsMemoire
 from axelcompta.workflow.rappels_envoi import (
     EnvoisMemoire,
     envois_du_rappel,
@@ -45,38 +46,22 @@ def _client(role: str = "admin") -> tuple[TestClient, EnvoisMemoire]:
     client = _client_et_stubs(role=role)[0]
     depot = EnvoisMemoire()
     client.app.dependency_overrides[get_envois] = lambda: depot  # type: ignore[attr-defined]
+    branchements = BranchementsMemoire()
+    client.app.dependency_overrides[get_branchements] = lambda: branchements  # type: ignore[attr-defined]
     return client, depot
 
 
-def test_l_admin_branche_son_smtp_et_le_secret_ne_revient_jamais() -> None:
-    client, depot = _client()
-    reponse = client.put(
-        "/portefeuille/integrations/envoi/mail", json=SMTP, headers=_en_tete_gestionnaire()
+def test_un_smtp_branche_apparait_dans_les_canaux_sans_son_secret() -> None:
+    client, _depot = _client()
+    ajout = client.post(
+        "/portefeuille/integrations",
+        json={"type": "mail", "nom": "E-mail", **SMTP},
+        headers=_en_tete_gestionnaire(),
     )
     lue = client.get("/portefeuille/integrations/envoi", headers=_en_tete_gestionnaire())
-    assert reponse.status_code == 200, reponse.text
-    assert "mail" in lue.json()["canaux"]
-    assert "tres-secret" not in reponse.text + lue.text
-    integration = depot.integration(TenantId("TENANT_DEMO"), "mail")
-    assert integration is not None and "tres-secret" not in integration.parametres_chiffres
-
-
-def test_seul_l_admin_branche_et_un_champ_manquant_est_refuse() -> None:
-    membre, _ = _client(role="membre")
-    assert (
-        membre.put(
-            "/portefeuille/integrations/envoi/mail", json=SMTP, headers=_en_tete_gestionnaire()
-        ).status_code
-        == 403
-    )
-    admin, _ = _client()
-    incomplet = {"fournisseur": "smtp", "parametres": {"hote": "x"}}
-    assert (
-        admin.put(
-            "/portefeuille/integrations/envoi/mail", json=incomplet, headers=_en_tete_gestionnaire()
-        ).status_code
-        == 422
-    )
+    assert ajout.status_code == 200, ajout.text
+    assert list(lue.json()["canaux"]) == ["mail"]
+    assert "tres-secret" not in ajout.text + lue.text
 
 
 def test_le_lien_de_desinscription_marche_sans_compte_et_seulement_signe() -> None:

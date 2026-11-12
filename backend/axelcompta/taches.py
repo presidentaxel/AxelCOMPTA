@@ -12,8 +12,8 @@ des opérations en attente depuis un passage précédent. Le code de sortie
 vaut 1 dès qu'une étape a échoué quelque part, pour que le planificateur le
 signale.
 
-Usage, depuis backend/ (DATABASE_URL, DIGIFACTORY_BASE_URL et
-DIGIFACTORY_TOKEN définis) :
+Usage, depuis backend/ (DATABASE_URL et AXELCOMPTA_CLE_INTEGRATIONS définis).
+L'adresse Digifactory est celle saisie dans Intégrations :
 
     python -m axelcompta.taches
     python -m axelcompta.taches --sans-synchro

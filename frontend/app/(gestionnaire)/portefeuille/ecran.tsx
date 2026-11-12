@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Aide, pourquoiEnvoi } from "@/components/Aide";
 import { useCanauxEnvoi } from "@/lib/use-canaux-envoi";
+import { IntegrationsDossier } from "@/components/IntegrationsDossier";
 import { SuiviEnvois } from "@/components/SuiviEnvois";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -579,6 +580,7 @@ export function EcranEntreprises() {
               />
             )}
           </dl>
+          <IntegrationsDossier dossierId={choisi.dossier_id} admin={droit.admin} />
           <div className="mt-8">
             <p className="text-sm font-medium text-ink">
               Rappels

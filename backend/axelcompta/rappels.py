@@ -24,6 +24,8 @@ from sqlalchemy.engine import Engine
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.demo_comptes import SupabaseCompteRepository, SupabaseConfig
 from axelcompta.ledger.repository import PostgresLedgerService
+from axelcompta.tenants.branchements import types_branches
+from axelcompta.tenants.branchements_postgres import PostgresBranchements
 from axelcompta.tenants.orm import rappels, regles_rappel
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
@@ -90,7 +92,7 @@ def planifier(engine: Engine, maintenant: datetime) -> int:
             en_attente = [dates[i] for i in ecritures_a_trancher(ledger, decisions, dossier.id)]
             if en_attente:
                 a_traiter[dossier.id] = min(en_attente)
-        branches = list(envois.canaux_branches(tenant.id))
+        branches = list(types_branches(PostgresBranchements(engine).lister(tenant.id)))
         for rappel in rappels_a_creer(
             regles, dossiers, _deja(engine, tenant.id), a_traiter, maintenant.date()
         ):
@@ -154,4 +156,6 @@ def envoyer(engine: Engine, maintenant: datetime) -> dict[str, int]:
         nb_a_traiter=lambda d: len(ecritures_a_trancher(ledger, decisions, d)),
         base_url=os.environ.get(VARIABLE_URL_APP, "http://localhost:3000").rstrip("/"),
     )
-    return envoyer_en_attente(PostgresEnvois(engine), contexte, expediteur_de, maintenant)
+    return envoyer_en_attente(
+        PostgresEnvois(engine), PostgresBranchements(engine), contexte, expediteur_de, maintenant
+    )
