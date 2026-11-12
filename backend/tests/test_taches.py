@@ -205,3 +205,17 @@ def test_un_desequilibre_de_balance_declenche_l_alerte() -> None:
     assert len(alertes) == 2  # le journal, puis le total du dossier
     assert bilan.lignes[0].startswith("ALERTE balance déséquilibrée : a, journal OD")
     assert "balance_desequilibree_total 2" in METRIQUES.texte()
+
+
+def test_le_rattrapage_rollee_dit_son_echec_sans_arreter_le_passage() -> None:
+    """AXE-820."""
+    from axelcompta.taches import _rollee
+
+    def panne() -> list[str]:
+        raise ConnectionError("Rollee injoignable")
+
+    assert _rollee(lambda: ["DIGI_1 : 2 compte(s), 0 à reconnecter"]) == [
+        "rollee DIGI_1 : 2 compte(s), 0 à reconnecter"
+    ]
+    assert _rollee(lambda: []) == ["rollee : aucun dossier relié"]
+    assert _rollee(panne) == ["rollee : échec (ConnectionError)"]

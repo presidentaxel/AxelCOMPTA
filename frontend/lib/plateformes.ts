@@ -31,3 +31,16 @@ export function resumePlateformes(s: SynthesePlateformes): string {
         : "Aucune plateforme reliée";
   return s.a_reconnecter > 0 ? `${base} · ${s.a_reconnecter} à reconnecter` : base;
 }
+
+/** AXE-821 : où en est le rapprochement d'un versement avec la banque. */
+export const ETATS_VERSEMENT: Record<string, string> = {
+  en_attente_banque: "virement pas encore reçu",
+  reconcilie: "rapproché",
+  a_classer: "à classer en recette",
+  a_verifier: "à vérifier",
+};
+
+export function etatVersement(etat: string, motif: string | null): string {
+  const libelle = ETATS_VERSEMENT[etat] ?? etat;
+  return etat === "a_verifier" && motif ? `${libelle} : ${motif}` : libelle;
+}

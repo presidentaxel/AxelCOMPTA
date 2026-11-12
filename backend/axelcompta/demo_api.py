@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol, cast
 
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, insert, select, update
@@ -174,6 +175,8 @@ from axelcompta.ingestion.journal import EntreeQuarantaine, JournalIngestion
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ingestion.providers.digifactory import normaliser_payload
+from axelcompta.ingestion.settlements_plateforme import SettlementsRepository
+from axelcompta.ingestion.settlements_plateforme_postgres import PostgresSettlements
 from axelcompta.jobs.file import (
     TYPE_IMPORT_DOSSIERS,
     TYPE_RAPPELS,
@@ -202,9 +205,12 @@ from axelcompta.packs.vtc_demo import (
     plancher_de,
 )
 from axelcompta.plateformes_rollee import (
+    DepotReception,
+    ReceptionPostgres,
     RolleeNonBranche,
     ServicesRollee,
     ouvrir_session,
+    recevoir,
     relire_comptes,
 )
 from axelcompta.tenants.affectations import AffectationRepository
@@ -291,6 +297,7 @@ from axelcompta.tenants.tags import (
 )
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.tester_branchement import tester as tester_branchement
+from axelcompta.webhooks_rollee import preparer as preparer_webhook
 from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT
 from axelcompta.workflow.classees import (
     Filtres,
@@ -6230,6 +6237,17 @@ class EssaiVue(BaseModel):
     message: str
 
 
+class FicheWebhookVue(BaseModel):
+    """Valeurs à reporter dans le formulaire Rollee. Le secret est chiffré
+    au repos ; il ne sort qu'ici, pour l'admin qui relie ce compte."""
+
+    url: str
+    secret: str
+    methode: str
+    evenements: list[str]
+    joignable: bool
+
+
 class ChoixDossierEntree(BaseModel):
     """`None` : le dossier revient au branchement par défaut."""
 
@@ -6345,6 +6363,33 @@ def _enregistrer_route_tester_branchement(app: FastAPI) -> None:
             branchement, garder_parametre(branchements, branchement, "jeton", par)
         )
         return EssaiVue(statut=essai.statut, message=essai.message)
+
+
+def _enregistrer_route_fiche_webhook(app: FastAPI) -> None:
+    """AXE-820 : le popup « Relier » donne l'adresse et le secret de ce compte."""
+
+    @app.post("/portefeuille/integrations/{branchement_id}/webhook", response_model=FicheWebhookVue)
+    def preparer_fiche_webhook(
+        branchement_id: str,
+        request: Request,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        branchements: BranchementsDep,
+    ) -> FicheWebhookVue:
+        tenant_id, _par = _admin_du_portefeuille(identite, role)
+        branchement = next(
+            (b for b in branchements.lister(tenant_id) if b.id == branchement_id), None
+        )
+        if branchement is None or branchement.type != "rollee":
+            raise BranchementIntrouvable(f"Branchement Rollee inconnu : {branchement_id}")
+        fiche = preparer_webhook(branchements, branchement, str(request.base_url))
+        return FicheWebhookVue(
+            url=fiche.url,
+            secret=fiche.secret,
+            methode=fiche.methode,
+            evenements=list(fiche.evenements),
+            joignable=fiche.joignable,
+        )
 
 
 def _enregistrer_routes_branchements_dossier(app: FastAPI) -> None:
@@ -6465,13 +6510,88 @@ def _enregistrer_routes_plateformes(app: FastAPI) -> None:
         )
 
 
+def get_reception_rollee() -> DepotReception:
+    """AXE-820 : la route publique du webhook, sans identité."""
+    return ReceptionPostgres(_engine())
+
+
+ReceptionRolleeDep = Annotated[DepotReception, Depends(get_reception_rollee)]
+_STATUT_RECEPTION = {"inconnu": 404, "refuse": 401, "illisible": 400}
+
+
+def _enregistrer_route_webhook_rollee(app: FastAPI) -> None:
+    @app.post("/webhooks/rollee/{branchement_id}", status_code=200)
+    async def webhook_rollee(
+        branchement_id: str, request: Request, depot: ReceptionRolleeDep
+    ) -> dict[str, str]:
+        """Public : la signature `X-Signature` (HMAC SHA-512, secret du
+        branchement) fait foi. Répond tout de suite ; la file traite."""
+        corps = await request.body()
+        signature = request.headers.get("X-Signature")
+        issue = await run_in_threadpool(
+            recevoir, depot, branchement_id, corps, signature, datetime.now(UTC)
+        )
+        if issue in _STATUT_RECEPTION:
+            raise HTTPException(status_code=_STATUT_RECEPTION[issue], detail=issue)
+        return {"statut": issue}
+
+
+def get_settlements() -> SettlementsRepository:
+    """AXE-821 : relevés de revenus des plateformes et leur rapprochement."""
+    return PostgresSettlements(_engine())
+
+
+SettlementsDep = Annotated[SettlementsRepository, Depends(get_settlements)]
+
+
+class VersementPlateformeVue(BaseModel):
+    """Côté chauffeur seulement (doc 19 : le gestionnaire ne voit pas de montant)."""
+
+    plateforme: str
+    du: str
+    au: str
+    brut_cts: int
+    commission_cts: int
+    verse_cts: int
+    etat: str  # en_attente_banque | reconcilie | a_classer | a_verifier
+    motif: str | None
+
+
+def _enregistrer_route_versements(app: FastAPI) -> None:
+    @app.get(
+        "/dossiers/{dossier_id}/versements-plateformes",
+        response_model=list[VersementPlateformeVue],
+    )
+    def lire_versements(
+        dossier: DossierDep, settlements: SettlementsDep
+    ) -> list[VersementPlateformeVue]:
+        """Les 20 dernières périodes : brut, commission, versé, et où en est
+        le rapprochement avec la banque."""
+        return [
+            VersementPlateformeVue(
+                plateforme=s.settlement.platform,
+                du=s.settlement.period_start.isoformat(),
+                au=s.settlement.period_end.isoformat(),
+                brut_cts=s.settlement.gross_earnings_cts,
+                commission_cts=s.settlement.commission_cts,
+                verse_cts=s.settlement.net_payout_cts,
+                etat=s.etat,
+                motif=s.motif,
+            )
+            for s in reversed(settlements.lister(dossier.id)[-20:])
+        ]
+
+
 def _enregistrer_routes_integrations(app: FastAPI) -> None:
     """Branchements, envois et plateformes Rollee (AXE-872, AXE-808, AXE-819)."""
     _enregistrer_routes_branchements(app)
     _enregistrer_route_tester_branchement(app)
+    _enregistrer_route_fiche_webhook(app)
     _enregistrer_routes_branchements_dossier(app)
     _enregistrer_routes_envoi(app)
     _enregistrer_routes_plateformes(app)
+    _enregistrer_route_webhook_rollee(app)
+    _enregistrer_route_versements(app)
 
 
 def _enregistrer_routes_envoi(app: FastAPI) -> None:

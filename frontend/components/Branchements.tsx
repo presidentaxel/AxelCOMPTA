@@ -3,11 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/Badge";
+import { FicheWebhookRollee } from "@/components/FicheWebhookRollee";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
   ajouterBranchement,
+  listerBranchements,
   modifierBranchement,
   testerBranchement,
   type Branchement,
@@ -16,6 +18,7 @@ import { TYPES_BRANCHEMENT } from "@/lib/branchements";
 import { formatDate } from "@/lib/format";
 
 type Edition = { mode: "ajout" } | { mode: "identifiants" | "nom"; id: string } | null;
+type ResultatAction = Branchement[] | string | { message: string; liste: Branchement[] };
 
 function message(exception: unknown, defaut: string): string {
   return exception instanceof Error ? exception.message : defaut;
@@ -54,7 +57,7 @@ export function BranchementsType({
     return () => window.clearTimeout(delai);
   }, [info, infoEphemere]);
 
-  async function agir(action: () => Promise<Branchement[] | string>) {
+  async function agir(action: () => Promise<ResultatAction>) {
     setEnCours(true);
     setInfo(null);
     try {
@@ -62,9 +65,14 @@ export function BranchementsType({
       if (typeof resultat === "string") {
         setInfoEphemere(true);
         setInfo(resultat);
-      } else {
+      } else if (Array.isArray(resultat)) {
         setInfoEphemere(false);
         onChange(resultat);
+        setEdition(null);
+      } else {
+        setInfoEphemere(true);
+        setInfo(resultat.message);
+        onChange(resultat.liste);
         setEdition(null);
       }
     } catch (exception) {
@@ -105,6 +113,9 @@ export function BranchementsType({
               edition={edition}
               setEdition={setEdition}
               agir={agir}
+              recharger={() => {
+                void listerBranchements().then(onChange);
+              }}
             />
           ))}
         </ul>
@@ -141,14 +152,17 @@ function LigneBranchement({
   edition,
   setEdition,
   agir,
+  recharger,
 }: {
   branchement: Branchement;
   admin: boolean;
   enCours: boolean;
   edition: Edition;
   setEdition: (edition: Edition) => void;
-  agir: (action: () => Promise<Branchement[] | string>) => Promise<void>;
+  agir: (action: () => Promise<ResultatAction>) => Promise<void>;
+  recharger: () => void;
 }) {
+  const [relier, setRelier] = useState(false);
   const enEdition = edition !== null && edition.mode !== "ajout" && edition.id === b.id;
   const actions = [
     {
@@ -182,6 +196,9 @@ function LigneBranchement({
           </span>
           {b.par_defaut && b.type !== "rollee" && <Badge variant="neutral">Par défaut</Badge>}
           {!b.actif && <Badge variant="closed">Désactivé</Badge>}
+          {b.type === "rollee" && b.secrets.includes("secret_webhook") && (
+            <Badge variant="neutral">Webhook prêt</Badge>
+          )}
         </div>
         {b.secrets.length > 0 && (
           <span className="hidden shrink-0 text-xs text-subtle sm:block">Masqué</span>
@@ -193,6 +210,17 @@ function LigneBranchement({
         )}
         {admin && !enEdition && (
           <>
+            {b.type === "rollee" && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={enCours}
+                onClick={() => setRelier(true)}
+              >
+                {b.secrets.includes("secret_webhook") ? "Voir le webhook" : "Relier"}
+              </Button>
+            )}
             <Button
               type="button"
               variant="ghost"
@@ -211,6 +239,9 @@ function LigneBranchement({
           </>
         )}
       </div>
+      {relier && (
+        <FicheWebhookRollee id={b.id} onFermer={() => setRelier(false)} onPrepare={recharger} />
+      )}
       {enEdition && edition.mode === "nom" && (
         <div className="px-5 pb-3">
           <Renommer

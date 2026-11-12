@@ -123,3 +123,43 @@ comptes_rollee = Table(
     Column("relie_le", DateTime(timezone=True), nullable=True),
     Column("maj_le", DateTime(timezone=True), nullable=False),
 )
+
+# AXE-820 : webhooks Rollee reçus, gardés tels quels, traités par la file.
+# Identifiant = empreinte du corps : un webhook rejoué n'est gardé qu'une fois.
+evenements_rollee = Table(
+    "evenements_rollee",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False, index=True),
+    Column("branchement_id", String, nullable=False),
+    Column("type", String, nullable=False),
+    Column("payload", JSON, nullable=False),
+    Column("recu_le", DateTime(timezone=True), nullable=False),
+    Column("traite_le", DateTime(timezone=True), nullable=True),
+    Column("resultat", String, nullable=True),
+)
+
+# AXE-821 : relevés de revenus des plateformes (Rollee), une ligne par compte
+# et par période, et leur rapprochement avec le virement en banque.
+settlements_plateforme = Table(
+    "settlements_plateforme",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("account_id", String, nullable=False),
+    Column("plateforme", String, nullable=False),
+    Column("periode_debut", Date, nullable=False),
+    Column("periode_fin", Date, nullable=False),
+    Column("verse_le", Date, nullable=False),
+    Column("brut_cts", BigInteger, nullable=False),
+    Column("commission_cts", BigInteger, nullable=False),
+    Column("regime_tva_commission", String, nullable=False),
+    Column("verse_cts", BigInteger, nullable=False),
+    Column("devise", String, nullable=False),
+    Column("source", String, nullable=False),
+    Column("payload", JSON, nullable=False),
+    Column("etat", String, nullable=False),
+    Column("ecriture_id", String, nullable=True),
+    Column("motif", String, nullable=True),
+    Column("maj_le", DateTime(timezone=True), nullable=False),
+)

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
+import json
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -10,11 +13,16 @@ import pytest
 
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.ingestion.comptes_rollee import ComptesRolleeMemoire
+from axelcompta.ingestion.webhooks_rollee import EvenementRollee, EvenementsRolleeMemoire
 from axelcompta.plateformes_rollee import (
     RolleeNonBranche,
     ServicesRollee,
+    Suivi,
     ouvrir_session,
+    rattraper,
+    recevoir,
     relire_comptes,
+    traiter_evenements,
 )
 from axelcompta.tenants.branchements import (
     Branchement,
@@ -23,7 +31,8 @@ from axelcompta.tenants.branchements import (
     modifier,
     nouveau,
 )
-from axelcompta.tenants.models import Dossier
+from axelcompta.tenants.memory import InMemoryDossierRepository
+from axelcompta.tenants.models import Dossier, Tenant
 
 T = TenantId("t")
 LE = datetime(2026, 11, 11, tzinfo=UTC)
@@ -150,3 +159,120 @@ def test_un_branchement_desactive_bloque_le_user_qui_en_depend() -> None:
     )
     with pytest.raises(RolleeNonBranche, match="désactivé"):
         asyncio.run(relire_comptes(services, DOSSIER))
+
+
+# --- AXE-820 : webhooks et rattrapage ---------------------------------------
+
+
+class _Reception:
+    def __init__(self, parametres_chiffres: str | None) -> None:
+        self.parametres = parametres_chiffres
+        self.evenements = EvenementsRolleeMemoire()
+        self.demandes: list[str] = []
+
+    def branchement(self, _id: str) -> tuple[TenantId, str] | None:
+        return (T, self.parametres) if self.parametres else None
+
+    def garder(self, evenement: EvenementRollee) -> bool:
+        return self.evenements.garder(evenement)
+
+    def demander_traitement(self, tenant_id: TenantId) -> None:
+        self.demandes.append(tenant_id)
+
+
+def _avec_secret() -> str:
+    cree = nouveau(
+        [],
+        T,
+        "rollee",
+        "rollee",
+        "Rollee",
+        {"jeton": "j", "environnement": "sandbox", "secret_webhook": "s3cret"},
+    )
+    return cree.parametres_chiffres
+
+
+def _signer(corps: bytes) -> str:
+    return hmac.new(b"s3cret", corps, hashlib.sha512).hexdigest()
+
+
+def test_recevoir_verifie_garde_une_fois_et_depose_un_job() -> None:
+    reception = _Reception(_avec_secret())
+    corps = json.dumps({"action": "disconnect_account", "data": {"user_id": "user-1"}}).encode()
+    assert recevoir(reception, "b1", corps, "mauvaise", LE) == "refuse"
+    assert recevoir(reception, "b1", corps, _signer(corps), LE) == "garde"
+    assert recevoir(reception, "b1", corps, _signer(corps), LE) == "deja_recu"
+    assert reception.demandes == [T]
+    assert recevoir(_Reception(None), "inconnu", corps, _signer(corps), LE) == "inconnu"
+    assert recevoir(reception, "b1", b"x", _signer(b"x"), LE) == "illisible"
+
+
+def _suivi(
+    services: ServicesRollee, notifications: list[str], revenus: list[str] | None = None
+) -> Suivi:
+    dossiers = InMemoryDossierRepository()
+    dossiers.enregistrer_tenant(Tenant(id=T, nom="T"))
+    dossiers.enregistrer(DOSSIER)
+    return Suivi(
+        services=services,
+        evenements=EvenementsRolleeMemoire(),
+        dossiers=dossiers,
+        notifier=lambda d: notifications.append(d),
+        relever_revenus=_faux_releve(revenus) if revenus is not None else None,
+    )
+
+
+def _faux_releve(revenus: list[str]) -> Any:
+    async def relever(dossier: Dossier) -> str:
+        revenus.append(dossier.id)
+        return "revenus lus"
+
+    return relever
+
+
+def _evenement(payload: dict[str, Any]) -> EvenementRollee:
+    return EvenementRollee(
+        json.dumps(payload), T, "b1", str(payload.get("type") or payload.get("action")), payload, LE
+    )
+
+
+def test_une_plateforme_perdue_previent_le_chauffeur_une_fois() -> None:
+    services, _journal, _ = _services()
+    asyncio.run(ouvrir_session(services, DOSSIER))
+    notifications: list[str] = []
+    suivi = _suivi(services, notifications)
+    perte = {"action": "disconnect_account", "data": {"user_id": "user-1", "id": "acc-b"}}
+    suivi.evenements.garder(_evenement(perte))
+    suivi.evenements.garder(_evenement({**perte, "rejoue": 1}))
+
+    resultat = traiter_evenements(suivi, T)
+
+    assert notifications == ["DIGI_1"]  # Bolt perdu, pas deux fois
+    assert resultat == "2 événements Rollee traités"
+    assert suivi.evenements.a_traiter(T, 10) == []
+
+
+def test_des_donnees_pretes_relevent_les_revenus_et_l_inconnu_est_ignore() -> None:
+    services, _journal, _ = _services()
+    asyncio.run(ouvrir_session(services, DOSSIER))
+    revenus: list[str] = []
+    suivi = _suivi(services, [], revenus)
+    suivi.evenements.garder(
+        _evenement({"type": "update_multi_endpoint", "data": {"user_id": "user-1"}})
+    )
+    suivi.evenements.garder(_evenement({"type": "rollee_connect_events", "data": {}}))
+    suivi.evenements.garder(_evenement({"type": "update_endpoint", "data": {"user_id": "inconnu"}}))
+    traiter_evenements(suivi, T)
+    assert isinstance(suivi.evenements, EvenementsRolleeMemoire)
+    resultats = sorted(e.resultat or "" for e in suivi.evenements.evenements.values())
+    assert revenus == ["DIGI_1"]
+    assert resultats == ["ignoré (rollee_connect_events)", "revenus lus", "user inconnu inconnu"]
+
+
+def test_le_rattrapage_relit_chaque_dossier_relie() -> None:
+    services, journal, _ = _services()
+    asyncio.run(ouvrir_session(services, DOSSIER))
+    revenus: list[str] = []
+    lignes = rattraper(_suivi(services, [], revenus))
+    assert revenus == ["DIGI_1"] and "comptes user-1" in journal
+    assert lignes == ["revenus lus"]

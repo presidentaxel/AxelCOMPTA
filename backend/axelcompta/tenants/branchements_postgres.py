@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 
@@ -112,3 +112,29 @@ class PostgresBranchements:
                     set_={"branchement_id": branchement_id},
                 )
             )
+
+
+def branchement_pour_webhook(engine: Engine, branchement_id: str) -> tuple[TenantId, str] | None:
+    """AXE-820 : la route publique d'un webhook Rollee, sans identité, ne lit
+    que le portefeuille et les paramètres chiffrés d'un branchement Rollee
+    actif (fonction `axelcompta_webhook_rollee`, migration `d6b2f8a4c3e7`)."""
+    with engine.connect() as connexion:
+        ligne = connexion.execute(
+            text("SELECT * FROM axelcompta_webhook_rollee(:b)"), {"b": branchement_id}
+        ).first()
+    if ligne is None:
+        return None
+    return TenantId(ligne.tenant_id), str(ligne.parametres_chiffres)
+
+
+def branchement_par_id(engine: Engine, branchement_id: str) -> Branchement | None:
+    """Rôle propriétaire (scripts d'administration) : un branchement par son
+    identifiant, quel que soit son portefeuille."""
+    with engine.connect() as connexion:
+        tenant_id = connexion.execute(
+            select(branchements.c.tenant_id).where(branchements.c.id == branchement_id)
+        ).scalar()
+    if tenant_id is None:
+        return None
+    lus = PostgresBranchements(engine).lister(TenantId(tenant_id))
+    return next((b for b in lus if b.id == branchement_id), None)

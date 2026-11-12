@@ -100,6 +100,14 @@ def synthese(
 class ComptesRolleeRepository(Protocol):
     def utilisateur(self, dossier_id: DossierId) -> UtilisateurRollee | None: ...
 
+    def dossier_du_user(self, rollee_user_id: str) -> DossierId | None:
+        """AXE-820 : un webhook ne connaît que le user Rollee."""
+        ...
+
+    def dossiers_relies(self) -> list[DossierId]:
+        """Les dossiers qui ont un user Rollee (rattrapage quotidien)."""
+        ...
+
     def enregistrer_utilisateur(self, utilisateur: UtilisateurRollee, le: datetime) -> None: ...
 
     def comptes(self, dossier_id: DossierId) -> list[CompteRelie]: ...
@@ -116,6 +124,19 @@ class ComptesRolleeMemoire:
 
     def utilisateur(self, dossier_id: DossierId) -> UtilisateurRollee | None:
         return self.utilisateurs.get(dossier_id)
+
+    def dossier_du_user(self, rollee_user_id: str) -> DossierId | None:
+        return next(
+            (
+                u.dossier_id
+                for u in self.utilisateurs.values()
+                if u.rollee_user_id == rollee_user_id
+            ),
+            None,
+        )
+
+    def dossiers_relies(self) -> list[DossierId]:
+        return sorted(DossierId(d) for d in self.utilisateurs)
 
     def enregistrer_utilisateur(self, utilisateur: UtilisateurRollee, le: datetime) -> None:
         self.utilisateurs[utilisateur.dossier_id] = utilisateur

@@ -17,6 +17,16 @@ ne dépend jamais d'`ingestion` en retour, règle absolue doc 03 §3).
   libellé contenant le nom de la plateforme. Trois états rapportés (doc 13
   §4.3, réduit) : `RECONCILIE`, `EN_ATTENTE_BANQUE`, `REVUE_MANUELLE` — pas
   de file de revue construite (doc 17 §3), l'état est juste rapporté.
+- `settlements_plateforme.py` (AXE-821) — relevés de revenus des
+  plateformes gardés une fois par compte et par période, et leur état de
+  rapprochement (`en_attente_banque`, `reconcilie`, `a_classer`,
+  `a_verifier`). Un relevé déjà ventilé n'est jamais réécrit. Le
+  rapprochement et la ventilation sont orchestrés par
+  `axelcompta/revenus_rollee.py`.
+- `ecritures_settlement.py`, `ecriture_de_ventilation()` (AXE-821) — l'OD
+  `{virement}:ventilation-plateforme` qui reprend le net du 706 et pose
+  brut HT, TVA et commission. Le virement n'est pas modifié, le 512 ne
+  bouge pas, aucune ligne au 471.
 - `ecritures_settlement.py` — `construire_ecriture_settlement()` (doc 13 §5,
   **fait semaine 2**) : ventilation TVA réelle depuis un settlement
   réconcilié, templates de données par régime de commission (`france_20`
