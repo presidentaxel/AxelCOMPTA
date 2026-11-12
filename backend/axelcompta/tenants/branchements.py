@@ -42,6 +42,9 @@ CHAMPS_FACULTATIFS: dict[str, tuple[str, ...]] = {
     # Vide : l'adresse de `DIGIFACTORY_BASE_URL`.
     "digifactory": ("url",),
 }
+# Jamais renvoyés à l'écran. Un champ vide à la mise à jour garde la valeur
+# déjà chiffrée : on retape le jeton seulement pour le remplacer.
+SECRETS = frozenset({"mot_de_passe", "cle_api", "jeton"})
 NOM_MAX = 60
 
 
@@ -90,6 +93,29 @@ def chiffrer_parametres(fournisseur: str, parametres: dict[str, str]) -> str:
         if str(parametres.get(c, "")).strip()
     }
     return chiffrer(json.dumps(utiles))
+
+
+def fusionner_parametres(actuel: Branchement, saisis: dict[str, str]) -> str:
+    """Rechiffre avec la clé d'environnement. Un secret vide garde l'ancien."""
+    fusion = actuel.parametres()
+    for cle, valeur in saisis.items():
+        texte = str(valeur).strip()
+        if cle in SECRETS:
+            if texte:
+                fusion[cle] = texte
+            continue
+        if texte:
+            fusion[cle] = texte
+        else:
+            fusion.pop(cle, None)
+    return chiffrer_parametres(actuel.fournisseur, fusion)
+
+
+def lecture_publique(branchement: Branchement) -> tuple[dict[str, str], tuple[str, ...]]:
+    """Champs lisibles, et les noms des secrets enregistrés. Pas leurs valeurs."""
+    valeurs = branchement.parametres()
+    publics = {cle: valeur for cle, valeur in valeurs.items() if cle not in SECRETS}
+    return publics, tuple(cle for cle in valeurs if cle in SECRETS)
 
 
 def _nom_valide(nom: str) -> str:
@@ -159,8 +185,7 @@ def modifier(
         suite = replace(suite, nom=nom)
     if modification.parametres is not None:
         suite = replace(
-            suite,
-            parametres_chiffres=chiffrer_parametres(actuel.fournisseur, modification.parametres),
+            suite, parametres_chiffres=fusionner_parametres(actuel, modification.parametres)
         )
     if modification.actif is not None:
         suite = replace(suite, actif=modification.actif)

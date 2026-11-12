@@ -287,6 +287,10 @@ export type Branchement = {
   par_defaut: boolean;
   actif: boolean;
   maj_le: string | null;
+  /** Champs non secrets (serveur, expéditeur…). Jamais un jeton. */
+  champs: Record<string, string>;
+  /** Noms des secrets déjà chiffrés. La valeur ne revient pas. */
+  secrets: string[];
 };
 
 export type EssaiBranchement = {

@@ -171,6 +171,9 @@ function LigneBranchement({
           {b.par_defaut && <Badge variant="neutral">Par défaut</Badge>}
           {!b.actif && <Badge variant="closed">Désactivé</Badge>}
         </div>
+        {b.secrets.length > 0 && (
+          <span className="hidden shrink-0 text-xs text-subtle sm:block">Masqué</span>
+        )}
         {b.maj_le && (
           <span className="hidden shrink-0 text-xs text-subtle sm:block">
             Réglé le {formatDate(b.maj_le.slice(0, 10))}
@@ -212,6 +215,7 @@ function LigneBranchement({
             type={b.type}
             avecNom={false}
             enCours={enCours}
+            existant={{ champs: b.champs, secrets: b.secrets }}
             onAnnuler={() => setEdition(null)}
             onValider={(_nom, parametres) =>
               agir(() => modifierBranchement(b.id, { parametres }))
@@ -323,22 +327,52 @@ function Renommer({
   );
 }
 
+function SaisieSecrete({
+  value,
+  onChange,
+  required,
+  dejaEnregistre,
+}: {
+  value: string;
+  onChange: (valeur: string) => void;
+  required: boolean;
+  dejaEnregistre: boolean;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <Input
+      type={visible ? "text" : "password"}
+      required={required}
+      autoComplete="new-password"
+      spellCheck={false}
+      value={value}
+      placeholder={dejaEnregistre ? "Retaper pour remplacer" : undefined}
+      onFocus={() => setVisible(true)}
+      onBlur={() => setVisible(false)}
+      onChange={(e) => onChange(e.target.value)}
+      className="mt-1"
+    />
+  );
+}
+
 function FormulaireBranchement({
   type,
   avecNom,
   enCours,
+  existant,
   onAnnuler,
   onValider,
 }: {
   type: Branchement["type"];
   avecNom: boolean;
   enCours: boolean;
+  existant?: { champs: Record<string, string>; secrets: string[] };
   onAnnuler: () => void;
   onValider: (nom: string, parametres: Record<string, string>) => void;
 }) {
   const config = TYPES_BRANCHEMENT[type];
   const [nom, setNom] = useState("");
-  const [valeurs, setValeurs] = useState<Record<string, string>>({});
+  const [valeurs, setValeurs] = useState<Record<string, string>>(existant?.champs ?? {});
   return (
     <form
       className="space-y-3"
@@ -360,19 +394,38 @@ function FormulaireBranchement({
             />
           </label>
         )}
-        {config.champs.map((champ) => (
-          <label key={champ.cle} className="block text-sm text-ink">
-            {champ.libelle}
-            <Input
-              type={champ.type}
-              required={!champ.facultatif}
-              autoComplete="off"
-              value={valeurs[champ.cle] ?? ""}
-              onChange={(e) => setValeurs((v) => ({ ...v, [champ.cle]: e.target.value }))}
-              className="mt-1"
-            />
-          </label>
-        ))}
+        {config.champs.map((champ) => {
+          const dejaEnregistre = existant?.secrets.includes(champ.cle) ?? false;
+          return (
+            <label key={champ.cle} className="block text-sm text-ink">
+              {champ.libelle}
+              {champ.secret && (
+                <span className="mt-0.5 block text-xs font-normal text-subtle">
+                  {dejaEnregistre
+                    ? "Déjà chiffré, plus affiché. Retapez-le seulement pour le changer."
+                    : "Visible pendant la saisie. Il ne reviendra pas à l'écran."}
+                </span>
+              )}
+              {champ.secret ? (
+                <SaisieSecrete
+                  value={valeurs[champ.cle] ?? ""}
+                  required={!champ.facultatif && !dejaEnregistre}
+                  dejaEnregistre={dejaEnregistre}
+                  onChange={(valeur) => setValeurs((v) => ({ ...v, [champ.cle]: valeur }))}
+                />
+              ) : (
+                <Input
+                  type={champ.type}
+                  required={!champ.facultatif}
+                  autoComplete="off"
+                  value={valeurs[champ.cle] ?? ""}
+                  onChange={(e) => setValeurs((v) => ({ ...v, [champ.cle]: e.target.value }))}
+                  className="mt-1"
+                />
+              )}
+            </label>
+          );
+        })}
       </div>
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={enCours}>

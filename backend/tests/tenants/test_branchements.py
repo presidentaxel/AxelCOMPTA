@@ -93,6 +93,22 @@ def test_le_seul_d_un_type_se_desactive_puis_redevient_le_defaut() -> None:
     assert list(types_branches(depot.lister(T))) == ["mail"]
 
 
+def test_un_secret_vide_garde_l_ancien_et_reste_chiffre() -> None:
+    depot = BranchementsMemoire()
+    cree = _ajouter(depot, "A")
+    avant = cree.parametres_chiffres
+    (suite,) = modifier(
+        depot.lister(T),
+        cree.id,
+        Modification(parametres={**SMTP, "mot_de_passe": "  ", "hote": "autre.example"}),
+    )
+    assert suite.parametres()["mot_de_passe"] == "secret"
+    assert suite.parametres()["hote"] == "autre.example"
+    assert suite.parametres_chiffres != avant
+    assert "secret" not in suite.parametres_chiffres
+    assert "autre.example" not in suite.parametres_chiffres
+
+
 def test_renommer_et_changer_les_identifiants() -> None:
     depot = BranchementsMemoire()
     cree = _ajouter(depot, "A")

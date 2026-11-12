@@ -5,6 +5,8 @@ type Champ = {
   libelle: string;
   type: "text" | "number" | "password" | "email" | "url";
   facultatif?: boolean;
+  /** Jeton, clé ou mot de passe : visible le temps de la saisie, jamais relu. */
+  secret?: boolean;
 };
 
 /** AXE-872 : les types d'intégration qu'un portefeuille peut brancher, et
@@ -23,6 +25,7 @@ export const TYPES_BRANCHEMENT: Record<
         cle: "jeton",
         libelle: "Jeton d'accès (X_DIGI_TOKEN)",
         type: "password",
+        secret: true,
       },
       {
         cle: "url",
@@ -40,7 +43,7 @@ export const TYPES_BRANCHEMENT: Record<
       { cle: "hote", libelle: "Serveur SMTP", type: "text" },
       { cle: "port", libelle: "Port (587 ou 465)", type: "number" },
       { cle: "utilisateur", libelle: "Utilisateur", type: "text" },
-      { cle: "mot_de_passe", libelle: "Mot de passe", type: "password" },
+      { cle: "mot_de_passe", libelle: "Mot de passe", type: "password", secret: true },
       { cle: "expediteur", libelle: "Adresse d'expédition", type: "email" },
     ],
   },
@@ -50,7 +53,7 @@ export const TYPES_BRANCHEMENT: Record<
     fournisseur: "http",
     champs: [
       { cle: "url", libelle: "Adresse de l'API d'envoi", type: "url" },
-      { cle: "cle_api", libelle: "Clé d'API", type: "password" },
+      { cle: "cle_api", libelle: "Clé d'API", type: "password", secret: true },
       { cle: "expediteur", libelle: "Nom d'expéditeur", type: "text" },
     ],
   },

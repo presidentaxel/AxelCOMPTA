@@ -214,6 +214,7 @@ from axelcompta.tenants.branchements import (
     BranchementIntrouvable,
     BranchementsRepository,
     Modification,
+    lecture_publique,
     modifier,
     nouveau,
     types_branches,
@@ -6139,7 +6140,8 @@ class BranchementModification(BaseModel):
 
 
 class BranchementVue(BaseModel):
-    """Jamais un identifiant ni un mot de passe."""
+    """Jamais un jeton, une clé ou un mot de passe. `secrets` ne porte que
+    les noms des champs déjà chiffrés."""
 
     id: str
     type: str
@@ -6148,6 +6150,8 @@ class BranchementVue(BaseModel):
     par_defaut: bool
     actif: bool
     maj_le: str | None
+    champs: dict[str, str] = {}
+    secrets: list[str] = []
 
 
 class EssaiVue(BaseModel):
@@ -6181,6 +6185,7 @@ class DesinscriptionVue(BaseModel):
 
 
 def _vue_branchement(b: Branchement) -> BranchementVue:
+    champs, secrets = lecture_publique(b)
     return BranchementVue(
         id=b.id,
         type=b.type,
@@ -6189,6 +6194,8 @@ def _vue_branchement(b: Branchement) -> BranchementVue:
         par_defaut=b.par_defaut,
         actif=b.actif,
         maj_le=b.maj_le.isoformat() if b.maj_le else None,
+        champs=champs,
+        secrets=list(secrets),
     )
 
 

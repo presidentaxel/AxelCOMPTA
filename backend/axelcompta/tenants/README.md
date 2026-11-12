@@ -30,8 +30,10 @@ d'héritage implicite (doc 03 §3bis, doc 06 §7).
   partiel), un choix possible par dossier (`branchements_dossier`). Le
   défaut ne se désactive pas tant qu'un autre peut le remplacer : on
   choisit d'abord le nouveau. Identifiants chiffrés (`core.chiffrement`),
-  jamais relus à l'écran. Migration `b8d4e1f7a2c6`, qui reprend
-  `integrations_envoi`.
+  jamais relus à l'écran. La clé Fernet `AXELCOMPTA_CLE_INTEGRATIONS` reste
+  dans l'environnement, pas dans Supabase : la colonne ne contient que le
+  texte chiffré. Un secret laissé vide à la mise à jour garde l'ancien.
+  Migration `b8d4e1f7a2c6`, qui reprend `integrations_envoi`.
 
 - `tags.py`, `tags_memoire.py`, `tags_postgres.py` (AXE-829) — tags
   d'entreprises et exclusion des traitements. Un réglage par portefeuille

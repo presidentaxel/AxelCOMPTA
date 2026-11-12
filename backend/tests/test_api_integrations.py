@@ -75,6 +75,12 @@ def test_deux_smtp_actifs_un_seul_par_defaut_jamais_de_secret() -> None:
         ("SMTP principal", True, True),
     ]
     assert "tres-secret" not in lue.text and "x" * 64 not in lue.text
+    mail = next(b for b in lue.json() if b["nom"] == "SMTP principal")
+    assert mail["champs"]["hote"] == "smtp.serenity.fr"
+    assert "mot_de_passe" not in mail["champs"]
+    assert mail["secrets"] == ["mot_de_passe"]
+    digi = next(b for b in lue.json() if b["type"] == "digifactory")
+    assert digi["champs"] == {} and digi["secrets"] == ["jeton"]
     assert len(liste) == 2
 
 
