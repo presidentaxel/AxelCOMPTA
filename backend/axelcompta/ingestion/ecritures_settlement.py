@@ -17,10 +17,11 @@ Ne dépend pas de `ledger` pour ses règles de calcul : celles-ci sont pures
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
 from axelcompta.core.errors import DomaineError
-from axelcompta.core.ids import EcritureId
+from axelcompta.core.ids import EcritureId, TransactionId
 from axelcompta.core.money import Money
 from axelcompta.core.pcg import COMPTE_BANQUE
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
@@ -168,4 +169,78 @@ def construire_ecriture_settlement(
         libelle=f"Règlement {settlement.platform} — {transaction.libelle}",
         reference_piece=None,
         lignes=tuple(lignes),
+    )
+
+
+# --- AXE-821 : ventiler un virement déjà passé en recette --------------------
+
+SUFFIXE_VENTILATION = ":ventilation-plateforme"
+
+
+class VirementNonVentilable(DomaineError):
+    """Le virement ne porte pas exactement le versé du relevé sur le compte
+    de recette : on ne ventile pas à l'aveugle."""
+
+
+def id_ventilation_plateforme(ecriture_id: EcritureId) -> EcritureId:
+    return EcritureId(f"{ecriture_id}{SUFFIXE_VENTILATION}")
+
+
+def ecriture_de_ventilation(
+    virement: Ecriture,
+    settlement: PlatformSettlement,
+    compte_recette: str,
+    *,
+    tva_recettes_regime: str,
+    date_ecriture: date | None = None,
+) -> Ecriture:
+    """AXE-821. Le virement S (512 au débit, `compte_recette` au crédit pour
+    le net) reste tel quel : le 512 ne bouge jamais. Une OD à côté reprend le
+    net du compte de recette et pose le détail du relevé : recette brute HT,
+    TVA collectée, commission et sa TVA (doc 13 §5.3). Mêmes lignes que
+    `construire_ecriture_settlement`, la ligne de banque remplacée par le
+    compte de recette. Aucune ligne au compte d'attente.
+
+    Lève `VirementNonVentilable` si S ne crédite pas exactement le versé
+    sur `compte_recette`."""
+    credit = sum(
+        ligne.montant.centimes
+        for ligne in virement.lignes
+        if ligne.compte == compte_recette and ligne.sens is Sens.CREDIT
+    )
+    if credit != settlement.net_payout_cts:
+        raise VirementNonVentilable(
+            f"{compte_recette} crédité de {credit} c, versé du relevé {settlement.net_payout_cts} c"
+        )
+    transaction = NormalizedTransaction(
+        id=TransactionId(str(virement.id)),
+        dossier_id=virement.dossier_id,
+        date=virement.date,
+        montant_cts=settlement.net_payout_cts,
+        libelle=virement.libelle,
+        source_provider=settlement.source_provider,
+        raw_payload={},
+    )
+    detail = construire_ecriture_settlement(
+        transaction,
+        settlement,
+        0,
+        tva_recettes_regime=tva_recettes_regime,
+        compte_banque=COMPTE_BANQUE,
+    )
+    lignes = tuple(
+        LigneEcriture(compte_recette, Sens.DEBIT, ligne.montant)
+        if ligne.compte == COMPTE_BANQUE
+        else ligne
+        for ligne in detail.lignes
+    )
+    periode = f"{settlement.period_start:%d/%m} au {settlement.period_end:%d/%m/%Y}"
+    return Ecriture(
+        id=id_ventilation_plateforme(virement.id),
+        dossier_id=virement.dossier_id,
+        journal=Journal.OD,
+        date=date_ecriture or virement.date,
+        libelle=f"Ventilation {settlement.platform} du {periode}",
+        reference_piece=str(virement.id),
+        lignes=lignes,
     )

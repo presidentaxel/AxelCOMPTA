@@ -4,16 +4,18 @@ from datetime import date
 
 import pytest
 
-from axelcompta.core.ids import DossierId, TransactionId
+from axelcompta.core.ids import DossierId, EcritureId, TransactionId
 from axelcompta.core.money import Money
 from axelcompta.ingestion.ecritures_settlement import (
     RegimeTvaInconnu,
     RegimeTvaRecettesInconnu,
+    VirementNonVentilable,
     construire_ecriture_settlement,
+    ecriture_de_ventilation,
 )
 from axelcompta.ingestion.providers.base import NormalizedTransaction, PlatformSettlement
 from axelcompta.ledger.invariants import solde, verifier_equilibre
-from axelcompta.ledger.models import Ecriture, Sens
+from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 
 
 def _transaction(montant_cts: int) -> NormalizedTransaction:
@@ -140,3 +142,70 @@ def test_le_virement_va_au_sous_compte_de_la_banque_qui_l_a_recu(regime: str) ->
     banques = [ligne for ligne in ecriture.lignes if ligne.compte.startswith("512")]
     assert [ligne.compte for ligne in banques] == ["5122"]
     verifier_equilibre(ecriture)
+
+
+# --- AXE-821 : ventiler un virement déjà passé en recette --------------------
+
+
+def _virement(net: int) -> Ecriture:
+    return Ecriture(
+        id=EcritureId("S1"),
+        dossier_id=DossierId("d1"),
+        journal=Journal.BQ,
+        date=date(2026, 9, 2),
+        libelle="Transfer from STICHTING CUSTODIAN UBER PAY",
+        reference_piece=None,
+        lignes=(
+            LigneEcriture("512", Sens.DEBIT, Money(net)),
+            LigneEcriture("706", Sens.CREDIT, Money(net)),
+        ),
+    )
+
+
+def _solde(ecritures: tuple[Ecriture, ...], compte: str) -> int:
+    return sum(
+        (1 if ligne.sens is Sens.CREDIT else -1) * ligne.montant.centimes
+        for e in ecritures
+        for ligne in e.lignes
+        if ligne.compte == compte
+    )
+
+
+def test_virement_plus_ventilation_donnent_le_golden_test_doc13_sans_toucher_au_512() -> None:
+    """Critère AXE-821 : 706 + 44571 − 622 − 44566 = net viré, au centime ;
+    le virement n'est pas modifié, aucune ligne au compte d'attente."""
+    virement = _virement(848_00)
+    od = ecriture_de_ventilation(
+        virement,
+        _settlement(1_040_00, 192_00, 848_00, "france_20"),
+        "706",
+        tva_recettes_regime="assujetti_taux_reduit",
+    )
+    les_deux = (virement, od)
+    assert (od.id, od.journal, od.reference_piece) == (
+        "S1:ventilation-plateforme",
+        Journal.OD,
+        "S1",
+    )
+    assert _solde(les_deux, "706") == 945_45 and _solde(les_deux, "44571") == 94_55
+    assert -_solde(les_deux, "622") == 160_00 and -_solde(les_deux, "44566") == 32_00
+    assert -_solde(les_deux, "512") == 848_00 and all(ligne.compte != "512" for ligne in od.lignes)
+    assert all(ligne.compte != "471" for ligne in od.lignes)
+    debit, credit = solde(od)
+    assert debit == credit
+    assert (
+        _solde(les_deux, "706")
+        + _solde(les_deux, "44571")
+        + _solde(les_deux, "622")
+        + _solde(les_deux, "44566")
+    ) == 848_00
+
+
+def test_un_virement_qui_ne_porte_pas_le_verse_n_est_pas_ventile() -> None:
+    with pytest.raises(VirementNonVentilable):
+        ecriture_de_ventilation(
+            _virement(848_01),
+            _settlement(1_040_00, 192_00, 848_00, "france_20"),
+            "706",
+            tva_recettes_regime="assujetti_taux_reduit",
+        )

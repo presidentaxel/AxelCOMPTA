@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { etatPlateforme, resumePlateformes } from "./plateformes";
+import { etatPlateforme, etatVersement, resumePlateformes } from "./plateformes";
 
 const date = (iso: string) => iso.split("-").reverse().join("/");
 
@@ -21,5 +21,13 @@ test("le gestionnaire ne voit que des nombres", () => {
   assert.equal(
     resumePlateformes({ reliees: 0, attendues: 0, a_reconnecter: 0, manquantes: [] }),
     "Aucune plateforme reliée",
+  );
+});
+
+test("l'état d'un versement dit pourquoi il est à vérifier", () => {
+  assert.equal(etatVersement("reconcilie", null), "rapproché");
+  assert.equal(
+    etatVersement("a_verifier", "plusieurs virements possibles"),
+    "à vérifier : plusieurs virements possibles",
   );
 });
