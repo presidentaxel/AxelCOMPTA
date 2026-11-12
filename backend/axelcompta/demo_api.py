@@ -6329,6 +6329,13 @@ def _enregistrer_routes_envoi(app: FastAPI) -> None:
         return DesinscriptionVue(message=f"Vous ne recevrez plus de rappels {canal}.")
 
 
+def _enregistrer_routes_integrations(app: FastAPI) -> None:
+    """Branchements du portefeuille et suivi des envois (AXE-872, AXE-808)."""
+    _enregistrer_routes_branchements(app)
+    _enregistrer_routes_branchements_dossier(app)
+    _enregistrer_routes_envoi(app)
+
+
 class NouveauChauffeurVue(BaseModel):
     contact_nr: str
     nom: str
@@ -6991,9 +6998,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_engagement(app)
     _enregistrer_routes_tva(app)
     _enregistrer_route_declaration_tva(app)
-    _enregistrer_routes_envoi(app)
-    _enregistrer_routes_branchements(app)
-    _enregistrer_routes_branchements_dossier(app)
+    _enregistrer_routes_integrations(app)
     _enregistrer_routes_transactions(app)
     _enregistrer_route_correction(app)
     _enregistrer_routes_annulation(app)

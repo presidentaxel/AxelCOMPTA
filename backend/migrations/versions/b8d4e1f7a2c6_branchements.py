@@ -1,7 +1,7 @@
 """plusieurs intégrations de chaque type par portefeuille
 
 Revision ID: b8d4e1f7a2c6
-Revises: e6b2d9f4a371
+Revises: d5b8e2f4a671
 Create Date: 2026-11-11
 
 AXE-872.
@@ -22,7 +22,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "b8d4e1f7a2c6"
-down_revision: str | Sequence[str] | None = "e6b2d9f4a371"
+down_revision: str | Sequence[str] | None = "d5b8e2f4a671"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -70,9 +70,7 @@ def upgrade() -> None:
         sa.Column("dossier_id", sa.String(), sa.ForeignKey("dossiers.id"), primary_key=True),
         sa.Column("type", sa.String(), primary_key=True),
         sa.Column("tenant_id", sa.String(), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column(
-            "branchement_id", sa.String(), sa.ForeignKey("branchements.id"), nullable=False
-        ),
+        sa.Column("branchement_id", sa.String(), sa.ForeignKey("branchements.id"), nullable=False),
     )
     op.add_column("envois_rappel", sa.Column("branchement_id", sa.String(), nullable=True))
     op.execute(
