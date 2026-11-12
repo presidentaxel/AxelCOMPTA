@@ -50,6 +50,7 @@ export function IntegrationsDossier({
       <dl className="mt-2 space-y-2">
         {types.map((type) => {
           const actifs = branchements.filter((b) => b.type === type && b.actif);
+          const sansDefaut = type === "rollee";
           const defaut = actifs.find((b) => b.par_defaut);
           return (
             <div key={type} className="flex items-center justify-between gap-4">
@@ -82,10 +83,12 @@ export function IntegrationsDossier({
                   className="rounded-md border border-border bg-canvas px-2 py-1 text-sm text-ink"
                 >
                   <option value="">
-                    Par défaut{defaut ? ` (${defaut.nom})` : ""}
+                    {sansDefaut
+                      ? "Pas encore relié, on interroge tous"
+                      : `Par défaut${defaut ? ` (${defaut.nom})` : ""}`}
                   </option>
                   {actifs
-                    .filter((b) => !b.par_defaut)
+                    .filter((b) => sansDefaut || !b.par_defaut)
                     .map((b) => (
                       <option key={b.id} value={b.id}>
                         {b.nom}

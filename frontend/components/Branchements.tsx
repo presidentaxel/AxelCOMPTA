@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import {
   ajouterBranchement,
   modifierBranchement,
@@ -158,7 +159,7 @@ function LigneBranchement({
       libelle: "Changer les identifiants",
       onSelect: () => setEdition({ mode: "identifiants", id: b.id }),
     },
-    ...(b.actif && !b.par_defaut
+    ...(b.type !== "rollee" && b.actif && !b.par_defaut
       ? [
           {
             libelle: "Utiliser par défaut",
@@ -173,13 +174,13 @@ function LigneBranchement({
   ];
 
   return (
-    <li className={b.par_defaut ? "bg-canvas-app" : undefined}>
+    <li className={b.par_defaut && b.type !== "rollee" ? "bg-canvas-app" : undefined}>
       <div className="flex items-center gap-3 px-5 py-3">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           <span className={`truncate text-sm font-medium ${b.actif ? "text-ink" : "text-subtle"}`}>
             {b.nom}
           </span>
-          {b.par_defaut && <Badge variant="neutral">Par défaut</Badge>}
+          {b.par_defaut && b.type !== "rollee" && <Badge variant="neutral">Par défaut</Badge>}
           {!b.actif && <Badge variant="closed">Désactivé</Badge>}
         </div>
         {b.secrets.length > 0 && (
@@ -416,6 +417,18 @@ function FormulaireBranchement({
                   required={!champ.facultatif && !dejaEnregistre}
                   dejaEnregistre={dejaEnregistre}
                   onChange={(valeur) => setValeurs((v) => ({ ...v, [champ.cle]: valeur }))}
+                />
+              ) : champ.type === "choix" ? (
+                <Select
+                  aria-label={champ.libelle}
+                  value={valeurs[champ.cle] ?? ""}
+                  placeholder="Choisir…"
+                  onValueChange={(valeur) => setValeurs((v) => ({ ...v, [champ.cle]: valeur }))}
+                  options={(champ.options ?? []).map((option) => ({
+                    value: option.valeur,
+                    label: option.libelle,
+                  }))}
+                  className="mt-1"
                 />
               ) : (
                 <Input

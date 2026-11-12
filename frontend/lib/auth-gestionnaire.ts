@@ -281,7 +281,7 @@ export async function lireIntegrationsEnvoi(): Promise<Record<string, string>> {
 /** AXE-872 : une intégration nommée du portefeuille. Jamais d'identifiant. */
 export type Branchement = {
   id: string;
-  type: "mail" | "sms" | "digifactory";
+  type: "mail" | "sms" | "digifactory" | "rollee";
   fournisseur: string;
   nom: string;
   par_defaut: boolean;

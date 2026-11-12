@@ -16,10 +16,6 @@ import type { EtatCategorisation } from "@/lib/types";
 
 const PREVUES = [
   {
-    nom: "Rollee",
-    detail: "Lirait les courses et les versements Uber, Bolt et Heetch de chaque chauffeur.",
-  },
-  {
     nom: "Bridge",
     detail: "Connecterait la banque en direct, en plus de Digifactory.",
   },

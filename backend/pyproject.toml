@@ -176,6 +176,7 @@ markers = [
     "integration: nécessite un vrai Postgres (`docker compose up -d db`), doc 09 §4",
     "supabase: nécessite un vrai projet Supabase (SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY), doc 17 §9 bloc B",
     "digifactory: appelle la vraie API Digifactory (DIGIFACTORY_TOKEN), hors CI",
+    "rollee: appelle le sandbox Rollee (ROLLEE_JETON_SANDBOX), hors CI",
 ]
 # importlib (plutôt que le mode "prepend" par défaut) : permet des noms de
 # fichiers de test identiques dans des dossiers différents (tests/ miroir de
@@ -184,4 +185,4 @@ markers = [
 # §4 étape 5) ne dépend jamais d'un Postgres démarré ni d'un accès réseau à
 # Supabase ; ces deux-là se lancent à part (`pytest -m integration`,
 # `pytest -m supabase`).
-addopts = '--import-mode=importlib -m "not integration and not supabase and not digifactory"'
+addopts = '--import-mode=importlib -m "not integration and not supabase and not digifactory and not rollee"'

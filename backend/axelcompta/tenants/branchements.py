@@ -31,17 +31,26 @@ FOURNISSEURS: dict[str, tuple[str, ...]] = {
     "mail": ("smtp",),
     "sms": ("http",),
     "digifactory": ("digifactory",),
+    "rollee": ("rollee",),
 }
 # Champs obligatoires, puis facultatifs, par fournisseur.
 CHAMPS: dict[str, tuple[str, ...]] = {
     "smtp": ("hote", "port", "utilisateur", "mot_de_passe", "expediteur"),
     "http": ("url", "cle_api", "expediteur"),
     "digifactory": ("jeton", "url"),
+    # AXE-818 : JWT du tableau de bord Rollee (Settings → JWT Token). Les
+    # jetons sandbox et production sont distincts.
+    "rollee": ("jeton", "environnement"),
 }
+# Valeurs permises, quand un champ n'accepte qu'une liste.
+VALEURS: dict[str, tuple[str, ...]] = {"environnement": ("sandbox", "production")}
 CHAMPS_FACULTATIFS: dict[str, tuple[str, ...]] = {}
 # Jamais renvoyés à l'écran. Un champ vide à la mise à jour garde la valeur
 # déjà chiffrée : on retape le jeton seulement pour le remplacer.
 SECRETS = frozenset({"mot_de_passe", "cle_api", "jeton"})
+# Rollee : plusieurs comptes pour une même compta. Aucun n'est « le » compte.
+# Tant qu'un compte pro n'est pas relié à l'un d'eux, on les interroge tous.
+SANS_DEFAUT = frozenset({"rollee"})
 NOM_MAX = 60
 
 
@@ -84,6 +93,9 @@ def chiffrer_parametres(fournisseur: str, parametres: dict[str, str]) -> str:
     manquants = [c for c in obligatoires if not str(parametres.get(c, "")).strip()]
     if manquants:
         raise BranchementInvalide(f"Champs manquants : {', '.join(manquants)}.")
+    for champ, permises in VALEURS.items():
+        if champ in obligatoires and str(parametres[champ]).strip() not in permises:
+            raise BranchementInvalide(f"{champ} : {' ou '.join(permises)}.")
     utiles = {
         c: str(parametres[c]).strip()
         for c in obligatoires + CHAMPS_FACULTATIFS.get(fournisseur, ())
@@ -138,7 +150,8 @@ def nouveau(
     nom: str,
     parametres: dict[str, str],
 ) -> Branchement:
-    """Le premier branchement actif d'un type devient celui par défaut."""
+    """Le premier branchement actif d'un type devient celui par défaut.
+    Rollee n'en a pas : chaque accès est un compte distinct."""
     if fournisseur not in FOURNISSEURS.get(type_, ()):
         raise BranchementInvalide(f"Fournisseur « {fournisseur} » inconnu pour {type_}.")
     nom = _nom_valide(nom)
@@ -151,7 +164,7 @@ def nouveau(
         fournisseur=fournisseur,
         nom=nom,
         parametres_chiffres=chiffrer_parametres(fournisseur, parametres),
-        par_defaut=not deja_un_defaut,
+        par_defaut=type_ not in SANS_DEFAUT and not deja_un_defaut,
     )
 
 
@@ -163,6 +176,18 @@ class Modification:
     parametres: dict[str, str] | None = None
     par_defaut: bool | None = None
     actif: bool | None = None
+
+
+def _oter_le_defaut(
+    suite: Branchement, autres: list[Branchement], demande_un_defaut: bool
+) -> list[Branchement] | None:
+    """Rollee n'a pas de défaut : on l'ôte, y compris sur les autres accès."""
+    if suite.type not in SANS_DEFAUT:
+        return None
+    if demande_un_defaut:
+        raise BranchementInvalide("Ce type n'a pas de branchement par défaut.")
+    suite = replace(suite, par_defaut=False)
+    return [replace(b, par_defaut=False) for b in autres if b.par_defaut] + [suite]
 
 
 def modifier(
@@ -186,9 +211,12 @@ def modifier(
         )
     if modification.actif is not None:
         suite = replace(suite, actif=modification.actif)
+    autres = [b for b in existants if b.type == actuel.type and b.id != actuel.id and b.actif]
+    sans_defaut = _oter_le_defaut(suite, autres, bool(modification.par_defaut))
+    if sans_defaut is not None:
+        return sans_defaut
     if modification.par_defaut:
         suite = replace(suite, par_defaut=True, actif=True)
-    autres = [b for b in existants if b.type == actuel.type and b.id != actuel.id and b.actif]
     if actuel.par_defaut and not suite.actif and autres:
         raise BranchementEnConflit(
             "C'est le branchement par défaut : choisissez d'abord celui qui le remplace."
@@ -213,9 +241,34 @@ def choisir(
     return next((b for b in actifs if b.par_defaut), None)
 
 
+def a_interroger(
+    branchements: Sequence[Branchement], type_: str, choix_dossier: str | None
+) -> list[Branchement]:
+    """Où lire. Le branchement choisi pour le dossier, s'il est actif.
+    Sinon, pour Rollee, tous les accès actifs : le compte peut venir de
+    n'importe lequel tant qu'il n'est pas relié. Les autres types : le défaut."""
+    actifs = [b for b in branchements if b.type == type_ and b.actif]
+    if choix_dossier is not None:
+        choisi = next((b for b in actifs if b.id == choix_dossier), None)
+        if choisi is not None:
+            return [choisi]
+    if type_ in SANS_DEFAUT:
+        return actifs
+    defaut = next((b for b in actifs if b.par_defaut), None)
+    return [defaut] if defaut is not None else []
+
+
 def types_branches(branchements: Sequence[Branchement]) -> dict[str, datetime]:
-    """Type branché → date du dernier réglage de son défaut. Rien de secret."""
-    return {b.type: b.maj_le or datetime.min for b in branchements if b.actif and b.par_defaut}
+    """Type branché → date du dernier réglage. Rien de secret.
+    Un type sans défaut (Rollee) compte dès qu'un accès est actif."""
+    vus: dict[str, datetime] = {}
+    for b in branchements:
+        if not b.actif or (b.type not in SANS_DEFAUT and not b.par_defaut):
+            continue
+        le = b.maj_le or datetime.min
+        if b.type not in vus or le > vus[b.type]:
+            vus[b.type] = le
+    return vus
 
 
 class BranchementsRepository(Protocol):

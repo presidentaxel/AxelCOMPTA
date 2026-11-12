@@ -10,7 +10,11 @@ connaît jamais le provider concret**.
 ## Providers V1
 
 - `DigifactoryProvider` — transactions bancaires (agrège Bridge par contact).
-- `RolleeProvider` — settlements plateformes gig (Uber, Bolt…).
+- `RolleeProvider` — settlements plateformes gig (Uber, Bolt…). Depuis
+  AXE-818 : `RolleeHttpClient` (API utilisateur, JWT renouvelé, backoff sur
+  429/5xx) et `lire_revenus` (une période de revenus → un
+  `PlatformSettlement`, ou un rejet avec sa raison si brut − frais ≠ versé).
+  Sans client, la fixture du golden test, comme avant.
 - `FileImportProvider` — CSV/XLSX/ODS.
 - `BridgeProvider` direct — piste parallèle non bloquante, pas de
   développement actif tant que Digifactory couvre le besoin.

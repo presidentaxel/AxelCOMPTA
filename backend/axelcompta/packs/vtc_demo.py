@@ -125,3 +125,35 @@ def charger_categories_banque(chemin: Path | None = None) -> dict[str, str]:
             for ligne in csv.DictReader(fichier)
             if ligne["category_id"].strip() and ligne["categorie"].strip()
         }
+
+
+CHEMIN_PLATEFORMES_PAR_DEFAUT = RACINE_PACKS_VTC / "plateformes.csv"
+
+
+@dataclass(frozen=True, slots=True)
+class Plateforme:
+    """Une plateforme du pack VTC (AXE-818) : comment la reconnaître dans le
+    nom d'un compte Rollee, et le régime de TVA de sa commission (doc 13 §5.2)."""
+
+    nom: str
+    motif: re.Pattern[str]
+    commission_tva_regime: str
+
+
+def charger_plateformes(chemin: Path | None = None) -> tuple[Plateforme, ...]:
+    chemin = chemin or CHEMIN_PLATEFORMES_PAR_DEFAUT
+    with chemin.open(newline="", encoding="utf-8") as fichier:
+        return tuple(
+            Plateforme(
+                ligne["plateforme"].strip(),
+                re.compile(ligne["motif"].strip()),
+                ligne["commission_tva_regime"].strip(),
+            )
+            for ligne in csv.DictReader(fichier)
+            if ligne["plateforme"].strip()
+        )
+
+
+def plateforme_de(nom_compte: str, plateformes: tuple[Plateforme, ...]) -> Plateforme | None:
+    """La plateforme d'un compte Rollee d'après son nom, `None` si inconnue."""
+    return next((p for p in plateformes if p.motif.search(nom_compte)), None)

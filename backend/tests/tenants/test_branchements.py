@@ -14,6 +14,7 @@ from axelcompta.tenants.branchements import (
     BranchementInvalide,
     BranchementsMemoire,
     Modification,
+    a_interroger,
     choisir,
     modifier,
     nouveau,
@@ -144,3 +145,23 @@ def test_un_dossier_ne_choisit_qu_un_branchement_actif_du_bon_type() -> None:
     verifier_choix(depot.lister(T), "mail", None)
     with pytest.raises(BranchementInvalide):
         verifier_choix(depot.lister(T), "mail", banque.id)
+
+
+def test_rollee_n_a_pas_de_defaut_et_on_les_interroge_tous() -> None:
+    """Plusieurs comptes Rollee pour une compta. Tant que le dossier n'en
+    choisit pas un, un compte pro peut venir de n'importe lequel."""
+    params = {"jeton": "j", "environnement": "production"}
+    a = nouveau([], T, "rollee", "rollee", "Entrepreneur", params)
+    b = nouveau([a], T, "rollee", "rollee", "Serenity", params)
+    assert a.par_defaut is False and b.par_defaut is False
+    assert [x.nom for x in a_interroger([a, b], "rollee", None)] == ["Entrepreneur", "Serenity"]
+    assert [x.nom for x in a_interroger([a, b], "rollee", b.id)] == ["Serenity"]
+    with pytest.raises(BranchementInvalide):
+        modifier([a, b], a.id, Modification(par_defaut=True))
+
+
+def test_un_branchement_rollee_exige_un_environnement_connu() -> None:
+    """AXE-818 : jetons sandbox et production distincts chez Rollee."""
+    nouveau([], T, "rollee", "rollee", "Rollee", {"jeton": "j", "environnement": "sandbox"})
+    with pytest.raises(BranchementInvalide):
+        nouveau([], T, "rollee", "rollee", "Rollee", {"jeton": "j", "environnement": "prod"})
