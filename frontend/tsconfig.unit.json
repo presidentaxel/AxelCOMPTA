@@ -60,6 +60,8 @@
     "lib/juridique.ts",
     "lib/juridique.test.ts",
     "lib/registre.ts",
-    "lib/registre.test.ts"
+    "lib/registre.test.ts",
+    "lib/ouverture.ts",
+    "lib/ouverture.test.ts"
   ]
 }

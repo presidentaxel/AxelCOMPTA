@@ -99,6 +99,11 @@ class Dossier:
     # (AXE-849), recalculés à chaque relecture. La clôture et la liasse les
     # attendent, comme `a_confirmer`.
     ecarts_registre: tuple[EcartRegistre, ...] = ()
+    # Déficits fiscaux reportables à l'ouverture de l'exercice en cours, en
+    # euros comme la liasse (2033-D ligne 870 de l'exercice précédent).
+    # Posés par la reprise d'une société existante (AXE-804), puis reportés à
+    # chaque passage d'exercice ; 0 sinon.
+    deficits_anterieurs_euros: int = 0
 
     def fin_exercice(self) -> date:
         if self.exercice_fin is not None:

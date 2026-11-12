@@ -169,6 +169,7 @@ class PostgresDossierRepository(DossierRepository):
                     option_ir_debut=dossier.option_ir_debut,
                     regime_tva=dossier.regime_tva,
                     tva_recettes_regime=dossier.tva_recettes_regime,
+                    deficits_anterieurs_euros=dossier.deficits_anterieurs_euros,
                 )
             )
 
@@ -245,6 +246,8 @@ def _parametres_tva(dossier: Dossier) -> dict[str, object]:
         "tva_jour_echeance": dossier.tva_jour_echeance,
         # AXE-849, même raison : nommée seulement si connue.
         "siren": dossier.siren,
+        # AXE-804, même raison : nommée seulement si posée.
+        "deficits_anterieurs_euros": dossier.deficits_anterieurs_euros or None,
     }
     return {colonne: valeur for colonne, valeur in valeurs.items() if valeur is not None}
 
@@ -274,6 +277,7 @@ def _vers_dossier(ligne: Any) -> Dossier:
         tva_jour_echeance=ligne.tva_jour_echeance,
         siren=ligne.siren,
         ecarts_registre=ecarts_depuis_json(ligne.ecarts_registre),
+        deficits_anterieurs_euros=int(ligne.deficits_anterieurs_euros or 0),
     )
 
 

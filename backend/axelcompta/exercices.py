@@ -34,6 +34,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from axelcompta.closing.cloture_fiscale import (
     chiffre_affaires_ht,
+    cloturer_fiscalement,
     ecritures_de_cloture,
     ecritures_exercice,
     hors_inventaire,
@@ -116,6 +117,7 @@ def preparer_passage(
         soumis_is=colonne.soumis_is,
         associes=colonne.associes,
         provisions=provisions,
+        deficits_anterieurs=dossier.deficits_anterieurs_euros,
     )
     de_l_exercice = hors_inventaire(
         dossier.id, ecritures_exercice(tranchees, parametres), parametres
@@ -124,9 +126,27 @@ def preparer_passage(
     ouverture = fin + timedelta(days=1)
     a_nouveaux = ecriture_a_nouveaux(dossier.id, de_l_exercice + inventaire, ouverture)
     apres, changements = _configuration_suivante(dossier, avenants, tranchees, ouverture)
+    apres = dataclasses.replace(
+        apres, deficits_anterieurs_euros=_deficits_reportables(dossier, tranchees, parametres)
+    )
     configuration_de(apres)
     ecritures = inventaire + ((a_nouveaux,) if a_nouveaux else ())
     return PassageExercice(dossier, apres, ecritures, changements)
+
+
+def _deficits_reportables(
+    dossier: Dossier, tranchees: tuple[Ecriture, ...], parametres: ParametresCloture
+) -> int:
+    """2033-D ligne 870 : déficits restant à reporter à la fin de l'exercice
+    (anciens non imputés et déficit de l'exercice). À l'IS seulement : à
+    l'IR, le déficit va aux associés, pas à la société (AXE-804)."""
+    if not parametres.soumis_is:
+        return 0
+    liasse = cloturer_fiscalement(
+        dossier.id, str(parametres.exercice_fin.year), tranchees, parametres
+    )
+    # Les cases de la liasse sont en centimes ; le report se garde en euros.
+    return max(0, int(liasse.cases.get("2033D.870", 0)) // 100)
 
 
 def _configuration_suivante(

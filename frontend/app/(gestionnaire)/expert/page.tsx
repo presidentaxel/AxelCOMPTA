@@ -332,6 +332,14 @@ export default function ModeExpertPage() {
                 ))}
               </select>
             </label>
+            {entreprise !== "toutes" && (
+              <Link
+                href={`/expert/ouverture/${entreprise}`}
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                Bilan d&apos;ouverture
+              </Link>
+            )}
             <label className="text-sm text-subtle">
               Nature
               <select

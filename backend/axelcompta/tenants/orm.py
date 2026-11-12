@@ -67,6 +67,7 @@ dossiers = Table(
     # AXE-849 : SIREN (relecture des registres) et écarts non tranchés.
     Column("siren", String, nullable=True),
     Column("ecarts_registre", JSON, nullable=False, server_default="[]"),
+    Column("deficits_anterieurs_euros", BigInteger, nullable=False, server_default="0"),
 )
 
 # Lectures des registres officiels (INSEE, RNE), append-only (AXE-849).
@@ -94,6 +95,27 @@ resolutions_ecart = Table(
     Column("par", String, nullable=False),
     Column("le", DateTime(timezone=True), nullable=False),
     CheckConstraint("retenue IN ('declaree', 'officielle')", name="resolutions_ecart_retenue"),
+)
+
+# Bilans d'ouverture repris d'un FEC (AXE-804) : un par dossier, ajout seul.
+ouvertures_importees = Table(
+    "ouvertures_importees",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, unique=True),
+    Column("nom_fichier", String, nullable=False),
+    Column("empreinte", String, nullable=False),
+    Column("cloture", Date, nullable=False),
+    Column("ouverture", Date, nullable=False),
+    Column("role", String, nullable=False),
+    Column("par", String, nullable=False),
+    Column("auteur_nom", String, nullable=True),
+    Column("motif", String, nullable=True),
+    Column("attestation", Text, nullable=False),
+    Column("correspondance", JSON, nullable=False),
+    Column("deficits_euros", BigInteger, nullable=False),
+    Column("ecriture_id", String, nullable=False),
+    Column("le", DateTime(timezone=True), nullable=False),
 )
 
 # Exercices clos, append-only (verrou en base, migration `b8e3f5a1c762`).
