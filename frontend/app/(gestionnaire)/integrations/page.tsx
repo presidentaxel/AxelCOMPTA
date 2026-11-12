@@ -65,13 +65,13 @@ export default function IntegrationsPage() {
   }, [router]);
 
   return (
-    <div className="mx-auto max-w-xl">
+    <div className="mx-auto max-w-4xl">
       <h1 className="text-[28px] font-bold tracking-tight text-ink">Intégrations</h1>
-      <p className="mt-2 text-sm text-subtle">
-        Chaque intégration peut avoir plusieurs accès. Celui « par défaut » sert à toutes les
-        entreprises, sauf celles qui en choisissent un autre dans leur fiche.
+      <p className="mt-2 max-w-2xl text-sm text-subtle">
+        Plusieurs accès par type. Celui par défaut sert à toutes les entreprises. Une entreprise
+        peut en choisir un autre dans sa fiche.
       </p>
-      <ul className="mt-8">
+      <div className="mt-8 space-y-4">
         {ORDRE_TYPES.map((type) => (
           <BranchementsType
             key={type}
@@ -81,37 +81,30 @@ export default function IntegrationsPage() {
             onChange={setBranchements}
           />
         ))}
-        {categorisation && (
-          <li className="flex items-start justify-between gap-6 border-b border-hairline py-4">
-            <span>
-              <span className="block text-sm font-medium text-ink">Catégorisation automatique</span>
-              <span className="mt-1 block text-sm text-subtle">
-                {categorisation.modele_charge
-                  ? "Le modèle est chargé : il propose une catégorie quand aucune règle ne s'applique."
-                  : (categorisation.raison ??
-                    "Le modèle n'est pas chargé. La synchronisation est arrêtée.")}
+      </div>
+      {categorisation && (
+        <p className="mt-8 text-sm text-subtle">
+          Catégorisation automatique :{" "}
+          {categorisation.modele_charge
+            ? "le modèle est chargé. Il propose une catégorie quand aucune règle ne s'applique."
+            : (categorisation.raison ??
+              "le modèle n'est pas chargé. La synchronisation est arrêtée.")}
+        </p>
+      )}
+      <section className="mt-10">
+        <h2 className="text-sm font-medium text-ink">Pas encore disponibles</h2>
+        <ul className="mt-3 divide-y divide-hairline border-y border-hairline">
+          {PREVUES.map((integration) => (
+            <li key={integration.nom} className="flex items-baseline justify-between gap-6 py-3">
+              <span>
+                <span className="text-sm text-ink">{integration.nom}</span>
+                <span className="mt-0.5 block text-sm text-subtle">{integration.detail}</span>
               </span>
-            </span>
-            <span
-              className={`shrink-0 text-xs ${categorisation.modele_charge ? "text-subtle" : "font-medium text-danger"}`}
-            >
-              {categorisation.modele_charge ? "Branché" : "Dégradée"}
-            </span>
-          </li>
-        )}
-        {PREVUES.map((integration) => (
-          <li
-            key={integration.nom}
-            className="flex items-start justify-between gap-6 border-b border-hairline py-4"
-          >
-            <span>
-              <span className="block text-sm font-medium text-ink">{integration.nom}</span>
-              <span className="mt-1 block text-sm text-subtle">{integration.detail}</span>
-            </span>
-            <span className="shrink-0 text-xs text-subtle">Prévu</span>
-          </li>
-        ))}
-      </ul>
+              <span className="shrink-0 text-xs text-subtle">Prévu</span>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   );
 }

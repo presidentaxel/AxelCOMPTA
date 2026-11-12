@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/ui/button";
@@ -14,11 +14,16 @@ import {
 import { TYPES_BRANCHEMENT } from "@/lib/branchements";
 import { formatDate } from "@/lib/format";
 
-type Edition =
-  { mode: "ajout" } | { mode: "identifiants" | "nom"; id: string } | null;
+type Edition = { mode: "ajout" } | { mode: "identifiants" | "nom"; id: string } | null;
 
 function message(exception: unknown, defaut: string): string {
   return exception instanceof Error ? exception.message : defaut;
+}
+
+function comparer(a: Branchement, b: Branchement): number {
+  if (a.par_defaut !== b.par_defaut) return a.par_defaut ? -1 : 1;
+  if (a.actif !== b.actif) return a.actif ? -1 : 1;
+  return a.nom.localeCompare(b.nom, "fr");
 }
 
 /** AXE-872 : les branchements d'un type (plusieurs SMTP, plusieurs comptes
@@ -39,6 +44,7 @@ export function BranchementsType({
   const [edition, setEdition] = useState<Edition>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
+  const tries = [...branchements].sort(comparer);
 
   async function agir(action: () => Promise<Branchement[] | string>) {
     setEnCours(true);
@@ -58,23 +64,27 @@ export function BranchementsType({
   }
 
   return (
-    <li className="border-b border-hairline py-4">
-      <div className="flex items-start justify-between gap-6">
-        <span>
-          <span className="block text-sm font-medium text-ink">
-            {config.nom}
-          </span>
-          <span className="mt-1 block text-sm text-subtle">
-            {config.detail}
-          </span>
-        </span>
-        {branchements.length === 0 && (
-          <span className="shrink-0 text-xs text-subtle">À brancher</span>
+    <section className="rounded-lg border border-border bg-canvas">
+      <header className="flex items-start justify-between gap-4 px-5 py-4">
+        <div>
+          <h2 className="text-sm font-semibold text-ink">{config.nom}</h2>
+          <p className="mt-1 text-sm text-subtle">{config.detail}</p>
+        </div>
+        {admin && edition?.mode !== "ajout" && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="shrink-0"
+            onClick={() => setEdition({ mode: "ajout" })}
+          >
+            Ajouter
+          </Button>
         )}
-      </div>
-      {branchements.length > 0 && (
-        <ul className="mt-3 space-y-3">
-          {branchements.map((b) => (
+      </header>
+      {tries.length > 0 && (
+        <ul className="divide-y divide-hairline border-t border-hairline">
+          {tries.map((b) => (
             <LigneBranchement
               key={b.id}
               branchement={b}
@@ -87,34 +97,28 @@ export function BranchementsType({
           ))}
         </ul>
       )}
-      {admin && edition?.mode !== "ajout" && (
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          className="mt-3"
-          onClick={() => setEdition({ mode: "ajout" })}
-        >
-          {branchements.length === 0
-            ? "Brancher"
-            : `Ajouter un autre accès ${config.nom}`}
-        </Button>
+      {tries.length === 0 && edition?.mode !== "ajout" && (
+        <p className="border-t border-hairline px-5 py-4 text-sm text-subtle">Aucun accès.</p>
       )}
       {edition?.mode === "ajout" && (
-        <FormulaireBranchement
-          type={type}
-          avecNom
-          enCours={enCours}
-          onAnnuler={() => setEdition(null)}
-          onValider={(nom, parametres) =>
-            agir(() =>
-              ajouterBranchement(type, config.fournisseur, nom, parametres),
-            )
-          }
-        />
+        <div className="border-t border-hairline px-5 py-4">
+          <FormulaireBranchement
+            type={type}
+            avecNom
+            enCours={enCours}
+            onAnnuler={() => setEdition(null)}
+            onValider={(nom, parametres) =>
+              agir(() => ajouterBranchement(type, config.fournisseur, nom, parametres))
+            }
+          />
+        </div>
       )}
-      {info && <p className="mt-2 text-sm text-subtle">{info}</p>}
-    </li>
+      {info && (
+        <p role="status" className="border-t border-hairline px-5 py-3 text-sm text-subtle">
+          {info}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -133,102 +137,153 @@ function LigneBranchement({
   setEdition: (edition: Edition) => void;
   agir: (action: () => Promise<Branchement[] | string>) => Promise<void>;
 }) {
-  const enEdition =
-    edition !== null && edition.mode !== "ajout" && edition.id === b.id;
+  const enEdition = edition !== null && edition.mode !== "ajout" && edition.id === b.id;
+  const actions = [
+    {
+      libelle: "Renommer",
+      onSelect: () => setEdition({ mode: "nom", id: b.id }),
+    },
+    {
+      libelle: "Changer les identifiants",
+      onSelect: () => setEdition({ mode: "identifiants", id: b.id }),
+    },
+    ...(b.actif && !b.par_defaut
+      ? [
+          {
+            libelle: "Utiliser par défaut",
+            onSelect: () => agir(() => modifierBranchement(b.id, { par_defaut: true })),
+          },
+        ]
+      : []),
+    {
+      libelle: b.actif ? "Désactiver" : "Réactiver",
+      onSelect: () => agir(() => modifierBranchement(b.id, { actif: !b.actif })),
+    },
+  ];
+
   return (
-    <li className="rounded-md border border-border p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span
-          className={`text-sm font-medium ${b.actif ? "text-ink" : "text-subtle"}`}
-        >
-          {b.nom}
-        </span>
-        {b.par_defaut && <Badge variant="neutral">Par défaut</Badge>}
-        {!b.actif && <Badge variant="closed">Désactivé</Badge>}
+    <li className={b.par_defaut ? "bg-canvas-app" : undefined}>
+      <div className="flex items-center gap-3 px-5 py-3">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <span className={`truncate text-sm font-medium ${b.actif ? "text-ink" : "text-subtle"}`}>
+            {b.nom}
+          </span>
+          {b.par_defaut && <Badge variant="neutral">Par défaut</Badge>}
+          {!b.actif && <Badge variant="closed">Désactivé</Badge>}
+        </div>
         {b.maj_le && (
-          <span className="text-xs text-subtle">
+          <span className="hidden shrink-0 text-xs text-subtle sm:block">
             Réglé le {formatDate(b.maj_le.slice(0, 10))}
           </span>
         )}
-      </div>
-      {admin && !enEdition && (
-        <div className="mt-2 flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={enCours}
-            onClick={() =>
-              agir(async () => {
-                const essai = await testerBranchement(b.id);
-                return `${b.nom} : ${essai.message}`;
-              })
-            }
-          >
-            Tester
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setEdition({ mode: "nom", id: b.id })}
-          >
-            Renommer
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setEdition({ mode: "identifiants", id: b.id })}
-          >
-            Changer les identifiants
-          </Button>
-          {b.actif && !b.par_defaut && (
+        {admin && !enEdition && (
+          <>
             <Button
               type="button"
               variant="ghost"
               size="sm"
               disabled={enCours}
               onClick={() =>
-                agir(() => modifierBranchement(b.id, { par_defaut: true }))
+                agir(async () => {
+                  const essai = await testerBranchement(b.id);
+                  return `${b.nom} : ${essai.message}`;
+                })
               }
             >
-              Utiliser par défaut
+              Tester
             </Button>
-          )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={enCours}
-            onClick={() =>
-              agir(() => modifierBranchement(b.id, { actif: !b.actif }))
-            }
-          >
-            {b.actif ? "Désactiver" : "Réactiver"}
-          </Button>
+            <MenuActions enCours={enCours} actions={actions} />
+          </>
+        )}
+      </div>
+      {enEdition && edition.mode === "nom" && (
+        <div className="px-5 pb-3">
+          <Renommer
+            nom={b.nom}
+            enCours={enCours}
+            onAnnuler={() => setEdition(null)}
+            onValider={(nom) => agir(() => modifierBranchement(b.id, { nom }))}
+          />
         </div>
       )}
-      {enEdition && edition.mode === "nom" && (
-        <Renommer
-          nom={b.nom}
-          enCours={enCours}
-          onAnnuler={() => setEdition(null)}
-          onValider={(nom) => agir(() => modifierBranchement(b.id, { nom }))}
-        />
-      )}
       {enEdition && edition.mode === "identifiants" && (
-        <FormulaireBranchement
-          type={b.type}
-          avecNom={false}
-          enCours={enCours}
-          onAnnuler={() => setEdition(null)}
-          onValider={(_nom, parametres) =>
-            agir(() => modifierBranchement(b.id, { parametres }))
-          }
-        />
+        <div className="px-5 pb-4">
+          <FormulaireBranchement
+            type={b.type}
+            avecNom={false}
+            enCours={enCours}
+            onAnnuler={() => setEdition(null)}
+            onValider={(_nom, parametres) =>
+              agir(() => modifierBranchement(b.id, { parametres }))
+            }
+          />
+        </div>
       )}
     </li>
+  );
+}
+
+function MenuActions({
+  enCours,
+  actions,
+}: {
+  enCours: boolean;
+  actions: { libelle: string; onSelect: () => void | Promise<void> }[];
+}) {
+  const [ouvert, setOuvert] = useState(false);
+  const zone = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!ouvert) return;
+    function fermerAuClic(evenement: MouseEvent) {
+      if (!zone.current?.contains(evenement.target as Node)) setOuvert(false);
+    }
+    function fermerAuClavier(evenement: KeyboardEvent) {
+      if (evenement.key === "Escape") setOuvert(false);
+    }
+    document.addEventListener("mousedown", fermerAuClic);
+    document.addEventListener("keydown", fermerAuClavier);
+    return () => {
+      document.removeEventListener("mousedown", fermerAuClic);
+      document.removeEventListener("keydown", fermerAuClavier);
+    };
+  }, [ouvert]);
+
+  return (
+    <div className={`relative shrink-0 ${ouvert ? "z-20" : ""}`} ref={zone}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-haspopup="menu"
+        aria-expanded={ouvert}
+        disabled={enCours}
+        onClick={() => setOuvert((etat) => !etat)}
+      >
+        Actions
+      </Button>
+      {ouvert && (
+        <div
+          role="menu"
+          className="absolute right-0 z-20 mt-1 w-56 rounded-md border border-border bg-canvas py-1 shadow-sm"
+        >
+          {actions.map((action) => (
+            <button
+              key={action.libelle}
+              type="button"
+              role="menuitem"
+              className="block w-full px-3 py-1.5 text-left text-sm text-ink hover:bg-surface-soft"
+              onClick={() => {
+                setOuvert(false);
+                void action.onSelect();
+              }}
+            >
+              {action.libelle}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -246,7 +301,7 @@ function Renommer({
   const [valeur, setValeur] = useState(nom);
   return (
     <form
-      className="mt-2 flex gap-2"
+      className="flex max-w-md gap-2"
       onSubmit={(evenement) => {
         evenement.preventDefault();
         onValider(valeur);
@@ -286,38 +341,39 @@ function FormulaireBranchement({
   const [valeurs, setValeurs] = useState<Record<string, string>>({});
   return (
     <form
-      className="mt-3 space-y-2"
+      className="space-y-3"
       onSubmit={(evenement) => {
         evenement.preventDefault();
         onValider(nom, valeurs);
       }}
     >
-      {avecNom && (
-        <label className="block text-sm text-ink">
-          Nom (pour le reconnaître, par exemple « {config.nom} agence Nord »)
-          <Input
-            required
-            value={nom}
-            onChange={(e) => setNom(e.target.value)}
-            className="mt-1"
-          />
-        </label>
-      )}
-      {config.champs.map((champ) => (
-        <label key={champ.cle} className="block text-sm text-ink">
-          {champ.libelle}
-          <Input
-            type={champ.type}
-            required={!champ.facultatif}
-            autoComplete="off"
-            value={valeurs[champ.cle] ?? ""}
-            onChange={(e) =>
-              setValeurs((v) => ({ ...v, [champ.cle]: e.target.value }))
-            }
-            className="mt-1"
-          />
-        </label>
-      ))}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {avecNom && (
+          <label className="block text-sm text-ink sm:col-span-2">
+            Nom, pour le reconnaître
+            <Input
+              required
+              placeholder={`${config.nom} agence Nord`}
+              value={nom}
+              onChange={(e) => setNom(e.target.value)}
+              className="mt-1"
+            />
+          </label>
+        )}
+        {config.champs.map((champ) => (
+          <label key={champ.cle} className="block text-sm text-ink">
+            {champ.libelle}
+            <Input
+              type={champ.type}
+              required={!champ.facultatif}
+              autoComplete="off"
+              value={valeurs[champ.cle] ?? ""}
+              onChange={(e) => setValeurs((v) => ({ ...v, [champ.cle]: e.target.value }))}
+              className="mt-1"
+            />
+          </label>
+        ))}
+      </div>
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={enCours}>
           {enCours ? "Enregistrement…" : "Enregistrer"}
