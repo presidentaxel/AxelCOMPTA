@@ -16,8 +16,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
+from typing import Any
 
 from axelcompta.categorize.models import Etage
 from axelcompta.core.ids import DossierId, EcritureId, UserId
@@ -37,6 +38,51 @@ def decision_en_vigueur(decision: DecisionHumaine | None) -> DecisionHumaine | N
     return decision
 
 
+# Nature d'une décision par rapport à ce qui était proposé (AXE-871).
+NATURE_CONFIRMEE = "confirmee"
+NATURE_CORRIGEE = "corrigee"
+NATURE_SANS_PROPOSITION = "sans_proposition"
+_SANS_AVIS = frozenset({"", "non_categorise_a_verifier"})
+
+
+@dataclass(frozen=True, slots=True)
+class ContexteDecision:
+    """Ce que l'humain avait sous les yeux en décidant (AXE-871) : de quoi
+    réentraîner le modèle et mesurer chaque étage sans relire le grand
+    livre, qui peut avoir bougé depuis. Le décideur (chauffeur, gestionnaire,
+    expert) se retrouve par `decide_par`."""
+
+    libelle: str
+    montant_cts: int  # signé, façon relevé : négatif = dépense
+    moyen_paiement: str | None
+    proposee: str | None  # catégorie proposée à ce moment-là
+    etage_propose: str | None
+    confiance_proposee: float | None
+    nature: str  # NATURE_CONFIRMEE | NATURE_CORRIGEE | NATURE_SANS_PROPOSITION
+
+    def en_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @staticmethod
+    def depuis_dict(brut: dict[str, Any]) -> ContexteDecision:
+        confiance = brut.get("confiance_proposee")
+        return ContexteDecision(
+            libelle=str(brut.get("libelle", "")),
+            montant_cts=int(brut.get("montant_cts", 0)),
+            moyen_paiement=brut.get("moyen_paiement"),
+            proposee=brut.get("proposee"),
+            etage_propose=brut.get("etage_propose"),
+            confiance_proposee=float(confiance) if confiance is not None else None,
+            nature=str(brut.get("nature", NATURE_SANS_PROPOSITION)),
+        )
+
+
+def nature_decision(proposee: str | None, choisie: str) -> str:
+    if proposee is None or proposee in _SANS_AVIS:
+        return NATURE_SANS_PROPOSITION
+    return NATURE_CONFIRMEE if proposee == choisie else NATURE_CORRIGEE
+
+
 @dataclass(frozen=True, slots=True)
 class DecisionHumaine:
     """Une catégorisation choisie par un humain côté client, sur une
@@ -51,6 +97,8 @@ class DecisionHumaine:
     confiance_origine: float
     decide_par: UserId
     decide_le: datetime
+    # AXE-871 : `None` pour les décisions d'avant le 12/11/2026.
+    contexte: ContexteDecision | None = None
 
 
 @dataclass(frozen=True, slots=True)

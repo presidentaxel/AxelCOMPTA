@@ -16,7 +16,7 @@ from axelcompta.core.ids import DossierId, EcritureId, UserId
 from axelcompta.core.rls import appliquer_rls
 
 from .audit import noter
-from .decisions import AnnotationDev, DecisionHumaine, DecisionRepository
+from .decisions import AnnotationDev, ContexteDecision, DecisionHumaine, DecisionRepository
 from .orm import annotations_dev, decisions_humaines
 
 
@@ -111,6 +111,7 @@ def inserer_decision(connexion: Connection, decision: DecisionHumaine) -> None:
             confiance_origine=decision.confiance_origine,
             decide_par=decision.decide_par,
             decide_le=decision.decide_le,
+            contexte=decision.contexte.en_dict() if decision.contexte is not None else None,
         )
     )
     noter(
@@ -132,4 +133,5 @@ def _ligne_vers_decision(ligne: Row[tuple[object, ...]]) -> DecisionHumaine:
         confiance_origine=ligne.confiance_origine,
         decide_par=UserId(ligne.decide_par),
         decide_le=ligne.decide_le,
+        contexte=ContexteDecision.depuis_dict(ligne.contexte) if ligne.contexte else None,
     )
