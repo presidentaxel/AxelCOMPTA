@@ -6306,9 +6306,7 @@ def _enregistrer_route_tester_branchement(app: FastAPI) -> None:
 def _enregistrer_route_fiche_webhook(app: FastAPI) -> None:
     """AXE-820 : le popup « Relier » donne l'adresse et le secret de ce compte."""
 
-    @app.post(
-        "/portefeuille/integrations/{branchement_id}/webhook", response_model=FicheWebhookVue
-    )
+    @app.post("/portefeuille/integrations/{branchement_id}/webhook", response_model=FicheWebhookVue)
     def preparer_fiche_webhook(
         branchement_id: str,
         request: Request,

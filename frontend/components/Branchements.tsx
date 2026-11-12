@@ -17,6 +17,7 @@ import {
 import { TYPES_BRANCHEMENT } from "@/lib/branchements";
 import { formatDate } from "@/lib/format";
 
+type Edition = { mode: "ajout" } | { mode: "identifiants" | "nom"; id: string } | null;
 type ResultatAction = Branchement[] | string | { message: string; liste: Branchement[] };
 
 function message(exception: unknown, defaut: string): string {

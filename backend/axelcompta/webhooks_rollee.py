@@ -81,9 +81,7 @@ class FicheWebhook:
     joignable: bool
 
 
-def preparer(
-    depot: BranchementsRepository, branchement: Branchement, url_api: str
-) -> FicheWebhook:
+def preparer(depot: BranchementsRepository, branchement: Branchement, url_api: str) -> FicheWebhook:
     """Crée le secret s'il manque (chiffré dans le compte) et l'adresse de ce compte."""
     branchement, secret = assurer_secret(depot, branchement)
     base = url_api.strip().rstrip("/")
