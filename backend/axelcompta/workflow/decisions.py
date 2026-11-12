@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -59,6 +59,9 @@ class ContexteDecision:
     etage_propose: str | None
     confiance_proposee: float | None
     nature: str  # NATURE_CONFIRMEE | NATURE_CORRIGEE | NATURE_SANS_PROPOSITION
+    # AXE-901 : l'avis de chaque étage, même non retenu (`avis_etages`).
+    # Vide pour les décisions d'avant le 12/11/2026.
+    avis: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def en_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -74,6 +77,7 @@ class ContexteDecision:
             etage_propose=brut.get("etage_propose"),
             confiance_proposee=float(confiance) if confiance is not None else None,
             nature=str(brut.get("nature", NATURE_SANS_PROPOSITION)),
+            avis=dict(brut.get("avis") or {}),
         )
 
 

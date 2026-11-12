@@ -1,4 +1,5 @@
-"""AXE-888 : une proposition de l'IA s'affiche sur une opération à trancher."""
+"""AXE-888 : une proposition de l'IA s'affiche sur une opération à trancher.
+AXE-901 : la décision qui la confirme le garde."""
 
 from __future__ import annotations
 
@@ -9,10 +10,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from axelcompta.categorize.llm import VERSION_PROMPT, cle_libelle
-from axelcompta.core.ids import DossierId, EcritureId
+from axelcompta.categorize.models import Etage, ProposedEntry
+from axelcompta.categorize.rules_and_ml import CATEGORIE_PAR_DEFAUT
+from axelcompta.core.ids import DossierId, EcritureId, TransactionId
 from axelcompta.core.money import Money
-from axelcompta.demo_api import get_propositions_ia
+from axelcompta.demo_api import get_decisions, get_propositions, get_propositions_ia
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
+from axelcompta.workflow.decisions import DecisionRepository
 from axelcompta.workflow.propositions_ia import PropositionIa, PropositionsIaMemoire
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client,
@@ -83,3 +87,43 @@ def test_a_verifier_ne_s_affiche_pas() -> None:
     _depot(client).enregistrer([_proposition(str(cible["libelle"]), "non_categorise_a_verifier")])
     vue = next(t for t in _transactions(client) if t["ecriture_id"] == cible["ecriture_id"])
     assert vue["origine_proposition"] != "ia"
+
+
+def test_confirmer_la_proposition_de_l_ia_est_une_decision_confirmee() -> None:
+    """AXE-901 : la décision garde ce que la file montrait (l'IA) et l'avis
+    de chaque étage, pas seulement la proposition de la synchro."""
+    client = _client()
+    cible = _sans_regle(client)
+    app = cast(FastAPI, client.app)
+    app.dependency_overrides[get_propositions]().enregistrer(
+        EcritureId(str(cible["ecriture_id"])),
+        ProposedEntry(
+            DossierId(SOPHIE), TransactionId("ia-1"), CATEGORIE_PAR_DEFAUT, Etage.ML, 0.2
+        ),
+    )
+    _depot(client).enregistrer([_proposition(str(cible["libelle"]), "telecommunications")])
+    reponse = client.post(
+        f"/dossiers/{SOPHIE}/transactions/{cible['ecriture_id']}/decision",
+        json={"categorie": "telecommunications"},
+        headers=_en_tete(SOPHIE),
+    )
+    assert reponse.status_code == 200, reponse.text
+    depot = cast(DecisionRepository, app.dependency_overrides[get_decisions]())
+    (decision,) = [
+        d
+        for d in depot.lister_decisions(DossierId(SOPHIE))
+        if d.ecriture_id == cible["ecriture_id"]
+    ]
+    contexte = decision.contexte
+    assert contexte is not None
+    assert (contexte.proposee, contexte.etage_propose, contexte.nature) == (
+        "telecommunications",
+        "LLM",
+        "confirmee",
+    )
+    assert contexte.avis["synchro"] == {
+        "etage": "ML",
+        "categorie": CATEGORIE_PAR_DEFAUT,
+        "confiance": 0.2,
+    }
+    assert contexte.avis["ia"]["modele"] == "claude-fable-5-2"

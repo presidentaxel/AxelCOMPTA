@@ -23,7 +23,13 @@ def test_le_contexte_est_relu_tel_qu_ecrit(
 ) -> None:
     creer_dossier("d1")
     creer_ecriture("d1", "e1")
-    contexte = ContexteDecision("CB TOTAL", -1000, "card", "carburant", "REGLE", 0.95, "confirmee")
+    avis = {  # AXE-901
+        "synchro": {"etage": "REGLE", "categorie": "carburant", "confiance": 0.95},
+        "ia": {"categorie": "carburant", "confiance": 0.8, "justification": "station"},
+    }
+    contexte = ContexteDecision(
+        "CB TOTAL", -1000, "card", "carburant", "REGLE", 0.95, "confirmee", avis
+    )
     depot = PostgresDecisionRepository(engine)
     depot.enregistrer_decision(
         DecisionHumaine(
