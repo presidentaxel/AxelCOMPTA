@@ -36,7 +36,9 @@ def _cle(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _ajouter(depot: BranchementsMemoire, nom: str, type_: str = "mail") -> Branchement:
     fournisseur, parametres = (
-        ("smtp", SMTP) if type_ == "mail" else ("digifactory", {"jeton": "j" * 64})
+        ("smtp", SMTP)
+        if type_ == "mail"
+        else ("digifactory", {"jeton": "j" * 64, "url": "https://digi.example"})
     )
     cree = nouveau(depot.lister(T), T, type_, fournisseur, nom, parametres)
     depot.enregistrer([cree], "admin", LE)
@@ -57,6 +59,8 @@ def test_un_champ_manquant_un_fournisseur_inconnu_ou_un_nom_pris_sont_refuses() 
     _ajouter(depot, "SMTP principal")
     with pytest.raises(BranchementInvalide):
         nouveau([], T, "mail", "smtp", "X", {"hote": "h"})
+    with pytest.raises(BranchementInvalide):
+        nouveau([], T, "digifactory", "digifactory", "D", {"jeton": "j" * 64})
     with pytest.raises(BranchementInvalide):
         nouveau([], T, "mail", "http", "X", {})
     with pytest.raises(BranchementInvalide):

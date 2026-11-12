@@ -49,7 +49,7 @@ def _ajouter(client: TestClient, nom: str, type_: str = "mail") -> list[dict[str
             "type": "digifactory",
             "fournisseur": "digifactory",
             "nom": nom,
-            "parametres": {"jeton": "x" * 64},
+            "parametres": {"jeton": "x" * 64, "url": "https://digi.example"},
         }
     )
     reponse = client.post("/portefeuille/integrations", json=corps, headers=_en_tete_gestionnaire())
@@ -80,7 +80,7 @@ def test_deux_smtp_actifs_un_seul_par_defaut_jamais_de_secret() -> None:
     assert "mot_de_passe" not in mail["champs"]
     assert mail["secrets"] == ["mot_de_passe"]
     digi = next(b for b in lue.json() if b["type"] == "digifactory")
-    assert digi["champs"] == {} and digi["secrets"] == ["jeton"]
+    assert digi["champs"] == {"url": "https://digi.example"} and digi["secrets"] == ["jeton"]
     assert len(liste) == 2
 
 

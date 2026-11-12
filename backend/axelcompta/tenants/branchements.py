@@ -36,12 +36,9 @@ FOURNISSEURS: dict[str, tuple[str, ...]] = {
 CHAMPS: dict[str, tuple[str, ...]] = {
     "smtp": ("hote", "port", "utilisateur", "mot_de_passe", "expediteur"),
     "http": ("url", "cle_api", "expediteur"),
-    "digifactory": ("jeton",),
+    "digifactory": ("jeton", "url"),
 }
-CHAMPS_FACULTATIFS: dict[str, tuple[str, ...]] = {
-    # Vide : l'adresse de `DIGIFACTORY_BASE_URL`.
-    "digifactory": ("url",),
-}
+CHAMPS_FACULTATIFS: dict[str, tuple[str, ...]] = {}
 # Jamais renvoyés à l'écran. Un champ vide à la mise à jour garde la valeur
 # déjà chiffrée : on retape le jeton seulement pour le remplacer.
 SECRETS = frozenset({"mot_de_passe", "cle_api", "jeton"})

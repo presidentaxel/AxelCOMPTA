@@ -27,12 +27,7 @@ export const TYPES_BRANCHEMENT: Record<
         type: "password",
         secret: true,
       },
-      {
-        cle: "url",
-        libelle: "Adresse de l'API",
-        type: "url",
-        facultatif: true,
-      },
+      { cle: "url", libelle: "Adresse de l'API", type: "url" },
     ],
   },
   mail: {

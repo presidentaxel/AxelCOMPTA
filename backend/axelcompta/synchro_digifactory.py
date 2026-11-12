@@ -5,10 +5,10 @@ planificateur : tant que la file de jobs (ADR-002) n'existe pas, on lance ça à
 la main ou depuis un cron. Chaque dossier est indépendant : l'échec de l'un
 n'empêche pas les autres, et le code de sortie vaut 1 si l'un a échoué.
 
-Usage, depuis backend/ (DATABASE_URL, DIGIFACTORY_BASE_URL et
-AXELCOMPTA_CLE_INTEGRATIONS définis, migrations appliquées). Le jeton vient du
-branchement Digifactory du dossier (AXE-872) ; `DIGIFACTORY_TOKEN` ne sert
-plus que pour un portefeuille qui n'en a encore aucun :
+Usage, depuis backend/ (DATABASE_URL et AXELCOMPTA_CLE_INTEGRATIONS définis,
+migrations appliquées). L'adresse et le jeton viennent du branchement
+Digifactory du dossier (AXE-872). `DIGIFACTORY_TOKEN` et `DIGIFACTORY_BASE_URL`
+ne servent que pour un portefeuille qui n'en a encore aucun :
 
     python -m axelcompta.synchro_digifactory --tenant <tenant_id>
     python -m axelcompta.synchro_digifactory --dossier <dossier_id>

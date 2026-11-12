@@ -42,7 +42,14 @@ def _dossier(id_: str, tenant: TenantId = T) -> Dossier:
 
 
 def _digi(depot: BranchementsMemoire, nom: str, jeton: str) -> Branchement:
-    cree = nouveau(depot.lister(T), T, "digifactory", "digifactory", nom, {"jeton": jeton})
+    cree = nouveau(
+        depot.lister(T),
+        T,
+        "digifactory",
+        "digifactory",
+        nom,
+        {"jeton": jeton, "url": "https://digi.example"},
+    )
     depot.enregistrer([cree], "admin", LE)
     return cree
 

@@ -371,13 +371,11 @@ class DigifactoryHttpClient:
 
     @classmethod
     def depuis_parametres(cls, parametres: dict[str, str]) -> DigifactoryHttpClient:
-        """Un branchement Digifactory du portefeuille (AXE-872) : son jeton,
-        et son adresse, ou à défaut `DIGIFACTORY_BASE_URL`."""
-        base_url = parametres.get("url") or os.environ.get("DIGIFACTORY_BASE_URL")
+        """Un branchement Digifactory (AXE-872) : jeton et adresse saisis
+        dans Intégrations. L'environnement n'est pas relu."""
+        base_url = parametres.get("url", "").strip()
         if not base_url:
-            raise RuntimeError(
-                "adresse Digifactory absente du branchement et de DIGIFACTORY_BASE_URL"
-            )
+            raise RuntimeError("adresse Digifactory absente du branchement")
         return cls(base_url, parametres["jeton"])
 
     async def _get(self, chemin: str, params: dict[str, str] | None = None) -> Any:
