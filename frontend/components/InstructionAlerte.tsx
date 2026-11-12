@@ -1,22 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useId, useState } from "react";
 
+import { Badge } from "@/components/Badge";
+import { BoutonLien } from "@/components/BoutonLien";
+import { Montant } from "@/components/Montant";
+import { Squelette } from "@/components/Squelette";
 import { Button } from "@/components/ui/button";
+import { ZoneDeTexte } from "@/components/ZoneDeTexte";
 import { lireHistoriqueAlerte } from "@/lib/auth-gestionnaire";
-import { formatDate, formatMontant } from "@/lib/format";
-import { libelleMoyenPaiement } from "@/lib/moyens-paiement";
+import {
+  LIBELLE_ETAT,
+  metaAlerte,
+  motifValide,
+  phraseEvenement,
+  varianteEtat,
+} from "@/lib/anomalies";
 import type { AlerteAnomalie, EvenementAnomalie } from "@/lib/types";
 
-const SUITE: Record<AlerteAnomalie["etat"], string> = {
-  ouverte: "Ouverte",
-  en_instruction: "En instruction",
-  justifiee: "Justifiée",
-  usage_personnel: "Usage personnel confirmé",
-  faux_positif: "Faux positif",
-};
-
-/** Qualification d'une alerte (doc 05 §6.3). Le libellé vient du serveur. */
+/** Qualification d'une alerte (doc 05 §6.3). Le libellé vient du serveur.
+ *
+ * Carte d'anomalie (DESIGN.md › `anomaly-card`) : fond canvas, filet
+ * `danger-border`, barre rouge de 3 px à gauche, aucune ombre. Les liens
+ * d'action sont orange `signal` et soulignés ; le rouge reste sur la barre et
+ * sur le montant, jamais sur une action. */
 export function InstructionAlerte({
   dossierId,
   alerte,
@@ -31,36 +38,32 @@ export function InstructionAlerte({
   onDecider: (decision: AlerteAnomalie["etat"], commentaire: string) => void;
 }) {
   return (
-    <article className="border-b border-hairline py-4">
-      <p className="text-sm font-medium text-ink">{alerte.libelle_ui}</p>
-      <p className="mt-1 text-sm text-subtle">{alerte.detail}</p>
-      <p className="mt-2 flex items-baseline justify-between gap-3 text-sm">
-        <span className="min-w-0 truncate text-ink">{alerte.libelle_mouvement}</span>
-        <span className="shrink-0 tabular-nums text-amount-negative">
-          {formatMontant(alerte.montant_centimes)}
-        </span>
-      </p>
-      <p className="mt-2 text-xs text-subtle">
-        {[formatDate(alerte.date), libelleMoyenPaiement(alerte.moyen_paiement ?? null), SUITE[alerte.etat]]
-          .filter(Boolean)
-          .join(" · ")}
-      </p>
+    <article className="rounded-lg border border-danger-border border-l-[3px] border-l-danger bg-canvas p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-ink">{alerte.libelle_ui}</p>
+          <p className="mt-1 text-sm text-body">{alerte.detail}</p>
+        </div>
+        <Montant centimes={alerte.montant_centimes} className="shrink-0 text-lg font-semibold" />
+      </div>
+      <p className="mt-3 truncate text-sm text-ink">{alerte.libelle_mouvement}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-subtle">
+        <span>{metaAlerte(alerte)}</span>
+        <Badge variant={varianteEtat(alerte.etat)}>{LIBELLE_ETAT[alerte.etat]}</Badge>
+      </div>
       {alerte.etat === "ouverte" && (
-        <Button
-          type="button"
+        <BoutonLien
           className="mt-3"
           disabled={envoi || lecture}
           onClick={() => onDecider("en_instruction", "")}
         >
-          Prendre en instruction
-        </Button>
+          Prendre en instruction<span aria-hidden="true">&nbsp;→</span>
+        </BoutonLien>
       )}
       {alerte.etat === "en_instruction" && (
         <Qualification alerteId={alerte.id} envoi={envoi || lecture} onDecider={onDecider} />
       )}
-      {alerte.etat !== "ouverte" && (
-        <Historique dossierId={dossierId} alerteId={alerte.id} />
-      )}
+      {alerte.etat !== "ouverte" && <Historique dossierId={dossierId} alerteId={alerte.id} />}
     </article>
   );
 }
@@ -79,42 +82,52 @@ function Qualification({
   const [manque, setManque] = useState(false);
   function decider(decision: "justifiee" | "usage_personnel" | "faux_positif") {
     // AXE-800 : chaque qualification porte le motif de l'expert.
-    if (commentaire.trim().length < 3) {
+    const motif = motifValide(commentaire);
+    if (motif === null) {
       setManque(true);
       return;
     }
     setManque(false);
-    onDecider(decision, commentaire.trim());
+    onDecider(decision, motif);
   }
   return (
     <form
-      className="mt-3 flex flex-col gap-2"
+      className="mt-4 flex flex-col gap-2 border-t border-hairline pt-4"
       onSubmit={(evenement) => {
         evenement.preventDefault();
         decider("justifiee");
       }}
     >
-      <label className="text-sm text-ink" htmlFor={champ}>
+      <label className="text-sm font-medium text-ink" htmlFor={champ}>
         Motif (obligatoire)
       </label>
-      <textarea
+      <ZoneDeTexte
         id={champ}
         name="commentaire"
-        rows={2}
+        rows={3}
         value={commentaire}
+        aria-invalid={manque || undefined}
+        aria-describedby={manque ? `${champ}-manque` : undefined}
         onChange={(evenement) => setCommentaire(evenement.target.value)}
-        className="rounded-md border border-hairline px-3 py-2 text-sm text-ink"
       />
-      {manque && <p className="text-sm text-danger">Indiquez le motif de votre décision.</p>}
-      <Button type="submit" disabled={envoi}>
-        Justifier
-      </Button>
-      <Button type="button" variant="secondary" disabled={envoi} onClick={() => decider("usage_personnel")}>
-        Confirmer un usage personnel
-      </Button>
-      <Button type="button" variant="secondary" disabled={envoi} onClick={() => decider("faux_positif")}>
-        Marquer comme faux positif
-      </Button>
+      {manque && (
+        <p id={`${champ}-manque`} className="text-sm text-danger">
+          Indiquez le motif de votre décision.
+        </p>
+      )}
+      {/* Une seule action principale : « Justifier » est aussi ce que valide la
+          touche Entrée du formulaire. Les deux autres issues restent au filet. */}
+      <div className="mt-1 flex flex-wrap gap-2">
+        <Button type="submit" disabled={envoi}>
+          Justifier
+        </Button>
+        <Button type="button" variant="secondary" disabled={envoi} onClick={() => decider("usage_personnel")}>
+          Confirmer un usage personnel
+        </Button>
+        <Button type="button" variant="secondary" disabled={envoi} onClick={() => decider("faux_positif")}>
+          Marquer comme faux positif
+        </Button>
+      </div>
     </form>
   );
 }
@@ -122,42 +135,50 @@ function Qualification({
 /** Chaque changement d'état, qui l'a fait et quand (AXE-814). Relu à
  * chaque ouverture : une qualification faite entre-temps y figure. */
 function Historique({ dossierId, alerteId }: { dossierId: string; alerteId: string }) {
+  const liste = useId();
   const [evenements, setEvenements] = useState<EvenementAnomalie[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [ouvert, setOuvert] = useState(false);
+
+  const lire = useCallback(() => {
+    setErreur(null);
+    lireHistoriqueAlerte(dossierId, alerteId)
+      .then(setEvenements)
+      .catch(() => setErreur("L'historique n'a pas pu être lu."));
+  }, [dossierId, alerteId]);
+
   function basculer() {
     if (ouvert) {
       setOuvert(false);
       return;
     }
     setOuvert(true);
-    setErreur(null);
-    lireHistoriqueAlerte(dossierId, alerteId)
-      .then(setEvenements)
-      .catch(() => setErreur("Impossible de lire l'historique."));
+    lire();
   }
+
   return (
-    <div className="mt-2">
-      <button
-        type="button"
-        className="text-xs font-medium text-primary hover:underline"
-        aria-expanded={ouvert}
-        onClick={basculer}
-      >
+    <div className="mt-3">
+      <BoutonLien aria-expanded={ouvert} aria-controls={liste} onClick={basculer}>
         {ouvert ? "Masquer l'historique" : "Historique"}
-      </button>
-      {ouvert && erreur && <p className="mt-1 text-xs text-danger">{erreur}</p>}
-      {ouvert && evenements && (
-        <ol className="mt-1 space-y-1 text-xs text-subtle">
-          {evenements.map((evenement) => (
-            <li key={`${evenement.le}-${evenement.etat}`}>
-              {formatDate(evenement.le)} · {SUITE[evenement.etat as AlerteAnomalie["etat"]] ?? evenement.etat}{" "}
-              · {evenement.acteur}
-              {evenement.commentaire ? ` · « ${evenement.commentaire} »` : ""}
-            </li>
-          ))}
-        </ol>
-      )}
+      </BoutonLien>
+      <div id={liste}>
+        {ouvert && erreur && (
+          <p className="text-sm text-ink">
+            {erreur}{" "}
+            <BoutonLien className="min-h-0" onClick={lire}>
+              Réessayer
+            </BoutonLien>
+          </p>
+        )}
+        {ouvert && !erreur && evenements === null && <Squelette className="mt-1 h-4 w-2/3" />}
+        {ouvert && evenements && (
+          <ol className="mt-1 space-y-1 text-sm text-subtle">
+            {evenements.map((evenement) => (
+              <li key={`${evenement.le}-${evenement.etat}`}>{phraseEvenement(evenement)}</li>
+            ))}
+          </ol>
+        )}
+      </div>
     </div>
   );
 }

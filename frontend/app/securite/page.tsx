@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
+import { MessageAcces } from "@/components/MessageAcces";
+import { PageAcces } from "@/components/PageAcces";
 import { CHEMIN_DOUBLE_AUTHENTIFICATION } from "@/lib/mfa-code";
 import { cheminDeRetour } from "@/lib/session";
 
@@ -19,5 +21,10 @@ export default function AncienneAdresseSecurite() {
     router.replace(`${CHEMIN_DOUBLE_AUTHENTIFICATION}?${params.toString()}`);
   }, [router]);
 
-  return null;
+  // La redirection est immédiate : une phrase d'attente évite l'écran vide.
+  return (
+    <PageAcces>
+      <MessageAcces ton="attente">Ouverture de la double authentification…</MessageAcces>
+    </PageAcces>
+  );
 }

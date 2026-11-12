@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { creerTag, poserTag, reglerExclusion } from "@/lib/auth-gestionnaire";
 import { basculerExclusion, libelleTag } from "@/lib/tags";
 import type { ReglageTags } from "@/lib/types";
@@ -103,22 +104,20 @@ export function PoseEnLot({
       <span className="text-ink">
         {coches.length === 1 ? "1 entreprise cochée" : `${coches.length} entreprises cochées`}
       </span>
-      <select
+      <Select
         aria-label="Tag à poser"
         value={choisi}
-        onChange={(evenement) => setTag(evenement.target.value)}
-        className="h-8 rounded-md border border-border bg-canvas px-2 text-sm text-ink"
-      >
-        {reglage.tags.map((option) => (
-          <option key={option.nom} value={option.nom}>
-            {libelleTag(option.nom)}
-          </option>
-        ))}
-      </select>
-      <Button type="button" size="sm" onClick={() => appliquer(true)}>
+        onValueChange={setTag}
+        options={reglage.tags
+          .filter((option) => option.nom !== "")
+          .map((option) => ({ value: option.nom, label: libelleTag(option.nom) }))}
+        className="w-48"
+      />
+      {/* Secondaires : le seul bouton principal de l'écran Entreprises est « Synchroniser ». */}
+      <Button type="button" variant="secondary" size="sm" onClick={() => appliquer(true)}>
         Poser
       </Button>
-      <Button type="button" variant="secondary" size="sm" onClick={() => appliquer(false)}>
+      <Button type="button" variant="ghost" size="sm" onClick={() => appliquer(false)}>
         Retirer
       </Button>
       {erreur && <span className="text-danger">{erreur}</span>}

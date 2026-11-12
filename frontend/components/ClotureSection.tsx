@@ -15,12 +15,13 @@ import { useState } from "react";
 
 import { Aide } from "@/components/Aide";
 import { Dialogue } from "@/components/Dialogue";
+import { Montant } from "@/components/Montant";
 import { ResultatACeJour } from "@/components/ResultatACeJour";
+import { TitreSection } from "@/components/TitreSection";
 import { Button } from "@/components/ui/button";
 import { cheminTelechargementCloture } from "@/lib/api";
 import { ErreurAuthChauffeur, telechargerAvecAuthChauffeur } from "@/lib/auth-chauffeur";
 import { phraseOperationsRestantes } from "@/lib/etapes-exercice";
-import { formatMontant } from "@/lib/format";
 import { phrasePourChauffeur } from "@/lib/langage-chauffeur";
 import type { DocumentCloture, DossierResume } from "@/lib/types";
 
@@ -100,7 +101,7 @@ export function ChiffresExercice({ dossier }: { dossier: DossierResume }) {
   return (
     <section>
       <ResultatACeJour dossier={dossier} />
-      <dl className="mt-4 space-y-2 text-sm">
+      <dl className="mt-4 border-t border-border text-sm">
         <Ligne
           label="Ce que vous avez encaissé"
           cents={dossier.ca_ht_cts}
@@ -171,12 +172,12 @@ export function ClotureSection({
 
   return (
     <section className="mt-8">
-      <h2 className="text-base font-semibold text-ink">Pour les impôts</h2>
+      <TitreSection>Pour les impôts</TitreSection>
       <p className="mt-1 text-sm text-ink">{texteDocuments(operationsRestantes, comptesClos)}</p>
-      <div className={bloque ? "opacity-50" : undefined}>
       <Button
         type="button"
         variant="secondary"
+        size="lg"
         className="mt-4 w-full"
         disabled={bloque}
         onClick={ouvrirAvertissement}
@@ -185,26 +186,27 @@ export function ClotureSection({
       </Button>
       {avertissementLiasse && (
         <Dialogue titre="Liasse de l'exercice" titreId="titre-liasse" onFermer={fermerAvertissement}>
-          <p className="mt-4 text-sm text-subtle">
+          <p className="mt-4 text-sm text-body">
             La signature électronique arrivera plus tard. En attendant, cette validation engage
             sur la liasse telle qu&apos;elle est.
           </p>
           <label className="mt-4 flex min-h-11 items-start gap-3 text-sm text-ink">
             <input
               type="checkbox"
-              className="mt-0.5 size-6 shrink-0"
+              className="mt-0.5 size-6 shrink-0 accent-primary"
               checked={liasseLue}
               onChange={(event) => setLiasseLue(event.target.checked)}
             />
             <span>Je reconnais avoir lu et validé le dossier fiscal (la liasse).</span>
           </label>
           <div className="mt-5 flex gap-2">
-            <Button type="button" variant="ghost" className="h-11 flex-1" onClick={fermerAvertissement}>
+            <Button type="button" variant="ghost" size="lg" className="flex-1" onClick={fermerAvertissement}>
               Annuler
             </Button>
             <Button
               type="button"
-              className="h-11 flex-1"
+              size="lg"
+              className="flex-1"
               disabled={!liasseLue}
               onClick={() => {
                 fermerAvertissement();
@@ -220,7 +222,7 @@ export function ClotureSection({
         Le FEC est le fichier que l&apos;administration demande lors d&apos;un
         contrôle. Il liste chaque écriture, au format texte, pas en PDF.
       </p>
-      <ul className="mt-2">
+      <ul className="mt-2 border-t border-border">
         {[pieceDeclaration(dossier), ...PIECES].map(({ document, label, detail, aide }) => (
           <li key={document} className="flex items-center gap-2 border-b border-hairline">
             <span className="flex min-w-0 flex-1 items-center py-3 pl-2 text-sm font-medium text-ink">
@@ -232,20 +234,25 @@ export function ClotureSection({
               aria-label={`Télécharger ${label} (${detail})`}
               disabled={bloque}
               onClick={() => void telecharger(document)}
-              className="flex min-h-11 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 py-3 text-sm text-subtle outline-none hover:bg-primary-subtle focus-visible:shadow-focus-detache disabled:cursor-not-allowed"
+              className="flex min-h-11 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 py-3 text-sm text-subtle outline-none transition-colors duration-100 hover:bg-surface-soft hover:text-ink focus-visible:shadow-focus-detache disabled:pointer-events-none disabled:opacity-50"
             >
               {detail}
-              <Download className="h-4 w-4 text-primary" aria-hidden />
+              <Download className="size-4 text-signal" aria-hidden />
             </button>
           </li>
         ))}
       </ul>
-      </div>
-      {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}
+      {erreur && (
+        <p role="alert" className="mt-2 text-sm text-danger">
+          {erreur}
+        </p>
+      )}
     </section>
   );
 }
 
+/** Une ligne du récapitulatif : libellé à gauche, montant à droite en chiffres
+ * tabulaires (DESIGN.md › Règle des montants), sans connotation de couleur. */
 function Ligne({
   label,
   cents,
@@ -256,13 +263,13 @@ function Ligne({
   aide?: string;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-3">
+    <div className="flex items-baseline justify-between gap-3 border-b border-hairline py-3">
       <dt className="text-subtle">
         {label}
         {aide && <Aide texte={aide} />}
       </dt>
-      <dd className={`tabular-nums text-right ${cents < 0 ? "text-amount-negative" : "text-ink"}`}>
-        {formatMontant(cents)}
+      <dd className="text-right text-[15px] font-medium">
+        <Montant centimes={cents} ton="neutre" />
       </dd>
     </div>
   );

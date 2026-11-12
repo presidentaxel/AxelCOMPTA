@@ -1,10 +1,12 @@
 "use client";
 
+import { ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { Etat } from "@/components/Etat";
 import { Squelette } from "@/components/Squelette";
+import { TitreEcran } from "@/components/TitreEcran";
 import {
   choisirDossierDeTest,
   listerDossiersDeTest,
@@ -46,21 +48,16 @@ export default function ChoixDossierDeTestPage() {
 
   return (
     <section aria-labelledby="titre-choix">
-      <h1 id="titre-choix" className="text-xl font-semibold text-ink">
-        Quel dossier ?
-      </h1>
-      <p className="mt-1 text-sm text-subtle">
+      <TitreEcran id="titre-choix" titre="Quel dossier ?">
         Compte de test : vous voyez l&apos;espace du chauffeur tel qu&apos;il le verrait, sans
         pouvoir rien changer.
-      </p>
-      {erreur && (
-        <Etat type="erreur" message={erreur} onReessayer={charger} className="mt-6" />
-      )}
+      </TitreEcran>
+      {erreur && <Etat type="erreur" message={erreur} onReessayer={charger} className="mt-0" />}
       {!erreur && dossiers === null && (
-        <div className="mt-6 space-y-3" aria-hidden>
-          <Squelette className="h-14 w-full" />
-          <Squelette className="h-14 w-full" />
-          <Squelette className="h-14 w-full" />
+        <div className="space-y-3" aria-hidden>
+          <Squelette className="h-16 w-full" />
+          <Squelette className="h-16 w-full" />
+          <Squelette className="h-16 w-full" />
         </div>
       )}
       {dossiers && dossiers.length === 0 && (
@@ -68,27 +65,28 @@ export default function ChoixDossierDeTestPage() {
           type="vide"
           message="Aucun dossier dans ce portefeuille."
           action={{ libelle: "Réessayer", onClick: charger }}
-          className="mt-6"
+          className="mt-0"
         />
       )}
       {dossiers && dossiers.length > 0 && (
-        <ul className="mt-6 divide-y divide-hairline rounded-md border border-border bg-canvas">
+        <ul className="divide-y divide-hairline overflow-hidden rounded-lg border border-border bg-canvas">
           {dossiers.map((dossier) => (
             <li key={dossier.dossier_id}>
               <button
                 type="button"
                 onClick={() => ouvrir(dossier)}
-                className="flex min-h-11 w-full items-baseline justify-between gap-3 px-4 py-3 text-left transition-colors duration-150 hover:bg-canvas-app"
+                className="flex min-h-16 w-full items-center justify-between gap-3 px-4 py-3 text-left outline-none transition-colors duration-150 hover:bg-canvas-app focus-visible:bg-canvas-app focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-signal"
               >
                 <span className="min-w-0">
                   <span className="block truncate text-base font-semibold text-ink">
                     {dossier.nom}
                   </span>
-                  <span className="block text-sm text-subtle">{dossier.forme_juridique}</span>
+                  <span className="block text-sm text-subtle">
+                    {dossier.forme_juridique} · {dossier.nb_operations} opération
+                    {dossier.nb_operations > 1 ? "s" : ""}
+                  </span>
                 </span>
-                <span className="shrink-0 text-sm tabular-nums text-subtle">
-                  {dossier.nb_operations} opération{dossier.nb_operations > 1 ? "s" : ""}
-                </span>
+                <ChevronRight className="h-5 w-5 shrink-0 text-muted" aria-hidden />
               </button>
             </li>
           ))}

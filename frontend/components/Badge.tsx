@@ -5,6 +5,10 @@
  * `neutral` est une exception délibérée, hors vocabulaire DESIGN.md : sert de
  * simple tag informatif (régime TVA, nom de plateforme) plutôt qu'un statut
  * d'écriture — usage différent, ne pas le confondre avec les 8 ci-dessus.
+ *
+ * Contraste texte / fond mesuré (WCAG, le texte fait 12 px donc 4,5:1 exigé) :
+ * toutes les paires passent, de 4,79 (`validated`) à 9,75 (`closed`). Le texte
+ * de `missing` (transparent) vaut 5,29 à 5,91 selon la surface qui le porte.
  */
 export type BadgeVariant =
   | "validated"
@@ -19,7 +23,9 @@ export type BadgeVariant =
 
 const STYLES: Record<BadgeVariant, string> = {
   validated: "bg-validated-subtle text-validated border border-success-border",
-  pending: "bg-pending-subtle text-pending border border-warning-border",
+  // `pending-ink` et non `pending` : l'or `pending` sur fond `pending-subtle`
+  // tombe sous 4,5:1 ; `pending-ink` donne 6,15:1 (DESIGN.md › Contrastes).
+  pending: "bg-pending-subtle text-pending-ink border border-warning-border",
   "auto-rule": "bg-auto-rule-subtle text-auto-rule border border-info-border",
   "auto-ml": "bg-auto-ml-subtle text-auto-ml border border-transparent",
   "auto-llm": "bg-auto-llm-subtle text-auto-llm border border-transparent",

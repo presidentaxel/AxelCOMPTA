@@ -6,6 +6,8 @@
 import { useState } from "react";
 
 import { Aide } from "@/components/Aide";
+import { BoutonLien } from "@/components/BoutonLien";
+import { TitreSection } from "@/components/TitreSection";
 import { Button } from "@/components/ui/button";
 import { ApiError, cheminGreffeInpi } from "@/lib/api";
 import {
@@ -67,31 +69,30 @@ export function GreffeInpiSection({
   return (
     <section className="mt-10">
       <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-base font-semibold text-ink">
+        <TitreSection>
           Dépôt des comptes
           <Aide texte="Le greffe du tribunal de commerce reçoit les comptes de l'année, sur le portail de l'INPI. Rien n'est envoyé depuis ici." />
-        </h2>
+        </TitreSection>
         {signe ? <Badge variant="validated">Signé</Badge> : <Badge variant="pending">À signer</Badge>}
       </div>
       {raisonBlocage && <p className="mt-1 text-sm text-ink">{raisonBlocage}</p>}
-      <div className={bloque ? "opacity-50" : undefined}>
       {guide.depose ? (
         <>
           <p className="mt-1 text-sm text-subtle">
             À reporter sur le portail. Rien n&apos;est envoyé d&apos;ici.
           </p>
           {bloque ? (
-            <Button type="button" className="mt-4 w-full" disabled>
+            <Button type="button" size="lg" className="mt-4 w-full" disabled>
               Ouvrir le portail INPI
             </Button>
           ) : (
-            <Button asChild className="mt-4 w-full">
+            <Button asChild size="lg" className="mt-4 w-full">
               <a href={guide.lien} target="_blank" rel="noopener noreferrer">
                 Ouvrir le portail INPI
               </a>
             </Button>
           )}
-          <ul className="mt-4">
+          <ul className="mt-4 border-t border-border">
             {guide.lignes.map((ligne) => (
               <li key={ligne.question} className="border-b border-hairline py-3">
                 <div className="flex items-baseline justify-between gap-4">
@@ -102,8 +103,8 @@ export function GreffeInpiSection({
               </li>
             ))}
           </ul>
-          <h3 className="mt-8 text-sm font-medium text-ink">Pièces à joindre</h3>
-          <ul>
+          <h3 className="mt-8 text-sm font-semibold text-ink">Pièces à joindre</h3>
+          <ul className="mt-2 border-t border-border">
             {guide.pieces.map((piece) => {
               const document = piece.document;
               return (
@@ -111,8 +112,8 @@ export function GreffeInpiSection({
                   <div className="flex items-baseline justify-between gap-4">
                     <span className="text-sm font-medium text-ink">{piece.nom}</span>
                     {document && (
-                      <button
-                        type="button"
+                      <BoutonLien
+                        className="min-h-11 shrink-0"
                         disabled={bloque}
                         onClick={() =>
                           void telecharger(
@@ -120,10 +121,9 @@ export function GreffeInpiSection({
                             `${document.replace(".pdf", "")}-${dossier.dossier_id}.pdf`,
                           )
                         }
-                        className="inline-flex min-h-11 shrink-0 items-center text-sm text-primary outline-none focus-visible:shadow-focus-detache disabled:cursor-not-allowed"
                       >
                         Télécharger
-                      </button>
+                      </BoutonLien>
                     )}
                   </div>
                   {piece.detail && <p className="mt-1 text-sm text-subtle">{piece.detail}</p>}
@@ -135,20 +135,20 @@ export function GreffeInpiSection({
       ) : (
         <p className="mt-2 text-sm text-subtle">Cette forme de société ne dépose pas ses comptes.</p>
       )}
-      <button
-        type="button"
+      <BoutonLien
+        className="mt-4 min-h-11"
         disabled={bloque}
         onClick={() =>
           void telecharger(cheminGreffeInpi(dossier.dossier_id), `greffe-inpi-${dossier.dossier_id}.pdf`)
         }
-        className="mt-4 inline-flex min-h-11 items-center text-left text-sm text-primary outline-none focus-visible:shadow-focus-detache disabled:cursor-not-allowed"
       >
         Télécharger le dossier de synthèse
-      </button>
+      </BoutonLien>
       {!signe && (
         <Button
           type="button"
           variant="secondary"
+          size="lg"
           className="mt-2 w-full"
           disabled={bloque || enCours}
           onClick={() => void signer()}
@@ -156,8 +156,11 @@ export function GreffeInpiSection({
           {enCours ? "Signature…" : "Signer"}
         </Button>
       )}
-      </div>
-      {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}
+      {erreur && (
+        <p role="alert" className="mt-2 text-sm text-danger">
+          {erreur}
+        </p>
+      )}
     </section>
   );
 }

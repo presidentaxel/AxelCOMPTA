@@ -10,16 +10,16 @@ import type { DossierResume } from "@/lib/types";
 export function ResultatACeJour({ dossier }: { dossier: DossierResume }) {
   const centimes = dossier.resultat_cts;
   return (
-    <div>
+    <div className="rounded-lg border border-border bg-canvas p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted" suppressHydrationWarning>
+        Résultat à ce jour, {formatDate(aujourdhuiIso())}
+      </p>
       <p
-        className={`text-[28px] font-bold tabular-nums tracking-tight ${
+        className={`mt-1.5 text-4xl font-bold leading-tight tabular-nums tracking-tight ${
           centimes < 0 ? "text-amount-negative" : "text-amount-positive"
         }`}
       >
         {formatMontant(centimes)}
-      </p>
-      <p className="text-sm text-subtle" suppressHydrationWarning>
-        Résultat à ce jour, {formatDate(aujourdhuiIso())}
       </p>
     </div>
   );

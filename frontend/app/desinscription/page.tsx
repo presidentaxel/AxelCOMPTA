@@ -1,28 +1,64 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+
+import { MessageAcces, type TonMessage } from "@/components/MessageAcces";
+import { PageAcces, TitreAcces } from "@/components/PageAcces";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  ETAT_ATTENTE,
+  ETAT_INJOIGNABLE,
+  etatApresReponse,
+  type EtatDesinscription,
+} from "@/lib/desinscription";
+
+/** Un refus du lien n'est pas une erreur d'authentification : pas de rouge. */
+const TON_PAR_STATUT: Record<EtatDesinscription["statut"], TonMessage> = {
+  attente: "attente",
+  faite: "succes",
+  refusee: "attention",
+  injoignable: "attention",
+};
 
 /** AXE-808 : lien en bas de chaque rappel. Public : la signature du lien
  * suffit, aucun compte n'est demandé. */
 export default function DesinscriptionPage() {
-  const [message, setMessage] = useState("Enregistrement…");
+  const [etat, setEtat] = useState<EtatDesinscription>(ETAT_ATTENTE);
 
-  useEffect(() => {
+  const enregistrer = useCallback(() => {
     const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
     fetch(`${base}/desinscription${window.location.search}`)
       .then(async (reponse) => {
-        const corps = (await reponse.json().catch(() => ({}))) as { message?: string; detail?: string };
-        setMessage(reponse.ok ? (corps.message ?? "C'est noté.") : (corps.detail ?? "Ce lien n'est pas valable."));
+        const corps = (await reponse.json().catch(() => ({}))) as { message?: unknown; detail?: unknown };
+        setEtat(etatApresReponse(reponse.ok, corps));
       })
-      .catch(() => setMessage("Le serveur ne répond pas. Réessayez dans un instant."));
+      .catch(() => setEtat(ETAT_INJOIGNABLE));
   }, []);
 
+  useEffect(() => {
+    // La désinscription part à l'ouverture du lien : c'est tout l'écran.
+    enregistrer();
+  }, [enregistrer]);
+
   return (
-    <main className="mx-auto max-w-md px-4 py-16">
-      <h1 className="text-xl font-semibold text-ink">Rappels</h1>
-      <p role="status" className="mt-4 text-sm text-ink">
-        {message}
-      </p>
-    </main>
+    <PageAcces>
+      <TitreAcces>Rappels</TitreAcces>
+      <Card className="mt-6">
+        <MessageAcces ton={TON_PAR_STATUT[etat.statut]}>{etat.message}</MessageAcces>
+      </Card>
+      {etat.statut === "injoignable" && (
+        <Button
+          type="button"
+          className="mt-4 w-full"
+          onClick={() => {
+            setEtat(ETAT_ATTENTE);
+            enregistrer();
+          }}
+        >
+          Réessayer
+        </Button>
+      )}
+    </PageAcces>
   );
 }

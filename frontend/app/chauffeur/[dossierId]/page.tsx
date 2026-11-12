@@ -276,7 +276,11 @@ function Activite({
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {annonce}
       </div>
-      <Entete dossier={dossier} onReessayer={reessayerEchecs} />
+      <Entete
+        dossier={dossier}
+        reste={transactions.statut === "pret" ? reste : null}
+        onReessayer={reessayerEchecs}
+      />
       <ConfirmationEntreprise dossierId={dossierId} />
       <EcartsRegistre dossierId={dossierId} />
       {transactions.statut === "pret" && !sansOperation && (
@@ -365,9 +369,13 @@ type CorrectionAffichee = {
 
 function Entete({
   dossier,
+  reste,
   onReessayer,
 }: {
   dossier: { statut: "en_cours" } | { statut: "pret"; valeur: DossierResume } | { statut: "erreur"; message: string };
+  /** Questions qui attendent encore une réponse ; `null` tant que les
+   * opérations ne sont pas chargées. */
+  reste: number | null;
   onReessayer: () => void;
 }) {
   if (dossier.statut === "erreur") {
@@ -390,6 +398,21 @@ function Entete({
       <p className="mt-1 text-sm text-subtle">
         {fiche.forme_juridique} · {fiche.regime_libelle}
       </p>
+      {reste !== null && (
+        <p className="mt-6 text-[28px] font-bold leading-tight tracking-tight text-ink">
+          {reste > 0 ? (
+            <>
+              Il reste{" "}
+              <span className="bg-[linear-gradient(transparent_58%,var(--color-highlight)_58%)] px-0.5">
+                {reste} {reste > 1 ? "questions" : "question"}
+              </span>
+              .
+            </>
+          ) : (
+            "Tout est à jour."
+          )}
+        </p>
+      )}
       <div className="mt-6">
         <ResultatACeJour dossier={fiche} />
       </div>
@@ -671,7 +694,7 @@ function Mouvements({
                       aria-expanded={estOuverte}
                       aria-label={`Corriger ${nom}`}
                       onClick={() => onOuvrir(estOuverte ? null : transaction.ecriture_id)}
-                      className={`mt-1 min-h-11 rounded-md px-1 text-sm font-medium text-primary ${ANNEAU}`}
+                      className={`mt-1 min-h-11 rounded-md px-1 text-sm font-medium text-signal ${ANNEAU}`}
                     >
                       Corriger
                     </button>
@@ -755,7 +778,7 @@ function AjouterTicketSortie({
         type="button"
         disabled={envoi}
         onClick={() => inputRef.current?.click()}
-        className={`mt-1 inline-flex min-h-11 items-center rounded-md px-1 text-sm font-medium text-primary disabled:opacity-50 ${ANNEAU}`}
+        className={`mt-1 inline-flex min-h-11 items-center rounded-md px-1 text-sm font-medium text-signal disabled:opacity-50 ${ANNEAU}`}
       >
         {envoi ? "Envoi…" : "Ajouter un ticket"}
       </button>

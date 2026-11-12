@@ -5,13 +5,14 @@ import { cn } from "cn"
 /** DESIGN.md § Cards et panneaux : `card` (défaut), `card-flat`, `card-section`,
  * `card-warning`/`card-danger`/`card-info`. Ne pas ajouter de variante hors
  * de cette liste sans mettre à jour DESIGN.md d'abord (même règle que les
- * badges). */
+ * badges). Aucune ombre sur une carte : le filet `border` suffit, les ombres
+ * sont réservées aux menus et fenêtres (DESIGN.md › Élévation). */
 const cardVariants = cva("text-ink", {
   variants: {
     variant: {
-      default: "rounded-lg border border-border bg-canvas p-5 shadow-xs",
+      default: "rounded-lg border border-border bg-canvas p-5",
       flat: "rounded-md bg-canvas-app p-4",
-      section: "rounded-lg border border-border bg-canvas p-0 shadow-sm",
+      section: "rounded-lg border border-border bg-canvas p-0",
       warning: "rounded-md border border-warning-border bg-warning-subtle px-4 py-3.5",
       danger: "rounded-md border border-danger-border bg-danger-subtle px-4 py-3.5",
       info: "rounded-md border border-info-border bg-info-subtle px-4 py-3.5",

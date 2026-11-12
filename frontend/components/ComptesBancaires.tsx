@@ -152,7 +152,7 @@ function LigneCompte({
       {!estNonVentile(compte) && (
         <button
           type="button"
-          className="mt-1 min-h-11 text-xs font-medium text-primary underline-offset-2 hover:underline"
+          className="mt-1 min-h-11 text-xs font-medium text-signal underline-offset-2 hover:underline"
           disabled={enCours}
           onClick={() => decider(false)}
         >

@@ -10,6 +10,7 @@ import { IntegrationsDossier } from "@/components/IntegrationsDossier";
 import { SuiviEnvois } from "@/components/SuiviEnvois";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import {
   declencherRappel,
   ErreurAuthGestionnaire,
@@ -48,7 +49,12 @@ import { gardeTag, libelleTag, SANS_TAG, TOUS_LES_TAGS, totauxPortefeuille } fro
 import type { DossierAgregat, ReglageTags } from "@/lib/types";
 import { useDroitGestionnaire } from "@/lib/use-droit";
 import { Squelette } from "@/components/Squelette";
-import { SynchronisationPortefeuille } from "@/components/SynchronisationPortefeuille";
+import {
+  BoutonSynchroniser,
+  NouveauxChauffeurs,
+  PhraseSynchronisation,
+  useSynchronisationPortefeuille,
+} from "@/components/SynchronisationPortefeuille";
 import {
   PastillesTags,
   PoseEnLot,
@@ -100,6 +106,7 @@ export function EcranEntreprises() {
         }
       });
   }, [router]);
+  const synchro = useSynchronisationPortefeuille(charger);
 
   useEffect(() => {
     const memo = lirePortefeuilleSession();
@@ -198,23 +205,27 @@ export function EcranEntreprises() {
   const choisi = dossiers?.find((dossier) => dossier.dossier_id === selection) ?? null;
 
   return (
-    <div className="sticky top-0 -m-8 flex h-screen overflow-hidden">
-    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-8">
+    <div className="flex items-start gap-6">
+    <div className="min-w-0 flex-1">
       <div className="flex items-start justify-between gap-6">
-        <h1 className="text-[28px] font-bold tracking-tight text-ink">Entreprises</h1>
-        <Link href="/invitations" className="mt-2 text-sm font-medium text-primary hover:underline">
+        <h1 className="text-[22px] font-bold tracking-tight text-ink">Entreprises</h1>
+        <Link href="/invitations" className="mt-2 text-sm font-medium text-signal hover:underline">
           Invitations
         </Link>
       </div>
       <AlerteConnexions />
-      <SynchronisationPortefeuille ecriture={droit.ecriture} onTerminee={charger} />
-      {droit.admin && (
-        <Link href="/import-dossiers" className="mt-2 inline-block text-sm font-medium text-primary">
-          Importer des entreprises depuis un fichier
-        </Link>
-      )}
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        {droit.ecriture && <BoutonSynchroniser etat={synchro} />}
+        <PhraseSynchronisation etat={synchro} />
+        {droit.admin && (
+          <Link href="/import-dossiers" className="text-sm font-semibold text-signal underline decoration-2 underline-offset-[3px] hover:text-signal-deep">
+            Importer des entreprises depuis un fichier
+          </Link>
+        )}
+      </div>
+      <NouveauxChauffeurs etat={synchro} ecriture={droit.ecriture} />
       {retires.length > 0 && (
-        <section className="mt-6 rounded-lg border border-border bg-canvas p-4">
+        <section className="mt-6 rounded-md border border-border bg-canvas p-4">
           <h2 className="text-sm font-semibold text-ink">Retirées de la liste</h2>
           <p className="mt-1 text-sm text-subtle">Les écritures sont gardées.</p>
           <ul className="mt-3">
@@ -276,7 +287,7 @@ export function EcranEntreprises() {
       {bandeau && banque !== COMPTES_A_CHOISIR && (
         <div
           role="status"
-          className="mt-6 flex flex-wrap items-center gap-3 rounded-md border border-warning/40 bg-pending-subtle px-4 py-3"
+          className="mt-4 flex flex-wrap items-center gap-3 rounded-md border border-warning/40 bg-pending-subtle px-4 py-2.5"
         >
           <p className="flex-1 text-sm text-ink">{bandeau}</p>
           <Button type="button" variant="secondary" size="sm" onClick={() => ecrire({ banque: COMPTES_A_CHOISIR })}>
@@ -423,7 +434,7 @@ export function EcranEntreprises() {
             <button
               type="button"
               aria-current={selection === dossier.dossier_id ? "true" : undefined}
-              className={`flex w-full items-start justify-between gap-6 rounded-lg px-3 py-2.5 text-left hover:bg-surface-soft ${
+              className={`flex w-full items-start justify-between gap-6 rounded-md px-3 py-2 text-left hover:bg-surface-soft ${
                 selection === dossier.dossier_id ? "bg-surface-soft" : ""
               }`}
               onClick={() => {
@@ -436,7 +447,7 @@ export function EcranEntreprises() {
             >
               <span className="min-w-0 flex-1">
                 <span className="flex items-baseline gap-2">
-                  <span className="truncate text-base font-semibold text-ink">{dossier.nom}</span>
+                  <span className="truncate text-sm font-semibold text-ink">{dossier.nom}</span>
                   <span className="shrink-0 text-sm text-subtle">{libelleCompte(dossier.statut_invitation)}</span>
                   <span className="shrink-0 text-sm font-medium text-ink">{bloque}</span>
                   <PastillesTags tags={dossier.tags ?? []} />
@@ -473,7 +484,7 @@ export function EcranEntreprises() {
                 </span>
               </span>
               <span
-                className={`shrink-0 text-lg font-semibold tabular-nums ${
+                className={`shrink-0 text-base font-semibold tabular-nums ${
                   dossier.resultat_cts < 0 ? "text-amount-negative" : "text-amount-positive"
                 }`}
               >
@@ -517,7 +528,7 @@ export function EcranEntreprises() {
       )}
       </div>
       {choisi ? (
-        <aside className="flex h-full w-96 shrink-0 flex-col overflow-hidden border-l border-border bg-canvas">
+        <aside className="sticky top-6 flex max-h-[calc(100vh-3rem)] w-96 shrink-0 flex-col overflow-hidden rounded-md border border-border bg-canvas">
           <div className="flex shrink-0 items-start justify-between gap-4 p-6 pb-4">
             <h2 className="min-w-0 truncate text-lg font-semibold text-ink">{choisi.nom}</h2>
             <span className="flex shrink-0 flex-nowrap gap-1">
@@ -546,7 +557,7 @@ export function EcranEntreprises() {
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
           <Link
             href={`/anomalies/${choisi.dossier_id}`}
-            className="mt-3 inline-block text-sm font-medium text-primary hover:underline"
+            className="mt-3 inline-block text-sm font-medium text-signal hover:underline"
           >
             Anomalies
           </Link>
@@ -631,7 +642,7 @@ export function EcranEntreprises() {
             <SuiviEnvois dossierId={choisi.dossier_id} />
           </div>
           {confirmerRetrait && (
-            <div className="mt-6 rounded-lg border border-border bg-canvas-app p-4">
+            <div className="mt-6 rounded-md border border-border bg-canvas-app p-4">
               <p className="text-sm text-ink">
                 Retirer {choisi.nom} de la liste ? Les écritures restent. Vous pourrez remettre
                 l&apos;entreprise dans la liste.
@@ -678,7 +689,7 @@ function Total({ libelle, valeur, montant }: { libelle: string; valeur: string; 
   return (
     <div>
       <dt className="text-sm text-subtle">{libelle}</dt>
-      <dd className={`mt-1 text-2xl font-bold tabular-nums tracking-tight ${couleur}`}>{valeur}</dd>
+      <dd className={`mt-0.5 text-xl font-bold tabular-nums tracking-tight ${couleur}`}>{valeur}</dd>
     </div>
   );
 }
@@ -709,21 +720,16 @@ function Filtre<T extends string>({
   onChoisir: (id: T) => void;
 }) {
   return (
-    <label className="text-sm text-subtle">
+    <div className="flex items-center gap-2 text-sm whitespace-nowrap text-subtle">
       {libelle}
-      <select
+      <Select
         aria-label={libelle}
         value={valeur}
-        onChange={(evenement) => onChoisir(evenement.target.value as T)}
-        className="ml-2 h-9 rounded-md border border-border bg-canvas px-2 text-sm text-ink"
-      >
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.libelle}
-          </option>
-        ))}
-      </select>
-    </label>
+        onValueChange={(id) => onChoisir(id as T)}
+        options={options.map((option) => ({ value: option.id, label: option.libelle }))}
+        className="min-w-28"
+      />
+    </div>
   );
 }
 
@@ -824,12 +830,12 @@ function AlerteConnexions() {
   return (
     <Link
       href="/connexions-bancaires"
-      className="mt-6 block rounded-md border border-warning/40 bg-pending-subtle px-4 py-3 text-sm text-ink hover:border-warning"
+      className="mt-4 block rounded-md border border-warning/40 bg-pending-subtle px-4 py-2.5 text-sm text-ink hover:border-warning"
     >
       {nombre === 1
         ? "Une connexion bancaire expire ou doit être confirmée."
         : `${nombre} connexions bancaires expirent ou doivent être confirmées.`}{" "}
-      <span className="font-medium text-primary">Voir</span>
+      <span className="font-medium text-signal">Voir</span>
     </Link>
   );
 }

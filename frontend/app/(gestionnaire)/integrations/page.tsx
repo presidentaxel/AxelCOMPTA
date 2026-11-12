@@ -66,7 +66,7 @@ export default function IntegrationsPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-[28px] font-bold tracking-tight text-ink">Intégrations</h1>
+      <h1 className="text-[22px] font-bold tracking-tight text-ink">Intégrations</h1>
       <p className="mt-2 max-w-2xl text-sm text-subtle">
         Plusieurs accès par type. Celui par défaut sert à toutes les entreprises. Une entreprise
         peut en choisir un autre dans sa fiche.

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   importerDossiers,
   suivreImport,
@@ -59,8 +60,8 @@ export default function ImportDossiersPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <h1 className="text-[28px] font-bold tracking-tight text-ink">Importer des entreprises</h1>
+    <div>
+      <h1 className="text-[22px] font-bold tracking-tight text-ink">Importer des entreprises</h1>
       <p className="mt-2 text-sm text-subtle">
         Une ligne par société, au format du modèle (CSV, séparateur « ; »). Chaque ligne est
         vérifiée avant toute création : SIREN, combinaison forme × impôt × TVA, dates d&apos;exercice.
@@ -100,20 +101,20 @@ export default function ImportDossiersPage() {
             {rapport.a_creer} entreprise{rapport.a_creer > 1 ? "s" : ""} prête{rapport.a_creer > 1 ? "s" : ""} à
             créer, {rapport.en_erreur} ligne{rapport.en_erreur > 1 ? "s" : ""} en erreur.
           </p>
-          <table className="mt-3 w-full text-sm">
-            <thead>
-              <tr className="h-9 border-b border-border bg-canvas-app text-left text-xs font-semibold uppercase tracking-wide text-subtle">
-                <th className="px-2">Ligne</th>
-                <th className="px-2">Entreprise</th>
-                <th className="px-2">Vérification</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="mt-3">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Ligne</TableHead>
+                <TableHead>Entreprise</TableHead>
+                <TableHead>Vérification</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {rapport.lignes.map((ligne) => (
-                <tr key={ligne.numero} className="border-b border-hairline align-top">
-                  <td className="px-2 py-2 tabular-nums text-subtle">{ligne.numero}</td>
-                  <td className="px-2 py-2 text-ink">{ligne.nom ?? "—"}</td>
-                  <td className="px-2 py-2">
+                <TableRow key={ligne.numero} className="align-top">
+                  <TableCell className="tabular-nums text-subtle">{ligne.numero}</TableCell>
+                  <TableCell>{ligne.nom ?? "—"}</TableCell>
+                  <TableCell>
                     {ligne.erreurs.length === 0 ? (
                       <span className="text-validated">À créer</span>
                     ) : (
@@ -124,11 +125,11 @@ export default function ImportDossiersPage() {
                     {ligne.avertissements.map((a) => (
                       <span key={a} className="block text-subtle">{a}</span>
                     ))}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
           {droit.admin && rapport.a_creer > 0 && !suivi && (
             <Button
               type="button"
@@ -144,7 +145,7 @@ export default function ImportDossiersPage() {
       {suivi && (
         <p role="status" className="mt-4 text-sm text-ink">
           {enCours ? "Création en cours…" : (suivi.resultat ?? suivi.erreur ?? "")}{" "}
-          {!enCours && <Link href="/" className="text-primary underline">Voir les entreprises</Link>}
+          {!enCours && <Link href="/" className="text-signal underline">Voir les entreprises</Link>}
         </p>
       )}
     </div>

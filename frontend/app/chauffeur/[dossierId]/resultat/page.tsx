@@ -268,6 +268,7 @@ function ChampMontantLibre({
           id="montant-dividendes"
           name="montant-dividendes"
           uiSize="lg"
+          montant
           inputMode="decimal"
           value={montant}
           aria-invalid={message !== null}

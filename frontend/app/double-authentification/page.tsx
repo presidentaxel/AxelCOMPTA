@@ -1,12 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 
-import { Etat } from "@/components/Etat";
-import { Squelette } from "@/components/Squelette";
+import { MessageAcces } from "@/components/MessageAcces";
+import { TitreAcces } from "@/components/PageAcces";
 import { SaisieCode } from "@/components/SaisieCode";
+import { Squelette } from "@/components/Squelette";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   obtenirSession,
   remplacerJetonsChauffeur,
@@ -23,6 +25,7 @@ import {
   verifierCode,
   type Enrolement,
 } from "@/lib/mfa";
+import { messageErreurMfa } from "@/lib/messages-mfa";
 import { cheminDeRetour } from "@/lib/session";
 
 type Etape =
@@ -36,6 +39,7 @@ type Etape =
  * Le code vérifié donne une session `aal2`. */
 export default function DoubleAuthentificationPage() {
   const router = useRouter();
+  const idRefus = useId();
   const [etape, setEtape] = useState<Etape>({ statut: "chargement" });
   const [saisie, setSaisie] = useState("");
   const [refus, setRefus] = useState<string | null>(null);
@@ -58,18 +62,16 @@ export default function DoubleAuthentificationPage() {
           : { statut: "enrolement", enrolement: await enroler(session.accessToken, facteurs) },
       );
     } catch (exception) {
-      setEtape({
-        statut: "erreur",
-        message: exception instanceof Error ? exception.message : "Erreur inattendue.",
-      });
+      setEtape({ statut: "erreur", message: messageErreurMfa(exception, "preparation") });
     }
   }, [router]);
 
   useEffect(() => {
-    // Une seule fois : relancer referait un QR à chaque rendu.
-    // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
+    // Une fois : `preparer` ne change que si le routeur change, ce qui
+    // refairait un QR. Le routeur de Next garde la même identité.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void preparer();
-  }, []);
+  }, [preparer]);
 
   async function valider(evenement: React.FormEvent) {
     evenement.preventDefault();
@@ -96,7 +98,7 @@ export default function DoubleAuthentificationPage() {
       );
       router.replace(retour === "/securite" || retour.startsWith("/securite?") ? "/" : retour);
     } catch (exception) {
-      setRefus(exception instanceof Error ? exception.message : "Code refusé.");
+      setRefus(messageErreurMfa(exception, "verification"));
     } finally {
       setEnvoi(false);
     }
@@ -104,44 +106,47 @@ export default function DoubleAuthentificationPage() {
 
   return (
     <section aria-labelledby="titre-double-auth">
-      <h1 id="titre-double-auth" className="text-xl font-bold text-ink">
-        Double authentification
-      </h1>
-      {etape.statut === "chargement" && (
-        <div className="mt-6 space-y-3" aria-hidden>
-          <Squelette className="h-52 w-52" />
-          <Squelette className="h-9 w-full" />
+      <TitreAcces id="titre-double-auth">Double authentification</TitreAcces>
+      {etape.statut === "chargement" && <SqueletteDoubleAuth />}
+      {etape.statut === "erreur" && (
+        <div className="mt-8 space-y-4">
+          <MessageAcces ton="erreur">{etape.message}</MessageAcces>
+          <Button type="button" onClick={() => void preparer()}>
+            Réessayer
+          </Button>
         </div>
       )}
-      {etape.statut === "erreur" && (
-        <Etat type="erreur" message={etape.message} onReessayer={() => void preparer()} />
-      )}
       {etape.statut === "enrolement" && (
-        <div className="mt-4 space-y-4 text-sm text-ink">
-          <p>
+        <div className="mt-4 space-y-6">
+          <p className="text-base text-body">
             Votre rôle demande un code en plus du mot de passe. Scannez ce QR code avec une
             application d&apos;authentification (Google Authenticator, 1Password, Authy…), puis
             saisissez le code qu&apos;elle affiche.
           </p>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={etape.enrolement.qrCode}
-            alt="QR code à scanner avec votre application d'authentification"
-            className="h-52 w-52 rounded-md border border-border bg-white p-2"
-          />
-          <p className="text-subtle">
-            Sans appareil photo, saisissez cette clé :{" "}
-            <code className="break-all font-mono text-ink">{etape.enrolement.secret}</code>
-          </p>
+          {/* Le QR se scanne sur fond blanc : la carte et le cadre sont en `canvas`. */}
+          <Card className="flex flex-col items-center gap-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={etape.enrolement.qrCode}
+              alt="QR code à scanner avec votre application d'authentification"
+              className="size-52 bg-canvas p-2"
+            />
+            <p className="w-full text-sm text-subtle">
+              Sans appareil photo, saisissez cette clé :{" "}
+              <code className="select-all break-all font-mono text-ink">
+                {etape.enrolement.secret}
+              </code>
+            </p>
+          </Card>
         </div>
       )}
       {etape.statut === "code" && (
-        <p className="mt-4 text-sm text-ink">
+        <p className="mt-4 text-base text-body">
           Saisissez le code affiché par votre application d&apos;authentification.
         </p>
       )}
       {(etape.statut === "code" || etape.statut === "enrolement") && (
-        <form onSubmit={valider} className="mt-4 space-y-3">
+        <form onSubmit={valider} className="mt-6 space-y-4">
           <SaisieCode
             valeur={saisie}
             onChange={(valeur) => {
@@ -149,25 +154,45 @@ export default function DoubleAuthentificationPage() {
               setRefus(null);
             }}
             invalide={refus !== null}
-            idErreur={refus ? "refus-code" : undefined}
+            idErreur={refus ? idRefus : undefined}
             disabled={envoi}
           />
           {refus && (
-            <p id="refus-code" className="text-sm text-danger">
+            <MessageAcces ton="erreur" id={idRefus}>
               {refus}
-            </p>
+            </MessageAcces>
           )}
-          <Button type="submit" disabled={envoi}>
+          <Button type="submit" disabled={envoi} className="w-full">
             {envoi ? "Vérification…" : "Valider"}
           </Button>
         </form>
       )}
       {etape.statut === "code" && (
-        <p className="mt-6 text-sm text-subtle">
+        <p className="mt-8 border-t border-border pt-6 text-sm text-subtle">
           Téléphone perdu ? Demandez à un autre administrateur de réinitialiser votre double
           authentification, depuis l&apos;écran Équipe.
         </p>
       )}
     </section>
+  );
+}
+
+/** Même emprise que l'enrôlement (le cas le plus haut) : rien ne saute quand
+ * la page répond. `role="status"` : le lecteur d'écran dit que ça charge. */
+function SqueletteDoubleAuth() {
+  return (
+    <div role="status" aria-busy="true" className="mt-4 space-y-6">
+      <span className="sr-only">Préparation de la double authentification…</span>
+      <div className="space-y-2" aria-hidden>
+        <Squelette className="h-4 w-full" />
+        <Squelette className="h-4 w-2/3" />
+      </div>
+      <Squelette className="h-72 w-full" />
+      <div className="grid grid-cols-6 gap-2 sm:gap-3" aria-hidden>
+        {Array.from({ length: 6 }, (_, index) => (
+          <Squelette key={index} className="h-11" />
+        ))}
+      </div>
+    </div>
   );
 }

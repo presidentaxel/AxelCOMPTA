@@ -49,17 +49,17 @@ export default function InvitationsPage() {
     [];
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <Link href="/portefeuille" className="text-sm font-medium text-primary hover:underline">
+    <div>
+      <Link href="/portefeuille" className="text-sm font-medium text-signal hover:underline">
         Retour aux entreprises
       </Link>
-      <h1 className="mt-4 text-[28px] font-bold tracking-tight text-ink">Invitations</h1>
+      <h1 className="mt-4 text-[22px] font-bold tracking-tight text-ink">Invitations</h1>
       <p className="mt-2 text-sm text-subtle">
         Un e-mail en face de chaque entreprise. L&apos;invitation part tout de suite.
       </p>
       {erreur && <p className="mt-6 text-sm text-danger">{erreur}</p>}
       {!dossiers && !erreur && (
-        <div className="mt-10 space-y-3" aria-hidden>
+        <div className="mt-8 space-y-3" aria-hidden>
           <Squelette className="h-12 w-full" />
           <Squelette className="h-12 w-full" />
           <Squelette className="h-12 w-full" />
@@ -67,7 +67,7 @@ export default function InvitationsPage() {
       )}
 
       {sansCompte.length > 0 && (
-        <ul className="mt-10">
+        <ul className="mt-8">
           {sansCompte.map((dossier) => (
             <li key={dossier.dossier_id} className="flex items-center gap-3 border-b border-hairline py-3">
               <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{dossier.nom}</span>
@@ -109,7 +109,7 @@ export default function InvitationsPage() {
       )}
 
       {suivies.length > 0 && (
-        <section className="mt-10">
+        <section className="mt-8">
           <h2 className="text-sm font-semibold text-ink">Déjà lancées</h2>
           <ul className="mt-3">
             {suivies.map((dossier) => (
@@ -176,7 +176,7 @@ export default function InvitationsPage() {
       )}
 
       {dossiers && (
-        <section className="mt-10">
+        <section className="mt-8">
           <h2 className="text-sm font-semibold text-ink">Plusieurs à la fois</h2>
           <div className="mt-3">
             <InvitationsEnMasse

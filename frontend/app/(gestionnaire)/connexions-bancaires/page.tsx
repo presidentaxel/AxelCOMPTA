@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { Aide, pourquoiEnvoi } from "@/components/Aide";
+import { Select } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useCanauxEnvoi } from "@/lib/use-canaux-envoi";
 import {
   type ConnexionDossier,
@@ -83,8 +85,8 @@ export default function ConnexionsBancairesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <h1 className="text-[28px] font-bold tracking-tight text-ink">Connexions bancaires</h1>
+    <div>
+      <h1 className="text-[22px] font-bold tracking-tight text-ink">Connexions bancaires</h1>
       <p className="mt-2 text-sm text-subtle">
         Sans connexion valide, les opérations d&apos;une entreprise n&apos;arrivent plus.
         <Aide texte={pourquoiEnvoi(canauxEnvoi)} />
@@ -100,7 +102,7 @@ export default function ConnexionsBancairesPage() {
             <Compteur libelle="Jamais connectées" valeur={donnees.compteurs.jamais_connecte} />
           </dl>
 
-          <section className="mt-10">
+          <section className="mt-8">
             <h2 className="text-sm font-medium text-ink">
               Relances des entreprises
               <Aide texte={pourquoiEnvoi(canauxEnvoi)} />
@@ -115,7 +117,7 @@ export default function ConnexionsBancairesPage() {
                     disabled={!droit.ecriture || enCours || actif}
                     onClick={() => void regler(() => reglerRelancePortefeuille(mode))}
                     aria-pressed={actif}
-                    className={`rounded-md border p-4 text-left ${actif ? "border-primary bg-primary-subtle" : "border-border hover:border-ink"}`}
+                    className={`rounded-md border p-4 text-left ${actif ? "border-ink bg-primary-subtle" : "border-border-strong hover:border-ink"}`}
                   >
                     <span className="text-sm font-medium text-ink">{titre}</span>
                     <span className="mt-1 block text-xs text-subtle">{detail}</span>
@@ -125,48 +127,47 @@ export default function ConnexionsBancairesPage() {
             </div>
           </section>
 
-          <table className="mt-10 w-full text-left text-sm">
-            <thead className="text-xs text-subtle">
-              <tr className="border-b border-hairline">
-                <th className="py-2 font-medium">Entreprise</th>
-                <th className="py-2 font-medium">Connexion</th>
-                <th className="py-2 font-medium">Expire le</th>
-                <th className="py-2 font-medium">Dernière mise à jour</th>
-                <th className="py-2 font-medium">Relances</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="mt-8">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Entreprise</TableHead>
+                <TableHead>Connexion</TableHead>
+                <TableHead>Expire le</TableHead>
+                <TableHead>Dernière mise à jour</TableHead>
+                <TableHead>Relances</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {donnees.dossiers.map((dossier) => (
-                <tr key={dossier.dossier_id} className="border-b border-hairline align-top">
-                  <td className="py-3 text-ink">{dossier.nom}</td>
-                  <td className="py-3">
+                <TableRow key={dossier.dossier_id} className="align-top">
+                  <TableCell>{dossier.nom}</TableCell>
+                  <TableCell>
                     <Etat dossier={dossier} />
-                  </td>
-                  <td className="py-3 tabular-nums text-ink">
+                  </TableCell>
+                  <TableCell className="tabular-nums">
                     {dossier.expire_le ? formatDate(dossier.expire_le) : "—"}
                     {dossier.jours_restants !== null && dossier.jours_restants >= 0 && (
                       <span className="block text-xs text-subtle">
                         dans {dossier.jours_restants} jour{dossier.jours_restants > 1 ? "s" : ""}
                       </span>
                     )}
-                  </td>
-                  <td className="py-3 tabular-nums text-subtle">
+                  </TableCell>
+                  <TableCell className="tabular-nums text-subtle">
                     {dossier.dernier_rafraichissement
                       ? formatDate(dossier.dernier_rafraichissement)
                       : "—"}
-                  </td>
-                  <td className="py-3">
+                  </TableCell>
+                  <TableCell>
                     {(dossier.statut === "expire" || dossier.statut === "a_renouveler") && (
-                      <Link href="/rappels" className="mb-2 block text-sm font-medium text-primary hover:underline">
+                      <Link href="/rappels" className="mb-2 block text-sm font-medium text-signal hover:underline">
                         Relancer
                       </Link>
                     )}
-                    <select
+                    <Select
                       aria-label={`Relances pour ${dossier.nom}`}
                       disabled={!droit.ecriture || enCours}
                       value={dossier.relance_propre ? dossier.relance : "portefeuille"}
-                      onChange={(evenement) => {
-                        const valeur = evenement.target.value;
+                      onValueChange={(valeur) => {
                         void regler(() =>
                           reglerRelanceDossier(
                             dossier.dossier_id,
@@ -174,19 +175,21 @@ export default function ConnexionsBancairesPage() {
                           ),
                         );
                       }}
-                      className="rounded-md border border-border bg-canvas px-2 py-1 text-sm text-ink"
-                    >
-                      <option value="portefeuille">
-                        Comme le portefeuille ({donnees.relance_portefeuille === "auto" ? "automatique" : "manuel"})
-                      </option>
-                      <option value="auto">Automatique</option>
-                      <option value="manuel">Manuel</option>
-                    </select>
-                  </td>
-                </tr>
+                      options={[
+                        {
+                          value: "portefeuille",
+                          label: `Comme le portefeuille (${donnees.relance_portefeuille === "auto" ? "automatique" : "manuel"})`,
+                        },
+                        { value: "auto", label: "Automatique" },
+                        { value: "manuel", label: "Manuel" },
+                      ]}
+                      className="min-w-64"
+                    />
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </>
       )}
     </div>

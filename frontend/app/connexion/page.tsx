@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 
 import { FormulaireConnexion } from "@/components/FormulaireConnexion";
+import { PageAcces } from "@/components/PageAcces";
 import {
   connexionGestionnaire,
   lireMoi,
@@ -12,12 +13,13 @@ import { CHEMIN_DOUBLE_AUTHENTIFICATION } from "@/lib/mfa-code";
 import { cheminDeRetour } from "@/lib/session";
 
 /** Connexion gestionnaire (doc 03 §7). Hors du groupe `(gestionnaire)` pour
- * ne pas hériter de la Sidebar/TopBar avant d'être connecté. */
+ * ne pas hériter de la barre de navigation avant d'être connecté : la marque
+ * vient du cadre d'accès, pas du formulaire (le chauffeur a la sienne). */
 export default function ConnexionGestionnairePage() {
   const router = useRouter();
 
   return (
-    <main className="mx-auto mt-24 max-w-sm px-4">
+    <PageAcces>
       <FormulaireConnexion
         titre="Connexion gestionnaire"
         sousTitre="Accédez à l'état de votre portefeuille."
@@ -35,6 +37,6 @@ export default function ConnexionGestionnairePage() {
           );
         }}
       />
-    </main>
+    </PageAcces>
   );
 }
