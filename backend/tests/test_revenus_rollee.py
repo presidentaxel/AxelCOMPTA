@@ -197,3 +197,60 @@ def test_de_bout_en_bout_le_ca_et_la_tva_sont_justes_et_rejouer_ne_cree_rien() -
     assert "1 versement(s) ventilé(s)" in resume and "1 en quarantaine" in resume
     (quarantaine,) = journal.lister_quarantaine(D)
     assert "custom" in quarantaine.motif
+
+
+def _soldes_de(ecritures: list[Ecriture]) -> dict[str, int]:
+    soldes: dict[str, int] = {}
+    for e in ecritures:
+        for x in e.lignes:
+            signe = 1 if x.sens is Sens.DEBIT else -1
+            soldes[x.compte] = soldes.get(x.compte, 0) + signe * x.montant.centimes
+    return {c: v for c, v in soldes.items() if v}
+
+
+def test_un_virement_ventile_puis_reclasse_perd_sa_ventilation() -> None:
+    """AXE-889 : décision sur un virement au 471 → 706 → ventilé → usage personnel."""
+    from axelcompta.workflow.reclassement import annulations_liees, reclasser
+
+    comptes: tuple[dict[str, str | None], dict[str, str]] = (
+        {"usage_personnel": "455"},
+        {"recettes_plateformes": "706"},
+    )
+    virement = _virement("S1", 848_00, compte="471")
+    ecritures: list[Ecriture] = [virement]
+    en_recette = reclasser(virement, "recettes_plateformes", ecritures, comptes)
+    assert en_recette is not None
+    ecritures.append(en_recette)
+    resultat = rapprocher([_stocke()], ecritures, DOSSIER, (), AUJOURD_HUI, LE)
+    (stocke,) = resultat.stockes
+    ecritures += resultat.ecritures
+    assert _soldes_de(ecritures)["44571"] < 0  # TVA collectée posée par la ventilation
+
+    perso = reclasser(virement, "usage_personnel", ecritures, comptes)
+    assert perso is not None
+    ecritures.append(perso)
+    (annulation,) = annulations_liees(virement, ecritures)
+    ecritures.append(annulation)
+    assert _soldes_de(ecritures) == {"512": 848_00, "455": -848_00}
+
+    suite = rapprocher([stocke], ecritures, DOSSIER, (), AUJOURD_HUI, LE)
+    (a_verifier,) = suite.stockes
+    assert a_verifier.etat == "a_verifier" and "annulée" in (a_verifier.motif or "")
+    assert suite.ecritures == []
+
+
+def test_un_virement_qui_reste_en_recette_garde_sa_ventilation() -> None:
+    from axelcompta.workflow.reclassement import annulations_liees
+
+    virement = _virement("S1", 848_00)
+    resultat = _rapprocher([_stocke()], [virement])
+    assert annulations_liees(virement, [virement, *resultat.ecritures]) == []
+
+
+def test_la_contrepassation_du_virement_emporte_sa_ventilation() -> None:
+    from axelcompta.workflow.reclassement import annuler_reclassements
+
+    virement = _virement("S1", 848_00)
+    resultat = _rapprocher([_stocke()], [virement])
+    (annulation,) = annuler_reclassements(virement.id, [virement, *resultat.ecritures])
+    assert annulation.id.startswith("S1:ventilation-plateforme")
