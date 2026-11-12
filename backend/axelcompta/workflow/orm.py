@@ -66,6 +66,21 @@ annotations_dev = Table(
 # ne se retrouvent plus une fois le ledger persisté au lieu d'être
 # recalculé à chaque requête. Une seule ligne par écriture, jamais mise à
 # jour (la proposition d'origine ne change pas après coup).
+# AXE-888 : la catégorie proposée par l'IA pour un libellé normalisé
+# (migration a9c2e5f1b7d3). Un libellé déjà envoyé ne repart jamais.
+propositions_ia = Table(
+    "propositions_ia",
+    metadata,
+    Column("dossier_id", String, ForeignKey("dossiers.id"), primary_key=True),
+    Column("cle", String, primary_key=True),
+    Column("version", String, primary_key=True),
+    Column("categorie", String, nullable=False),
+    Column("confiance", Float, nullable=False),
+    Column("justification", String, nullable=False),
+    Column("modele", String, nullable=False),
+    Column("cree_le", DateTime(timezone=True), nullable=False),
+)
+
 propositions_categorisation = Table(
     "propositions_categorisation",
     metadata,

@@ -72,16 +72,18 @@ from axelcompta.anomaly.service import analyser
 from axelcompta.api.erreurs import brancher_erreurs
 from axelcompta.categorize.appris import (
     OperationTranchee,
+    PropositionApprise,
     libelle_sans_categorie,
     propositions_apprises,
 )
+from axelcompta.categorize.llm import VERSION_PROMPT, cle_libelle
 from axelcompta.categorize.ml_fallback import (
     charger_calibration,
     repli_sans_modele_permis,
 )
 from axelcompta.categorize.modele_requis import EtatCategorisation, signaler
 from axelcompta.categorize.modele_requis import charger as charger_modele_et_etat
-from axelcompta.categorize.models import Etage
+from axelcompta.categorize.models import Etage, ProposedEntry
 from axelcompta.categorize.rules_and_ml import (
     CATEGORIE_PAR_DEFAUT,
     CATEGORIE_RETRAIT_ESPECES,
@@ -355,6 +357,8 @@ from axelcompta.workflow.notifications import (
 )
 from axelcompta.workflow.notifications_postgres import PostgresNotificationRepository
 from axelcompta.workflow.propositions import PropositionRepository
+from axelcompta.workflow.propositions_ia import PropositionIa, PropositionsIa
+from axelcompta.workflow.propositions_ia_postgres import PostgresPropositionsIa
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
 from axelcompta.workflow.quarantaine import (
     LIBELLES_MOTIF,
@@ -607,7 +611,7 @@ class TransactionVue(BaseModel):
     # règles (« regle ») et le modèle (« modele ») en vigueur. La proposition
     # d'origine, figée à la synchro, reste en base comme trace.
     proposition: str | None = None
-    origine_proposition: str | None = None  # "appris" | "regle" | "modele"
+    origine_proposition: str | None = None  # "appris" | "regle" | "ia" | "modele" | "banque"
     confiance_proposition: float | None = None
     # Décision humaine en vigueur. None : classée par une règle, ou pas encore.
     categorie: str | None = None
@@ -1145,6 +1149,7 @@ def _transactions_dossier(
     justificatifs: JustificatifRepository,
     decisions: tuple[DecisionHumaine, ...] = (),
     pipeline: RulesAndMlPipeline | None = None,
+    ia: Mapping[str, PropositionIa] | None = None,
 ) -> list[TransactionVue]:
     """Extrait de la route (doc 08 §2 : longueur de fonction)."""
     vues = _avec_categories(_vues_dossier(dossier, ledger, justificatifs), decisions)
@@ -1153,7 +1158,7 @@ def _transactions_dossier(
         for e in ledger.grand_livre(dossier.id)
         if (ligne := ligne_banque(e)) is not None
     }
-    return _avec_propositions(dossier, vues, decisions, pipeline, banques)
+    return _avec_propositions(dossier, vues, decisions, pipeline, banques, ia)
 
 
 def _avec_categories(
@@ -1205,10 +1210,12 @@ def _avec_propositions(
     decisions: tuple[DecisionHumaine, ...],
     pipeline: RulesAndMlPipeline | None,
     banques: dict[str, str] | None = None,
+    ia: Mapping[str, PropositionIa] | None = None,
 ) -> list[TransactionVue]:
     """Une proposition par opération à trancher : d'abord une opération
     semblable que l'indiv a déjà tranchée (dernière décision de chaque
-    écriture), sinon le pipeline actuel. Rien si le modèle s'abstient."""
+    écriture), puis une règle, puis l'IA (AXE-888), puis le modèle et la
+    banque. Rien si tous s'abstiennent."""
     a_trancher = [vue for vue in vues if vue.statut == "à trancher"]
     if not a_trancher:
         return vues
@@ -1230,24 +1237,48 @@ def _avec_propositions(
     )
     mises_a_jour: dict[str, dict[str, object]] = {}
     for vue, apprise, actuelle in zip(a_trancher, apprises, actuelles, strict=True):
-        if apprise is not None:
-            mises_a_jour[vue.ecriture_id] = {
-                "proposition": apprise.categorie,
-                "origine_proposition": "appris",
-                "confiance_proposition": round(apprise.similarite, 2),
-            }
-        elif actuelle is not None and actuelle.categorie != CATEGORIE_PAR_DEFAUT:
-            mises_a_jour[vue.ecriture_id] = {
-                "proposition": actuelle.categorie,
-                "origine_proposition": _ORIGINE_PAR_ETAGE.get(actuelle.etage),
-                "confiance_proposition": round(actuelle.confiance, 2),
-            }
+        retenue = _proposition_retenue(vue, apprise, actuelle, ia or {})
+        if retenue is not None:
+            mises_a_jour[vue.ecriture_id] = retenue
     return [
         vue.model_copy(update=mises_a_jour[vue.ecriture_id])
         if vue.ecriture_id in mises_a_jour
         else vue
         for vue in vues
     ]
+
+
+def _proposition_retenue(
+    vue: TransactionVue,
+    apprise: PropositionApprise | None,
+    actuelle: ProposedEntry | None,
+    ia: Mapping[str, PropositionIa],
+) -> dict[str, object] | None:
+    if apprise is not None:
+        return {
+            "proposition": apprise.categorie,
+            "origine_proposition": "appris",
+            "confiance_proposition": round(apprise.similarite, 2),
+        }
+    utile = actuelle is not None and actuelle.categorie != CATEGORIE_PAR_DEFAUT
+    if utile and actuelle is not None and actuelle.etage is Etage.REGLE:
+        return _proposition_du_pipeline(actuelle)
+    propre = ia.get(cle_libelle(vue.libelle))
+    if propre is not None and propre.proposable:
+        return {
+            "proposition": propre.categorie,
+            "origine_proposition": "ia",
+            "confiance_proposition": round(propre.confiance, 2),
+        }
+    return _proposition_du_pipeline(actuelle) if utile and actuelle is not None else None
+
+
+def _proposition_du_pipeline(actuelle: ProposedEntry) -> dict[str, object]:
+    return {
+        "proposition": actuelle.categorie,
+        "origine_proposition": _ORIGINE_PAR_ETAGE.get(actuelle.etage),
+        "confiance_proposition": round(actuelle.confiance, 2),
+    }
 
 
 def _nb_a_trancher(ecritures: tuple[Ecriture, ...] | list[Ecriture]) -> int:
@@ -1486,6 +1517,14 @@ DossiersDep = Annotated[DossierRepository, Depends(get_dossiers)]
 LedgerBaseDep = Annotated[LedgerService, Depends(get_ledger)]
 EcrireDecisionsDep = Annotated[EcrireDecisions, Depends(get_ecrire_decisions)]
 PropositionsDep = Annotated[PropositionRepository, Depends(get_propositions)]
+
+
+def get_propositions_ia() -> PropositionsIa:
+    """Dépendance FastAPI — propositions de l'IA par libellé (AXE-888)."""
+    return PostgresPropositionsIa(_engine())
+
+
+PropositionsIaDep = Annotated[PropositionsIa, Depends(get_propositions_ia)]
 
 
 def get_verdicts() -> VerdictsRepository:
@@ -2384,9 +2423,15 @@ def _enregistrer_routes_revue(app: FastAPI) -> None:
         decisions: DecisionsDep,
         pipeline: PipelineDep,
         experts: ExpertsDep,
+        propositions_ia: PropositionsIaDep,
     ) -> list[TransactionVue]:
         vues = _transactions_dossier(
-            dossier, ledger, justificatifs, decisions.lister_decisions(dossier.id), pipeline
+            dossier,
+            ledger,
+            justificatifs,
+            decisions.lister_decisions(dossier.id),
+            pipeline,
+            propositions_ia.lister(dossier.id, VERSION_PROMPT),
         )
         return _avec_reclassements_expert(vues, experts.decisions(dossier.id))
 
