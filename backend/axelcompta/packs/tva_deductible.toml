@@ -17,8 +17,11 @@
 # pour le carburant (art. 298, 4-1° CGI).
 #
 # Données versionnées : une nouvelle règle s'ajoute dans une nouvelle version,
-# datée, jamais en réécrivant une version passée. À valider par l'expert-comptable
-# (AXE-815) avant la première liasse réelle.
+# datée, jamais en réécrivant une version passée. Le montant posé avec le code
+# « deductible_estimee_… » reste celui calculé ici. Un montant lu plus tard sur
+# un justificatif est une autre valeur, code « deductible_relevee_… » : il
+# remplace l'estimation, il ne modifie pas cette table.
+# À valider par l'expert-comptable (AXE-815) avant la première liasse réelle.
 
 [[versions]]
 debut = 2025-01-01

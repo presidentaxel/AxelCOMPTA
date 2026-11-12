@@ -88,6 +88,20 @@ def test_classer_dit_qui_a_classe_chaque_operation() -> None:
     )
     assert par_id[EcritureId("zara:impute-606")].statut == "expert"
     assert par_id[EcritureId("total")].montant_cts == -60_00
+    assert par_id[EcritureId("total")].tva_estimee_cts is None  # franchise par défaut
+
+
+def test_le_reel_normal_montre_la_tva_estimee_d_un_plein_passe_ttc() -> None:
+    total = _ecriture("total", "6061", -60_00)
+    operations = classer(
+        [total],
+        {EcritureId("total"): _proposition("total", "carburant", Etage.REGLE, 0.97)},
+        {},
+        {},
+        "reel_normal",
+    )
+    assert operations[0].tva_estimee_cts == 10_00
+    assert operations[0].tva_relevee_cts is None
 
 
 def test_filtres_tri_et_compteurs() -> None:

@@ -34,6 +34,7 @@ import {
 } from "@/lib/classees";
 import { filtresActifs, sansFiltres, versFileATraiter } from "@/lib/classees-filtres";
 import { formatDate } from "@/lib/format";
+import { phraseTva } from "@/lib/tva-estimee";
 import { messageEchecChargement } from "@/lib/session";
 import type { OperationClassee, OperationsClassees as Donnees } from "@/lib/types";
 
@@ -186,6 +187,16 @@ export function OperationsClassees({
   );
 }
 
+function phraseTvaOperation(operation: OperationClassee) {
+  const phrase = phraseTva(
+    operation.tva_estimee_cts,
+    operation.tva_relevee_cts,
+    operation.montant_cts,
+    false,
+  );
+  return phrase ? <span className="mt-1 block text-sm text-ink">{phrase}</span> : null;
+}
+
 function Choix({
   libelle,
   valeur,
@@ -275,6 +286,7 @@ function Ligne({
           {operation.categorie ? ` · ${operation.categorie}` : ""} · {ORIGINES[operation.origine] ?? operation.origine} ·
           confiance {formatConfiance(operation.confiance)}
           {operation.verdict ? ` · noté ${operation.verdict}` : ""}
+          {phraseTvaOperation(operation)}
           {erreur && (
             <span role="alert" className="mt-1 block text-sm text-danger">
               {erreur}

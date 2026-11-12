@@ -6,4 +6,4 @@ partie : il est posé à la lecture.
 """
 
 # 2 : libellés sans l'ancien suffixe « (catégorie) » (AXE-848).
-VERSION_CLASSEES = 2
+VERSION_CLASSEES = 3

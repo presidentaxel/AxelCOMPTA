@@ -122,7 +122,7 @@ from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.identite import Adresse, Associe, IdentiteEntreprise
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, UserId
 from axelcompta.core.libelles import categorie_du_suffixe, sans_categorie
-from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque, est_compte_tva_deductible
+from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
 from axelcompta.core.rls import appliquer_rls, contexte_identite
 from axelcompta.demo_auth import (
     IdentiteAuthentifiee,
@@ -376,6 +376,7 @@ from axelcompta.workflow.signature import DocumentSigne, SignatureRepository
 from axelcompta.workflow.signature_demo import SignatureDemoProvider
 from axelcompta.workflow.signature_postgres import PostgresSignatureRepository
 from axelcompta.workflow.synchro import id_ecriture
+from axelcompta.workflow.tva_imputation import tva_affichee
 from axelcompta.workflow.verdicts import VerdictsRepository
 from axelcompta.workflow.verdicts_postgres import PostgresVerdicts
 
@@ -608,8 +609,10 @@ class TransactionVue(BaseModel):
     reclassee_par: str | None = None
     reclassee_le: str | None = None
     motif_reclassement: str | None = None
-    # AXE-831 : TVA déductible estimée d'après la catégorie, faute de ticket.
+    # AXE-831 : l'un ou l'autre. L'estimation vient de la table ; le montant
+    # relevé, quand un justificatif le donnera, la remplace.
     tva_estimee_cts: int | None = None
+    tva_relevee_cts: int | None = None
 
 
 class DecisionEntree(BaseModel):
@@ -1092,7 +1095,7 @@ def _vues_dossier(
     # Un reclassement entre banques (ventilation 512 → 512x, AXE-832) n'est
     # pas une opération du relevé : le chauffeur ne le voit pas.
     return [
-        _transaction_vue(e, e.id in avec_photo, e.id in exclues)
+        _transaction_vue(e, e.id in avec_photo, e.id in exclues, regime_tva=dossier.regime_tva)
         for e in ecritures
         if not est_reclassement_bancaire(e)
     ]
@@ -1263,15 +1266,29 @@ def _compte_affiche(ecriture: Ecriture) -> str:
     return autres[0] if len(autres) == 1 else "règlement plateforme"
 
 
-def _vue_tranchee(ecriture: Ecriture, a_justificatif: bool, categorie: str) -> TransactionVue:
+def _vue_tranchee(
+    dossier: Dossier, ecriture: Ecriture, a_justificatif: bool, categorie: str
+) -> TransactionVue:
     """Réponse d'une décision ou d'une correction : la catégorie vient d'être posée."""
-    return _transaction_vue(ecriture, a_justificatif, annulee=False).model_copy(
-        update={"categorie": categorie}
-    )
+    return _transaction_vue(
+        ecriture,
+        a_justificatif,
+        annulee=False,
+        regime_tva=dossier.regime_tva,
+        categorie=categorie,
+    ).model_copy(update={"categorie": categorie})
 
 
-def _transaction_vue(ecriture: Ecriture, a_justificatif: bool, annulee: bool) -> TransactionVue:
+def _transaction_vue(
+    ecriture: Ecriture,
+    a_justificatif: bool,
+    annulee: bool,
+    *,
+    regime_tva: str = "franchise",
+    categorie: str | None = None,
+) -> TransactionVue:
     a_trancher = not annulee and any(ligne.compte == COMPTE_ATTENTE for ligne in ecriture.lignes)
+    estimee, relevee = _montants_tva(ecriture, regime_tva, categorie)
     return TransactionVue(
         ecriture_id=ecriture.id,
         date=ecriture.date.isoformat(),
@@ -1280,20 +1297,28 @@ def _transaction_vue(ecriture: Ecriture, a_justificatif: bool, annulee: bool) ->
         compte=_compte_affiche(ecriture),
         statut="à trancher" if a_trancher else "validé",
         a_justificatif=a_justificatif,
-        tva_estimee_cts=_tva_estimee(ecriture),
+        tva_estimee_cts=estimee,
+        tva_relevee_cts=relevee,
     )
 
 
-def _tva_estimee(ecriture: Ecriture) -> int | None:
-    """AXE-831 : la TVA déductible posée d'après la catégorie, pas lue sur un
-    ticket. `None` quand il n'y en a pas."""
-    total = sum(
-        ligne.montant.centimes
-        for ligne in ecriture.lignes
-        if est_compte_tva_deductible(ligne.compte)
-        and (ligne.code_tva or "").startswith("deductible_estimee")
+def _montants_tva(
+    ecriture: Ecriture, regime_tva: str, categorie: str | None
+) -> tuple[int | None, int | None]:
+    """(estimation de la table, montant relevé). Le montant déjà écrit sur la
+    ligne fait foi ; sinon l'estimation est celle de la table, à la date."""
+    tva = tva_affichee(
+        ecriture.lignes,
+        montant_ttc_cts=abs(_montant_512(ecriture)),
+        categorie=categorie,
+        jour=ecriture.date,
+        regime_tva=regime_tva,
     )
-    return total or None
+    if tva is None:
+        return None, None
+    if tva.origine == "relevee":
+        return None, tva.centimes
+    return tva.centimes, None
 
 
 def _categories_par_compte() -> dict[str, str]:
@@ -1974,6 +1999,8 @@ def _decision_suivante(
         ecriture_vue,
         justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture_vue.id),
         ecriture_vue.id in annulees(ecritures_vues),
+        regime_tva=dossier.regime_tva,
+        categorie=categorie,
     )
 
 
@@ -2375,7 +2402,7 @@ def _enregistrer_routes_revue(app: FastAPI) -> None:
             dossier, entree, base, decisions, propositions, identite.user_id, ecrire
         )
         avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
-        return [_vue_tranchee(e, e.id in avec_photo, entree.categorie) for e in ecritures]
+        return [_vue_tranchee(dossier, e, e.id in avec_photo, entree.categorie) for e in ecritures]
 
 
 def _enregistrer_route_correction(app: FastAPI) -> None:
@@ -2408,6 +2435,7 @@ def _enregistrer_route_correction(app: FastAPI) -> None:
             ecrire,
         )
         return _vue_tranchee(
+            dossier,
             ecriture,
             justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture.id),
             entree.categorie,
@@ -2446,6 +2474,7 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
         )
         # `_trancher` refuse une écriture contre-passée : celle-ci ne l'est pas.
         return _vue_tranchee(
+            dossier,
             ecriture,
             justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture.id),
             entree.categorie,
@@ -2469,6 +2498,7 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
             ecriture,
             justificatifs.a_un_justificatif(dossier.tenant_id, dossier.id, ecriture.id),
             ecriture.id in annulees(ledger.grand_livre(dossier.id)),
+            regime_tva=dossier.regime_tva,
         )
 
 
@@ -5770,6 +5800,8 @@ class OperationClasseeVue(BaseModel):
     statut: str
     sens: str
     verdict: str | None
+    tva_estimee_cts: int | None = None
+    tva_relevee_cts: int | None = None
 
 
 class CompteursClasseesVue(BaseModel):
@@ -5816,6 +5848,7 @@ def _operations_du_dossier(
         propositions.lister(dossier.id),
         en_vigueur,
         {},
+        dossier.regime_tva,
     )
 
 
@@ -5834,6 +5867,8 @@ def _vue_classee(operation: OperationClassee, noms: dict[DossierId, str]) -> Ope
         statut=operation.statut,
         sens=operation.sens,
         verdict=operation.verdict,
+        tva_estimee_cts=operation.tva_estimee_cts,
+        tva_relevee_cts=operation.tva_relevee_cts,
     )
 
 
@@ -5905,6 +5940,8 @@ def _operation_json(operation: OperationClassee) -> dict[str, Any]:
         "origine": operation.origine,
         "confiance": operation.confiance,
         "statut": operation.statut,
+        "tva_estimee_cts": operation.tva_estimee_cts,
+        "tva_relevee_cts": operation.tva_relevee_cts,
     }
 
 
@@ -5921,6 +5958,12 @@ def _operation_depuis_json(ligne: dict[str, Any]) -> OperationClassee:
         origine=str(ligne["origine"]),
         confiance=None if confiance is None else float(confiance),
         statut=cast(Statut, str(ligne["statut"])),
+        tva_estimee_cts=None
+        if ligne.get("tva_estimee_cts") is None
+        else int(ligne["tva_estimee_cts"]),
+        tva_relevee_cts=None
+        if ligne.get("tva_relevee_cts") is None
+        else int(ligne["tva_relevee_cts"]),
     )
 
 

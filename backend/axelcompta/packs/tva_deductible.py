@@ -21,6 +21,11 @@ from pathlib import Path
 CHEMIN_TABLE = Path(__file__).with_name("tva_deductible.toml")
 COMPTE_TVA_DEDUCTIBLE = "44566"  # TVA déductible sur autres biens et services
 REGIME_FRANCHISE = "franchise"
+# Posé sur les lignes tant que le montant vient de cette table. Un montant lu
+# sur un justificatif prendra `PREFIXE_RELEVEE` : la table ne se réécrit pas,
+# et l'écran cesse de dire « estimée ».
+PREFIXE_ESTIMEE = "deductible_estimee_"
+PREFIXE_RELEVEE = "deductible_relevee_"
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,7 +40,7 @@ class RegleTva:
     @property
     def code(self) -> str:
         """Le code TVA posé sur les lignes : estimée, pas lue sur une facture."""
-        return f"deductible_estimee_{self.taux.normalize():f}"
+        return f"{PREFIXE_ESTIMEE}{self.taux.normalize():f}"
 
 
 @dataclass(frozen=True, slots=True)
