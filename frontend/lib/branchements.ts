@@ -34,7 +34,7 @@ export const TYPES_BRANCHEMENT: Record<
   rollee: {
     nom: "Rollee",
     detail:
-      "Lit les revenus Uber et Bolt de chaque chauffeur (brut, commission, versement).",
+      "Lit les revenus Uber et Bolt. Plusieurs comptes Rollee pour une même compta : aucun n'est le défaut. Tant qu'un compte pro n'est pas relié, on les interroge tous.",
     fournisseur: "rollee",
     champs: [
       {
