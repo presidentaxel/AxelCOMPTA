@@ -341,6 +341,23 @@ export async function modifierBranchement(
   return (await reponse.json()) as Branchement[];
 }
 
+export type FicheWebhook = {
+  url: string;
+  secret: string;
+  methode: string;
+  evenements: string[];
+  joignable: boolean;
+};
+
+export async function preparerWebhook(id: string): Promise<FicheWebhook> {
+  const reponse = await requeteGestionnaire(
+    `/portefeuille/integrations/${encodeURIComponent(id)}/webhook`,
+    { method: "POST" },
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as FicheWebhook;
+}
+
 export async function testerBranchement(id: string): Promise<EssaiBranchement> {
   const reponse = await requeteGestionnaire(
     `/portefeuille/integrations/${encodeURIComponent(id)}/tester`,

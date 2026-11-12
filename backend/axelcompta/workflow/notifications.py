@@ -46,7 +46,14 @@ TYPE_COMPTES_A_CHOISIR = "comptes_a_choisir"
 # TVA en cours d'année (AXE-805) : la CA3 de la période est à déposer.
 TYPE_TVA_J7 = "tva_j7"
 TYPE_TVA_J2 = "tva_j2"
+# AXE-820 : Rollee a perdu l'accès à une plateforme (mot de passe changé,
+# session expirée) : ses revenus n'arrivent plus.
+TYPE_PLATEFORME_A_RECONNECTER = "plateforme_a_reconnecter"
 MESSAGES_FIXES = {
+    TYPE_PLATEFORME_A_RECONNECTER: (
+        "Une de vos plateformes (Uber, Bolt…) n'est plus reliée : ses revenus n'arrivent "
+        "plus. Reconnectez-la dans Compte, Mes plateformes."
+    ),
     TYPE_TVA_J7: "Votre déclaration de TVA est à déposer dans une semaine : voyez Ma TVA.",
     TYPE_TVA_J2: "Votre déclaration de TVA est à déposer dans deux jours : voyez Ma TVA.",
     TYPE_CLOTURE_A_VALIDER: "Votre exercice est terminé : relisez-le et validez sa clôture.",

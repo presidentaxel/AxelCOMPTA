@@ -26,7 +26,7 @@ from datetime import UTC, date, datetime
 
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, TYPE_RAPPELS, TYPE_SYNCHRO, Job
+from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, TYPE_RAPPELS, TYPE_ROLLEE, TYPE_SYNCHRO, Job
 from axelcompta.jobs.postgres import FilePostgres
 from axelcompta.modeles_distants import assurer_modele
 from axelcompta.nouveaux_contacts import (
@@ -36,6 +36,7 @@ from axelcompta.nouveaux_contacts import (
     fiche_sirene,
     proposer,
 )
+from axelcompta.plateformes_rollee import suivi_postgres, traiter_evenements
 from axelcompta.rappels import envoyer
 from axelcompta.synchro_digifactory import (
     TYPE_DIGIFACTORY,
@@ -82,6 +83,8 @@ class Dependances:
     envoyer_rappels: Callable[[], dict[str, int]] | None = None
     # AXE-872 : rattache un dossier créé à son branchement Digifactory.
     choisir_branchement: Callable[[TenantId, DossierId, str], None] | None = None
+    # AXE-820 : traite les webhooks Rollee gardés d'un portefeuille.
+    traiter_rollee: Callable[[TenantId], str] | None = None
 
 
 def _stockee(proposition: Proposition, maintenant: datetime) -> PropositionStockee:
@@ -224,6 +227,8 @@ def executer_job(job: Job, deps: Dependances, aujourd_hui: date) -> str:
         return importer_dossiers(job, deps.dossiers)
     if job.type == TYPE_RAPPELS and deps.envoyer_rappels is not None:
         return resume_envois(deps.envoyer_rappels())
+    if job.type == TYPE_ROLLEE and deps.traiter_rollee is not None:
+        return deps.traiter_rollee(TenantId(job.tenant_id))
     if job.type != TYPE_SYNCHRO:
         raise ValueError(f"type de job non pris en charge : {job.type}")
     return synchroniser_portefeuille_suivi(TenantId(job.tenant_id), deps, aujourd_hui)
@@ -278,6 +283,7 @@ def dependances_reelles() -> Dependances:
         choisir_branchement=lambda t, d, b: branchements.choisir_pour_dossier(
             t, d, TYPE_DIGIFACTORY, b
         ),
+        traiter_rollee=lambda t: traiter_evenements(suivi_postgres(engine), t),
     )
 
 

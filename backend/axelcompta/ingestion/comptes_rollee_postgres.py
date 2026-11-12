@@ -32,6 +32,24 @@ class PostgresComptesRollee:
             DossierId(ligne.dossier_id), ligne.rollee_user_id, ligne.branchement_id
         )
 
+    def dossier_du_user(self, rollee_user_id: str) -> DossierId | None:
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            dossier_id = connexion.execute(
+                select(utilisateurs_rollee.c.dossier_id).where(
+                    utilisateurs_rollee.c.rollee_user_id == rollee_user_id
+                )
+            ).scalar()
+        return DossierId(dossier_id) if dossier_id else None
+
+    def dossiers_relies(self) -> list[DossierId]:
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            lignes = connexion.execute(
+                select(utilisateurs_rollee.c.dossier_id).order_by(utilisateurs_rollee.c.dossier_id)
+            ).scalars()
+            return [DossierId(d) for d in lignes]
+
     def enregistrer_utilisateur(self, utilisateur: UtilisateurRollee, le: datetime) -> None:
         with self._engine.begin() as connexion:
             appliquer_rls(connexion)

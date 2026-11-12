@@ -130,7 +130,7 @@ class RolleeHttpClient:
             if reponse.status_code == 401:
                 raise RolleeAuthError(f"401 sur {chemin} : jeton refusé ({self.environnement})")
         reponse.raise_for_status()
-        return reponse.json()
+        return reponse.json() if reponse.content else None
 
     async def renouveler(self) -> str:
         reponse = await self._une_requete("GET", "/token/refresh")
@@ -168,6 +168,15 @@ class RolleeHttpClient:
             params={"start_date": _debut_unix(depuis), "end_date": _fin_unix(jusqua)},
         )
         return resultat
+
+    async def configurer_webhook(self, type_: str, url: str, secret: str) -> None:
+        """`PUT /webhooks/{type}` (AXE-820). Un PUT remplace toute la
+        configuration de ce type : tous les champs sont envoyés."""
+        await self._requete(
+            "PUT",
+            f"/webhooks/{type_}",
+            json={"url": url, "method": "POST", "enabled": True, "secret": secret, "headers": {}},
+        )
 
     async def aclose(self) -> None:
         await self._client.aclose()

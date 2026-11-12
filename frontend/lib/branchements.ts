@@ -34,7 +34,7 @@ export const TYPES_BRANCHEMENT: Record<
   rollee: {
     nom: "Rollee",
     detail:
-      "Lit les revenus Uber et Bolt. Plusieurs comptes Rollee pour une même compta : aucun n'est le défaut. Tant qu'un compte pro n'est pas relié, on les interroge tous.",
+      "Lit les revenus Uber et Bolt. Plusieurs comptes Rollee pour une même compta : aucun n'est le défaut. Chaque compte a son webhook : Relier montre l'adresse et le secret à reporter chez Rollee.",
     fournisseur: "rollee",
     champs: [
       {

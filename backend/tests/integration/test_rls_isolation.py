@@ -15,6 +15,8 @@ l'utilise sur la même base que l'`engine` (admin) de la fixture.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import hmac
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -38,8 +40,10 @@ from axelcompta.ingestion.comptes_rollee_postgres import PostgresComptesRollee
 from axelcompta.ingestion.consentement import ReleveSante, SanteConnexion, StatutConsentement
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
+from axelcompta.ingestion.webhooks_rollee_postgres import PostgresEvenementsRollee
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
+from axelcompta.plateformes_rollee import ReceptionPostgres, recevoir
 from axelcompta.tenants.affectations import AffectationDejaDecidee, DecisionAffectation
 from axelcompta.tenants.affectations_postgres import PostgresAffectationRepository
 from axelcompta.tenants.avenants import AvenantRegime, MotifAvenant
@@ -783,3 +787,47 @@ def test_les_plateformes_reliees_restent_celles_du_dossier(
         assert web.comptes(karim) == []
     with contexte_identite(dossier_id=None, tenant_id="tenant-a"):
         assert [c.nom for c in web.comptes(karim)] == ["Uber"]
+
+
+def test_un_webhook_rollee_signe_est_garde_dans_son_portefeuille_seulement(
+    engine: Engine,
+    engine_web: Engine,
+    deux_tenants_trois_dossiers: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AXE-820 (migration `d6b2f8a4c3e7`) : la route publique, sans identité,
+    ne lit que le portefeuille et les paramètres chiffrés d'un branchement
+    Rollee actif ; l'événement est gardé dans ce portefeuille, une fois, et
+    un job est déposé."""
+    monkeypatch.setenv(
+        "AXELCOMPTA_CLE_INTEGRATIONS", "8HzGpdBIGgfDOSnOFZjfeI0MiLgqAkpdHFEDrKZ0KNI="
+    )
+    le = datetime(2026, 11, 11, 10, 0, tzinfo=UTC)
+    rollee = nouveau(
+        [],
+        TenantId("tenant-a"),
+        "rollee",
+        "rollee",
+        "Rollee",
+        {"jeton": "j", "environnement": "sandbox", "secret_webhook": "s3cret"},
+    )
+    PostgresBranchements(engine).enregistrer([rollee], "admin", le)
+    corps = b'{"action": "connect_account", "data": {"user_id": "user-k"}}'
+    signature = hmac.new(b"s3cret", corps, hashlib.sha512).hexdigest()
+    reception = ReceptionPostgres(engine_web)
+
+    with contexte_identite(dossier_id=None, tenant_id=None):
+        assert recevoir(reception, rollee.id, corps, signature, le) == "garde"
+        assert recevoir(reception, rollee.id, corps, signature, le) == "deja_recu"
+        assert recevoir(reception, "inconnu", corps, signature, le) == "inconnu"
+
+    web = PostgresEvenementsRollee(engine_web)
+    with contexte_identite(dossier_id=None, tenant_id="tenant-b"):
+        assert web.a_traiter(TenantId("tenant-a"), 10) == []
+    with contexte_identite(dossier_id=None, tenant_id="tenant-a"):
+        assert [e.type for e in web.a_traiter(TenantId("tenant-a"), 10)] == ["connect_account"]
+    with engine.connect() as connexion:
+        types = connexion.execute(
+            text("SELECT type FROM jobs WHERE tenant_id = 'tenant-a'")
+        ).scalars()
+        assert list(types) == ["rollee"]
