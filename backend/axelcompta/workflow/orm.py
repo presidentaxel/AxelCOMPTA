@@ -46,6 +46,9 @@ decisions_humaines = Table(
     Column("confiance_origine", Float, nullable=False),
     Column("decide_par", String, nullable=False),
     Column("decide_le", DateTime, nullable=False),
+    # AXE-871 : contexte de la décision (libellé, montant, proposition,
+    # nature), migration f1c7a3e9b2d5. Nul pour les décisions plus anciennes.
+    Column("contexte", JSON, nullable=True),
 )
 
 annotations_dev = Table(

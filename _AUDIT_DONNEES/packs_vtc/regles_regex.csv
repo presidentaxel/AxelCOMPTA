@@ -1,5 +1,5 @@
 regex,categorie,confiance,montant_min_cts,source
-(?i)\bretrait\b|\bdab\b|\bgab\b|withdrawal,retrait_especes,haute,,"ajoutée le 2026-11-06 (AXE-844) : retraits au distributeur, à préciser par le chauffeur (activité ou personnel)"
+(?i)\bretrait\b|\bdab\b|\bgab\b|withdrawal,retrait_especes,haute,500,"ajoutée le 2026-11-06 (AXE-844) : retraits au distributeur, à préciser par le chauffeur (activité ou personnel)"
 (?i)\btotal\b|\besso\b|\bbp\b|\bshell\b|\bavia\b|carburant|gazole|\bgo\b\W*\d,carburant,haute,500,libellés réels échantillon carburant
 cofiroute|sanef|\basf\b|vinci|effia|aprr|sapn|parkeo|horodat|parking,peage_stationnement,haute,,libellés réels échantillon péage
 norauto|midas|feu vert|speedy|euro.?repar|contr[oô]le tech|entret,entretien_reparation_vehicule,haute,,libellés réels échantillon entretien
@@ -24,3 +24,7 @@ dgfip,charges_sociales_impots,moyenne,,"peut aussi être une subvention (compte 
 \bloa\b|location avec option,loa_credit_bail_vehicule,haute,,"LOA : crédit-bail, compte 612 ; séparée de la LLD (AXE-803, profil Yanis doc 17 §4.3)"
 virement interne|\binterne\b|transfert entre (vos|mes) comptes|vir(ement)? (de|vers) (mon|votre) compte,virement_interne,basse,,"ajoutée le 2026-09-27 : vocabulaire bancaire générique ; le compte d'en face n'est pas toujours connecté, donc proposée, jamais imputée seule"
 compte courant d.associ|\bcca\b|apport en compte courant,compte_courant_associe,basse,,"ajoutée le 2026-09-27 : vocabulaire générique ; compte selon le statut (455 ou 108), donc proposée, jamais imputée seule"
+\bpop svcs\b|\bpop services\b,recettes_plateformes,haute,,"ajoutée le 2026-11-12 (AXE-871, mesure AXE-732) : versements de plateforme, 15 lignes réelles"
+"\bur\s?\d{6,}|representation\+ur",charges_sociales_impots,moyenne,,"ajoutée le 2026-11-12 (AXE-871, mesure AXE-732) : prélèvements URSSAF au libellé abrégé"
+boulangerie|boulanger|p[aâ]tisserie|\bcaf[ée]\b|brasserie|starbucks|columbus caf,repas_et_receptions,basse,,"ajoutée le 2026-11-12 (AXE-871, mesure AXE-732) : 62 lignes réelles hors règles ; basse : proposée, jamais imputée seule"
+pharmacie|\btabac\b|civette|\bpmu\b|\bfdj\b,usage_personnel_suspect,basse,,"ajoutée le 2026-11-12 (AXE-871, mesure AXE-732) : usage personnel probable, à trancher par le chauffeur"

@@ -53,6 +53,14 @@ EXEMPLES: tuple[tuple[str, str], ...] = (
     ("ARVAL SERVICE LEASE", "loyers_locations"),
     ("PRLV SEPA DIAC LOA 0123", "loa_credit_bail_vehicule"),  # AXE-803 : LOA ≠ LLD
     ("VIREMENT INTERNE", "virement_interne"),
+    # AXE-871 : familles réelles hors règles relevées par la mesure AXE-732.
+    ("VIR POP SVCS 0412", "recettes_plateformes"),
+    ("PRLV UR 117000123456", "charges_sociales_impots"),
+    ("PRLV +REPRESENTATION+UR IDF", "charges_sociales_impots"),
+    ("CB BOULANGERIE DU MARCHE", "repas_et_receptions"),
+    ("CB CAFE DE LA GARE", "repas_et_receptions"),
+    ("CB PHARMACIE CENTRALE", "usage_personnel_suspect"),
+    ("CB CIVETTE CHATEAU", "usage_personnel_suspect"),
     ("APPORT EN COMPTE COURANT", "compte_courant_associe"),
 )
 

@@ -339,9 +339,11 @@ from axelcompta.workflow.consultations import JournalConsultations, PostgresJour
 from axelcompta.workflow.decisions import (
     CATEGORIE_A_PRECISER,
     CATEGORIE_ANNULATION,
+    ContexteDecision,
     DecisionHumaine,
     DecisionRepository,
     decision_en_vigueur,
+    nature_decision,
 )
 from axelcompta.workflow.decisions_et_reclassements import (
     EcrireDecisions,
@@ -1996,6 +1998,52 @@ def _nouvelle_decision(
         confiance_origine=proposition.confiance,
         decide_par=decide_par,
         decide_le=maintenant,
+        contexte=_contexte_avant(ecriture, proposition, decision_en_vigueur(courante), categorie),
+    )
+
+
+def _contexte_avant(
+    ecriture: Ecriture,
+    proposition: ProposedEntry,
+    en_vigueur: DecisionHumaine | None,
+    categorie: str,
+) -> ContexteDecision:
+    """Une correction part de la décision en vigueur, pas de la proposition
+    d'origine du pipeline."""
+    if en_vigueur is None:
+        return _contexte_proposition(ecriture, proposition, categorie)
+    precedente = (en_vigueur.categorie, Etage.REVUE_HUMAINE.name, 1.0)
+    return _contexte(ecriture, categorie, precedente, proposition.moyen_paiement)
+
+
+def _contexte(
+    ecriture: Ecriture,
+    categorie: str,
+    proposee: tuple[str | None, str | None, float | None],
+    moyen_paiement: str | None = None,
+) -> ContexteDecision:
+    """AXE-871 : ce que l'humain avait sous les yeux. `proposee` : (catégorie,
+    étage, confiance) proposés à ce moment-là."""
+    categorie_proposee, etage, confiance = proposee
+    return ContexteDecision(
+        libelle=sans_categorie(ecriture.libelle),
+        montant_cts=montant_bancaire(ecriture),
+        moyen_paiement=moyen_paiement,
+        proposee=categorie_proposee,
+        etage_propose=etage,
+        confiance_proposee=confiance,
+        nature=nature_decision(categorie_proposee, categorie),
+    )
+
+
+def _contexte_proposition(
+    ecriture: Ecriture, proposition: ProposedEntry, categorie: str
+) -> ContexteDecision:
+    return _contexte(
+        ecriture,
+        categorie,
+        (proposition.categorie, proposition.etage.name, proposition.confiance),
+        proposition.moyen_paiement,
     )
 
 
@@ -2045,11 +2093,10 @@ def _decision_suivante(
     en_vigueur = decision_en_vigueur(courante)
     if en_vigueur is None:
         raise HTTPException(status_code=409, detail="Cette opération n'a pas encore été classée.")
+    ecriture = next((e for e in base.grand_livre(dossier.id) if e.id == ecriture_id), None)
+    if ecriture is None:
+        raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
     if categorie != CATEGORIE_ANNULATION:
-        ecritures = base.grand_livre(dossier.id)
-        ecriture = next((e for e in ecritures if e.id == ecriture_id), None)
-        if ecriture is None:
-            raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
         resoudre_ecriture_a_trancher(
             ecriture,
             categorie,
@@ -2064,6 +2111,9 @@ def _decision_suivante(
         confiance_origine=en_vigueur.confiance_origine,
         decide_par=decide_par,
         decide_le=datetime.now(UTC),
+        contexte=_contexte(
+            ecriture, categorie, (en_vigueur.categorie, Etage.REVUE_HUMAINE.name, 1.0)
+        ),
     )
     ecrire.ecrire([decision], _reclassements(dossier, base, [(EcritureId(ecriture_id), categorie)]))
     ledger = _ledger_avec_decisions(dossier, base, decisions)
@@ -2139,6 +2189,7 @@ def _trancher_groupe(
                 confiance_origine=proposition.confiance,
                 decide_par=decide_par,
                 decide_le=maintenant,
+                contexte=_contexte_proposition(ecriture, proposition, entree.categorie),
             )
         )
     ecrire.ecrire(
