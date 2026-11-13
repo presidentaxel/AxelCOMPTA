@@ -43,6 +43,7 @@ import type {
   Synchronisation,
 } from "./types";
 
+import type { FicheRollee, RolleePortefeuille } from "./liens-rollee";
 import type { AnalyseFec, OuvertureVue } from "./ouverture";
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
@@ -1198,3 +1199,39 @@ export async function reprendreFecExpert(
   );
 }
 
+
+/** AXE-911 : comptes Rollee à relier, état du lien de chaque entreprise. */
+export async function lireRolleePortefeuille(): Promise<RolleePortefeuille> {
+  const reponse = await requeteGestionnaire("/portefeuille/rollee");
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as RolleePortefeuille;
+}
+
+/** `dossierId` à null : « aucun de ces comptes ». */
+export async function choisirCompteRollee(rolleeUserId: string, dossierId: string | null): Promise<void> {
+  const reponse = await requeteGestionnaire("/portefeuille/rollee/choix", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rollee_user_id: rolleeUserId, dossier_id: dossierId }),
+  });
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+}
+
+export async function lireLienRollee(dossierId: string): Promise<FicheRollee> {
+  const reponse = await requeteGestionnaire(`/dossiers/${encodeURIComponent(dossierId)}/rollee`);
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as FicheRollee;
+}
+
+export async function delierRollee(dossierId: string, motif: string): Promise<number> {
+  const reponse = await requeteGestionnaire(
+    `/dossiers/${encodeURIComponent(dossierId)}/rollee/delier`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ motif }),
+    },
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return ((await reponse.json()) as { versements_contrepasses: number }).versements_contrepasses;
+}

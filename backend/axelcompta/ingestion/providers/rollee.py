@@ -160,6 +160,38 @@ class RolleeHttpClient:
         resultat: list[dict[str, Any]] = await self._requete("GET", f"/users/{user_id}/accounts")
         return resultat
 
+    async def utilisateurs(self, limite_pages: int = 200) -> list[dict[str, Any]]:
+        """`GET /users`, toutes les pages (`next_page_link`) : `id`, `metadata`…
+        AXE-911 : lecture seule, pour relier les users existants aux dossiers."""
+        tous: list[dict[str, Any]] = []
+        chemin: str | None = "/users"
+        for _page in range(limite_pages):
+            if chemin is None:
+                break
+            reponse = await self._requete("GET", chemin)
+            if isinstance(reponse, list):
+                return tous + [u for u in reponse if isinstance(u, dict)]
+            page = reponse or {}
+            donnees = page.get("data") or page.get("users") or page.get("results") or []
+            tous += [u for u in donnees if isinstance(u, dict)]
+            suivant = page.get("next_page_link")
+            chemin = str(suivant) if suivant else None
+        return tous
+
+    async def profil(self, account_id: str) -> dict[str, Any]:
+        """`GET /accounts/{id}/profile` : `first_name`, `last_name`, `email`, `phone`…
+        Lu pour comparer, jamais gardé (AXE-911)."""
+        resultat: dict[str, Any] = await self._requete("GET", f"/accounts/{account_id}/profile")
+        return resultat or {}
+
+    async def coordonnees_bancaires(self, account_id: str) -> dict[str, Any]:
+        """`GET /accounts/{id}/banking_info` : `iban`, `recipient`, `swift`.
+        Lu pour comparer, jamais gardé (AXE-911)."""
+        resultat: dict[str, Any] = await self._requete(
+            "GET", f"/accounts/{account_id}/banking_info"
+        )
+        return resultat or {}
+
     async def revenus(self, account_id: str, depuis: date, jusqua: date) -> dict[str, Any]:
         """`GET /accounts/{id}/income` sur la période, bornes comprises."""
         resultat: dict[str, Any] = await self._requete(

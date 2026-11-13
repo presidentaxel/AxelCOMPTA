@@ -12,6 +12,8 @@ période, puis rapproché du virement reçu en banque :
   suivante le ventile ;
 * `a_verifier` : plusieurs virements possibles, virement classé ailleurs,
   exercice clos, ou relevé modifié après ventilation. Rien n'est écrit.
+* `delie` : relevé d'un compte Rollee dont le lien avec le dossier a été
+  retiré (AXE-911). Sa ventilation est contre-passée ; il n'est plus traité.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ from axelcompta.core.ids import DossierId
 
 from .providers.base import PlatformSettlement
 
-Etat = Literal["en_attente_banque", "reconcilie", "a_classer", "a_verifier"]
+Etat = Literal["en_attente_banque", "reconcilie", "a_classer", "a_verifier", "delie"]
 A_RAPPROCHER: frozenset[str] = frozenset({"en_attente_banque", "a_classer"})
 
 

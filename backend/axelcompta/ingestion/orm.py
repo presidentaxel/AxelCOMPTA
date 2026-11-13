@@ -107,7 +107,46 @@ utilisateurs_rollee = Table(
     Column("dossier_id", String, ForeignKey("dossiers.id"), primary_key=True),
     Column("rollee_user_id", String, nullable=False, unique=True),
     Column("branchement_id", String, nullable=False),
-    Column("cree_le", DateTime(timezone=True), nullable=False),
+    Column("cree_le", DateTime(timezone=True), nullable=False),  # date du lien
+    # AXE-911 : cree (espace chauffeur), auto (rapprochement), manuel (gestionnaire).
+    Column("origine", String, nullable=False, server_default="cree"),
+    Column("indice", String, nullable=True),
+    Column("relie_par", String, nullable=True),
+    CheckConstraint("origine IN ('cree', 'auto', 'manuel')", name="ck_utilisateurs_rollee_origine"),
+)
+
+# AXE-911 : un lien retiré n'est jamais effacé (ajout seul).
+liens_rollee_retires = Table(
+    "liens_rollee_retires",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("rollee_user_id", String, nullable=False),
+    Column("branchement_id", String, nullable=False),
+    Column("origine", String, nullable=False),
+    Column("indice", String, nullable=True),
+    Column("relie_par", String, nullable=True),
+    Column("relie_le", DateTime(timezone=True), nullable=False),
+    Column("retire_le", DateTime(timezone=True), nullable=False),
+    Column("retire_par", String, nullable=False),
+    Column("motif", String, nullable=False),
+)
+
+# AXE-911 : users Rollee que le rapprochement n'a pas reliés seuls. Aucune
+# donnée en clair : candidats (dossier, raisons) et aperçu masqué.
+rapprochements_rollee = Table(
+    "rapprochements_rollee",
+    metadata,
+    Column("rollee_user_id", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False, index=True),
+    Column("branchement_id", String, nullable=False),
+    Column("etat", String, nullable=False),
+    Column("candidats", JSON, nullable=False),
+    Column("apercu", JSON, nullable=False),
+    Column("maj_le", DateTime(timezone=True), nullable=False),
+    CheckConstraint(
+        "etat IN ('a_choisir', 'non_trouve', 'ecarte')", name="ck_rapprochements_rollee_etat"
+    ),
 )
 
 # Les comptes de plateformes que le chauffeur a reliés dans Rollee Connect,
