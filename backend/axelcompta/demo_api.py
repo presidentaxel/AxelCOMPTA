@@ -326,6 +326,7 @@ from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.tester_branchement import tester as tester_branchement
 from axelcompta.webhooks_rollee import preparer as preparer_webhook
 from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT
+from axelcompta.workflow.avis_etages import avis_etages, proposition_affichee
 from axelcompta.workflow.classees import (
     Filtres,
     OperationClassee,
@@ -1910,6 +1911,7 @@ def _trancher(
     propositions: PropositionRepository,
     decide_par: UserId,
     ecrire: EcrireDecisions,
+    ia: Mapping[str, PropositionIa],
 ) -> Ecriture:
     """doc 17 §9 bloc C : la décision humaine, pour de vrai — déclenche le
     `workflow` testé (doc 05 §5), pas un changement d'état côté React seul.
@@ -1932,7 +1934,9 @@ def _trancher(
         )
     if not any(ligne.compte == COMPTE_ATTENTE for ligne in ecriture.lignes):
         raise HTTPException(status_code=409, detail="Cette opération n'est pas à classer.")
-    decision = _nouvelle_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
+    decision = _nouvelle_decision(
+        dossier, ecriture, categorie, (decisions, propositions), decide_par, ia
+    )
     ecrire.ecrire([decision], _reclassements(dossier, base, [(ecriture.id, categorie)]))
     return _ecriture_decidee(dossier, base, decisions, ecriture_id)
 
@@ -1946,6 +1950,7 @@ def _corriger(
     propositions: PropositionRepository,
     decide_par: UserId,
     ecrire: EcrireDecisions,
+    ia: Mapping[str, PropositionIa],
 ) -> Ecriture:
     """Corriger, c'est enregistrer une nouvelle décision. L'ancienne reste
     (doc 05 §5) : la dernière prévaut, rien n'est modifié en place."""
@@ -1962,7 +1967,9 @@ def _corriger(
             status_code=409,
             detail="Cette opération ne se corrige pas par une nouvelle catégorie.",
         )
-    decision = _nouvelle_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
+    decision = _nouvelle_decision(
+        dossier, ecriture, categorie, (decisions, propositions), decide_par, ia
+    )
     ecrire.ecrire([decision], _reclassements(dossier, base, [(ecriture.id, categorie)]))
     return _ecriture_decidee(dossier, base, decisions, ecriture_id)
 
@@ -1971,12 +1978,13 @@ def _nouvelle_decision(
     dossier: Dossier,
     ecriture: Ecriture,
     categorie: str,
-    decisions: DecisionRepository,
-    propositions: PropositionRepository,
+    depots: tuple[DecisionRepository, PropositionRepository],
     decide_par: UserId,
+    ia: Mapping[str, PropositionIa],
 ) -> DecisionHumaine:
     """La décision à écrire, si la catégorie a un compte. N'écrit rien :
     l'appelant l'écrit avec son OD de reclassement (AXE-852)."""
+    decisions, propositions = depots
     proposition = propositions.obtenir(dossier.id, ecriture.id)
     if proposition is None:
         raise HTTPException(
@@ -1999,22 +2007,31 @@ def _nouvelle_decision(
         confiance_origine=proposition.confiance,
         decide_par=decide_par,
         decide_le=maintenant,
-        contexte=_contexte_avant(ecriture, proposition, decision_en_vigueur(courante), categorie),
+        contexte=_contexte_avant(
+            ecriture,
+            (proposition, ia.get(cle_libelle(ecriture.libelle))),
+            decision_en_vigueur(courante),
+            categorie,
+        ),
     )
 
 
 def _contexte_avant(
     ecriture: Ecriture,
-    proposition: ProposedEntry,
+    avis: tuple[ProposedEntry, PropositionIa | None],
     en_vigueur: DecisionHumaine | None,
     categorie: str,
 ) -> ContexteDecision:
     """Une correction part de la décision en vigueur, pas de la proposition
-    d'origine du pipeline."""
+    d'origine du pipeline. AXE-901 : l'avis de chaque étage est gardé."""
+    proposition, ia = avis
     if en_vigueur is None:
-        return _contexte_proposition(ecriture, proposition, categorie)
+        return _contexte_proposition(ecriture, proposition, categorie, ia)
     precedente = (en_vigueur.categorie, Etage.REVUE_HUMAINE.name, 1.0)
-    return _contexte(ecriture, categorie, precedente, proposition.moyen_paiement)
+    return dataclasses.replace(
+        _contexte(ecriture, categorie, precedente, proposition.moyen_paiement),
+        avis=avis_etages(proposition, ia),
+    )
 
 
 def _contexte(
@@ -2038,13 +2055,21 @@ def _contexte(
 
 
 def _contexte_proposition(
-    ecriture: Ecriture, proposition: ProposedEntry, categorie: str
+    ecriture: Ecriture,
+    proposition: ProposedEntry,
+    categorie: str,
+    ia: PropositionIa | None = None,
 ) -> ContexteDecision:
-    return _contexte(
-        ecriture,
-        categorie,
-        (proposition.categorie, proposition.etage.name, proposition.confiance),
-        proposition.moyen_paiement,
+    """AXE-901 : la proposition retenue est celle que la file affichait
+    (l'IA quand aucune règle ne s'applique), plus l'avis de chaque étage."""
+    return dataclasses.replace(
+        _contexte(
+            ecriture,
+            categorie,
+            proposition_affichee(proposition, ia),
+            proposition.moyen_paiement,
+        ),
+        avis=avis_etages(proposition, ia),
     )
 
 
@@ -2154,6 +2179,7 @@ def _trancher_groupe(
     propositions: PropositionRepository,
     decide_par: UserId,
     ecrire: EcrireDecisions,
+    ia: Mapping[str, PropositionIa],
 ) -> list[Ecriture]:
     """Tout ou rien : une seule opération refusée refuse le lot, avec sa
     raison, et rien n'est écrit."""
@@ -2194,7 +2220,9 @@ def _trancher_groupe(
                 confiance_origine=proposition.confiance,
                 decide_par=decide_par,
                 decide_le=maintenant,
-                contexte=_contexte_proposition(ecriture, proposition, entree.categorie),
+                contexte=_contexte_proposition(
+                    ecriture, proposition, entree.categorie, ia.get(cle_libelle(ecriture.libelle))
+                ),
             )
         )
     ecrire.ecrire(
@@ -2530,13 +2558,21 @@ def _enregistrer_routes_revue(app: FastAPI) -> None:
         justificatifs: JustificatifsDep,
         ecrire: EcrireDecisionsDep,
         identite: IdentiteDep,
+        propositions_ia: PropositionsIaDep,
     ) -> list[TransactionVue]:
         """« Tout confirmer » : les mêmes contrôles que pour une décision
         seule, sur chaque opération, avant d'écrire quoi que ce soit ; puis
         toutes les décisions dans une seule transaction."""
         identite = _verifier_acces_dossier(dossier.id, identite)
         ecritures = _trancher_groupe(
-            dossier, entree, base, decisions, propositions, identite.user_id, ecrire
+            dossier,
+            entree,
+            base,
+            decisions,
+            propositions,
+            identite.user_id,
+            ecrire,
+            propositions_ia.lister(dossier.id, VERSION_PROMPT),
         )
         avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
         return [_vue_tranchee(dossier, e, e.id in avec_photo, entree.categorie) for e in ecritures]
@@ -2559,6 +2595,7 @@ def _enregistrer_route_correction(app: FastAPI) -> None:
         justificatifs: JustificatifsDep,
         ecrire: EcrireDecisionsDep,
         identite: IdentiteDep,
+        propositions_ia: PropositionsIaDep,
     ) -> TransactionVue:
         identite = _verifier_acces_dossier(dossier.id, identite)
         ecriture = _corriger(
@@ -2570,6 +2607,7 @@ def _enregistrer_route_correction(app: FastAPI) -> None:
             propositions,
             identite.user_id,
             ecrire,
+            propositions_ia.lister(dossier.id, VERSION_PROMPT),
         )
         return _vue_tranchee(
             dossier,
@@ -2594,6 +2632,7 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
         justificatifs: JustificatifsDep,
         ecrire: EcrireDecisionsDep,
         identite: IdentiteDep,
+        propositions_ia: PropositionsIaDep,
     ) -> TransactionVue:
         """Indiv qui tranche sa propre écriture (doc 19 §5.6, doc 19 §8bis :
         jeton obligatoire depuis le 2026-09-11) — `DossierDep` refuse déjà
@@ -2608,6 +2647,7 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
             propositions,
             identite.user_id,
             ecrire,
+            propositions_ia.lister(dossier.id, VERSION_PROMPT),
         )
         # `_trancher` refuse une écriture contre-passée : celle-ci ne l'est pas.
         return _vue_tranchee(
