@@ -2163,7 +2163,8 @@ def _joindre_justificatif(
 def _configurer_cors(app: FastAPI) -> None:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[ORIGINE_FRONTEND_DEV],
+        # 3000 est l'origine habituelle. 3001 sert quand ce port est déjà pris.
+        allow_origins=[ORIGINE_FRONTEND_DEV, "http://localhost:3001"],
         allow_methods=["GET", "POST", "PUT", "PATCH"],
         allow_headers=["*"],
         # Lu par le front pour enregistrer un fichier sous le nom choisi par
