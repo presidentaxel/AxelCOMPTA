@@ -30,6 +30,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# AXE-888 : le SDK officiel de Claude, importé seulement au moment d'un vrai
+# appel. Hors des tests et de la CI : `uv sync --extra llm` sur le poste qui
+# lance `scripts/proposer_ia.py`.
+llm = ["anthropic>=2.8"]
 dev = [
     "pytest>=8.0",
     "mypy>=1.11",
@@ -63,7 +67,7 @@ warn_unused_configs = true
 # joblib n'a ni py.typed ni stubs publiés (types-joblib n'existe pas) —
 # justification requise pour toute suppression de type (doc 08 §3).
 [[tool.mypy.overrides]]
-module = ["joblib", "sklearn.*", "boto3"]
+module = ["joblib", "sklearn.*", "boto3", "anthropic"]
 ignore_missing_imports = true
 
 # --- Lint + format : ruff (doc 08 §3) ---
