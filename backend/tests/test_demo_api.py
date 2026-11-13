@@ -66,6 +66,7 @@ from axelcompta.api.routes import (
     get_notifications,
     get_pipeline,
     get_propositions,
+    get_propositions_ia,
     get_provisions_cloture,
     get_registre_anomalies,
     get_resolutions_quarantaine,
@@ -123,6 +124,7 @@ from axelcompta.workflow.notifications import (
     message,
 )
 from axelcompta.workflow.propositions import InMemoryPropositionRepository
+from axelcompta.workflow.propositions_ia import PropositionsIaMemoire
 from axelcompta.workflow.resolutions_quarantaine import ResolutionsMemoire
 from axelcompta.workflow.signature import DocumentSigne
 from axelcompta.workflow.signature_memory import InMemorySignatureRepository
@@ -279,6 +281,8 @@ def _client_et_stubs(
     if role == ROLE_EXPERT:
         _expert_habilite(experts_stub)
     app.dependency_overrides[get_propositions] = lambda: propositions_stub
+    propositions_ia_stub = PropositionsIaMemoire()
+    app.dependency_overrides[get_propositions_ia] = lambda: propositions_ia_stub
     app.dependency_overrides[get_decisions] = lambda: decisions_stub
     app.dependency_overrides[get_comptes] = lambda: comptes_stub
     app.dependency_overrides[get_justificatifs] = lambda: justificatifs_stub

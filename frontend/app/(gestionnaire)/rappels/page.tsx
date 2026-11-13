@@ -32,6 +32,10 @@ function libelleCanal(id: string): string {
 
 /** Réglages. Une règle « avant clôture » part seule pour les entreprises
  * concernées. L'envoi réel attend le branchement du canal. */
+/** AXE-890 : message proposé pour relancer un chauffeur sans plateforme reliée. */
+const MESSAGE_PLATEFORMES =
+  "Reliez vos comptes Uber et Bolt dans Compte › Mes plateformes : vos recettes seront détaillées automatiquement.";
+
 export default function RappelsPage() {
   const router = useRouter();
   const droit = useDroitGestionnaire();
@@ -163,20 +167,37 @@ export default function RappelsPage() {
           <BoutonChoix actif={declencheur === "a_traiter"} disabled={!droit.admin} onClick={() => setDeclencheur("a_traiter")}>
             Opérations en attente
           </BoutonChoix>
+          <BoutonChoix
+            actif={declencheur === "plateformes_non_reliees"}
+            disabled={!droit.admin}
+            onClick={() => {
+              setDeclencheur("plateformes_non_reliees");
+              if (!message.trim()) setMessage(MESSAGE_PLATEFORMES);
+            }}
+          >
+            Plateformes non reliées
+          </BoutonChoix>
           <BoutonChoix actif={declencheur === "manuel"} disabled={!droit.admin} onClick={() => setDeclencheur("manuel")}>
             Bouton sur la fiche
           </BoutonChoix>
           {declencheur !== "manuel" && (
             <label className="flex items-center gap-2 text-subtle">
               {declencheur === "a_traiter" && "depuis"}
+              {declencheur === "plateformes_non_reliees" && "tous les"}
               <Input
                 value={jours}
                 onChange={(e) => setJours(e.target.value)}
                 inputMode="numeric"
                 className="w-16"
-                aria-label={declencheur === "a_traiter" ? "Jours d'attente" : "Jours avant la clôture"}
+                aria-label={
+                  declencheur === "a_traiter"
+                    ? "Jours d'attente"
+                    : declencheur === "plateformes_non_reliees"
+                      ? "Jours entre deux rappels"
+                      : "Jours avant la clôture"
+                }
               />
-              {declencheur === "a_traiter" ? "jours" : "jours avant"}
+              {declencheur === "avant_cloture" ? "jours avant" : "jours"}
             </label>
           )}
         </div>
@@ -276,7 +297,9 @@ export default function RappelsPage() {
                 ? `${regle.jours_avant} jours avant la clôture`
                 : regle.declencheur === "a_traiter"
                   ? `Opérations en attente depuis ${regle.jours_avant} jours`
-                  : "Bouton sur la fiche"}
+                  : regle.declencheur === "plateformes_non_reliees"
+                    ? `Plateformes non reliées, tous les ${regle.jours_avant} jours`
+                    : "Bouton sur la fiche"}
               {" · "}
               {regle.portee === "selection" ? `${regle.dossier_ids.length} entreprise(s)` : "Toutes"}
               {" · "}

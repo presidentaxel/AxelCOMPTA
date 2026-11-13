@@ -74,16 +74,18 @@ from axelcompta.api.auth import (
 from axelcompta.api.erreurs import brancher_erreurs
 from axelcompta.categorize.appris import (
     OperationTranchee,
+    PropositionApprise,
     libelle_sans_categorie,
     propositions_apprises,
 )
+from axelcompta.categorize.llm import VERSION_PROMPT, cle_libelle
 from axelcompta.categorize.ml_fallback import (
     charger_calibration,
     repli_sans_modele_permis,
 )
 from axelcompta.categorize.modele_requis import EtatCategorisation, signaler
 from axelcompta.categorize.modele_requis import charger as charger_modele_et_etat
-from axelcompta.categorize.models import Etage
+from axelcompta.categorize.models import Etage, ProposedEntry
 from axelcompta.categorize.rules_and_ml import (
     CATEGORIE_PAR_DEFAUT,
     CATEGORIE_RETRAIT_ESPECES,
@@ -98,7 +100,32 @@ from axelcompta.closing.affectation import (
 from axelcompta.closing.bilan_simplifie import ClotureSimplifieeService
 from axelcompta.closing.cloture_fiscale import chiffre_affaires_ht
 from axelcompta.closing.dividendes import RetenuesDividendes, retenues
-from axelcompta.closing.models import LiassePivot, ParametresCloture, ProvisionCloture
+from axelcompta.closing.immobilisations import (
+    DUREE_PAR_DEFAUT,
+    DUREES_PROPOSEES,
+    Cession,
+    Immobilisation,
+    ImmobilisationInvalide,
+    dotation,
+    plus_ou_moins_value,
+    valeur_nette,
+    valider,
+)
+from axelcompta.closing.loa import (
+    ContratLoa,
+    cca,
+    charge_premier_loyer,
+    engagement_restant,
+    terme,
+)
+from axelcompta.closing.loa import valider as valider_contrat_loa
+from axelcompta.closing.models import (
+    SANS_SAISIE,
+    LiassePivot,
+    ParametresCloture,
+    ProvisionCloture,
+    SaisiesCloture,
+)
 from axelcompta.closing.ouverture import id_a_nouveaux
 from axelcompta.closing.ouverture_depot import (
     ROLE_DIRIGEANT,
@@ -189,7 +216,7 @@ from axelcompta.ledger.banque import (
 )
 from axelcompta.ledger.contrepassation import annulees, contrepasser
 from axelcompta.ledger.memory import InMemoryLedgerService
-from axelcompta.ledger.models import Ecriture, Journal, Sens
+from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
 from axelcompta.nouveaux_contacts import fiche_sirene, recherche_entreprises
@@ -295,6 +322,7 @@ from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.tester_branchement import tester as tester_branchement
 from axelcompta.webhooks_rollee import preparer as preparer_webhook
 from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT
+from axelcompta.workflow.avis_etages import avis_etages, proposition_affichee
 from axelcompta.workflow.classees import (
     Filtres,
     OperationClassee,
@@ -308,9 +336,11 @@ from axelcompta.workflow.consultations import JournalConsultations, PostgresJour
 from axelcompta.workflow.decisions import (
     CATEGORIE_A_PRECISER,
     CATEGORIE_ANNULATION,
+    ContexteDecision,
     DecisionHumaine,
     DecisionRepository,
     decision_en_vigueur,
+    nature_decision,
 )
 from axelcompta.workflow.decisions_et_reclassements import (
     EcrireDecisions,
@@ -352,6 +382,8 @@ from axelcompta.workflow.notifications import (
 )
 from axelcompta.workflow.notifications_postgres import PostgresNotificationRepository
 from axelcompta.workflow.propositions import PropositionRepository
+from axelcompta.workflow.propositions_ia import PropositionIa, PropositionsIa
+from axelcompta.workflow.propositions_ia_postgres import PostgresPropositionsIa
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
 from axelcompta.workflow.quarantaine import (
     LIBELLES_MOTIF,
@@ -367,6 +399,7 @@ from axelcompta.workflow.rappels_envoi import (
 )
 from axelcompta.workflow.rappels_envoi_postgres import PostgresEnvois
 from axelcompta.workflow.reclassement import (
+    annulations_liees,
     annuler_reclassements,
     grand_livre_comptable,
     grand_livre_tranche,
@@ -604,7 +637,7 @@ class TransactionVue(BaseModel):
     # règles (« regle ») et le modèle (« modele ») en vigueur. La proposition
     # d'origine, figée à la synchro, reste en base comme trace.
     proposition: str | None = None
-    origine_proposition: str | None = None  # "appris" | "regle" | "modele"
+    origine_proposition: str | None = None  # "appris" | "regle" | "ia" | "modele" | "banque"
     confiance_proposition: float | None = None
     # Décision humaine en vigueur. None : classée par une règle, ou pas encore.
     categorie: str | None = None
@@ -772,7 +805,7 @@ def _statut_invitation_vue(statut: StatutInvitation) -> str:
 def _construire_liasse(
     dossier: Dossier,
     ledger: InMemoryLedgerService,
-    provisions: tuple[ProvisionCloture, ...] = (),
+    provisions: SaisiesCloture = SANS_SAISIE,
 ) -> LiassePivot:
     """Semaine 4 (doc 17 §9) : même appel que `_resume` (clôture) et que les
     exports du script de chauffeurs type (`_executer_un_chauffeur`), mais sur le
@@ -786,9 +819,7 @@ def _construire_liasse(
     )
 
 
-def _parametres(
-    dossier: Dossier, provisions: tuple[ProvisionCloture, ...] = ()
-) -> ParametresCloture:
+def _parametres(dossier: Dossier, provisions: SaisiesCloture = SANS_SAISIE) -> ParametresCloture:
     """Bornes déclarées de l'exercice et identité du dossier : ce qui fait
     passer la clôture du bilan simplifié à la liasse fiscale complète."""
     return ParametresCloture(
@@ -798,15 +829,20 @@ def _parametres(
         identite=dossier.identite,
         soumis_is=_colonne(dossier).soumis_is,
         associes=_colonne(dossier).associes,
-        provisions=provisions,
+        provisions=provisions.provisions,
+        immobilisations=provisions.immobilisations,
+        contrats_loa=provisions.contrats_loa,
         deficits_anterieurs=dossier.deficits_anterieurs_euros,
     )
 
 
-def _provisions_saisies(
-    dossier: Dossier, depot: ProvisionsClotureRepository
-) -> tuple[ProvisionCloture, ...]:
-    return depot.lister(dossier.tenant_id, dossier.id, dossier.fin_exercice().year)
+def _provisions_saisies(dossier: Dossier, depot: ProvisionsClotureRepository) -> SaisiesCloture:
+    """Estimations CCA/FNP de l'exercice et registre des immobilisations (AXE-802)."""
+    return SaisiesCloture(
+        depot.lister(dossier.tenant_id, dossier.id, dossier.fin_exercice().year),
+        depot.lister_immobilisations(dossier.tenant_id, dossier.id),
+        depot.lister_contrats_loa(dossier.tenant_id, dossier.id),
+    )
 
 
 def _regimes_a_venir(
@@ -896,7 +932,7 @@ def _exiger_operations_tranchees(dossier: Dossier, ledger: InMemoryLedgerService
 def _ecritures_avec_cloture(
     dossier: Dossier,
     ledger: InMemoryLedgerService,
-    provisions: tuple[ProvisionCloture, ...] = (),
+    provisions: SaisiesCloture = SANS_SAISIE,
 ) -> tuple[Ecriture, ...]:
     """Écritures de l'exercice (mêmes bornes que la liasse) + écritures
     d'inventaire (TVA, IS) : FEC, grand livre et balance téléchargés
@@ -925,7 +961,7 @@ def _resume(
     comptes: CompteRepository,
     signatures: SignatureRepository,
     digifactory_branche: bool = True,
-    provisions: tuple[ProvisionCloture, ...] = (),
+    provisions: SaisiesCloture = SANS_SAISIE,
 ) -> DossierResume:
     ecritures = ledger.grand_livre(dossier.id)
     liasse = _construire_liasse(dossier, ledger, provisions)
@@ -1142,6 +1178,7 @@ def _transactions_dossier(
     justificatifs: JustificatifRepository,
     decisions: tuple[DecisionHumaine, ...] = (),
     pipeline: RulesAndMlPipeline | None = None,
+    ia: Mapping[str, PropositionIa] | None = None,
 ) -> list[TransactionVue]:
     """Extrait de la route (doc 08 §2 : longueur de fonction)."""
     vues = _avec_categories(_vues_dossier(dossier, ledger, justificatifs), decisions)
@@ -1150,7 +1187,7 @@ def _transactions_dossier(
         for e in ledger.grand_livre(dossier.id)
         if (ligne := ligne_banque(e)) is not None
     }
-    return _avec_propositions(dossier, vues, decisions, pipeline, banques)
+    return _avec_propositions(dossier, vues, decisions, pipeline, banques, ia)
 
 
 def _avec_categories(
@@ -1202,10 +1239,12 @@ def _avec_propositions(
     decisions: tuple[DecisionHumaine, ...],
     pipeline: RulesAndMlPipeline | None,
     banques: dict[str, str] | None = None,
+    ia: Mapping[str, PropositionIa] | None = None,
 ) -> list[TransactionVue]:
     """Une proposition par opération à trancher : d'abord une opération
     semblable que l'indiv a déjà tranchée (dernière décision de chaque
-    écriture), sinon le pipeline actuel. Rien si le modèle s'abstient."""
+    écriture), puis une règle, puis l'IA (AXE-888), puis le modèle et la
+    banque. Rien si tous s'abstiennent."""
     a_trancher = [vue for vue in vues if vue.statut == "à trancher"]
     if not a_trancher:
         return vues
@@ -1227,24 +1266,48 @@ def _avec_propositions(
     )
     mises_a_jour: dict[str, dict[str, object]] = {}
     for vue, apprise, actuelle in zip(a_trancher, apprises, actuelles, strict=True):
-        if apprise is not None:
-            mises_a_jour[vue.ecriture_id] = {
-                "proposition": apprise.categorie,
-                "origine_proposition": "appris",
-                "confiance_proposition": round(apprise.similarite, 2),
-            }
-        elif actuelle is not None and actuelle.categorie != CATEGORIE_PAR_DEFAUT:
-            mises_a_jour[vue.ecriture_id] = {
-                "proposition": actuelle.categorie,
-                "origine_proposition": _ORIGINE_PAR_ETAGE.get(actuelle.etage),
-                "confiance_proposition": round(actuelle.confiance, 2),
-            }
+        retenue = _proposition_retenue(vue, apprise, actuelle, ia or {})
+        if retenue is not None:
+            mises_a_jour[vue.ecriture_id] = retenue
     return [
         vue.model_copy(update=mises_a_jour[vue.ecriture_id])
         if vue.ecriture_id in mises_a_jour
         else vue
         for vue in vues
     ]
+
+
+def _proposition_retenue(
+    vue: TransactionVue,
+    apprise: PropositionApprise | None,
+    actuelle: ProposedEntry | None,
+    ia: Mapping[str, PropositionIa],
+) -> dict[str, object] | None:
+    if apprise is not None:
+        return {
+            "proposition": apprise.categorie,
+            "origine_proposition": "appris",
+            "confiance_proposition": round(apprise.similarite, 2),
+        }
+    utile = actuelle is not None and actuelle.categorie != CATEGORIE_PAR_DEFAUT
+    if utile and actuelle is not None and actuelle.etage is Etage.REGLE:
+        return _proposition_du_pipeline(actuelle)
+    propre = ia.get(cle_libelle(vue.libelle))
+    if propre is not None and propre.proposable:
+        return {
+            "proposition": propre.categorie,
+            "origine_proposition": "ia",
+            "confiance_proposition": round(propre.confiance, 2),
+        }
+    return _proposition_du_pipeline(actuelle) if utile and actuelle is not None else None
+
+
+def _proposition_du_pipeline(actuelle: ProposedEntry) -> dict[str, object]:
+    return {
+        "proposition": actuelle.categorie,
+        "origine_proposition": _ORIGINE_PAR_ETAGE.get(actuelle.etage),
+        "confiance_proposition": round(actuelle.confiance, 2),
+    }
 
 
 def _nb_a_trancher(ecritures: tuple[Ecriture, ...] | list[Ecriture]) -> int:
@@ -1483,6 +1546,14 @@ DossiersDep = Annotated[DossierRepository, Depends(get_dossiers)]
 LedgerBaseDep = Annotated[LedgerService, Depends(get_ledger)]
 EcrireDecisionsDep = Annotated[EcrireDecisions, Depends(get_ecrire_decisions)]
 PropositionsDep = Annotated[PropositionRepository, Depends(get_propositions)]
+
+
+def get_propositions_ia() -> PropositionsIa:
+    """Dépendance FastAPI — propositions de l'IA par libellé (AXE-888)."""
+    return PostgresPropositionsIa(_engine())
+
+
+PropositionsIaDep = Annotated[PropositionsIa, Depends(get_propositions_ia)]
 
 
 def get_verdicts() -> VerdictsRepository:
@@ -1837,6 +1908,7 @@ def _trancher(
     propositions: PropositionRepository,
     decide_par: UserId,
     ecrire: EcrireDecisions,
+    ia: Mapping[str, PropositionIa],
 ) -> Ecriture:
     """doc 17 §9 bloc C : la décision humaine, pour de vrai — déclenche le
     `workflow` testé (doc 05 §5), pas un changement d'état côté React seul.
@@ -1859,7 +1931,9 @@ def _trancher(
         )
     if not any(ligne.compte == COMPTE_ATTENTE for ligne in ecriture.lignes):
         raise HTTPException(status_code=409, detail="Cette opération n'est pas à classer.")
-    decision = _nouvelle_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
+    decision = _nouvelle_decision(
+        dossier, ecriture, categorie, (decisions, propositions), decide_par, ia
+    )
     ecrire.ecrire([decision], _reclassements(dossier, base, [(ecriture.id, categorie)]))
     return _ecriture_decidee(dossier, base, decisions, ecriture_id)
 
@@ -1873,6 +1947,7 @@ def _corriger(
     propositions: PropositionRepository,
     decide_par: UserId,
     ecrire: EcrireDecisions,
+    ia: Mapping[str, PropositionIa],
 ) -> Ecriture:
     """Corriger, c'est enregistrer une nouvelle décision. L'ancienne reste
     (doc 05 §5) : la dernière prévaut, rien n'est modifié en place."""
@@ -1889,7 +1964,9 @@ def _corriger(
             status_code=409,
             detail="Cette opération ne se corrige pas par une nouvelle catégorie.",
         )
-    decision = _nouvelle_decision(dossier, ecriture, categorie, decisions, propositions, decide_par)
+    decision = _nouvelle_decision(
+        dossier, ecriture, categorie, (decisions, propositions), decide_par, ia
+    )
     ecrire.ecrire([decision], _reclassements(dossier, base, [(ecriture.id, categorie)]))
     return _ecriture_decidee(dossier, base, decisions, ecriture_id)
 
@@ -1898,12 +1975,13 @@ def _nouvelle_decision(
     dossier: Dossier,
     ecriture: Ecriture,
     categorie: str,
-    decisions: DecisionRepository,
-    propositions: PropositionRepository,
+    depots: tuple[DecisionRepository, PropositionRepository],
     decide_par: UserId,
+    ia: Mapping[str, PropositionIa],
 ) -> DecisionHumaine:
     """La décision à écrire, si la catégorie a un compte. N'écrit rien :
     l'appelant l'écrit avec son OD de reclassement (AXE-852)."""
+    decisions, propositions = depots
     proposition = propositions.obtenir(dossier.id, ecriture.id)
     if proposition is None:
         raise HTTPException(
@@ -1926,6 +2004,69 @@ def _nouvelle_decision(
         confiance_origine=proposition.confiance,
         decide_par=decide_par,
         decide_le=maintenant,
+        contexte=_contexte_avant(
+            ecriture,
+            (proposition, ia.get(cle_libelle(ecriture.libelle))),
+            decision_en_vigueur(courante),
+            categorie,
+        ),
+    )
+
+
+def _contexte_avant(
+    ecriture: Ecriture,
+    avis: tuple[ProposedEntry, PropositionIa | None],
+    en_vigueur: DecisionHumaine | None,
+    categorie: str,
+) -> ContexteDecision:
+    """Une correction part de la décision en vigueur, pas de la proposition
+    d'origine du pipeline. AXE-901 : l'avis de chaque étage est gardé."""
+    proposition, ia = avis
+    if en_vigueur is None:
+        return _contexte_proposition(ecriture, proposition, categorie, ia)
+    precedente = (en_vigueur.categorie, Etage.REVUE_HUMAINE.name, 1.0)
+    return dataclasses.replace(
+        _contexte(ecriture, categorie, precedente, proposition.moyen_paiement),
+        avis=avis_etages(proposition, ia),
+    )
+
+
+def _contexte(
+    ecriture: Ecriture,
+    categorie: str,
+    proposee: tuple[str | None, str | None, float | None],
+    moyen_paiement: str | None = None,
+) -> ContexteDecision:
+    """AXE-871 : ce que l'humain avait sous les yeux. `proposee` : (catégorie,
+    étage, confiance) proposés à ce moment-là."""
+    categorie_proposee, etage, confiance = proposee
+    return ContexteDecision(
+        libelle=sans_categorie(ecriture.libelle),
+        montant_cts=montant_bancaire(ecriture),
+        moyen_paiement=moyen_paiement,
+        proposee=categorie_proposee,
+        etage_propose=etage,
+        confiance_proposee=confiance,
+        nature=nature_decision(categorie_proposee, categorie),
+    )
+
+
+def _contexte_proposition(
+    ecriture: Ecriture,
+    proposition: ProposedEntry,
+    categorie: str,
+    ia: PropositionIa | None = None,
+) -> ContexteDecision:
+    """AXE-901 : la proposition retenue est celle que la file affichait
+    (l'IA quand aucune règle ne s'applique), plus l'avis de chaque étage."""
+    return dataclasses.replace(
+        _contexte(
+            ecriture,
+            categorie,
+            proposition_affichee(proposition, ia),
+            proposition.moyen_paiement,
+        ),
+        avis=avis_etages(proposition, ia),
     )
 
 
@@ -1950,6 +2091,10 @@ def _reclassements(
         if reclassement is not None:
             calculees.append(reclassement)
             ecritures.append(reclassement)
+        # AXE-889 : un virement ventilé qui quitte le 706 perd sa ventilation.
+        liees = annulations_liees(source, ecritures, periodes)
+        calculees.extend(liees)
+        ecritures.extend(liees)
     return calculees
 
 
@@ -1975,11 +2120,10 @@ def _decision_suivante(
     en_vigueur = decision_en_vigueur(courante)
     if en_vigueur is None:
         raise HTTPException(status_code=409, detail="Cette opération n'a pas encore été classée.")
+    ecriture = next((e for e in base.grand_livre(dossier.id) if e.id == ecriture_id), None)
+    if ecriture is None:
+        raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
     if categorie != CATEGORIE_ANNULATION:
-        ecritures = base.grand_livre(dossier.id)
-        ecriture = next((e for e in ecritures if e.id == ecriture_id), None)
-        if ecriture is None:
-            raise HTTPException(status_code=404, detail=f"Écriture inconnue : {ecriture_id}")
         resoudre_ecriture_a_trancher(
             ecriture,
             categorie,
@@ -1994,6 +2138,9 @@ def _decision_suivante(
         confiance_origine=en_vigueur.confiance_origine,
         decide_par=decide_par,
         decide_le=datetime.now(UTC),
+        contexte=_contexte(
+            ecriture, categorie, (en_vigueur.categorie, Etage.REVUE_HUMAINE.name, 1.0)
+        ),
     )
     ecrire.ecrire([decision], _reclassements(dossier, base, [(EcritureId(ecriture_id), categorie)]))
     ledger = _ledger_avec_decisions(dossier, base, decisions)
@@ -2029,6 +2176,7 @@ def _trancher_groupe(
     propositions: PropositionRepository,
     decide_par: UserId,
     ecrire: EcrireDecisions,
+    ia: Mapping[str, PropositionIa],
 ) -> list[Ecriture]:
     """Tout ou rien : une seule opération refusée refuse le lot, avec sa
     raison, et rien n'est écrit."""
@@ -2069,6 +2217,9 @@ def _trancher_groupe(
                 confiance_origine=proposition.confiance,
                 decide_par=decide_par,
                 decide_le=maintenant,
+                contexte=_contexte_proposition(
+                    ecriture, proposition, entree.categorie, ia.get(cle_libelle(ecriture.libelle))
+                ),
             )
         )
     ecrire.ecrire(
@@ -2121,7 +2272,8 @@ def _joindre_justificatif(
 def _configurer_cors(app: FastAPI) -> None:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[ORIGINE_FRONTEND_DEV],
+        # 3000 est l'origine habituelle. 3001 sert quand ce port est déjà pris.
+        allow_origins=[ORIGINE_FRONTEND_DEV, "http://localhost:3001"],
         allow_methods=["GET", "POST", "PUT", "PATCH"],
         allow_headers=["*"],
         # Lu par le front pour enregistrer un fichier sous le nom choisi par
@@ -2381,9 +2533,15 @@ def _enregistrer_routes_revue(app: FastAPI) -> None:
         decisions: DecisionsDep,
         pipeline: PipelineDep,
         experts: ExpertsDep,
+        propositions_ia: PropositionsIaDep,
     ) -> list[TransactionVue]:
         vues = _transactions_dossier(
-            dossier, ledger, justificatifs, decisions.lister_decisions(dossier.id), pipeline
+            dossier,
+            ledger,
+            justificatifs,
+            decisions.lister_decisions(dossier.id),
+            pipeline,
+            propositions_ia.lister(dossier.id, VERSION_PROMPT),
         )
         return _avec_reclassements_expert(vues, experts.decisions(dossier.id))
 
@@ -2397,13 +2555,21 @@ def _enregistrer_routes_revue(app: FastAPI) -> None:
         justificatifs: JustificatifsDep,
         ecrire: EcrireDecisionsDep,
         identite: IdentiteDep,
+        propositions_ia: PropositionsIaDep,
     ) -> list[TransactionVue]:
         """« Tout confirmer » : les mêmes contrôles que pour une décision
         seule, sur chaque opération, avant d'écrire quoi que ce soit ; puis
         toutes les décisions dans une seule transaction."""
         identite = _verifier_acces_dossier(dossier.id, identite)
         ecritures = _trancher_groupe(
-            dossier, entree, base, decisions, propositions, identite.user_id, ecrire
+            dossier,
+            entree,
+            base,
+            decisions,
+            propositions,
+            identite.user_id,
+            ecrire,
+            propositions_ia.lister(dossier.id, VERSION_PROMPT),
         )
         avec_photo = justificatifs.presents(dossier.tenant_id, dossier.id)
         return [_vue_tranchee(dossier, e, e.id in avec_photo, entree.categorie) for e in ecritures]
@@ -2426,6 +2592,7 @@ def _enregistrer_route_correction(app: FastAPI) -> None:
         justificatifs: JustificatifsDep,
         ecrire: EcrireDecisionsDep,
         identite: IdentiteDep,
+        propositions_ia: PropositionsIaDep,
     ) -> TransactionVue:
         identite = _verifier_acces_dossier(dossier.id, identite)
         ecriture = _corriger(
@@ -2437,6 +2604,7 @@ def _enregistrer_route_correction(app: FastAPI) -> None:
             propositions,
             identite.user_id,
             ecrire,
+            propositions_ia.lister(dossier.id, VERSION_PROMPT),
         )
         return _vue_tranchee(
             dossier,
@@ -2461,6 +2629,7 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
         justificatifs: JustificatifsDep,
         ecrire: EcrireDecisionsDep,
         identite: IdentiteDep,
+        propositions_ia: PropositionsIaDep,
     ) -> TransactionVue:
         """Indiv qui tranche sa propre écriture (doc 19 §5.6, doc 19 §8bis :
         jeton obligatoire depuis le 2026-09-11) — `DossierDep` refuse déjà
@@ -2475,6 +2644,7 @@ def _enregistrer_routes_transactions(app: FastAPI) -> None:
             propositions,
             identite.user_id,
             ecrire,
+            propositions_ia.lister(dossier.id, VERSION_PROMPT),
         )
         # `_trancher` refuse une écriture contre-passée : celle-ci ne l'est pas.
         return _vue_tranchee(
@@ -3893,7 +4063,7 @@ def _enregistrer_routes_balance(app: FastAPI) -> None:
 def _document_greffe_inpi(
     dossier: Dossier,
     ledger: InMemoryLedgerService,
-    provisions: tuple[ProvisionCloture, ...] = (),
+    provisions: SaisiesCloture = SANS_SAISIE,
 ) -> bytes:
     """doc 20 §4 : le PDF non signé (« document de synthèse » de démo, pas
     celui que le Guichet Unique génère réellement — on ne peut pas
@@ -4663,7 +4833,7 @@ def _preparer_cloture(
     ledger: LedgerService,
     decisions: DecisionRepository,
     avenants: AvenantRegimeRepository,
-    provisions: tuple[ProvisionCloture, ...] = (),
+    provisions: SaisiesCloture = SANS_SAISIE,
 ) -> PassageExercice:
     """Lève `PassageRefuse` (un `Conflit` : 409 avec sa phrase, AXE-839) ;
     l'aperçu la lit pour dire pourquoi, avec son code (AXE-853)."""
@@ -4725,7 +4895,7 @@ def _enregistrer_routes_provisions(app: FastAPI) -> None:
         dossier: DossierDep, provisions: ProvisionsDep, identite: IdentiteDep
     ) -> ProvisionsVue:
         _verifier_acces_dossier(dossier.id, identite)
-        return _vue_provisions(_provisions_saisies(dossier, provisions))
+        return _vue_provisions(_provisions_saisies(dossier, provisions).provisions)
 
     @app.put("/dossiers/{dossier_id}/provisions-cloture", response_model=ProvisionsVue)
     def enregistrer_provisions(
@@ -4738,6 +4908,253 @@ def _enregistrer_routes_provisions(app: FastAPI) -> None:
         saisies = _lire_provisions(corps)
         provisions.remplacer(dossier.tenant_id, dossier.id, dossier.fin_exercice().year, saisies)
         return _vue_provisions(saisies)
+
+
+class ImmobilisationVue(BaseModel):
+    id: str
+    designation: str
+    compte: str
+    mise_en_service: str
+    base_cts: int
+    duree_mois: int
+    dotation_exercice_cts: int  # dotation de l'exercice ouvert
+    valeur_nette_cts: int  # à la fin de l'exercice ouvert (ou à la cession)
+    cede_le: str | None = None
+    prix_cession_cts: int | None = None
+    plus_ou_moins_value_cts: int | None = None
+
+
+class BienADeclarerVue(BaseModel):
+    """Une opération imputée sur un compte d'immobilisation, pas encore au registre."""
+
+    ecriture_id: str
+    date: str
+    libelle: str
+    compte: str
+    base_cts: int
+    duree_proposee_mois: int
+
+
+class RegistreVue(BaseModel):
+    immobilisations: list[ImmobilisationVue]
+    a_declarer: list[BienADeclarerVue]
+
+
+class DeclarationEntree(BaseModel):
+    ecriture_id: str
+    designation: str
+    mise_en_service: date
+    duree_mois: int
+
+
+class CessionEntree(BaseModel):
+    le: date
+    prix_cts: int = 0
+
+
+def _ligne_immobilisee(ecriture: Ecriture) -> LigneEcriture | None:
+    """La ligne d'acquisition d'un bien : compte 2 hors amortissements (28)."""
+    return next(
+        (
+            x
+            for x in ecriture.lignes
+            if x.compte.startswith("2") and not x.compte.startswith("28") and x.sens is Sens.DEBIT
+        ),
+        None,
+    )
+
+
+def _vue_immobilisation(dossier: Dossier, immo: Immobilisation) -> ImmobilisationVue:
+    debut, fin = dossier.exercice_debut, dossier.fin_exercice()
+    return ImmobilisationVue(
+        id=immo.id,
+        designation=immo.designation,
+        compte=immo.compte,
+        mise_en_service=immo.mise_en_service.isoformat(),
+        base_cts=immo.base_cts,
+        duree_mois=immo.duree_mois,
+        dotation_exercice_cts=dotation(immo, debut, fin),
+        valeur_nette_cts=valeur_nette(immo, fin),
+        cede_le=immo.cession.le.isoformat() if immo.cession else None,
+        prix_cession_cts=immo.cession.prix_cts if immo.cession else None,
+        plus_ou_moins_value_cts=plus_ou_moins_value(immo),
+    )
+
+
+def _registre(
+    dossier: Dossier, ledger: InMemoryLedgerService, depot: ProvisionsClotureRepository
+) -> RegistreVue:
+    fiches = depot.lister_immobilisations(dossier.tenant_id, dossier.id)
+    declarees = {f.ecriture_acquisition for f in fiches}
+    exclues = annulees(ledger.grand_livre(dossier.id))
+    a_declarer = [
+        BienADeclarerVue(
+            ecriture_id=e.id,
+            date=e.date.isoformat(),
+            libelle=sans_categorie(e.libelle),
+            compte=ligne.compte,
+            base_cts=ligne.montant.centimes,
+            duree_proposee_mois=DUREES_PROPOSEES.get(ligne.compte, DUREE_PAR_DEFAUT),
+        )
+        for e in ledger.grand_livre(dossier.id)
+        if e.id not in declarees
+        and e.id not in exclues
+        and (ligne := _ligne_immobilisee(e)) is not None
+        and ligne_banque(e) is not None
+    ]
+    return RegistreVue(
+        immobilisations=[_vue_immobilisation(dossier, f) for f in fiches], a_declarer=a_declarer
+    )
+
+
+def _declarer(
+    dossier: Dossier, ledger: InMemoryLedgerService, entree: DeclarationEntree
+) -> Immobilisation:
+    """La fiche d'un bien acquis par une opération : compte et base viennent
+    de l'écriture (HT quand la TVA a été séparée), le reste du chauffeur."""
+    ecriture = next((e for e in ledger.grand_livre(dossier.id) if e.id == entree.ecriture_id), None)
+    ligne = _ligne_immobilisee(ecriture) if ecriture is not None else None
+    if ecriture is None or ligne is None:
+        raise ImmobilisationInvalide("Cette opération n'est pas l'achat d'un bien à amortir.")
+    fiche = Immobilisation(
+        id=f"{entree.ecriture_id}:immo",
+        designation=entree.designation.strip(),
+        compte=ligne.compte,
+        mise_en_service=entree.mise_en_service,
+        base_cts=ligne.montant.centimes,
+        duree_mois=entree.duree_mois,
+        ecriture_acquisition=entree.ecriture_id,
+    )
+    valider(fiche)
+    return fiche
+
+
+def _enregistrer_routes_immobilisations(app: FastAPI) -> None:
+    """AXE-802 : registre des immobilisations. Lu par la clôture, qui en tire
+    les dotations aux amortissements et la sortie des biens cédés."""
+
+    @app.get("/dossiers/{dossier_id}/immobilisations", response_model=RegistreVue)
+    def lire_registre(
+        dossier: DossierDep,
+        ledger: LedgerDossierDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+    ) -> RegistreVue:
+        _verifier_acces_dossier(dossier.id, identite)
+        return _registre(dossier, ledger, provisions)
+
+    @app.post("/dossiers/{dossier_id}/immobilisations", response_model=RegistreVue)
+    def declarer_immobilisation(
+        entree: DeclarationEntree,
+        dossier: DossierDep,
+        ledger: LedgerDossierDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+    ) -> RegistreVue:
+        _verifier_acces_dossier(dossier.id, identite)
+        fiche = _declarer(dossier, ledger, entree)
+        provisions.ajouter_immobilisation(dossier.tenant_id, dossier.id, fiche)
+        return _registre(dossier, ledger, provisions)
+
+    @app.post(
+        "/dossiers/{dossier_id}/immobilisations/{immobilisation_id}/cession",
+        response_model=RegistreVue,
+    )
+    def ceder_immobilisation(
+        immobilisation_id: str,
+        entree: CessionEntree,
+        dossier: DossierDep,
+        ledger: LedgerDossierDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+    ) -> RegistreVue:
+        _verifier_acces_dossier(dossier.id, identite)
+        fiches = {f.id: f for f in provisions.lister_immobilisations(dossier.tenant_id, dossier.id)}
+        fiche = fiches.get(immobilisation_id)
+        if fiche is None:
+            raise HTTPException(status_code=404, detail="Ce bien n'est pas au registre.")
+        cession = Cession(entree.le, entree.prix_cts)
+        valider(dataclasses.replace(fiche, cession=cession))
+        provisions.enregistrer_cession(dossier.tenant_id, dossier.id, immobilisation_id, cession)
+        return _registre(dossier, ledger, provisions)
+
+    _enregistrer_routes_loa(app)
+
+
+class ContratLoaEntree(BaseModel):
+    loueur: str
+    vehicule: str
+    debut: date
+    duree_mois: int
+    loyer_mensuel_cts: int
+    premier_loyer_cts: int = 0
+    prix_levee_cts: int = 0
+    co2_g_km: int | None = None
+
+
+class ContratLoaVue(ContratLoaEntree):
+    id: str
+    terme: str
+    charge_premier_loyer_exercice_cts: int  # part du premier loyer de l'exercice ouvert
+    cca_fin_exercice_cts: int  # 486 à la clôture de l'exercice ouvert
+    engagement_restant_cts: int  # hors bilan à la clôture : loyers restants + levée
+
+
+def _vue_contrat(dossier: Dossier, contrat: ContratLoa) -> ContratLoaVue:
+    debut, fin = dossier.exercice_debut, dossier.fin_exercice()
+    return ContratLoaVue(
+        id=contrat.id,
+        loueur=contrat.loueur,
+        vehicule=contrat.vehicule,
+        debut=contrat.debut,
+        duree_mois=contrat.duree_mois,
+        loyer_mensuel_cts=contrat.loyer_mensuel_cts,
+        premier_loyer_cts=contrat.premier_loyer_cts,
+        prix_levee_cts=contrat.prix_levee_cts,
+        co2_g_km=contrat.co2_g_km,
+        terme=terme(contrat).isoformat(),
+        charge_premier_loyer_exercice_cts=charge_premier_loyer(contrat, debut, fin),
+        cca_fin_exercice_cts=cca(contrat, fin),
+        engagement_restant_cts=engagement_restant(contrat, fin),
+    )
+
+
+def _enregistrer_routes_loa(app: FastAPI) -> None:
+    """AXE-803 : contrats de LOA. La clôture en tire l'étalement du premier
+    loyer (486) et l'engagement hors bilan. La levée d'option se déclare comme
+    un achat, dans le registre des immobilisations."""
+
+    @app.get("/dossiers/{dossier_id}/loa", response_model=list[ContratLoaVue])
+    def lire_contrats_loa(
+        dossier: DossierDep, provisions: ProvisionsDep, identite: IdentiteDep
+    ) -> list[ContratLoaVue]:
+        _verifier_acces_dossier(dossier.id, identite)
+        contrats = provisions.lister_contrats_loa(dossier.tenant_id, dossier.id)
+        return [_vue_contrat(dossier, c) for c in contrats]
+
+    @app.post("/dossiers/{dossier_id}/loa", response_model=list[ContratLoaVue])
+    def ajouter_contrat_loa(
+        entree: ContratLoaEntree,
+        dossier: DossierDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+    ) -> list[ContratLoaVue]:
+        _verifier_acces_dossier(dossier.id, identite)
+        contrat = ContratLoa(
+            id=f"loa-{uuid.uuid4().hex[:12]}",
+            loueur=entree.loueur.strip(),
+            vehicule=entree.vehicule.strip(),
+            debut=entree.debut,
+            duree_mois=entree.duree_mois,
+            loyer_mensuel_cts=entree.loyer_mensuel_cts,
+            premier_loyer_cts=entree.premier_loyer_cts,
+            prix_levee_cts=entree.prix_levee_cts,
+            co2_g_km=entree.co2_g_km,
+        )
+        valider_contrat_loa(contrat)
+        provisions.ajouter_contrat_loa(dossier.tenant_id, dossier.id, contrat)
+        contrats = provisions.lister_contrats_loa(dossier.tenant_id, dossier.id)
+        return [_vue_contrat(dossier, c) for c in contrats]
 
 
 def _prouver_cloture(
@@ -7320,6 +7737,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_balance(app)
     _enregistrer_routes_comptes_bancaires(app)
     _enregistrer_routes_provisions(app)
+    _enregistrer_routes_immobilisations(app)
     _enregistrer_routes_declarations(app)
     _enregistrer_routes_pieces_greffe(app)
     _enregistrer_routes_greffe_inpi(app)

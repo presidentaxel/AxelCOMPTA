@@ -77,9 +77,11 @@ export function questionSelonSigne(montantCts: number, sansProposition: boolean)
 /** D'où vient la proposition, sans parler du modèle ni d'un pourcentage. */
 export function intituleProposition(
   libelle: string,
-  origine: "appris" | "regle" | "modele" | "banque" | null,
+  origine: "appris" | "regle" | "ia" | "modele" | "banque" | null,
 ): string {
   if (origine === "appris") return `Comme une opération déjà classée : ${libelle}`;
+  // AXE-888 : proposée par l'IA, à valider. On le dit, sans plus.
+  if (origine === "ia") return `Proposition de l'IA : ${libelle}`;
   // AXE-826 : la catégorie vient de la banque, pas de nous. On le dit.
   if (origine === "banque") return `D'après votre banque : ${libelle}`;
   return `Proposition : ${libelle}`;

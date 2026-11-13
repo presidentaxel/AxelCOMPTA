@@ -30,6 +30,7 @@ from .ecritures_cloture import (
     id_cloture_is,
     id_cloture_tva,
 )
+from .immobilisations import ecritures_immobilisations, prefixe_immobilisations
 from .impot_societes import arrondir_euros, calculer_is
 from .liasse_2033 import Balance, bilan, compte_de_resultat, net_actif, resultat_fiscal
 from .liasse_2033_annexes import (
@@ -45,6 +46,7 @@ from .liasse_2054 import immobilisations_2054
 from .liasse_2055 import amortissements_2055
 from .liasse_2056 import provisions_2056
 from .liasse_2058 import deficits_2058, resultat_2058
+from .loa import ecritures_loa, engagement_restant, prefixe_loa
 from .models import LiassePivot, ParametresCloture
 from .provisions import ecritures_provisions, prefixe_provisions
 from .tva_periodique import est_liquidation_periodique
@@ -89,17 +91,26 @@ def hors_inventaire(
     les soldes « avant inventaire » (TVA de la 2033-D)."""
     annee = parametres.exercice_fin.year
     exclues = {id_cloture_tva(dossier_id, annee), id_cloture_is(dossier_id, annee)}
-    prefixe = prefixe_provisions(dossier_id, annee)
-    return tuple(e for e in ecritures if e.id not in exclues and not e.id.startswith(prefixe))
+    prefixes = (
+        prefixe_provisions(dossier_id, annee),
+        prefixe_immobilisations(dossier_id, annee),
+        prefixe_loa(dossier_id, annee),
+    )
+    return tuple(e for e in ecritures if e.id not in exclues and not e.id.startswith(prefixes))
 
 
 def ecritures_de_cloture(
     dossier_id: DossierId, ecritures: tuple[Ecriture, ...], parametres: ParametresCloture
 ) -> tuple[Ecriture, ...]:
-    """Provisions saisies, puis TVA, puis IS. `ecritures` : celles de l'exercice."""
+    """Provisions saisies et amortissements (AXE-802), puis TVA, puis IS.
+    `ecritures` : celles de l'exercice."""
     ecritures = hors_inventaire(dossier_id, ecritures, parametres)
     fin = parametres.exercice_fin
     provisions = ecritures_provisions(dossier_id, parametres.provisions, fin)
+    provisions += ecritures_immobilisations(
+        dossier_id, parametres.immobilisations, parametres.exercice_debut, fin
+    )
+    provisions += ecritures_loa(dossier_id, parametres.contrats_loa, parametres.exercice_debut, fin)
     avant_tva = ecritures + provisions
     tva = ecriture_liquidation_tva(dossier_id, soldes(avant_tva), fin)
     avec_tva = avant_tva + ((tva,) if tva else ())
@@ -165,6 +176,14 @@ def _liasse_reel_normal(
     )
 
 
+def _engagements_hors_bilan(parametres: ParametresCloture) -> dict[str, int]:
+    """AXE-803 : engagements de crédit-bail à la clôture (annexe), en centimes."""
+    if not parametres.contrats_loa:
+        return {}
+    total = sum(engagement_restant(c, parametres.exercice_fin) for c in parametres.contrats_loa)
+    return {"ENGAGEMENTS_CREDIT_BAIL": total}
+
+
 def cloturer_fiscalement(
     dossier_id: DossierId,
     exercice: str,
@@ -190,6 +209,7 @@ def cloturer_fiscalement(
         # 2031 cadre C.1 : bénéfice (370) ou déficit (372) de la 2033-B.
         cases |= _prefixer("2031", {"BENEFICE": fiscal["370"], "DEFICIT": fiscal["372"]})
         cases |= _prefixer("2031H", salaires)
+    cases |= _engagements_hors_bilan(parametres)
     cases |= _prefixer("2033A", actif_passif)
     cases |= _prefixer("2033A.NET", net_actif(actif_passif))
     cases |= _prefixer("2033B", resultat | fiscal)

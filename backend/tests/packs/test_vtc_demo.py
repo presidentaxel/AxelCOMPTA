@@ -54,11 +54,11 @@ def test_honoraires_et_charges_sociales_sont_corriges_vers_des_comptes_de_charge
     assert nature_depuis_compte(comptes["charges_sociales_impots"]) == "charge"
 
 
-def test_immobilisation_vehicule_reste_non_corrigee_expres() -> None:
-    # Le premier choix (218, hors compte de résultat) est correct pour un
-    # achat de véhicule (le cas courant) ; la seule alternative 6/7 (775) ne
-    # s'applique qu'à la revente — la forcer casserait le cas normal.
+def test_immobilisation_vehicule_va_en_materiel_de_transport() -> None:
+    # Hors compte de résultat (un achat de véhicule s'amortit), et en 2182
+    # plutôt que 218 : la 2033-C le range en matériel de transport (AXE-802).
     comptes = charger_compte_par_categorie()
+    assert comptes["immobilisation_vehicule"] == "2182"
     assert nature_depuis_compte(comptes["immobilisation_vehicule"]) == "autre"
 
 

@@ -101,6 +101,8 @@ JAMAIS_IMPUTEES = {
 # chauffeur est passée en compte courant d'associé (455) dans l'historique
 # FEC : même classe.
 CATEGORIE_DECISION_VERS_TAXONOMIE = {"usage_personnel": "compte_courant_associe"}
+# Mêmes valeurs que `axelcompta.workflow.decisions` : annulation, « à préciser ».
+DECISIONS_SANS_CATEGORIE = frozenset({"annulation_decision", "a_preciser_expert"})
 _SUFFIXE_CATEGORIE = re.compile(r"\s+\([a-z0-9_]+\)$")
 
 
@@ -167,6 +169,11 @@ def lignes_decisions() -> list[tuple[str, str, str]]:
     with engine.connect() as connexion:
         for dossier_id, libelle, categorie, montant_cts in connexion.execute(requete):
             if montant_cts is None:
+                continue
+            # AXE-871 : la dernière décision peut être une annulation ou un
+            # « je ne sais plus » : ce ne sont pas des catégories. L'opération
+            # n'est alors pas tranchée, on ne l'apprend pas.
+            if categorie in DECISIONS_SANS_CATEGORIE:
                 continue
             libelle = _SUFFIXE_CATEGORIE.sub("", libelle)
             categorie = CATEGORIE_DECISION_VERS_TAXONOMIE.get(categorie, categorie)
