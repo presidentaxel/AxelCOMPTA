@@ -1,6 +1,6 @@
 # 03 — Architecture technique
 
-> **État au 2026-11-10** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-13** (ajouté ; le reste du doc décrit la cible) :
 > - Modules ajoutés au découpage : `pseudonymize/` (seule porte vers un LLM)
 >   et `jobs/` (file Postgres, ADR-002). Carte à jour dans le
 >   [doc 18](18-organisation-code.md).
@@ -16,8 +16,15 @@
 > - MFA native de Supabase demandée à l'admin et à l'expert-comptable
 >   (jeton `aal2`, AXE-812). Le TOTP maison (`tenants/mfa.py`) est retiré.
 > - Un worker (`axelcompta.worker`) exécute la file de jobs Postgres :
->   import des dossiers, « Synchroniser », rappels (AXE-809, AXE-845,
->   AXE-808).
+>   import des dossiers, « Synchroniser », rappels, événements Rollee
+>   (AXE-809, AXE-845, AXE-808, AXE-820).
+> - Intégrations externes en **branchements** par portefeuille, plusieurs
+>   par type, identifiants chiffrés (AXE-872) : mail, SMS, Digifactory,
+>   Rollee. Seule route publique sans compte : `POST /webhooks/rollee/{id}`,
+>   signée, qui ne lit qu'une fonction `SECURITY DEFINER` (AXE-820).
+> - Services externes appelés depuis le 10/11 : Rollee, INSEE et RNE
+>   (AXE-849), un bucket S3 privé pour le modèle (AXE-847), l'API Batch
+>   d'Anthropic (AXE-887, éteinte par défaut).
 > - Depuis le 2026-11-05, la base Supabase `AxelCompta` est la base réelle
 >   du portefeuille Serenity ; aucun dossier ni compte de démo n'y reste
 >   (doc 17). Isolation stricte (AXE-810), hébergement de production à

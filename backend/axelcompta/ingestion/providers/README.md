@@ -56,6 +56,15 @@ pipeline selon le chemin retenu le jour de la démo.
     relier une transaction à sa `ProposedEntry` (`categorize/`).
   - **Chemin A (réel) non tenté** : token Digifactory toujours en 401
     (doc 16 §7), accès sandbox Rollee toujours non vérifié (doc 17 §5).
+- **Au 2026-11-13** : Digifactory réel (depuis septembre, un client par
+  branchement depuis AXE-872). `RolleeHttpClient` (AXE-818) : API
+  utilisateur, JWT renouvelé sur 401 et rendu à l'appelant pour qu'il le
+  garde, 429 et 5xx réessayés ; `lire_revenus` traduit une période en
+  `PlatformSettlement` sans jamais arrondir. Depuis AXE-911 : `/users`
+  paginé, profil et coordonnées bancaires, en GET seulement. Testé sur des
+  réponses construites d'après la documentation ; test de contrat sandbox
+  hors CI (`pytest -m rollee`). Sans client, `RolleeProvider()` rend
+  toujours la fixture du golden test.
 - **V1 (doc 12, phase 0.3 + 1)** : spikes Digifactory/Bridge/Rollee menés à
   terme (accès réel obtenu, pas seulement les fixtures), tous les chemins de
   secours consolidés.

@@ -25,8 +25,10 @@
   fournisseur de LLM, un nouvel hébergeur) oblige à mettre à jour
   [confidentialite.md](confidentialite.md) dans la même PR. Le test
   `frontend/lib/juridique.test.ts` vérifie les critères d'AXE-859 : Supabase
-  (eu-west-1) et Digifactory cités, ni prix ni LLM, Bridge jamais présenté
-  comme un appel direct.
+  (eu-west-1) et Digifactory cités, aucun prix, Bridge jamais présenté
+  comme un appel direct. Depuis AXE-887, il vérifie aussi que le
+  fournisseur d'IA n'est cité que dans la politique de confidentialité, avec
+  la pseudonymisation, et que Rollee y figure.
 - Le texte de l'engagement de l'expert-comptable fait foi dans le code
   (`backend/axelcompta/workflow/expert_comptable.py`, `TEXTE_ENGAGEMENT`) :
   c'est lui que l'expert accepte. Le fichier ici le reprend mot pour mot.

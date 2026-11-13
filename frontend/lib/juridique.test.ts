@@ -71,8 +71,24 @@ test("les textes citent Supabase en eu-west-1 et Digifactory", () => {
   assert.match(lire("confidentialite"), /Digifactory/u);
 });
 
-test("aucun LLM ni fournisseur d'IA n'est cité comme service", () => {
-  assert.doesNotMatch(TOUS, /\b(LLM|Claude|Gemini|OpenAI|GPT|Mistral|Anthropic)\b/u);
+test("le fournisseur d'IA n'est cité que dans la confidentialité, pseudonymisation comprise", () => {
+  // AXE-887 : l'étage LLM (Anthropic) est branché, éteint par défaut.
+  const confidentialite = lire("confidentialite");
+  assert.match(confidentialite, /Anthropic/u);
+  assert.match(confidentialite, /pseudonymisés/u);
+  const autres = (Object.keys(TEXTES_JURIDIQUES) as CleTexte[])
+    .filter((cle) => cle !== "confidentialite")
+    .map(lire)
+    .join("\n");
+  assert.doesNotMatch(autres, /\b(LLM|Claude|Gemini|OpenAI|GPT|Mistral|Anthropic)\b/u);
+});
+
+test("les plateformes passent par Rollee, cité comme service", () => {
+  // AXE-818 à AXE-821 : Rollee lit les revenus des plateformes.
+  const tableau = lire("confidentialite")
+    .split("\n")
+    .filter((ligne) => ligne.startsWith("|"));
+  assert.ok(tableau.some((ligne) => /Rollee/u.test(ligne)));
 });
 
 test("aucun prix : le seul montant est le capital de l'éditeur", () => {

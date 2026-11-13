@@ -1,10 +1,15 @@
 # 09 — Stratégie de tests
 
-> **État au 2026-11-05** (ajouté) : en plus des tests unitaires, de
+> **État au 2026-11-13** (ajouté) : en plus des tests unitaires, de
 > propriétés et des golden tests de liasse, le frontend a des tests de
 > bout en bout Playwright (`frontend/e2e/`, dont la répétition de la démo,
-> AXE-431). Le jeu de test gelé de catégorisation n'existe pas encore
-> (AXE-423, AXE-816).
+> AXE-431). Au 13/11 : environ 1 390 tests rapides et 145 d'intégration
+> (Postgres local, rôle web et RLS compris). Tests de contrat hors CI, à
+> lancer avec un jeton : Rollee sandbox (`pytest -m rollee`). Les clients
+> INSEE, RNE, Rollee et Anthropic sont testés sur des réponses construites
+> d'après leur documentation. Mesure des objectifs V1 :
+> `scripts/mesurer_objectifs.py` (AXE-816) ; le jeu de test gelé n'existe
+> pas encore (AXE-902, AXE-423).
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-12
 

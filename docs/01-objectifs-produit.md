@@ -1,6 +1,6 @@
 # 01 — Objectifs produit et vision
 
-> **État au 2026-11-05** (ajouté ; le reste du doc décrit la cible d'origine) :
+> **État au 2026-11-13** (ajouté ; le reste du doc décrit la cible d'origine) :
 > - Le chauffeur a sa propre interface depuis septembre (doc 19) : il tranche
 >   ses opérations, photographie ses tickets, clôture et valide. Le
 >   non-objectif « pas d'interface pour les chauffeurs » (§3) et la ligne C10
@@ -8,9 +8,14 @@
 > - Le gestionnaire ne voit que des agrégats. Seul l'expert-comptable de
 >   l'entreprise, dans le mode expert, voit le détail et impute, en prenant
 >   la responsabilité de chaque changement (doc 02 §2.3, AXE-800).
-> - C3 : les photos sont stockées, pas lues (pas d'OCR). C4 : règles et
->   modèle, aucun LLM branché. C8 : dépôt manuel. Les KPIs du §6 ne sont pas
->   encore mesurés (AXE-816). Le détail est dans le [doc 12](12-roadmap-todo.md).
+> - C3 : les photos sont stockées, pas lues (pas d'OCR). C4 : règles, modèle,
+>   puis Claude Fable 5.2 qui propose sans imputer (AXE-887, éteint par
+>   défaut). C8 : dépôt manuel.
+> - KPIs du §6 mesurés le 12/11 sur une référence provisoire (AXE-816) :
+>   précision 100 %, règles 83,9 %, recours au LLM 1,9 %, mais 38,4 %
+>   d'automatique pour 85 % visés. Décision à prendre : AXE-905. Suivi
+>   quotidien en production : doc 15 §2. Le détail est dans le
+>   [doc 12](12-roadmap-todo.md).
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-12
 

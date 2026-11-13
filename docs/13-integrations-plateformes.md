@@ -1,15 +1,28 @@
 # 13 — Intégrations de plateformes et pattern DataProvider
 
-> **État au 2026-11-10** (ajouté) : la réconciliation et les écritures de
-> settlement (§4, §5) sont codées et testées sur fixtures (golden test
-> §5.3, autoliquidation Bolt). Rollee n'est pas contractualisé. Tickets
-> ouverts le 05/11 (AXE-440, qui les regroupait, est annulé) : AXE-817
-> (contrat, sandbox, User API ou Company API), AXE-818 (client et
-> `RolleeProvider`), AXE-819 (Rollee Connect), AXE-820 (webhooks signés,
-> synchro de secours), AXE-821 (réconciliation avec le virement
-> Digifactory, écritures 706, TVA et commission). En attendant, les
-> settlements viendront des relevés exportés par le chauffeur depuis Uber
-> et Bolt (AXE-801).
+> **État au 2026-11-13** (ajouté) : Rollee est branché de bout en bout,
+> testé sur des réponses construites d'après sa documentation (pas encore
+> sur de vraies réponses) :
+> - AXE-817 : accès par le compte Rollee de Serenity, API utilisateur ;
+>   AXE-872 : un **branchement** Rollee par compte, jeton chiffré, sandbox
+>   ou production.
+> - AXE-818 : client (JWT renouvelé et gardé, 429 et 5xx réessayés) et
+>   traduction d'une période de revenus en `PlatformSettlement` (§3). Unité
+>   des montants et date du virement : non documentées, à vérifier au test
+>   de contrat (`pytest -m rollee`).
+> - AXE-819 : le chauffeur relie ses comptes dans Rollee Connect (§3.3),
+>   depuis Compte › Mes plateformes.
+> - AXE-820 : webhooks signés (HMAC SHA-512) et rattrapage quotidien.
+> - AXE-821 : réconciliation (§4, ±1 centime, -3 à +5 jours, nom de la
+>   plateforme) et OD de ventilation (§5, golden test §5.3 au centime). Le
+>   virement reste en 706, le 512 ne bouge pas. AXE-889 : contre-passée si
+>   le virement est reclassé. AXE-891 : « à vérifier » dans « À traiter ».
+> - AXE-911 : chaque user Rollee est relié au bon dossier par empreintes
+>   (metadata, IBAN, nom avec e-mail ou téléphone), sinon le gestionnaire
+>   choisit. Éteint tant que `AXELCOMPTA_ROLLEE_RAPPROCHEMENT` n'est pas posé.
+> - Reste : sortir un versement de « à vérifier » (AXE-912) ; relevés CSV
+>   Uber et Bolt pour un chauffeur sans Rollee (AXE-801) ; périodes
+>   quotidiennes de Rollee, si elles existent, à additionner par semaine.
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-16
 

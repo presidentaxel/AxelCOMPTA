@@ -52,10 +52,16 @@ pivot de liasse (`LiassePivot`) avant rendu par `filings/`.
   clôture et liasse qui attendent la configuration confirmée par le
   chauffeur (AXE-730), refus de clôture en erreur métier `PassageRefuse`
   (409, AXE-853).
-- **Manque pour la V1** : dotations aux amortissements (AXE-802), LOA
-  (AXE-803), bilan d'ouverture d'une société existante (AXE-804),
-  identité de la société pour la liasse (AXE-846), rapprochement bancaire
-  ligne à ligne, lignes de détail des annexes 2054 à 2059 (AXE-484).
+- **Fait du 2026-11-11 au 2026-11-13** : bilan d'ouverture repris d'un
+  FEC et déficits antérieurs (AXE-804, ci-dessous), identité de la société
+  saisie par le dirigeant (AXE-846, dans `tenants/`), immobilisations et
+  amortissement (`immobilisations.py`, AXE-802), LOA (`loa.py`, AXE-803 :
+  premier loyer étalé en 486, engagement hors bilan, levée d'option en
+  2182). Plafond de l'art. 39-4 non appliqué au transport de personnes, à
+  valider (AXE-815).
+- **Manque pour la V1** : saisie guidée d'un bilan d'ouverture sans FEC,
+  reprise des immobilisations à l'ouverture, rapprochement bancaire ligne à
+  ligne, lignes de détail des annexes 2054 à 2059 (AXE-484).
 
 ## Doc de référence
 

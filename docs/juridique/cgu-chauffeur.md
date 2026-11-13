@@ -1,6 +1,6 @@
 # Conditions d'utilisation — espace du dirigeant
 
-> Version du 2026-11-10. Projet, à relire par un juriste (AXE-813).
+> Version du 2026-11-13. Projet, à relire par un juriste (AXE-813).
 > L'acceptation de cette version sera tracée au journal d'audit (AXE-813).
 
 ## 1. Ce qu'est AxeLCompta
@@ -40,6 +40,12 @@ Vos opérations bancaires arrivent par Digifactory, auprès de qui vous (ou
 votre gestionnaire, avec votre accord) avez autorisé l'accès à vos comptes.
 Vous choisissez quels comptes sont professionnels : les opérations d'un
 compte personnel ne sont pas comptabilisées.
+
+Si vous reliez vos comptes Uber ou Bolt dans Rollee Connect, AxeLCompta lit
+chez Rollee vos revenus et vos versements, pour séparer la recette, la TVA
+et la commission de chaque virement. Vous saisissez vos identifiants Uber
+et Bolt chez Rollee : AxeLCompta ne les voit jamais. Votre gestionnaire
+voit combien de plateformes sont reliées, jamais vos montants.
 
 ## 5. Ce que vous vous engagez à faire
 

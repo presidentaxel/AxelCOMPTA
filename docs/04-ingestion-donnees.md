@@ -1,18 +1,25 @@
 # 04 — Ingestion des données : Bridge, fichiers, OCR & justificatifs
 
-> **État au 2026-11-10** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-13** (ajouté ; le reste du doc décrit la cible) :
 > - Bancaire : synchro Digifactory réelle, idempotente, avec archive brute,
 >   quarantaine résolue par le gestionnaire (AXE-424) et contre-passation
 >   d'une transaction modifiée (doc 16). Un sous-compte 512x par compte
 >   bancaire (AXE-832) ; seuls les comptes retenus sont comptabilisés
->   (AXE-729). Premier mois réel exporté : AXE-728 et AXE-733. Mois d'avant
->   la connexion Digifactory : AXE-833.
+>   (AXE-729). Plusieurs comptes Digifactory par portefeuille, un client par
+>   jeton (AXE-872). Premier mois réel exporté : AXE-728 et AXE-733. Mois
+>   d'avant la connexion Digifactory : AXE-833.
 > - La transaction normalisée porte le type d'opération et la catégorie de
 >   la banque (AXE-826).
+> - Plateformes : revenus lus chez Rollee par période (AXE-818), gardés une
+>   fois (`settlements_plateforme`), rapprochés du virement bancaire
+>   (AXE-821, doc 13). Une période qui ne tombe pas juste part en quarantaine.
 > - Fichiers : aucun profil d'import CSV/Excel générique pour les
->   opérations (le seul import CSV est celui des dossiers, AXE-809, doc 14). Premiers profils
->   prévus pour les relevés Uber et Bolt (AXE-801), et l'import du FEC de
->   l'outil précédent (AXE-804).
+>   opérations (le seul import CSV est celui des dossiers, AXE-809, doc 14).
+>   Relevés Uber et Bolt en secours de Rollee : AXE-801. Le FEC de l'outil
+>   précédent se reprend en bilan d'ouverture (AXE-804, lecteur tolérant aux
+>   variantes du format, garde-fous contre un faux FEC).
+> - Registres officiels : INSEE et RNE relus chaque semaine pour chaque
+>   dossier qui a un SIREN (AXE-849).
 > - Justificatifs : stockés en base par tenant et dossier (AXE-425), une
 >   photo par dépense. Pas d'OCR, pas de matching automatique, pas de WORM.
 

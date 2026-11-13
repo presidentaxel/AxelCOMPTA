@@ -1,6 +1,6 @@
 # 02 — Cadre réglementaire et juridique
 
-> Statut : brouillon à valider — Dernière mise à jour : 2026-11-10 (mode expert livré, §2.3)
+> Statut : brouillon à valider — Dernière mise à jour : 2026-11-13 (premier LLM branché, §8)
 
 ## 1. Pourquoi ce document existe
 
@@ -245,6 +245,13 @@ Voir doc 10 pour le volet technique. Points juridiques :
   (noms, IBAN, numéros) avant tout appel Claude/Gemini/OpenAI + endpoints UE quand
   disponibles + opt-out de l'entraînement fournisseur. Registre des traitements à
   jour.
+  **Au 2026-11-13** : Claude (Anthropic) est branché, éteint par défaut
+  (AXE-887). Partent seulement des libellés pseudonymisés, montant en ordre
+  de grandeur ; un prompt qui garde un nom connu, un IBAN, un e-mail ou un
+  téléphone est refusé avant l'envoi. Le LLM propose, une personne décide.
+  Pas encore vérifiés : région de traitement, conservation et non-usage
+  pour l'entraînement chez Anthropic. Anthropic est ajouté à la liste des
+  sous-traitants ([juridique/confidentialite.md](juridique/confidentialite.md)).
 - **Droits des personnes** : les gérants des dossiers (chauffeurs…) ne voient pas la plateforme mais restent
   des personnes concernées → procédure d'accès/rectification via le client
   (responsable de traitement ; AxeL = sous-traitant art. 28, DPA contractuel).

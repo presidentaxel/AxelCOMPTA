@@ -1,29 +1,41 @@
 # 05 — Pipeline de catégorisation hybride et détection d'anomalies
 
-> **État au 2026-11-10** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-13** (ajouté ; le reste du doc décrit la cible) :
 > - Ordre réel (AXE-826) : virements internes (deux jambes opposées sur
 >   deux comptes du dossier), règles du pack, modèle, puis catégorie de la
->   banque (Bridge) en simple proposition, jamais imputée seule.
+>   banque (Bridge) en simple proposition, jamais imputée seule. Ensuite,
+>   dans les tâches planifiées, l'IA pour ce qui reste au 471.
 > - Étage 1 (règles) et étage 2 (modèle v2 calibré : proposition au-dessus
 >   de 0,6, imputation automatique au-dessus de 0,95 pour 9 catégories
 >   seulement) en place, plus les propositions apprises des décisions du
 >   chauffeur. Une règle peut avoir un plancher de montant : en dessous,
->   elle propose sans imputer (carburant à 5 €, AXE-837). Retraits
->   d'espèces : question dédiée au chauffeur (AXE-844).
+>   elle propose sans imputer (carburant et retraits d'espèces à 5 €,
+>   AXE-837, AXE-871). Règles ajoutées le 13/11 d'après le premier flux réel
+>   (AXE-732, AXE-871) : `POP SVCS`, URSSAF abrégé, repas et usage personnel
+>   probable en confiance basse.
 > - Sans modèle, la synchro s'arrête et le dit (AXE-825) ; repli sur les
->   règles seules avec `AXELCOMPTA_SANS_MODELE=1`. Le modèle n'est encore
->   que sur un poste (AXE-830, AXE-847).
-> - Étage 3 (LLM) : la pseudonymisation et l'interface `LLMProvider` existent
->   (AXE-436), aucun fournisseur n'est branché.
+>   règles seules avec `AXELCOMPTA_SANS_MODELE=1`. Le modèle est dans un
+>   bucket S3 privé, versionné, empreinte vérifiée (AXE-847).
+> - Étage 3 (LLM) : Claude Fable 5.2 par l'API Batch (AXE-887), après
+>   pseudonymisation bloquante (AXE-436). Il propose, n'impute jamais. Un
+>   lot par dossier et par jour, 80 libellés au plus, cache par libellé et
+>   version du prompt. Budget : 0,50 $ par chauffeur et 100 $ au global par
+>   mois, réservé avant l'envoi ; coupe-circuit. **Éteint par défaut**
+>   (`AXELCOMPTA_LLM_ACTIF`). Avant, les propositions de la démo étaient
+>   calculées à l'avance (AXE-888, `scripts/proposer_ia.py`).
 > - Étage 4 (humain) : « À traiter » côté chauffeur, mode expert côté
 >   expert-comptable habilité, motif obligatoire (AXE-800). Une décision
->   s'écrit au grand livre en OD de reclassement (AXE-420). Le mode expert
+>   s'écrit au grand livre en OD de reclassement (AXE-420). Elle garde son
+>   contexte et l'avis de chaque étage (AXE-871, AXE-901). Le mode expert
 >   relit aussi les opérations déjà classées et note « juste » ou « faux »
 >   (AXE-823).
 > - Anomalies (§6) : profils et détecteurs V1 faits (AXE-437), détecteurs
 >   carburant affinés (AXE-836) ; qualifications en base avec historique
->   (AXE-814).
-> - Aucun objectif du doc 01 §6 n'est encore mesuré (AXE-816).
+>   (AXE-814). Rappel non mesuré (AXE-903).
+> - Objectifs du doc 01 §6 mesurés le 12/11 (AXE-816,
+>   `scripts/mesurer_objectifs.py`) : 38,4 % d'automatique pour 85 % visés,
+>   précision 100 % (décision : AXE-905). Part de chaque étage et délai
+>   opération → écriture suivis chaque jour (AXE-900, doc 15).
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-12
 

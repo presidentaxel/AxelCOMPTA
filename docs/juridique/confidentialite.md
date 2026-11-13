@@ -1,7 +1,8 @@
 # Confidentialité et sous-traitance des données
 
-> Version du 2026-11-10. Projet, à relire par un juriste (AXE-813). Écrit à
-> partir des services réellement branchés dans le code le 2026-11-10.
+> Version du 2026-11-13. Projet, à relire par un juriste (AXE-813). Écrit à
+> partir des services réellement branchés dans le code le 2026-11-13
+> (ajouts depuis le 2026-11-10 : Rollee, Anthropic, INSEE et RNE).
 
 ## 1. Qui fait quoi
 
@@ -27,6 +28,16 @@ Contact : contact@axelproject.fr.
   journal des connexions, des consultations et des exports.
 - Pour un expert-comptable habilité : nom, cabinet, numéro d'inscription à
   l'Ordre, lettre de mission, engagement accepté, chacun de ses changements.
+- Revenus des plateformes (Uber, Bolt) que le dirigeant a reliées dans
+  Rollee : par période, montant brut, commission et montant versé, et l'état
+  de chaque compte relié.
+- Pour relier un compte Rollee au bon dossier : nom, e-mail, téléphone et
+  IBAN de versement connus de Rollee, comparés à ceux du dossier. Ils sont
+  réduits à une empreinte dès la lecture et ne sont jamais gardés en clair ;
+  le gestionnaire ne voit que des initiales et les 4 derniers chiffres de
+  l'IBAN.
+- Ce que disent les registres publics de l'entreprise (INSEE, RNE) :
+  dénomination, forme, siège, capital, dirigeants, état.
 
 ## 3. Pourquoi
 
@@ -41,9 +52,17 @@ Contact : contact@axelproject.fr.
   contractuelle de cette réutilisation, doc 02 §8.]
 - Sécuriser les accès (double authentification, journal des accès).
 
-**Aucune donnée n'est envoyée à un service d'intelligence artificielle
-externe.** Le classement automatique se fait par des règles et par un
-modèle statistique exécuté sur nos serveurs.
+**Service d'intelligence artificielle externe.** Le classement automatique
+se fait d'abord par des règles et par un modèle statistique exécuté sur nos
+serveurs. Pour les opérations qu'ils ne savent pas classer, AxeLCompta peut
+demander une proposition de catégorie à Anthropic (modèle Claude). N'y
+partent que des libellés d'opérations **pseudonymisés** : le nom de
+l'entreprise et de ses associés est remplacé, le montant n'est donné qu'en
+ordre de grandeur, et l'envoi est bloqué s'il reste un IBAN, un e-mail, un
+téléphone, un numéro de carte, une plaque, un numéro de sécurité sociale ou
+un nom connu du dossier. La proposition n'est jamais appliquée seule : une
+personne la confirme ou la corrige. Ce service est désactivé tant
+qu'AXEL PROJECT ne l'a pas allumé.
 
 ## 4. Sous-traitants et services utilisés
 
@@ -52,6 +71,8 @@ modèle statistique exécuté sur nos serveurs.
 | **Supabase, Inc.** | Base de données (PostgreSQL), authentification, stockage de fichiers | Région AWS **eu-west-1 (Irlande)** |
 | **Digifactory** | Transmission des opérations bancaires de l'entreprise (`entrepreneur.digifactory.fr`) | [À COMPLÉTER : localisation des données chez Digifactory] |
 | **Sentry** (Functional Software, Inc.), seulement s'il est activé | Rapports d'erreurs techniques, sans donnée personnelle (`send_default_pii` désactivé côté serveur) | [À COMPLÉTER : région du projet Sentry] |
+| **Rollee**, seulement si le dirigeant relie ses plateformes | Lecture des revenus et des versements des plateformes (Uber, Bolt) reliées par le dirigeant dans Rollee Connect. AxeLCompta ne transmet à Rollee que l'identifiant du dossier ; les identifiants Uber et Bolt sont saisis chez Rollee, jamais chez AxeLCompta. | [À COMPLÉTER : localisation des données chez Rollee] |
+| **Anthropic, PBC**, seulement si le service est activé | Proposition de catégorie pour des libellés d'opérations pseudonymisés (section 3) | [À COMPLÉTER : région de traitement et durée de conservation chez Anthropic] |
 | Hébergeur de l'application | Serveur web et API | [À COMPLÉTER : hébergeur applicatif, AXE-811] |
 
 **Chaîne bancaire.** AxeLCompta n'interroge pas les banques. Le dirigeant
@@ -69,11 +90,14 @@ du dirigeant, le texte du rappel et un lien, jamais de montant.
 
 **Données publiques.** Pour pré-remplir l'identité d'une société,
 AxeLCompta interroge l'annuaire public « Recherche d'entreprises » de
-l'État avec le seul numéro SIREN.
+l'État avec le seul numéro SIREN. Pour vérifier ce que déclare le
+dirigeant, il relit chaque semaine, avec le même numéro, le répertoire
+Sirene de l'INSEE et le Registre national des entreprises (INPI).
 
 **Transferts hors de l'Union européenne.** Supabase, Inc. est une société
 de droit américain : même hébergées en Irlande, les données peuvent être
 soumises à une demande d'une autorité américaine (CLOUD Act, ADR-003).
+Anthropic, PBC est aussi une société de droit américain.
 [À COMPLÉTER par le juriste : mécanisme d'encadrement (clauses
 contractuelles types, DPA Supabase).]
 

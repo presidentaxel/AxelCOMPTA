@@ -127,6 +127,13 @@ d'héritage implicite (doc 03 §3bis, doc 06 §7).
   le gestionnaire ne voit que ceux de son `tenant_id`. **Isolation dans les
   requêtes du repository, pas de RLS Postgres** (V1). Un seul portefeuille
   de démo, pas encore de création de dossier hors amorçage.
+- **Au 2026-11-13** : RLS Postgres par dossier et par tenant (rôle
+  `axelcompta_web`, depuis le 2026-09-22) ; création des dossiers en masse
+  (AXE-809) ; identité saisie par le dirigeant (`identite_saisie.py`,
+  AXE-846) ; registres INSEE et RNE et leurs écarts (`registres.py`,
+  AXE-849) ; branchements, plusieurs par type et par portefeuille
+  (`branchements.py`, AXE-872). Les clés INSEE et RNE ne sont pas encore
+  posées : aucune réponse réelle lue.
 - **V1 (doc 12, phase 1.1)** : multi-tenant complet, ~200 dossiers
   indépendants, matrice statut × pack pleinement opérationnelle.
 

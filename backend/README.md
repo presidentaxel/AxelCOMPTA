@@ -3,7 +3,7 @@
 Monolithe modulaire Python (FastAPI / SQLAlchemy / Postgres), découpage complet
 défini en [doc 03 §3](../docs/03-architecture.md#3--découpage-en-modules-monolithe-modulaire).
 
-> **État au 2026-11-05** : l'état du projet est tenu dans le
+> **État au 2026-11-13** : l'état du projet est tenu dans le
 > [doc 12](../docs/12-roadmap-todo.md) ; la carte des modules dans le
 > [doc 18](../docs/18-organisation-code.md). L'API se lance avec
 > `uvicorn axelcompta.api.app:app` (section « Lancer l'API de démo »).
@@ -337,23 +337,23 @@ Détail complet de la correspondance arbre ↔ docs : [docs/18-organisation-code
 
 ## Modules
 
-| Module | Rôle en une ligne | État au 2026-11-10 | Manque pour la V1 |
+| Module | Rôle en une ligne | État au 2026-11-13 | Manque pour la V1 |
 |---|---|---|---|
 | [`core/`](axelcompta/core/README.md) | Types partagés : monnaie, erreurs, ids typés, accès DB, métriques | Actif | — |
-| [`tenants/`](axelcompta/tenants/README.md) | Tenants, dossiers, matrice statut × régime, avenants, agrégats, tags, Sirene, import CSV | Actif (tous statuts sauf micro), création en masse (AXE-809), Sirene (AXE-834), tags (AXE-829), configuration confirmée (AXE-730) | Identité de la société (AXE-846), INSEE/RNE (AXE-849) |
-| [`packs/`](axelcompta/packs/README.md) | Packs métier : taxonomies, règles, templates | 21 règles, plancher par règle (AXE-826, AXE-837) | Taxonomie relue (AXE-815) |
-| [`ingestion/providers/`](axelcompta/ingestion/providers/README.md) | Interface `DataProvider` + implémentations | Digifactory réel, comptes retenus et 512x (AXE-729, AXE-832), settlements sur fixtures | Relevés Uber/Bolt (AXE-801), import FEC (AXE-804), Rollee (AXE-817 à 821) |
+| [`tenants/`](axelcompta/tenants/README.md) | Tenants, dossiers, matrice statut × régime, avenants, agrégats, tags, Sirene, import CSV | Actif (tous statuts sauf micro), création en masse (AXE-809), Sirene (AXE-834), tags (AXE-829), configuration confirmée (AXE-730), identité saisie (AXE-846), écarts INSEE/RNE (AXE-849), branchements (AXE-872) | Clés INSEE/RNE posées et lues en réel |
+| [`packs/`](axelcompta/packs/README.md) | Packs métier : taxonomies, règles, templates | Règles du premier flux réel (AXE-871), plancher par règle, TVA déductible par catégorie (AXE-831), LOA en 612 et véhicule en 2182 | Taxonomie et table de TVA relues (AXE-815) |
+| [`ingestion/providers/`](axelcompta/ingestion/providers/README.md) | Interface `DataProvider` + implémentations | Digifactory réel (un client par branchement, AXE-872), comptes retenus et 512x, client Rollee (AXE-818 à 821), rapprochement user Rollee ↔ dossier (AXE-911) | Rollee vu en réel, relevés Uber/Bolt (AXE-801), sortie de « à vérifier » (AXE-912) |
 | [`documents/`](axelcompta/documents/README.md) | Justificatifs, OCR, Factur-X, matching | Stockage en base (AXE-425) | OCR, matching, WORM |
-| [`categorize/`](axelcompta/categorize/README.md) | Pipeline règles → ML → LLM → revue humaine | Virements internes, règles, modèle v2, catégorie Bridge ; arrêt sans modèle (AXE-825) | LLM branché, mesure (AXE-816), modèle hors du poste (AXE-847) |
+| [`categorize/`](axelcompta/categorize/README.md) | Pipeline règles → ML → LLM → revue humaine | Virements internes, règles, modèle v2, catégorie Bridge ; prompt du LLM (AXE-888), objectifs mesurés (AXE-816), seuils par catégorie (AXE-871) | Jeu gelé (AXE-902), recalibrage (AXE-904), décision AXE-905 |
 | [`anomaly/`](axelcompta/anomaly/README.md) | Détection d'abus / anomalies | Détecteurs V1 (AXE-437, AXE-836), qualifications en base (AXE-814) | Jeu d'évaluation |
-| [`ledger/`](axelcompta/ledger/README.md) | ❤️ Moteur comptable pur | I2, I3, I4, I7 tenus (AXE-806, AXE-807), contre-passation, sous-comptes 512x | I8 : Test Compta Demat (AXE-484) |
-| [`closing/`](axelcompta/closing/README.md) | Clôture d'exercice, états financiers | Liasse 2033/2031, réel normal en totaux, CA3 annuelle et par période (AXE-805) | Immobilisations (AXE-802), LOA (AXE-803), bilan d'ouverture (AXE-804) |
+| [`ledger/`](axelcompta/ledger/README.md) | ❤️ Moteur comptable pur | I2, I3, I4, I7 tenus (AXE-806, AXE-807), contre-passation, sous-comptes 512x, OD de ventilation des plateformes (AXE-821) | I8 : Test Compta Demat (AXE-484) |
+| [`closing/`](axelcompta/closing/README.md) | Clôture d'exercice, états financiers | Liasse 2033/2031, réel normal en totaux, CA3 annuelle et par période (AXE-805), immobilisations (AXE-802), LOA (AXE-803), bilan d'ouverture depuis un FEC et déficits (AXE-804) | Saisie guidée sans FEC, annexes en détail (AXE-484) |
 | [`filings/`](axelcompta/filings/README.md) | Renderers FEC, PDF, EDI-TDFC, INPI | FEC validé, CERFA 2065/2031/2033, dossier INPI | Test Compta Demat (AXE-484), signature RGS (AXE-441) |
-| [`workflow/`](axelcompta/workflow/README.md) | Validation, revue, notifications, signature | Décisions en OD de reclassement (AXE-420), quarantaine (AXE-424), expert-comptable (AXE-800), rappels envoyés (AXE-808) | Signature RGS (AXE-441) |
+| [`workflow/`](axelcompta/workflow/README.md) | Validation, revue, notifications, signature | Décisions en OD de reclassement avec contexte et avis des étages (AXE-420, AXE-871, AXE-901), quarantaine (AXE-424), expert-comptable (AXE-800), rappels envoyés (AXE-808, AXE-890), budget et lots du LLM (AXE-887), indicateurs de catégorisation (AXE-900) | Signature RGS (AXE-441) |
 | [`api/`](axelcompta/api/README.md) | Routes FastAPI, auth, permissions | `api.app`, `api/routes.py`, `api/auth.py` (AXE-840), rôles dont expert, MFA, `/metrics` à jeton, erreurs 4xx | Chaque route vers la façade de son module (AXE-428) |
-| [`pseudonymize/`](axelcompta/pseudonymize/) | Seule porte vers un LLM | Fait (AXE-436) | Fournisseur branché |
-| [`jobs/`](axelcompta/jobs/) | File de jobs Postgres (ADR-002) | Utilisée par le worker (AXE-809, AXE-845, AXE-808) | — |
-| [`ml/`](axelcompta/ml/README.md) | Entraînement, évaluation, registry modèles | Entraînement dans `_AUDIT_DONNEES/` | Registry, dérive |
+| [`pseudonymize/`](axelcompta/pseudonymize/) | Seule porte vers un LLM | Fait (AXE-436), fournisseur Anthropic par l'API Batch (AXE-887) | Allumé en production, avec une limite de dépense |
+| [`jobs/`](axelcompta/jobs/) | File de jobs Postgres (ADR-002) | Utilisée par le worker (AXE-809, AXE-845, AXE-808, événements Rollee AXE-820) | — |
+| [`ml/`](axelcompta/ml/README.md) | Entraînement, évaluation, registry modèles | Entraînement dans `_AUDIT_DONNEES/`, modèle versionné dans un bucket S3 (AXE-847) | Promotion (AXE-904), dérive |
 
 ## Ce qui existe déjà et sera réutilisé (hors de cet arbre)
 
@@ -393,6 +393,78 @@ AXE-842) :
 5. Compte de test, si besoin (AXE-822, à supprimer avant que les
    chauffeurs se connectent) :
    `python scripts/compte_de_test.py creer <e-mail> --jusqu-au <date>`.
+
+## Mettre en route les tickets du 10 au 13/11 sur une base existante
+
+Suite de la section précédente, suivie dans AXE-842. Même règle : chaque
+reprise en simulation, puis appliquée après accord.
+
+1. `alembic upgrade head` : 14 migrations depuis le 10/11, de
+   `a3f8c2d71e46` (identité) à `e2a6c8f4b913` (liens Rollee).
+2. **Intégrations** (écran du même nom, admin) : brancher **d'abord le
+   jeton Digifactory actuel**, qui devient le défaut ; ensuite seulement
+   les autres comptes. `DIGIFACTORY_TOKEN` peut alors rester vide.
+   `AXELCOMPTA_CLE_INTEGRATIONS` doit être posée aussi sur la machine des
+   tâches planifiées et du worker, et ne jamais changer (AXE-872).
+3. Variables (voir `.env.example`), chacune facultative, rien ne se passe
+   sans elle :
+
+   | Variable | Sert à |
+   |---|---|
+   | `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`, `MODELES_BUCKET`, `AXELCOMPTA_MODELE_VERSION` | récupérer le modèle de catégorisation (AXE-847, plus bas) |
+   | `INSEE_API_KEY`, ou `INPI_RNE_USERNAME` et `INPI_RNE_PASSWORD` | relire les registres officiels (AXE-849, plus bas) |
+   | `ROLLEE_JETON_SANDBOX` (+ `ROLLEE_COMPTE_SANDBOX`, `ROLLEE_PLATEFORME_SANDBOX`) | test de contrat Rollee seulement, jamais en production |
+   | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `AXELCOMPTA_LLM_ACTIF=1` | allumer l'étage LLM (AXE-887, plus bas) |
+   | `AXELCOMPTA_LLM_PLAFOND_CHAUFFEUR_USD`, `AXELCOMPTA_LLM_PLAFOND_GLOBAL_USD` | changer le budget de l'IA (0,50 $ et 100 $ par défaut) |
+   | `AXELCOMPTA_ROLLEE_RAPPROCHEMENT=1` | relier seuls les users Rollee la nuit (AXE-911, après la simulation) |
+
+4. Reprise de la TVA déductible des dépenses déjà passées TTC (AXE-831) :
+
+       python scripts/reprendre_tva_deductible.py --tenant TENANT              # simulation
+       python scripts/reprendre_tva_deductible.py --tenant TENANT --appliquer
+
+5. Rollee, dans l'ordre :
+   1. jeton sandbox, puis `python -m pytest -m rollee` depuis `backend/`
+      (unité des montants, AXE-818) ;
+   2. Intégrations › Rollee : jeton de production, « Tester » ;
+   3. une fois l'API en ligne (AXE-811), sur chaque compte Rollee
+      d'Intégrations : saisir l'adresse publique de l'API, puis le popup
+      du webhook donne l'adresse, le secret et les cases à cocher dans le
+      formulaire Rollee (ou `python -m axelcompta.webhooks_rollee
+      --branchement <id>` le déclare chez Rollee). D'ici là, le rattrapage
+      de 4 h suffit ;
+   4. `python scripts/rapprocher_rollee.py --tenant TENANT` (simulation,
+      que des nombres), bilan sur AXE-911, puis `--appliquer` ou
+      `AXELCOMPTA_ROLLEE_RAPPROCHEMENT=1`.
+6. IA : `uv sync --extra llm` sur la machine des tâches planifiées, limite
+   de dépense posée dans la console Anthropic, puis la clé et
+   `AXELCOMPTA_LLM_ACTIF=1`.
+
+## Étage LLM (AXE-887, AXE-888)
+
+`llm_synchro.py`, appelé par les tâches planifiées, éteint par défaut. À
+chaque passage : relever les lots finis de l'API Batch, soumettre au plus
+un lot par dossier et par jour (80 libellés pseudonymisés au plus, absents
+du cache), puis les alertes de budget. Le lot est estimé au pire cas et
+réservé en base (`lots_llm`) avant l'envoi ; au-delà du budget, rien ne
+part. Coupe-circuit : au moins 3 lots relevés sur 24 h, dont la moitié en
+échec ou refusés. Les alertes (`alertes_llm`, une par seuil et par mois)
+vont dans Sentry ; le gestionnaire ne voit que le nombre de libellés.
+
+`scripts/proposer_ia.py --dossier ID [--appliquer]` reste pour remplir le
+cache d'un dossier à la main (démo d'AXE-888, plafond `--plafond-usd`).
+
+## Rollee (AXE-818 à 821, 889 à 891, 911)
+
+- `plateformes_rollee.py` : le chauffeur relie ses plateformes (Rollee
+  Connect) ; traitement des jobs `rollee` déposés par les webhooks.
+- `revenus_rollee.py` : revenus → `settlements_plateforme` → rapprochement
+  → OD `{virement}:ventilation-plateforme`. Rejouer n'écrit rien.
+- `rapprochement_rollee_service.py` et `scripts/rapprocher_rollee.py` :
+  relier les users Rollee existants à leurs dossiers, par empreintes.
+- Le jeton Rollee renouvelé en route est toujours gardé dans le
+  branchement (`garder_parametre`) : un jeton renouvelé et perdu casse
+  l'accès.
 
 ## Modèle de catégorisation hors du poste (AXE-847)
 
