@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { etatPlateforme, etatVersement, resumePlateformes } from "./plateformes";
+import { etatPlateforme, etatVersement, motifEnClair, resumePlateformes } from "./plateformes";
 
 const date = (iso: string) => iso.split("-").reverse().join("/");
 
@@ -30,4 +30,22 @@ test("l'état d'un versement dit pourquoi il est à vérifier", () => {
     etatVersement("a_verifier", "plusieurs virements possibles"),
     "à vérifier : plusieurs virements possibles",
   );
+});
+
+test("les versements à vérifier se comptent côté gestionnaire, sans montant", () => {
+  assert.equal(
+    resumePlateformes({ reliees: 2, attendues: 2, a_reconnecter: 0, manquantes: [], versements_a_verifier: 3 }),
+    "Plateformes reliées : 2/2 · 3 versements à vérifier",
+  );
+  assert.equal(
+    resumePlateformes({ reliees: 2, attendues: 2, a_reconnecter: 0, manquantes: [], versements_a_verifier: 0 }),
+    "Plateformes reliées : 2/2",
+  );
+});
+
+test("le motif d'un versement à vérifier se dit sans jargon comptable", () => {
+  assert.equal(motifEnClair("plusieurs virements possibles"), "Plusieurs virements reçus peuvent correspondre.");
+  assert.equal(motifEnClair("virement classé en 625100"), "Le virement reçu n'est pas classé en recette.");
+  assert.doesNotMatch(motifEnClair("Écriture déséquilibrée : 12 ≠ 13"), /déséquilibrée/);
+  assert.doesNotMatch(motifEnClair(null), /null/);
 });

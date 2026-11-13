@@ -6,8 +6,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 import axelcompta.api.routes as routes
-from axelcompta.api.routes import get_services_rollee
+from axelcompta.api.routes import get_services_rollee, get_settlements
 from axelcompta.ingestion.comptes_rollee import ComptesRolleeMemoire
+from axelcompta.ingestion.settlements_plateforme import SettlementsMemoire
 from axelcompta.plateformes_rollee import Session
 from axelcompta.tenants.branchements import BranchementsMemoire
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
@@ -33,6 +34,7 @@ def _client() -> TestClient:
     services.branchements = BranchementsMemoire()  # aucun branchement : erreur lisible
     services.comptes = ComptesRolleeMemoire()
     client.app.dependency_overrides[get_services_rollee] = lambda: services  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_settlements] = lambda: SettlementsMemoire()  # type: ignore[attr-defined]
     return client
 
 
@@ -68,4 +70,10 @@ def test_le_gestionnaire_ne_voit_qu_une_synthese_sans_montant() -> None:
         "/dossiers/DEMO_karim/plateformes/synthese", headers=_en_tete_gestionnaire()
     )
     assert reponse.status_code == 200
-    assert set(reponse.json()) == {"reliees", "attendues", "a_reconnecter", "manquantes"}
+    assert set(reponse.json()) == {
+        "reliees",
+        "attendues",
+        "a_reconnecter",
+        "manquantes",
+        "versements_a_verifier",
+    }

@@ -198,7 +198,11 @@ from axelcompta.ingestion.journal import EntreeQuarantaine, JournalIngestion
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ingestion.providers.digifactory import normaliser_payload
-from axelcompta.ingestion.settlements_plateforme import SettlementsRepository
+from axelcompta.ingestion.settlements_plateforme import (
+    SettlementsRepository,
+    SettlementStocke,
+    a_verifier,
+)
 from axelcompta.ingestion.settlements_plateforme_postgres import PostgresSettlements
 from axelcompta.jobs.file import (
     TYPE_IMPORT_DOSSIERS,
@@ -6864,6 +6868,7 @@ class SyntheseRolleeVue(BaseModel):
     attendues: int
     a_reconnecter: int
     manquantes: list[str]
+    versements_a_verifier: int = 0  # AXE-891 : un nombre, sans montant
 
 
 def _vue_plateformes(
@@ -6910,7 +6915,7 @@ def _enregistrer_routes_plateformes(app: FastAPI) -> None:
 
     @app.get("/dossiers/{dossier_id}/plateformes/synthese", response_model=SyntheseRolleeVue)
     def synthese_plateformes(
-        dossier: DossierPortefeuilleDep, services: ServicesRolleeDep
+        dossier: DossierPortefeuilleDep, services: ServicesRolleeDep, settlements: SettlementsDep
     ) -> SyntheseRolleeVue:
         """Ce qui est connu en base, sans appeler Rollee."""
         resume = synthese(
@@ -6921,6 +6926,7 @@ def _enregistrer_routes_plateformes(app: FastAPI) -> None:
             attendues=resume.attendues,
             a_reconnecter=resume.a_reconnecter,
             manquantes=list(resume.manquantes),
+            versements_a_verifier=len(a_verifier(settlements.lister(dossier.id))),
         )
 
 
@@ -6981,19 +6987,31 @@ def _enregistrer_route_versements(app: FastAPI) -> None:
     ) -> list[VersementPlateformeVue]:
         """Les 20 dernières périodes : brut, commission, versé, et où en est
         le rapprochement avec la banque."""
-        return [
-            VersementPlateformeVue(
-                plateforme=s.settlement.platform,
-                du=s.settlement.period_start.isoformat(),
-                au=s.settlement.period_end.isoformat(),
-                brut_cts=s.settlement.gross_earnings_cts,
-                commission_cts=s.settlement.commission_cts,
-                verse_cts=s.settlement.net_payout_cts,
-                etat=s.etat,
-                motif=s.motif,
-            )
-            for s in reversed(settlements.lister(dossier.id)[-20:])
-        ]
+        return [_vue_versement(s) for s in reversed(settlements.lister(dossier.id)[-20:])]
+
+    @app.get(
+        "/dossiers/{dossier_id}/versements-plateformes/a-verifier",
+        response_model=list[VersementPlateformeVue],
+    )
+    def lire_versements_a_verifier(
+        dossier: DossierDep, settlements: SettlementsDep
+    ) -> list[VersementPlateformeVue]:
+        """AXE-891 : tous les relevés « à vérifier », même anciens, pour
+        « À traiter ». Ils y restent tant qu'ils sont dans cet état."""
+        return [_vue_versement(s) for s in reversed(a_verifier(settlements.lister(dossier.id)))]
+
+
+def _vue_versement(s: SettlementStocke) -> VersementPlateformeVue:
+    return VersementPlateformeVue(
+        plateforme=s.settlement.platform,
+        du=s.settlement.period_start.isoformat(),
+        au=s.settlement.period_end.isoformat(),
+        brut_cts=s.settlement.gross_earnings_cts,
+        commission_cts=s.settlement.commission_cts,
+        verse_cts=s.settlement.net_payout_cts,
+        etat=s.etat,
+        motif=s.motif,
+    )
 
 
 def _enregistrer_routes_integrations(app: FastAPI) -> None:

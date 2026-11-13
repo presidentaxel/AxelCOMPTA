@@ -74,6 +74,11 @@ def fusionner(
     return replace(connu, settlement=lu, maj_le=maintenant)
 
 
+def a_verifier(stockes: Sequence[SettlementStocke]) -> list[SettlementStocke]:
+    """AXE-891 : les relevés qu'un humain doit regarder, dans l'ordre reçu."""
+    return [s for s in stockes if s.etat == "a_verifier"]
+
+
 class SettlementsRepository(Protocol):
     def lister(self, dossier_id: DossierId) -> list[SettlementStocke]: ...
 
