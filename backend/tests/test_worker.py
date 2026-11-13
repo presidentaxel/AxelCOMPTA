@@ -8,7 +8,7 @@ from dataclasses import replace
 from datetime import UTC, date, datetime
 
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.jobs.file import TYPE_ROLLEE, TYPE_SYNCHRO, FileMemoire
+from axelcompta.jobs.file import TYPE_RAPPROCHEMENT_ROLLEE, TYPE_ROLLEE, TYPE_SYNCHRO, FileMemoire
 from axelcompta.synchro_digifactory import ResultatDossier
 from axelcompta.tenants.contacts_proposes import ContactsProposesMemoire
 from axelcompta.tenants.memory import InMemoryDossierRepository
@@ -186,3 +186,12 @@ def test_le_job_rollee_traite_les_webhooks_du_portefeuille() -> None:
     deps = replace(deps, traiter_rollee=lambda t: vus.append(t) or "1 événement Rollee traité")  # type: ignore[func-returns-value]
     resultat = executer_job(FileMemoire().demander(T, TYPE_ROLLEE), deps, AUJOURD_HUI)
     assert (resultat, vus) == ("1 événement Rollee traité", [T])
+
+
+def test_le_job_de_rapprochement_rollee_rend_son_bilan() -> None:
+    """AXE-918 : bouton « Rapprocher Rollee »."""
+    deps, _dossiers, _contacts, _ = _deps()
+    vus: list[str] = []
+    deps = replace(deps, rapprocher_rollee=lambda t: vus.append(t) or "1 relié(s)")  # type: ignore[func-returns-value]
+    resultat = executer_job(FileMemoire().demander(T, TYPE_RAPPROCHEMENT_ROLLEE), deps, AUJOURD_HUI)
+    assert (resultat, vus) == ("1 relié(s)", [T])

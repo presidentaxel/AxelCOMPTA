@@ -43,7 +43,7 @@ import type {
   Synchronisation,
 } from "./types";
 
-import type { FicheRollee, RolleePortefeuille } from "./liens-rollee";
+import type { FicheRollee, PassageRollee, RolleePortefeuille } from "./liens-rollee";
 import type { AnalyseFec, OuvertureVue } from "./ouverture";
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
@@ -1205,6 +1205,19 @@ export async function lireRolleePortefeuille(): Promise<RolleePortefeuille> {
   const reponse = await requeteGestionnaire("/portefeuille/rollee");
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
   return (await reponse.json()) as RolleePortefeuille;
+}
+
+/** AXE-918 : relier les comptes Rollee sans attendre la nuit (job du worker). */
+export async function lancerRapprochementRollee(): Promise<PassageRollee> {
+  const reponse = await requeteGestionnaire("/portefeuille/rollee/rapprocher", { method: "POST" });
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as PassageRollee;
+}
+
+export async function lireRapprochementRollee(): Promise<PassageRollee | null> {
+  const reponse = await requeteGestionnaire("/portefeuille/rollee/rapprochement");
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as PassageRollee | null;
 }
 
 /** `dossierId` à null : « aucun de ces comptes ». */

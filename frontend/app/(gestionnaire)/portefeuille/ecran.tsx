@@ -9,6 +9,7 @@ import { useCanauxEnvoi } from "@/lib/use-canaux-envoi";
 import { IntegrationsDossier } from "@/components/IntegrationsDossier";
 import { SuiviEnvois } from "@/components/SuiviEnvois";
 import { ComptesRolleeAChoisir } from "@/components/ComptesRolleeAChoisir";
+import { RapprochementRollee } from "@/components/RapprochementRollee";
 import { LienRollee } from "@/components/LienRollee";
 import { SynthesePlateformes } from "@/components/SynthesePlateformes";
 import { Button } from "@/components/ui/button";
@@ -324,7 +325,10 @@ export function EcranEntreprises() {
       )}
 
       {rollee && (
-        <ComptesRolleeAChoisir vue={rollee} ecriture={droit.ecriture} onChoisi={chargerRollee} />
+        <>
+          <RapprochementRollee ecriture={droit.ecriture} onTermine={chargerRollee} />
+          <ComptesRolleeAChoisir vue={rollee} ecriture={droit.ecriture} onChoisi={chargerRollee} />
+        </>
       )}
 
       <div className="mt-8 flex items-center gap-2">

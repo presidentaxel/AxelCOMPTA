@@ -6,8 +6,10 @@ from axelcompta.ingestion.rapprochement_rollee import (
     INDICE_IBAN,
     INDICE_METADATA,
     INDICE_NOM_EMAIL,
+    INDICE_NOM_UNIQUE,
     RAISON_DEJA_RELIE,
     RAISON_NOM,
+    RAISON_NOM_UNIQUE,
     RAISON_RETIRE,
     DossierIndices,
     Empreintes,
@@ -16,6 +18,7 @@ from axelcompta.ingestion.rapprochement_rollee import (
     bilan,
     empreinte,
     empreintes,
+    noms_uniques,
     normaliser_iban,
     normaliser_nom,
     normaliser_telephone,
@@ -57,14 +60,55 @@ def test_le_meme_iban_relie_seul() -> None:
     assert (issue.etat, issue.dossier_id, issue.indice) == ("relie_auto", "d1", INDICE_IBAN)
 
 
-def test_le_nom_avec_l_email_relie_seul_mais_le_nom_seul_va_au_gestionnaire() -> None:
+def test_le_nom_avec_l_email_relie_seul() -> None:
     avec_email = _user("u1", noms=[MARTIN], emails=["E.Martin@exemple.fr "])
     dossier = _dossier("d1", noms=[MARTIN], emails=["e.martin@exemple.fr"])
     (sur,) = rapprocher([avec_email], [dossier], {})
     assert (sur.etat, sur.indice) == ("relie_auto", INDICE_NOM_EMAIL)
-    (faible,) = rapprocher([_user("u2", noms=[MARTIN])], [dossier], {})
-    assert faible.etat == "a_choisir" and faible.dossier_id is None
-    assert faible.candidats[0].raisons == (RAISON_NOM,)
+
+
+def test_un_nom_que_seul_ce_user_porte_relie_seul() -> None:
+    """AXE-918 : le nom du dirigeant chez Digifactory, porté par un seul user Rollee."""
+    autre = _user("u-autre", noms=[normaliser_nom("Karim", "Benali")])
+    (issue, _) = rapprocher(
+        [_user("u1", noms=[MARTIN]), autre], [_dossier("d1", noms=[MARTIN])], {}
+    )
+    assert (issue.etat, issue.dossier_id, issue.indice) == ("relie_auto", "d1", INDICE_NOM_UNIQUE)
+    assert issue.candidats[0].raisons == (RAISON_NOM, RAISON_NOM_UNIQUE)
+
+
+def test_deux_users_au_meme_nom_vont_au_gestionnaire() -> None:
+    """Homonymes, ou le même chauffeur inscrit sur deux comptes Rollee."""
+    issues = rapprocher(
+        [_user("u1", noms=[MARTIN]), _user("u2", noms=[MARTIN])],
+        [_dossier("d1", noms=[MARTIN])],
+        {},
+    )
+    assert [i.etat for i in issues] == ["a_choisir", "a_choisir"]
+    assert issues[0].candidats[0].raisons == (RAISON_NOM,)
+
+
+def test_un_user_a_uber_et_bolt_au_meme_nom_compte_une_fois() -> None:
+    user = _user("u1", noms=[MARTIN, normaliser_nom("Elodie", "MARTIN DUPONT")])
+    assert len(noms_uniques([user])) == 1
+
+
+def test_un_nom_qui_vise_deux_dossiers_va_au_gestionnaire() -> None:
+    """Un dirigeant de deux sociétés : son user Rollee ne choisit pas seul."""
+    (issue,) = rapprocher(
+        [_user("u1", noms=[MARTIN])],
+        [_dossier("d1", noms=[MARTIN]), _dossier("d2", noms=[MARTIN])],
+        {},
+    )
+    assert issue.etat == "a_choisir" and len(issue.candidats) == 2
+
+
+def test_un_passage_partiel_ne_relie_jamais_par_le_nom_seul() -> None:
+    """Webhook d'un seul user : on ne sait pas si son nom est unique."""
+    (issue,) = rapprocher(
+        [_user("u1", noms=[MARTIN])], [_dossier("d1", noms=[MARTIN])], {}, complet=False
+    )
+    assert issue.etat == "a_choisir"
 
 
 def test_deux_dossiers_au_meme_iban_vont_au_gestionnaire() -> None:

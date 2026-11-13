@@ -68,6 +68,33 @@ export function bandeauRollee(vue: RolleePortefeuille): string | null {
   return `${parties.join(", ")}. Sans ce lien, les revenus Uber et Bolt n'arrivent pas.`;
 }
 
+/** Même forme que le suivi d'un job renvoyé par l'API (AXE-918). */
+export type PassageRollee = {
+  statut: "en_attente" | "en_cours" | "fait" | "echec";
+  resultat: string | null;
+  erreur: string | null;
+  demandee_le: string | null;
+  terminee_le: string | null;
+};
+
+export function rapprochementEnCours(passage: PassageRollee | null): boolean {
+  return passage !== null && (passage.statut === "en_attente" || passage.statut === "en_cours");
+}
+
+/** La phrase sous « Rapprocher Rollee » : la lecture de tous les comptes
+ * Rollee prend quelques minutes, on dit où on en est. */
+export function phraseRapprochement(
+  passage: PassageRollee | null,
+  date: (iso: string) => string,
+): string | null {
+  if (passage === null) return null;
+  if (passage.statut === "en_attente") return "Rapprochement demandé…";
+  if (passage.statut === "en_cours") return "Lecture des comptes Rollee en cours, quelques minutes…";
+  if (passage.statut === "echec") return `Le rapprochement a échoué : ${passage.erreur ?? "erreur inconnue"}.`;
+  const quand = passage.terminee_le ? ` le ${date(passage.terminee_le)}` : "";
+  return `Dernier rapprochement${quand} : ${passage.resultat ?? "terminé"}.`;
+}
+
 /** Ce que retirer le lien change, dit avant de confirmer. */
 export function effetDelier(versements: number): string {
   if (versements === 0) return "Aucun versement n'a encore été importé par ce lien.";

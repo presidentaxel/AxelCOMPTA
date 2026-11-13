@@ -209,6 +209,7 @@ from axelcompta.ingestion.settlements_plateforme_postgres import PostgresSettlem
 from axelcompta.jobs.file import (
     TYPE_IMPORT_DOSSIERS,
     TYPE_RAPPELS,
+    TYPE_RAPPROCHEMENT_ROLLEE,
     TYPE_SYNCHRO,
     DemandesDeJobs,
     Job,
@@ -7257,6 +7258,28 @@ def _fiche_rollee(
     )
 
 
+def _enregistrer_routes_rapprochement_rollee(app: FastAPI) -> None:
+    """AXE-918 : le bouton « Rapprocher Rollee » et son suivi."""
+
+    @app.post("/portefeuille/rollee/rapprocher", response_model=SynchronisationVue)
+    def rapprocher_rollee(
+        demandes: DemandesJobsDep, role: RoleMembreDep, identite: IdentiteDep
+    ) -> SynchronisationVue | None:
+        """AXE-918 : relie les users Rollee sans attendre la nuit. Le worker lit
+        tous les comptes Rollee, pose les liens sûrs et remplit la file. Un
+        passage en attente ou en cours est rendu sans en lancer un second."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, "La lecture seule ne lance pas de rapprochement.")
+        return _synchronisation_vue(demandes.demander(tenant_id, TYPE_RAPPROCHEMENT_ROLLEE))
+
+    @app.get("/portefeuille/rollee/rapprochement", response_model=SynchronisationVue | None)
+    def lire_rapprochement_rollee(
+        demandes: DemandesJobsDep, identite: IdentiteDep
+    ) -> SynchronisationVue | None:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _synchronisation_vue(demandes.dernier(tenant_id, TYPE_RAPPROCHEMENT_ROLLEE))
+
+
 def _enregistrer_routes_liens_rollee(app: FastAPI) -> None:
     """AXE-911 : le gestionnaire choisit, voit et corrige le lien Rollee."""
 
@@ -7327,6 +7350,7 @@ def _enregistrer_routes_integrations(app: FastAPI) -> None:
     _enregistrer_route_webhook_rollee(app)
     _enregistrer_route_versements(app)
     _enregistrer_routes_liens_rollee(app)
+    _enregistrer_routes_rapprochement_rollee(app)
 
 
 def _enregistrer_routes_envoi(app: FastAPI) -> None:

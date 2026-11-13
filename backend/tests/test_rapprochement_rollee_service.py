@@ -13,6 +13,7 @@ from axelcompta.core.identite import Adresse, Associe, IdentiteEntreprise
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.ingestion.comptes_rollee import ComptesRolleeMemoire
 from axelcompta.ingestion.liens_rollee import AChoisir, Lien, LiensRolleeMemoire
+from axelcompta.ingestion.providers.rollee import RolleeIndisponible
 from axelcompta.ingestion.rapprochement_rollee import Apercu, Empreintes, Issue, UserRollee
 from axelcompta.plateformes_rollee import ServicesRollee
 from axelcompta.rapprochement_rollee_service import (
@@ -43,7 +44,7 @@ class FauxRollee:
         return [{"id": "u-iban", "metadata": {}}, {"id": "u-nom"}, {"id": "u-rien"}]
 
     async def comptes(self, user_id: str) -> list[dict[str, Any]]:
-        return [{"id": f"{user_id}-uber", "name": "Uber"}]
+        return [{"id": f"{user_id}-uber", "name": "Bolt"}]
 
     async def profil(self, compte_id: str) -> dict[str, Any]:
         self.appels.append(f"profil {compte_id}")
@@ -135,7 +136,7 @@ def test_un_user_est_lu_en_empreintes_et_en_apercu_masque() -> None:
     brut = {"id": "u-iban", "metadata": {"dossier_id": "d1"}}
     user = asyncio.run(lire_user(FauxRollee(), brut, CLE))  # type: ignore[arg-type]
     assert user.dossier_metadata == "d1"
-    assert user.apercu == Apercu("É.M.", ("Uber",), "0189")
+    assert user.apercu == Apercu("É.M.", ("Bolt",), "0189")
     assert "Martin" not in repr(user) and IBAN not in repr(user)
 
 
@@ -159,31 +160,39 @@ def test_la_simulation_donne_le_bilan_sans_rien_ecrire() -> None:
     depots = _depots(rollee)
     lignes = asyncio.run(passer_tenant(depots, T, False, LE))
     assert lignes == [
-        "t / Rollee prod : 1 relié(s) automatiquement, 1 à choisir, 1 non trouvé(s) "
-        "(simulation : rien n'est écrit)"
+        "t : 2 relié(s) automatiquement, 0 à choisir, 1 non trouvé(s) "
+        "(simulation : rien n'est écrit)",
+        "  Rollee prod : 2 relié(s) automatiquement, 0 à choisir, 1 non trouvé(s)",
     ]
     assert depots.liens.liens(T) == [] and depots.liens.a_choisir(T) == []
     assert rollee.appels[-1] == "fermé"
 
 
-def test_l_application_relie_le_sur_et_previent_pour_le_reste() -> None:
+def test_l_application_relie_par_l_iban_et_par_le_nom_unique() -> None:
     depots = _depots(FauxRollee())
     lignes = asyncio.run(passer_tenant(depots, T, True, LE))
-    (lien,) = depots.liens.liens(T)
-    assert (lien.dossier_id, lien.rollee_user_id, lien.origine, lien.indice) == (
-        "d-iban",
-        "u-iban",
-        "auto",
-        "iban",
-    )
-    assert {(a.rollee_user_id, a.etat) for a in depots.liens.a_choisir(T)} == {
-        ("u-nom", "a_choisir"),
-        ("u-rien", "non_trouve"),
-    }
-    assert lignes[-1] == "t : 2 à signaler"
-    # Second passage : le lien reste, la file aussi, personne n'est re-prévenu.
+    assert {
+        (x.dossier_id, x.rollee_user_id, x.origine, x.indice) for x in depots.liens.liens(T)
+    } == {("d-iban", "u-iban", "auto", "iban"), ("d-nom", "u-nom", "auto", "nom_unique")}
+    # AXE-918 : un user sans candidat n'encombre pas la file du gestionnaire.
+    assert depots.liens.a_choisir(T) == []
+    assert len(lignes) == 2
     encore = asyncio.run(passer_tenant(depots, T, True, LE))
-    assert len(encore) == 1 and "0 relié(s)" in encore[0]
+    assert "0 relié(s)" in encore[0]
+
+
+def test_un_nom_porte_sur_deux_comptes_rollee_va_au_gestionnaire_et_le_previent() -> None:
+    """AXE-918 : le nom n'est unique que sur l'ensemble des comptes Rollee."""
+    depots = _depots(FauxRollee())
+    second = nouveau(
+        [], T, "rollee", "rollee", "Rollee flotte", {"jeton": "j", "environnement": "production"}
+    )
+    depots.services.branchements.enregistrer([second], "admin", LE)
+    lignes = asyncio.run(passer_tenant(depots, T, True, LE))
+    # Chaque compte rend les mêmes users : tout nom est porté deux fois.
+    assert {x.indice for x in depots.liens.liens(T)} == set()
+    assert {a.rollee_user_id for a in depots.liens.a_choisir(T)} == {"u-iban", "u-nom"}
+    assert lignes[-1] == "t : 4 à signaler"
 
 
 def _attente(user: str, etat: str = "a_choisir") -> AChoisir:
@@ -196,11 +205,10 @@ def test_un_user_ecarte_le_reste_et_un_passage_partiel_garde_la_file() -> None:
     users = [UserRollee("u-ecarte", None, Empreintes()), UserRollee("u-neuf", None, Empreintes())]
     issues = [Issue("u-ecarte", "a_choisir"), Issue("u-neuf", "non_trouve")]
     nouveaux = appliquer(liens, issues, users, Passage(T, "b1", LE, partiel=True))
-    assert [a.rollee_user_id for a in nouveaux] == ["u-neuf"]
+    assert nouveaux == []  # un non trouvé n'est pas mis dans la file (AXE-918)
     assert {(a.rollee_user_id, a.etat) for a in liens.a_choisir(T)} == {
         ("u-ecarte", "ecarte"),
         ("u-autre", "a_choisir"),
-        ("u-neuf", "non_trouve"),
     }
 
 
@@ -210,3 +218,51 @@ def test_un_lien_pose_entre_temps_renvoie_le_user_au_gestionnaire() -> None:
     users = [UserRollee("u1", None, Empreintes())]
     appliquer(liens, [Issue("u1", "relie_auto", "d1", "iban")], users, Passage(T, "b1", LE))
     assert [(a.rollee_user_id, a.etat) for a in liens.a_choisir(T)] == [("u1", "a_choisir")]
+
+
+def test_un_user_illisible_empeche_tout_lien_par_le_nom_seul() -> None:
+    """AXE-918 : Rollee débordé (429) sur un user. Il pourrait porter le même
+    nom qu'un autre : le nom seul ne relie personne à ce passage."""
+
+    class RolleeDeborde(FauxRollee):
+        async def utilisateurs(self) -> list[dict[str, Any]]:
+            return [*await super().utilisateurs(), {"id": "u-429"}]
+
+        async def comptes(self, user_id: str) -> list[dict[str, Any]]:
+            if user_id == "u-429":
+                raise RolleeIndisponible("429 après 5 essais")
+            return await super().comptes(user_id)
+
+    depots = _depots(RolleeDeborde())
+    lignes = asyncio.run(passer_tenant(depots, T, True, LE))
+    # L'IBAN relie toujours ; le nom seul, plus.
+    assert {(x.rollee_user_id, x.indice) for x in depots.liens.liens(T)} == {("u-iban", "iban")}
+    assert [a.rollee_user_id for a in depots.liens.a_choisir(T)] == ["u-nom"]
+    assert "1 user(s) Rollee illisible(s)" in lignes[1]
+
+
+def test_un_user_deborde_est_relu_a_la_fin_et_uber_n_est_pas_interroge_sur_l_iban() -> None:
+    """AXE-918 : un 429 passager ne prive pas du lien par le nom."""
+
+    class DebordeUneFois(FauxRollee):
+        def __init__(self) -> None:
+            super().__init__()
+            self.essais: dict[str, int] = {}
+            self.ibans: list[str] = []
+
+        async def comptes(self, user_id: str) -> list[dict[str, Any]]:
+            self.essais[user_id] = self.essais.get(user_id, 0) + 1
+            if user_id == "u-nom" and self.essais[user_id] == 1:
+                raise RolleeIndisponible("429")
+            return [{"id": f"{user_id}-uber", "name": "uber.com-rev"}]
+
+        async def coordonnees_bancaires(self, compte_id: str) -> dict[str, Any]:
+            self.ibans.append(compte_id)
+            return await super().coordonnees_bancaires(compte_id)
+
+    rollee = DebordeUneFois()
+    depots = _depots(rollee)
+    asyncio.run(passer_tenant(depots, T, True, LE))
+    assert ("u-nom", "nom_unique") in {(x.rollee_user_id, x.indice) for x in depots.liens.liens(T)}
+    assert rollee.essais["u-nom"] == 2
+    assert rollee.ibans == []  # Uber répond toujours 400 : jamais demandé
