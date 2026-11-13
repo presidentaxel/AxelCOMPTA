@@ -541,6 +541,13 @@ export function lireVersementsPlateformesChauffeur(dossierId: string): Promise<V
   return fetchAvecAuthChauffeur<VersementPlateforme[]>(`/dossiers/${dossierId}/versements-plateformes`);
 }
 
+/** AXE-891 : tous les relevés « à vérifier », même anciens, pour « À traiter ». */
+export function lireVersementsAVerifierChauffeur(dossierId: string): Promise<VersementPlateforme[]> {
+  return fetchAvecAuthChauffeur<VersementPlateforme[]>(
+    `/dossiers/${dossierId}/versements-plateformes/a-verifier`,
+  );
+}
+
 /** Un lien Rollee Connect de 30 minutes, pour relier ou reconnecter. */
 export function ouvrirSessionRolleeChauffeur(
   dossierId: string,

@@ -26,6 +26,7 @@ import { ResultatACeJour } from "@/components/ResultatACeJour";
 import { Squelette, SqueletteLignes } from "@/components/Squelette";
 import { StationTickets } from "@/components/StationTickets";
 import { ToastDecision } from "@/components/ToastDecision";
+import { VersementsAVerifier } from "@/components/VersementsAVerifier";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import {
@@ -40,6 +41,8 @@ import {
   annulerDecisionChauffeur,
   corrigerTransactionChauffeur,
   joindreJustificatifChauffeur,
+  lireVersementsAVerifierChauffeur,
+  type VersementPlateforme,
 } from "@/lib/auth-chauffeur";
 import { formatDate, formatMontant } from "@/lib/format";
 import { libelleCategorie, phrasePourChauffeur } from "@/lib/langage-chauffeur";
@@ -94,6 +97,21 @@ function Activite({
   const [enCoursCorrection, setEnCoursCorrection] = useState(false);
   const [ouverte, setOuverte] = useState<string | null>(null);
   const [annulation, setAnnulation] = useState<{ ids: string[]; libelle: string } | null>(null);
+  const [versements, setVersements] = useState<VersementPlateforme[]>([]);
+
+  useEffect(() => {
+    let actif = true;
+    lireVersementsAVerifierChauffeur(dossierId)
+      .then((lus) => {
+        if (actif) setVersements(lus);
+      })
+      .catch(() => {
+        // Non lus : « À traiter » reste utilisable sans eux.
+      });
+    return () => {
+      actif = false;
+    };
+  }, [dossierId]);
 
   function enregistree(transaction: TransactionVue, decision: DecisionEnAttente) {
     remplacer(transaction);
@@ -288,7 +306,7 @@ function Activite({
       <div className="sticky top-0 z-20 -mx-4 mt-8 bg-canvas-app px-4 pb-3 pt-1">
         <div className="flex gap-2">
           <Onglet actif={etat.vue === "traiter"} onClick={() => mettreAJour({ vue: "traiter" })}>
-            {reste > 0 ? `À traiter · ${reste}` : "À traiter"}
+            {reste + versements.length > 0 ? `À traiter · ${reste + versements.length}` : "À traiter"}
           </Onglet>
           <Onglet actif={etat.vue === "mouvements"} onClick={() => mettreAJour({ vue: "mouvements" })}>
             Mouvements
@@ -329,6 +347,7 @@ function Activite({
           courante={courante}
           file={file}
           tickets={tickets}
+          versements={versements}
           dossierId={dossierId}
           suit={suit}
           erreur={erreurAction}
@@ -449,6 +468,7 @@ function Arriere({
   courante,
   file,
   tickets,
+  versements,
   dossierId,
   suit,
   erreur,
@@ -460,6 +480,7 @@ function Arriere({
   courante: TransactionVue | null;
   file: TransactionVue[];
   tickets: TransactionVue[];
+  versements: VersementPlateforme[];
   dossierId: string;
   suit: boolean;
   erreur: string | null;
@@ -474,6 +495,13 @@ function Arriere({
     zoneRef.current?.focus({ preventScroll: true });
   }, [suit, courante?.ecriture_id]);
 
+  if (!courante && tickets.length === 0 && versements.length > 0) {
+    return (
+      <div ref={zoneRef} tabIndex={-1} role="region" aria-label="À traiter" className={`outline-none ${ANNEAU}`}>
+        <VersementsAVerifier versements={versements} />
+      </div>
+    );
+  }
   if (!courante && tickets.length === 0) {
     return (
       <div ref={zoneRef} tabIndex={-1} role="region" aria-label="À traiter" className={`mt-6 outline-none ${ANNEAU}`}>
@@ -540,6 +568,7 @@ function Arriere({
         </div>
       )}
       <StationTickets dossierId={dossierId} depenses={tickets} onJointe={onChange} />
+      <VersementsAVerifier versements={versements} />
     </div>
   );
 }

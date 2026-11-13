@@ -7,7 +7,12 @@ from datetime import UTC, date, datetime
 
 from axelcompta.core.ids import DossierId
 from axelcompta.ingestion.providers.base import PlatformSettlement
-from axelcompta.ingestion.settlements_plateforme import SettlementsMemoire, cle, fusionner
+from axelcompta.ingestion.settlements_plateforme import (
+    SettlementsMemoire,
+    a_verifier,
+    cle,
+    fusionner,
+)
 
 LE = datetime(2026, 11, 11, tzinfo=UTC)
 SEMAINE = PlatformSettlement(
@@ -58,3 +63,10 @@ def test_le_depot_en_memoire_trie_par_periode() -> None:
         date(2026, 9, 28),
         date(2026, 10, 5),
     ]
+
+
+def test_a_verifier_ne_garde_que_les_releves_a_regarder() -> None:
+    nouveau = fusionner(None, "acc-1", SEMAINE, LE)
+    assert nouveau is not None
+    bloque = replace(nouveau, id="b", etat="a_verifier", motif="virement déjà rapproché")
+    assert a_verifier([nouveau, bloque, replace(nouveau, id="c", etat="reconcilie")]) == [bloque]
