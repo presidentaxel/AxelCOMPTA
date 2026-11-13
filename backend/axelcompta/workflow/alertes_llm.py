@@ -6,7 +6,8 @@ rythme du mois dépassera le budget avant la fin du mois. Les chauffeurs qui
 coûtent plus de 3 fois la moyenne sont signalés : boucle ou dossier anormal.
 
 Une alerte ne part qu'une fois par portée, par mois et par seuil
-(`AlertesLlm.marquer`). L'envoi est fait par l'appelant.
+(`AlertesLlm.marquer`). Elle va à l'équipe AxeL, jamais au cabinet : le
+gestionnaire ne voit pas ce que l'IA coûte.
 """
 
 from __future__ import annotations
@@ -54,18 +55,16 @@ def _candidates(
     maintenant: datetime,
 ) -> Iterable[AlerteLlm]:
     depenses = Depenses.du_mois(lots, maintenant)
-    tenants = {str(lot.dossier_id): lot.tenant_id for lot in lots}
     for dossier_id, depense in sorted(depenses.par_dossier.items()):
-        tenant = tenants.get(dossier_id)
         for seuil in seuils_atteints(depense, plafonds.chauffeur_usd):
             texte = f"Claude : {seuil} % du budget du mois atteint pour le dossier {dossier_id}."
-            yield AlerteLlm(PORTEE_CHAUFFEUR, dossier_id, str(seuil), texte, tenant)
+            yield AlerteLlm(PORTEE_CHAUFFEUR, dossier_id, str(seuil), texte, None)
     par_tenant: dict[TenantId, float] = {}
     for lot in du_mois(lots, maintenant):
         par_tenant[lot.tenant_id] = par_tenant.get(lot.tenant_id, 0.0) + lot.depense_usd
     for tenant, depense in sorted(par_tenant.items()):
         plafond = plafonds.chauffeur_usd * max(dossiers_par_tenant.get(tenant, 1), 1)
-        yield from _paliers(PORTEE_CABINET, str(tenant), depense, plafond, maintenant, tenant)
+        yield from _paliers(PORTEE_CABINET, str(tenant), depense, plafond, maintenant, None)
     yield from _paliers(
         PORTEE_GLOBAL, "tous", depenses.globale, plafonds.global_usd, maintenant, None
     )

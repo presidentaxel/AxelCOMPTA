@@ -152,6 +152,19 @@ def du_mois(lots: Iterable[Lot], maintenant: datetime) -> list[Lot]:
     return [lot for lot in lots if lot.soumis_le >= debut]
 
 
+def libelles_du_mois(lots: Iterable[Lot], tenant_id: TenantId, maintenant: datetime) -> int:
+    """Libellés confiés à l'IA ce mois-ci, une fois par dossier. Les refus
+    et les échecs n'ont pas produit de catégorie. Le coût n'entre pas ici :
+    le cabinet ne le voit pas."""
+    vus: set[tuple[str, str]] = set()
+    for lot in du_mois(lots, maintenant):
+        if lot.tenant_id != tenant_id or lot.statut not in ("soumis", "termine"):
+            continue
+        for cle in lot.cles:
+            vus.add((str(lot.dossier_id), cle))
+    return len(vus)
+
+
 def coupe_circuit(lots: Iterable[Lot], maintenant: datetime) -> bool:
     """Ouvert si trop de lots récents ont échoué ou été refusés."""
     recents = [
@@ -223,18 +236,3 @@ def anomalies(depenses: Depenses) -> list[str]:
         return []
     moyenne = sum(valeurs) / len(valeurs)
     return sorted(d for d, v in depenses.par_dossier.items() if v > FACTEUR_ANOMALIE * moyenne)
-
-
-def bandeau(depense: float, plafond: float, maintenant: datetime) -> str | None:
-    """Ce que la ligne du LLM dit dans Intégrations, à partir de 50 % du
-    budget du cabinet ou si le rythme du mois le dépassera."""
-    if plafond <= 0:
-        return None
-    if depense >= plafond:
-        return "Budget du mois atteint : l'IA ne propose plus rien avant le 1er du mois prochain."
-    atteints = seuils_atteints(depense, plafond)
-    if atteints:
-        return f"{atteints[-1]} % du budget du mois de l'IA est utilisé."
-    if projection_depasse(depense, plafond, maintenant):
-        return "Au rythme actuel, le budget du mois de l'IA sera dépassé avant la fin du mois."
-    return None

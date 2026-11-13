@@ -395,12 +395,10 @@ export type ConfigurationDossier = {
 export type EtatCategorisation = {
   modele_charge: boolean;
   raison: string | null;
-  /** AXE-887 : absent tant que l'étage LLM est éteint. */
-  llm?: BudgetLlm | null;
+  /** AXE-887 : absent tant que l'étage LLM est éteint. Jamais le coût. */
+  llm?: ActiviteLlm | null;
 };
 
-export type BudgetLlm = {
-  depense_usd: number;
-  plafond_usd: number;
-  alerte: string | null;
+export type ActiviteLlm = {
+  libelles: number;
 };

@@ -16,7 +16,6 @@ import os
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import select
 from sqlalchemy.engine import Engine
 
 from axelcompta.categorize.llm import consignes_systeme, schema_reponse
@@ -31,10 +30,7 @@ from axelcompta.pseudonymize.fournisseur_anthropic import (
     FournisseurLotsAnthropic,
 )
 from axelcompta.pseudonymize.llm import JournalPrompts
-from axelcompta.tenants.branchements import choisir
-from axelcompta.tenants.branchements_postgres import PostgresBranchements
 from axelcompta.tenants.models import Dossier
-from axelcompta.tenants.orm import droits_membre
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.tags import etat_du_portefeuille, retenus
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
@@ -59,7 +55,6 @@ from axelcompta.workflow.lots_llm_postgres import PostgresAlertesLlm, PostgresLo
 from axelcompta.workflow.propositions_ia import categories_proposables
 from axelcompta.workflow.propositions_ia_postgres import PostgresPropositionsIa
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
-from axelcompta.workflow.rappels_envoi import expediteur_de
 from axelcompta.workflow.reclassement import projeter
 from axelcompta.workflow.revue import COMPTE_ATTENTE
 
@@ -134,39 +129,14 @@ def passer_llm(engine: Engine, maintenant: datetime) -> list[str]:
         maintenant,
     )
     for alerte in alertes:
-        lignes.append(f"llm alerte : {_prevenir(engine, alerte)}")
+        lignes.append(f"llm alerte : {_prevenir(alerte)}")
     return lignes
 
 
-def _admins(engine: Engine, tenant_id: TenantId) -> list[str]:
-    with engine.connect() as connexion:
-        return [
-            str(email)
-            for email in connexion.execute(
-                select(droits_membre.c.email).where(
-                    droits_membre.c.tenant_id == str(tenant_id), droits_membre.c.role == "admin"
-                )
-            ).scalars()
-        ]
-
-
-def _prevenir(engine: Engine, alerte: AlerteLlm) -> str:
-    """Cabinet : un mail à ses admins par son SMTP par défaut. Global et
-    anomalies : Sentry (erreur à 100 % du budget global)."""
-    if alerte.tenant_id is None:
-        _sentry(alerte.texte, "error" if alerte.grave else "warning")
-        return f"{alerte.texte} (Sentry)"
-    smtp = choisir(PostgresBranchements(engine).lister(alerte.tenant_id), "mail", None)
-    admins = _admins(engine, alerte.tenant_id)
-    if smtp is None or not admins:
-        return f"{alerte.texte} (aucun SMTP ou aucun admin : non envoyée)"
-    try:
-        expediteur = expediteur_de(smtp)
-        for admin in admins:
-            expediteur.envoyer(admin, "AxeLCompta : budget de l'IA", alerte.texte)
-    except Exception as exc:  # noqa: BLE001 — l'alerte reste notée, le passage continue
-        return f"{alerte.texte} (envoi en échec : {type(exc).__name__})"
-    return f"{alerte.texte} (mail à {len(admins)} admin(s))"
+def _prevenir(alerte: AlerteLlm) -> str:
+    """Sentry, pour l'équipe AxeL. Le cabinet ne reçoit pas le coût."""
+    _sentry(alerte.texte, "error" if alerte.grave else "warning")
+    return f"{alerte.texte} (Sentry)"
 
 
 def _sentry(message: str, niveau: str) -> None:

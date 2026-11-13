@@ -71,7 +71,7 @@ Seules les opérations écrites depuis le 12/11/2026 sont mesurées : avant, la 
 | `llm_part_cache` | % des jetons d'entrée lus depuis le cache de prompt |
 | `llm_lots_en_echec_mois` | lots en échec ou refusés |
 
-Alertes de budget (une fois par seuil et par mois) : 50, 80 et 100 % par chauffeur et par cabinet, par mail aux admins du cabinet via son SMTP par défaut ; global et chauffeurs à plus de 3 fois la moyenne, dans Sentry (erreur à 100 % du global). La projection de fin de mois prévient avant les seuils, dès le 5 du mois.
+Alertes de budget (une fois par seuil et par mois) : 50, 80 et 100 % par chauffeur, par cabinet et au global, dans Sentry (erreur à 100 % du global). Le cabinet n'est pas prévenu : il ne voit pas le coût. La projection de fin de mois prévient avant les seuils, dès le 5 du mois.
 
 ## 3. Métriques techniques
 

@@ -9,8 +9,8 @@ son statut et son coût (jetons et dollars). Base du budget mensuel, des
 nouvelles tentatives et de l'idempotence (l'identifiant est une empreinte
 du dossier, de la version, des libellés et de la tentative).
 `alertes_llm` : une alerte de budget déjà envoyée, une fois par portée, par
-mois et par seuil. Le rôle web lit les lots de son portefeuille (bandeau
-d'Intégrations) ; seules les tâches planifiées écrivent.
+mois et par seuil. Le rôle web lit le nombre de libellés de son
+portefeuille (ligne d'Intégrations) ; seules les tâches planifiées écrivent.
 """
 
 from collections.abc import Sequence

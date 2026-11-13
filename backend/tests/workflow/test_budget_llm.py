@@ -15,11 +15,11 @@ from axelcompta.workflow.budget_llm import (
     Plafonds,
     abandonnees,
     anomalies,
-    bandeau,
     coupe_circuit,
     cout,
     echecs_par_cle,
     id_lot,
+    libelles_du_mois,
     max_tokens,
     plafonds_configures,
     projection_depasse,
@@ -123,10 +123,15 @@ def test_un_chauffeur_qui_coute_trois_fois_la_moyenne_est_signale() -> None:
     assert anomalies(Depenses.du_mois(lots[:3], MAINTENANT)) == []  # trop peu de dossiers
 
 
-def test_le_bandeau_d_integrations() -> None:
-    assert bandeau(0.1, 5.0, MAINTENANT.replace(day=2)) is None
-    assert bandeau(4.1, 5.0, MAINTENANT) == "80 % du budget du mois de l'IA est utilisé."
-    assert "atteint" in (bandeau(5.0, 5.0, MAINTENANT) or "")
+def test_le_cabinet_voit_le_nombre_de_libelles_pas_le_cout() -> None:
+    lots = [
+        lot("a", cles=("A", "B")),
+        lot("doublon", cles=("B",)),
+        lot("refuse", statut="refus", cles=("C",)),
+        lot("echec", statut="echec", cles=("D",)),
+        lot("autre", tenant_id=TenantId("autre"), cles=("E",)),
+    ]
+    assert libelles_du_mois(lots, TenantId("t"), MAINTENANT) == 2
 
 
 def test_les_plafonds_se_reglent_par_l_environnement(monkeypatch: pytest.MonkeyPatch) -> None:

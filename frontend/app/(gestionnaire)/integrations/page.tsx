@@ -11,7 +11,7 @@ import {
   type Branchement,
 } from "@/lib/auth-gestionnaire";
 import { ORDRE_TYPES } from "@/lib/branchements";
-import { resumeBudgetLlm } from "@/lib/budget-llm";
+import { resumeActiviteLlm } from "@/lib/activite-llm";
 import { useDroitGestionnaire } from "@/lib/use-droit";
 import type { EtatCategorisation } from "@/lib/types";
 
@@ -89,14 +89,7 @@ export default function IntegrationsPage() {
         </p>
       )}
       {categorisation?.llm && (
-        <div className="mt-2">
-          <p className="text-sm text-subtle">{resumeBudgetLlm(categorisation.llm)}</p>
-          {categorisation.llm.alerte && (
-            <p role="status" className="mt-2 rounded-md border border-hairline bg-signal/10 px-3 py-2 text-sm text-ink">
-              {categorisation.llm.alerte}
-            </p>
-          )}
-        </div>
+        <p className="mt-2 text-sm text-subtle">{resumeActiviteLlm(categorisation.llm)}</p>
       )}
       <section className="mt-10">
         <h2 className="text-sm font-medium text-ink">Pas encore disponibles</h2>

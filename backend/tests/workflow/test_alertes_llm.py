@@ -30,7 +30,7 @@ def test_chaque_seuil_ne_part_qu_une_fois_dans_le_mois() -> None:
     premieres = nouvelles_alertes(lots, UN_DOSSIER, PLAFONDS, memoire, MAINTENANT.replace(day=2))
     assert (PORTEE_CHAUFFEUR, "50") in _portees(premieres)
     assert (PORTEE_CABINET, "50") in _portees(premieres)
-    assert all(a.tenant_id == TenantId("t") for a in premieres)
+    assert all(a.tenant_id is None for a in premieres)
     encore = nouvelles_alertes(lots, UN_DOSSIER, PLAFONDS, memoire, MAINTENANT.replace(day=2))
     assert encore == []
     plus = [lot(cout_usd=0.41)]
