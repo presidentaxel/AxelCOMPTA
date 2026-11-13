@@ -1,6 +1,8 @@
 """Tâches planifiées : pour chaque portefeuille, synchro Digifactory, bascules
 de régime dues (fin d'option IR, doc 06 §7), puis notifications internes
 (doc 12, J3 et J5). Une fois par jour, le rattrapage Rollee (AXE-820).
+L'étage LLM (AXE-887), s'il est activé, relève et soumet ses lots à chaque
+passage.
 
 Un seul point d'entrée pour le planificateur, quel qu'il soit : le crontab
 du poste de Louis pour la démo, celui du serveur (ou un timer systemd) en
@@ -38,6 +40,7 @@ from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.core.metriques import METRIQUES
 from axelcompta.ledger.balance import SoldeJournal, ecarts
 from axelcompta.ledger.repository import soldes_par_journal
+from axelcompta.llm_synchro import mesurer_llm, passer_llm
 from axelcompta.modeles_distants import assurer_modele
 from axelcompta.notifier import notifier_depuis_base
 from axelcompta.plateformes_rollee import rattraper, suivi_postgres
@@ -52,8 +55,10 @@ from axelcompta.tenants.repository import DossierRepository
 from axelcompta.tenants.tags import SANS_TAGS, EtatTags, etat_du_portefeuille, exclus, retenus
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.worker import dependances_reelles, detecter_portefeuilles, resume_envois
+from axelcompta.workflow.budget_llm import debut_du_mois
 from axelcompta.workflow.indicateurs_categorisation import OperationSuivie, calculer
 from axelcompta.workflow.indicateurs_categorisation_postgres import operations_suivies
+from axelcompta.workflow.lots_llm_postgres import PostgresLotsLlm
 from axelcompta.workflow.notifications import ResultatNotification
 
 # Reçoit aussi les dossiers à synchroniser sans classement automatique.
@@ -233,6 +238,15 @@ def mesurer_categorisation(
     ]
 
 
+def _llm(passer: Callable[[], list[str]]) -> list[str]:
+    """AXE-887 : relever et soumettre les lots du LLM, alertes de budget.
+    Un échec est dit, il n'arrête pas le passage."""
+    try:
+        return passer()
+    except Exception as exc:  # noqa: BLE001 — le passage suivant réessaiera
+        return [f"llm : échec ({type(exc).__name__})"]
+
+
 def _rappels(engine: Engine, maintenant: datetime) -> list[str]:
     """AXE-808 : règles automatiques puis une passe d'envoi. Un échec est dit,
     il n'arrête pas les autres tâches."""
@@ -276,6 +290,7 @@ def main() -> int:
         lambda tenant_id: etat_du_portefeuille(PostgresTagsRepository(engine), tenant_id),
         lambda d: prechauffer_caches(engine, d),
     )
+    bilan.lignes += _llm(lambda: passer_llm(engine, debut))
     bilan.lignes += _rappels(engine, debut)
     try:
         bilan.lignes += detecter_portefeuilles(dependances_reelles(), debut.date())
@@ -294,6 +309,9 @@ def main() -> int:
         controler_balance(bilan, lambda: soldes_par_journal(engine), _alerter_sentry)
         bilan.lignes += mesurer_categorisation(
             lambda depuis: operations_suivies(engine, depuis), debut
+        )
+        bilan.lignes += _llm(
+            lambda: mesurer_llm(PostgresLotsLlm(engine).lister(debut_du_mois(debut)), debut)
         )
         _ecrire_metriques()
     print(f"[{debut.isoformat(timespec='seconds')}] tâches planifiées")

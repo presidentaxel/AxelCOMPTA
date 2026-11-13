@@ -16,6 +16,8 @@
   "include": [
     "lib/tva-estimee.ts",
     "lib/tva-estimee.test.ts",
+    "lib/budget-llm.ts",
+    "lib/budget-llm.test.ts",
     "lib/loa.ts",
     "lib/loa.test.ts",
     "lib/immobilisations.ts",

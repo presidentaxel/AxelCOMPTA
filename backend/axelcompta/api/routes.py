@@ -327,6 +327,8 @@ from axelcompta.tester_branchement import tester as tester_branchement
 from axelcompta.webhooks_rollee import preparer as preparer_webhook
 from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT
 from axelcompta.workflow.avis_etages import avis_etages, proposition_affichee
+from axelcompta.workflow.budget_llm import bandeau, debut_du_mois, llm_actif
+from axelcompta.workflow.budget_llm import plafonds_configures as plafonds_llm
 from axelcompta.workflow.classees import (
     Filtres,
     OperationClassee,
@@ -379,6 +381,8 @@ from axelcompta.workflow.journal_acces import (
     JournalAcces,
     PostgresJournalAcces,
 )
+from axelcompta.workflow.lots_llm import LotsLlm, LotsLlmMemoire
+from axelcompta.workflow.lots_llm_postgres import PostgresLotsLlm
 from axelcompta.workflow.notifications import (
     NotificationRepository,
     ecritures_a_trancher,
@@ -477,9 +481,18 @@ class RegimeAVenirVue(BaseModel):
     motif: str
 
 
+class BudgetLlmVue(BaseModel):
+    """AXE-887 : la ligne du LLM dans Intégrations, pour le cabinet."""
+
+    depense_usd: float
+    plafond_usd: float
+    alerte: str | None
+
+
 class CategorisationVue(BaseModel):
     modele_charge: bool
     raison: str | None
+    llm: BudgetLlmVue | None = None
 
 
 class DossierResume(BaseModel):
@@ -1543,6 +1556,15 @@ def get_pipeline() -> RulesAndMlPipeline:
 def get_etat_categorisation() -> EtatCategorisation:
     get_pipeline()
     return _ETAT_CATEGORISATION or EtatCategorisation(True, "")
+
+
+def get_lots_llm() -> LotsLlm:
+    """AXE-887 : lots envoyés au LLM, lus sous la RLS du portefeuille.
+    Étage éteint : rien à lire, aucune connexion."""
+    return PostgresLotsLlm(_engine()) if llm_actif() else LotsLlmMemoire()
+
+
+LotsLlmDep = Annotated[LotsLlm, Depends(get_lots_llm)]
 
 
 DecisionsDep = Annotated[DecisionRepository, Depends(get_decisions)]
@@ -2941,11 +2963,37 @@ def _enregistrer_route_categorisation(app: FastAPI) -> None:
     def lire_categorisation(
         identite: IdentiteDep,
         etat: Annotated[EtatCategorisation, Depends(get_etat_categorisation)],
+        dossiers: DossiersDep,
+        lots_llm: LotsLlmDep,
     ) -> CategorisationVue:
         """AXE-825 : le modèle est-il chargé ? Sinon, la catégorisation est
         dégradée et la synchro ne tourne pas."""
-        _verifier_acces_gestionnaire(identite)
-        return CategorisationVue(modele_charge=etat.modele_charge, raison=etat.raison)
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return CategorisationVue(
+            modele_charge=etat.modele_charge,
+            raison=etat.raison,
+            llm=_budget_llm(tenant_id, dossiers, lots_llm),
+        )
+
+
+def _budget_llm(
+    tenant_id: TenantId, dossiers: DossierRepository, lots_llm: LotsLlm
+) -> BudgetLlmVue | None:
+    """Éteint (`AXELCOMPTA_LLM_ACTIF` absent) : pas de ligne."""
+    if not llm_actif():
+        return None
+    maintenant = datetime.now(UTC)
+    depense = sum(
+        lot.depense_usd
+        for lot in lots_llm.lister(debut_du_mois(maintenant))
+        if lot.tenant_id == tenant_id
+    )
+    plafond = plafonds_llm().chauffeur_usd * max(len(dossiers.lister_par_tenant(tenant_id)), 1)
+    return BudgetLlmVue(
+        depense_usd=round(depense, 2),
+        plafond_usd=round(plafond, 2),
+        alerte=bandeau(depense, plafond, maintenant),
+    )
 
 
 def _enregistrer_routes_portefeuille(app: FastAPI) -> None:

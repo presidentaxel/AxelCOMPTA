@@ -13,6 +13,7 @@ from axelcompta.ledger.balance import SoldeJournal
 from axelcompta.synchro_digifactory import ResultatDossier
 from axelcompta.taches import (
     BilanTaches,
+    _llm,
     controler_balance,
     lancer_taches,
     mesurer_categorisation,
@@ -253,3 +254,13 @@ def test_une_mesure_en_echec_est_dite_sans_arreter_les_taches() -> None:
 
     lignes = mesurer_categorisation(lire, datetime(2026, 11, 20, tzinfo=UTC))
     assert lignes == ["catégorisation : mesure en échec (RuntimeError)"]
+
+
+def test_l_etage_llm_dit_son_echec_sans_arreter_le_passage() -> None:
+    """AXE-887."""
+
+    def panne() -> list[str]:
+        raise ConnectionError("Anthropic injoignable")
+
+    assert _llm(panne) == ["llm : échec (ConnectionError)"]
+    assert _llm(lambda: ["llm : 1 lot(s) soumis"]) == ["llm : 1 lot(s) soumis"]
