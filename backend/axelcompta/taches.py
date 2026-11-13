@@ -26,7 +26,7 @@ import os
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy.engine import Engine
@@ -52,6 +52,8 @@ from axelcompta.tenants.repository import DossierRepository
 from axelcompta.tenants.tags import SANS_TAGS, EtatTags, etat_du_portefeuille, exclus, retenus
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.worker import dependances_reelles, detecter_portefeuilles, resume_envois
+from axelcompta.workflow.indicateurs_categorisation import OperationSuivie, calculer
+from axelcompta.workflow.indicateurs_categorisation_postgres import operations_suivies
 from axelcompta.workflow.notifications import ResultatNotification
 
 # Reçoit aussi les dossiers à synchroniser sans classement automatique.
@@ -167,6 +169,7 @@ HEURE_CONTROLE_BALANCE = 3
 # AXE-820 : rattrapage Rollee, une fois par jour (webhooks perdus).
 HEURE_RATTRAPAGE_ROLLEE = 4
 VARIABLE_FICHIER_METRIQUES = "AXELCOMPTA_METRIQUES_FICHIER"
+FENETRE_INDICATEURS = timedelta(days=30)
 
 
 def controler_balance(
@@ -202,6 +205,32 @@ def _ecrire_metriques() -> None:
     chemin = os.environ.get(VARIABLE_FICHIER_METRIQUES)
     if chemin:
         Path(chemin).write_text(METRIQUES.texte(), encoding="utf-8")
+
+
+def mesurer_categorisation(
+    lire: Callable[[datetime], list[OperationSuivie]], maintenant: datetime
+) -> list[str]:
+    """AXE-900 : part de chaque étage et délai opération → écriture sur 30
+    jours glissants, en jauges (doc 15 §2). Un échec est dit, il n'arrête
+    pas le contrôle de balance."""
+    try:
+        indicateurs = calculer(lire(maintenant - FENETRE_INDICATEURS), maintenant)
+    except Exception as exc:  # noqa: BLE001 — la mesure suivante réessaiera
+        return [f"catégorisation : mesure en échec ({type(exc).__name__})"]
+    METRIQUES.jauger("categorisation_operations_30j", indicateurs.operations)
+    for etage, part in indicateurs.part_par_etage.items():
+        METRIQUES.jauger("categorisation_part", part, etage=etage)
+    METRIQUES.jauger("categorisation_part_imputee_seule", indicateurs.part_imputee_seule)
+    METRIQUES.jauger("categorisation_part_tranchee_humain", indicateurs.part_tranchee)
+    METRIQUES.jauger("categorisation_part_en_attente", indicateurs.part_en_attente)
+    if indicateurs.delai_p95_heures is not None:
+        METRIQUES.jauger("transaction_vers_ecriture_p95_heures", indicateurs.delai_p95_heures)
+    delai = indicateurs.delai_p95_heures
+    return [
+        f"catégorisation : {indicateurs.operations} opérations sur 30 jours, "
+        f"{indicateurs.part_imputee_seule:g} % imputées seules, "
+        f"délai p95 {'—' if delai is None else f'{delai:g} h'}"
+    ]
 
 
 def _rappels(engine: Engine, maintenant: datetime) -> list[str]:
@@ -263,6 +292,9 @@ def main() -> int:
     if debut.hour == HEURE_CONTROLE_BALANCE:
         installer_sentry()
         controler_balance(bilan, lambda: soldes_par_journal(engine), _alerter_sentry)
+        bilan.lignes += mesurer_categorisation(
+            lambda depuis: operations_suivies(engine, depuis), debut
+        )
         _ecrire_metriques()
     print(f"[{debut.isoformat(timespec='seconds')}] tâches planifiées")
     for ligne in bilan.lignes:

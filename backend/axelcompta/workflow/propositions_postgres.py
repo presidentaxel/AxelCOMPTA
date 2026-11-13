@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -33,6 +34,7 @@ class PostgresPropositionRepository(PropositionRepository):
                     etage=proposition.etage.name,
                     confiance=proposition.confiance,
                     moyen_paiement=proposition.moyen_paiement,
+                    cree_le=datetime.now(UTC),
                 )
                 .on_conflict_do_nothing(index_elements=[table.c.ecriture_id])
             )

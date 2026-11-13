@@ -3,7 +3,7 @@ portefeuille, sans qu'une étape en échec n'empêche l'autre."""
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -11,10 +11,16 @@ from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.core.metriques import METRIQUES
 from axelcompta.ledger.balance import SoldeJournal
 from axelcompta.synchro_digifactory import ResultatDossier
-from axelcompta.taches import BilanTaches, controler_balance, lancer_taches
+from axelcompta.taches import (
+    BilanTaches,
+    controler_balance,
+    lancer_taches,
+    mesurer_categorisation,
+)
 from axelcompta.tenants.memory import InMemoryDossierRepository
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.tags import EXCLUSIONS_PAR_DEFAUT, TAG_SOCIETE_DU_GESTIONNAIRE, EtatTags
+from axelcompta.workflow.indicateurs_categorisation import OperationSuivie
 from axelcompta.workflow.notifications import ResultatNotification
 
 
@@ -219,3 +225,31 @@ def test_le_rattrapage_rollee_dit_son_echec_sans_arreter_le_passage() -> None:
     ]
     assert _rollee(lambda: []) == ["rollee : aucun dossier relié"]
     assert _rollee(panne) == ["rollee : échec (ConnectionError)"]
+
+
+def test_la_categorisation_est_mesuree_en_jauges() -> None:
+    """AXE-900 : part de chaque étage et délai p95 sur 30 jours."""
+    maintenant = datetime(2026, 11, 20, tzinfo=UTC)
+    lues: list[datetime] = []
+
+    def lire(depuis: datetime) -> list[OperationSuivie]:
+        lues.append(depuis)
+        synchro = datetime(2026, 11, 11, 6, tzinfo=UTC)
+        return [OperationSuivie("REGLE", "carburant", date(2026, 11, 10), synchro, False, None)]
+
+    lignes = mesurer_categorisation(lire, maintenant)
+    assert lues == [maintenant - timedelta(days=30)]
+    assert lignes == [
+        "catégorisation : 1 opérations sur 30 jours, 100 % imputées seules, délai p95 30 h"
+    ]
+    texte = METRIQUES.texte()
+    assert 'categorisation_part{etage="regle"} 100.0' in texte
+    assert "transaction_vers_ecriture_p95_heures 30.0" in texte
+
+
+def test_une_mesure_en_echec_est_dite_sans_arreter_les_taches() -> None:
+    def lire(_depuis: datetime) -> list[OperationSuivie]:
+        raise RuntimeError("base indisponible")
+
+    lignes = mesurer_categorisation(lire, datetime(2026, 11, 20, tzinfo=UTC))
+    assert lignes == ["catégorisation : mesure en échec (RuntimeError)"]
