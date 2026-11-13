@@ -98,10 +98,23 @@ ne dépend jamais d'`ingestion` en retour, règle absolue doc 03 §3).
   (AXE-729, AXE-851), sous-comptes 512x (AXE-832), type d'opération et
   catégorie de la banque portés par la transaction (AXE-826), nouveaux
   contacts proposés (AXE-845).
-- **Prévu au 2026-11-10** : première synchro des chauffeurs réels
-  (AXE-728), relevés Uber et Bolt comme source de settlements (AXE-801),
-  import du FEC de l'outil précédent (AXE-804), mois d'avant la connexion
-  Digifactory (AXE-833).
+- **Fait du 2026-11-12 au 2026-11-13 (Rollee)** :
+  - `comptes_rollee.py` : le user Rollee d'un dossier et ses comptes de
+    plateformes (connecté, à reconnecter), sans montant (AXE-819) ;
+  - `webhooks_rollee.py` : événements reçus, gardés une fois par empreinte
+    du corps (AXE-820) ;
+  - `settlements_plateforme.py` : relevés par période et leur état,
+    `a_verifier()` pour « À traiter », `delie` quand le lien est retiré
+    (AXE-821, AXE-891, AXE-911) ;
+  - `rapprochement_rollee.py` (pur) : relier un user Rollee au bon dossier
+    par empreintes HMAC ; `liens_rollee.py` : l'origine du lien,
+    l'historique des liens retirés et la file « à choisir » (AXE-911).
+  Chacun a son dépôt `_postgres.py`. `digifactory_contacts.py` (ex
+  `demo_digifactory.py`, AXE-840) : le contact Digifactory → dossier.
+- **Prévu au 2026-11-13** : première synchro des chauffeurs réels
+  (AXE-728), relevés Uber et Bolt en secours de Rollee (AXE-801), sortie
+  de « à vérifier » (AXE-912), mois d'avant la connexion Digifactory
+  (AXE-833).
 
 ## Doc de référence
 

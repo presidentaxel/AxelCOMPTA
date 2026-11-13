@@ -1,6 +1,6 @@
 # 16 — Intégration Digifactory (source bancaire)
 
-> **État au 2026-11-10** (ajouté) : synchro réelle codée (curseur, archive
+> **État au 2026-11-13** (ajouté) : synchro réelle codée (curseur, archive
 > brute, quarantaine, contre-passation), premier chargement découpé et
 > santé de connexion relevée (AXE-443). Mode réel depuis le 05/11 (doc
 > 17) : seuls les contacts listés sont importés (AXE-726), dossiers pilotes
@@ -9,8 +9,14 @@
 > compte non retenu (AXE-729, AXE-851) ; un sous-compte 512x par compte
 > (AXE-832) ; les nouveaux contacts sont proposés dans Entreprises et le
 > bouton « Synchroniser » passe par le worker (AXE-845) ; la quarantaine
-> se résout depuis Anomalies (AXE-424). Prochaine étape : la première
-> synchro des chauffeurs réels (AXE-728), puis un mois exporté (AXE-733).
+> se résout depuis Anomalies (AXE-424). Depuis le 12/11 (AXE-872), le jeton
+> Digifactory est un branchement du portefeuille, chiffré, et il peut y en
+> avoir plusieurs : la synchro ouvre un client par jeton, les nouveaux
+> contacts sont lus sur chaque compte. `DIGIFACTORY_TOKEN` ne sert plus
+> qu'en repli, tant qu'aucun branchement n'existe. Les IBAN des comptes
+> servent aussi à relier les users Rollee (AXE-911, sous forme
+> d'empreinte). Prochaine étape : la première synchro des chauffeurs réels
+> (AXE-728), puis un mois exporté (AXE-733).
 
 > **Statut : les 4 routes vérifiées en réel le 2026-09-11 — voir §7.** Le
 > 401 n'était pas un problème côté Digifactory : c'était un mauvais type

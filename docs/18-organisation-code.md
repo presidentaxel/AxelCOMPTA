@@ -27,16 +27,16 @@ AxeLCompta/
 │   ├── tenants/       # portefeuilles, dossiers, RLS ; matrice statut × régime, avenants de régime
 │   ├── packs/         # pack VTC réduit (V1 : taxonomie complète)
 │   ├── ingestion/
-│   │   └── providers/ # DataProvider ; démo sur fixtures, synchro Digifactory codée
+│   │   └── providers/ # DataProvider ; Digifactory réel, client Rollee (AXE-818), fixtures
 │   ├── documents/     # justificatifs en base, par tenant et dossier (AXE-425) ; OCR en V1
-│   ├── categorize/    # règles + ML (garde de sens, abstention) + propositions apprises des décisions, pas de LLM
-│   ├── anomaly/       # profils par dossier, détecteurs V1 (AXE-437) ; qualifications encore en mémoire
+│   ├── categorize/    # règles + ML (garde de sens, abstention) + propositions apprises ; prompt du LLM, objectifs, seuils
+│   ├── anomaly/       # profils par dossier, détecteurs V1 (AXE-437) ; qualifications en base (AXE-814)
 │   ├── ledger/        # moteur pur, Postgres, écritures validées immuables
-│   ├── closing/       # clôture fiscale : TVA, IS (si la colonne est à l'IS), liasse 2033
+│   ├── closing/       # clôture fiscale : TVA, IS, liasse 2033 ; immobilisations, LOA, bilan d'ouverture depuis un FEC
 │   ├── filings/       # CERFA 2065, 2031 et 2033 officiels, FEC légal, PDF (V1 : EDI/INPI)
 │   ├── workflow/      # décisions humaines, signatures démo, journal d'audit, notifications internes
 │   ├── api/           # api.app (+ /sante, /metrics) ; routes dans api/routes.py, jetons dans api/auth.py
-│   ├── pseudonymize/  # seule porte vers un LLM : prompt pseudonymisé, LLMProvider (aucun fournisseur branché)
+│   ├── pseudonymize/  # seule porte vers un LLM : prompt pseudonymisé, fournisseur Anthropic (API Batch, AXE-887)
 │   ├── jobs/          # file de jobs Postgres (ADR-002), exécutée par worker.py depuis le 2026-11-09
 │   └── ml/            # V1 ; le modèle (v2) s'entraîne dans _AUDIT_DONNEES/entrainer_modele.py
 ├── frontend/          # Next.js : écrans gestionnaire (web) et chauffeur (mobile), auth Supabase
@@ -126,7 +126,19 @@ de jobs : import des dossiers, bouton « Synchroniser », rappels ; lancé
 par `scripts/worker_planifie.sh`), `nouveaux_contacts.py` (les contacts
 Digifactory sans dossier, proposés au gestionnaire, AXE-845) et
 `rappels.py` (règles automatiques et envoi des rappels par e-mail et SMS,
-AXE-808).
+AXE-808). Depuis le 2026-11-11 :
+
+| Fichier | Rôle |
+|---|---|
+| `modeles_distants.py` | récupère le modèle de catégorisation dans le bucket S3 privé, empreinte vérifiée (AXE-847) |
+| `registres_officiels.py` | relit l'INSEE et le RNE ; la comparaison est dans `tenants/registres.py` (AXE-849) |
+| `tester_branchement.py` | bouton « Tester » d'une intégration (AXE-872) |
+| `plateformes_rollee.py` | le chauffeur relie ses plateformes via Rollee Connect ; traitement des événements Rollee (AXE-819, AXE-820) |
+| `webhooks_rollee.py` | secret et déclaration du webhook d'un branchement Rollee (AXE-820) |
+| `revenus_rollee.py` | revenus Rollee → relevés → rapprochement → OD de ventilation, et leur contre-passation (AXE-821, AXE-889, AXE-911) |
+| `rapprochement_rollee_service.py` | relie les users Rollee à leurs dossiers ; l'algorithme pur est dans `ingestion/rapprochement_rollee.py` (AXE-911) |
+| `llm_synchro.py` | l'étage LLM dans les tâches planifiées : relever, soumettre, alerter ; budget dans `workflow/budget_llm.py` (AXE-887) |
+| `prevenir_admins.py` | mail aux admins d'un cabinet par son SMTP par défaut (AXE-911) |
 
 `api/app.py` est le point d'entrée HTTP depuis le 2026-10-25
 (`uvicorn axelcompta.api.app:app`). Il sert l'app construite par

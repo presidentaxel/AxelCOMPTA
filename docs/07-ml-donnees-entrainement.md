@@ -1,12 +1,18 @@
 # 07 — ML : données, entraînement, évaluation, MLOps
 
-> **État au 2026-11-05** (ajouté ; le reste du doc décrit la cible) : modèle
+> **État au 2026-11-13** (ajouté ; le reste du doc décrit la cible) : modèle
 > v2 (TF-IDF + régression logistique, 78,9 % d'exactitude en validation
 > croisée par dossier, calibré), entraîné dans
 > `_AUDIT_DONNEES/entrainer_modele.py` ; le réentraînement sur les décisions
-> existe (`--decisions`). Pas de registry ni de monitoring de dérive. La
-> relecture des 500 lignes qui donne le jeu de test gelé en est à 7/500
-> (AXE-423) ; la mesure des objectifs V1 en dépend (AXE-816).
+> existe (`--decisions`, qui écarte depuis le 13/11 les annulations et les
+> « à préciser »). Le modèle est rangé dans un bucket S3 privé, un dossier
+> par version, avec son empreinte (AXE-847) ; pas de promotion automatique.
+> Chaque décision humaine garde son contexte et l'avis de chaque étage
+> (AXE-871, AXE-901) : la matière du prochain entraînement. Seuils « sans
+> erreur » par catégorie prêts, pas branchés (`categorize/seuils.py`).
+> Mesure sur le premier flux réel (AXE-732) : le modèle se trompe souvent sur
+> ce que les règles ratent. Restent : jeu gelé (AXE-902, après AXE-423 à
+> 7/500), recalibrage et promotion (AXE-904), monitoring de dérive.
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-12
 

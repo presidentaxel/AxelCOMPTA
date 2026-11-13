@@ -1,6 +1,6 @@
 # 19 — Parcours utilisateur : gestionnaire et chauffeur
 
-> Statut : brouillon à valider — Dernière mise à jour : 2026-11-10 (exception expert-comptable en place, §2.4).
+> Statut : brouillon à valider — Dernière mise à jour : 2026-11-13 (Rollee et IA vus par le gestionnaire, §2.4).
 > Né d'une discussion Louis / Claude Code le 2026-09-06 : décision de
 > cadrer et documenter l'accès chauffeur en libre-service **avant** tout
 > code, conformément à ce que prévoyait déjà [doc 12 §2.7](12-roadmap-todo.md).
@@ -154,6 +154,21 @@ décide pas à sa place. Un gestionnaire sans ce rôle garde la vue agrégée. E
 place depuis le 2026-11-09 : le mode expert, les anomalies, les opérations
 classées et la quarantaine ne s'ouvrent qu'à l'expert habilité, sur les
 dossiers de sa lettre de mission.
+
+**Ajouts du 10 au 13/11, même règle : des nombres, jamais de montant.**
+- Plateformes (Rollee) : « Plateformes reliées : 1/2 · 1 à reconnecter ·
+  3 versements à vérifier ». Le détail des versements (brut, commission,
+  versé) n'est qu'au chauffeur (AXE-819, AXE-821, AXE-891).
+- Relier un compte Rollee au bon dossier (AXE-911) : le gestionnaire voit
+  ce qui correspond (« même IBAN », « même nom »), des initiales, les
+  plateformes et les 4 derniers chiffres de l'IBAN. Il choisit, ou retire
+  un lien avec un motif ; chaque geste va au journal d'accès.
+- Registres officiels (AXE-849) : l'écart s'affiche en clair, sauf les noms
+  de personnes (« Dirigeant différent de celui du registre. »).
+- IA (AXE-887) : le nombre de libellés proposés ce mois-ci, jamais le coût.
+- C'est le dirigeant qui saisit l'identité de sa société (AXE-846), qui
+  relie ses plateformes et qui reprend son bilan d'ouverture (AXE-804,
+  ou l'expert-comptable habilité).
 
 ## 3. Modèle de compte et onboarding
 

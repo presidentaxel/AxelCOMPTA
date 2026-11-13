@@ -108,6 +108,20 @@ seul module autorisé à transformer une `ProposedEntry` (sortie de
   l'application (AXE-808), rôle et engagement de l'expert-comptable
   (AXE-800, `expert_comptable.py`, voir doc 02 §2.3). Détail des autres
   dans les sections ci-dessous.
+- **Fait du 2026-11-12 au 2026-11-13** :
+  - `tva_imputation.py` et `reprise_tva.py` : la TVA déductible estimée
+    séparée à l'imputation d'une dépense, et la reprise des écritures
+    passées TTC (AXE-831) ;
+  - `propositions_ia.py` : le cache des propositions de l'IA par libellé
+    normalisé et version du prompt (AXE-888) ;
+  - `budget_llm.py`, `lots_llm.py`, `etage_llm.py`, `alertes_llm.py` :
+    budget, lots de l'API Batch, relève et soumission, alertes (AXE-887) ;
+  - `avis_etages.py` : l'avis de chaque étage gardé avec la décision
+    humaine, dans `decisions_humaines.contexte` (AXE-871, AXE-901) ;
+  - `indicateurs_categorisation.py` : part de chaque étage et délai
+    opération → écriture, chaque jour (AXE-900) ;
+  - `rappels_auto.py` : déclencheur « plateformes non reliées » (AXE-890) ;
+  - `jalons.py` : ex `demo_jalons.py` (AXE-840).
 - **V1 (doc 12, phase 3)** : actif, prestataire de signature tranché
   (AXE-441).
 

@@ -1,6 +1,6 @@
 # 10 — Sécurité, RGPD et protection des données
 
-> **État au 2026-11-10** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-13** (ajouté ; le reste du doc décrit la cible) :
 > - Fait : RLS par dossier sur les tables, pseudonymisation obligatoire
 >   avant tout LLM avec tests de fuite (AXE-436), journal d'audit
 >   append-only des décisions et signatures, Sentry seulement si un DSN est
@@ -16,15 +16,28 @@
 >   l'API : elles se lisent dans les journaux de Supabase Auth.
 > - Production isolée (AXE-810) : plus de données de démo (doc 17),
 >   `/metrics` fermé sans `METRICS_TOKEN`, verrous du rôle web testés.
-> - Paramètres SMTP et SMS des gestionnaires chiffrés (Fernet, clé
->   `AXELCOMPTA_CLE_INTEGRATIONS` hors base), jamais renvoyés à l'écran ;
->   les rappels ne contiennent jamais de montant (AXE-808).
+> - Identifiants des intégrations (SMTP, SMS, Digifactory, Rollee) chiffrés
+>   (Fernet, clé `AXELCOMPTA_CLE_INTEGRATIONS` hors base), jamais renvoyés à
+>   l'écran ; les rappels ne contiennent jamais de montant (AXE-808,
+>   AXE-872).
+> - Rollee (AXE-819 à 821, 911) : le chauffeur saisit ses identifiants Uber
+>   et Bolt chez Rollee, jamais chez nous ; le user Rollee ne porte que le
+>   `dossier_id`. Webhooks vérifiés par HMAC. Le rapprochement compare des
+>   empreintes HMAC : ni nom, ni IBAN, ni e-mail gardés en clair. Le
+>   gestionnaire ne voit aucun montant.
+> - IA (AXE-887, AXE-888) : seuls des libellés pseudonymisés partent chez
+>   Anthropic, montant en ordre de grandeur ; une fuite détectée bloque
+>   l'envoi. Clé dans l'environnement du serveur, jamais dans le repo.
 > - Compte de test (AXE-822) : lecture seule, date de fin obligatoire
 >   (90 jours au plus), chaque ouverture de dossier tracée au journal
 >   d'audit.
+> - Textes juridiques rédigés d'après les services branchés, dont l'annexe
+>   de sous-traitance art. 28 (AXE-859, [juridique/](juridique/README.md)).
 > - Pas fait : sauvegardes avec restauration testée et hébergement
->   de production (AXE-811), DPA et CGU (AXE-813, AXE-859), offboarding
->   (export et purge d'un tenant, doc 14 : aucun ticket).
+>   de production (AXE-811), relecture juriste, acceptation tracée et DPA
+>   signé (AXE-813), offboarding (export et purge d'un tenant, doc 14 :
+>   aucun ticket). Les nouveaux sous-traitants (Rollee, Anthropic, INSEE,
+>   INPI) sont à reporter dans les textes avant le pilote.
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-12
 > Le volet juridique RGPD est traité en doc 02 §8 ; ici, l'implémentation.

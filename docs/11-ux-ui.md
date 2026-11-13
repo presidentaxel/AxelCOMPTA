@@ -1,26 +1,39 @@
 # 11 — UX / UI : interface B2B
 
-> **État au 2026-11-10** (ajouté ; le reste du doc décrit la cible
+> **État au 2026-11-13** (ajouté ; le reste du doc décrit la cible
 > d'origine) : l'hypothèse « le chauffeur ne voit que la page de signature »
-> est caduque (doc 19). Écrans réels : côté chauffeur (mobile) Activité,
-> À traiter, Exercice, Mon résultat, Ma TVA (AXE-805), Compte (avec « Mes
-> comptes bancaires », AXE-832 et AXE-729, et « Accès à votre dossier »,
-> AXE-812), la carte « Vérifiez votre entreprise » (AXE-730) et la cloche ;
-> côté gestionnaire Entreprises (tags, AXE-829 ; nouveaux chauffeurs
-> Digifactory et « Synchroniser », AXE-845 ; comptes à choisir, AXE-851),
-> Importer des entreprises (AXE-809), Invitations, Rappels (suivi des
-> envois, AXE-808), Équipe (habilitation de l'expert, réinitialisation de
-> la MFA), Intégrations (SMTP, SMS, état de la catégorisation), Mode
-> expert (engagement, motifs, opérations classées, AXE-800 et AXE-823) et
-> Anomalies (historique, opérations bancaires à revoir, AXE-814 et
-> AXE-424). Écran « Double authentification » à la connexion (AXE-812) ;
-> bandeau « Mode test, lecture seule » du compte de test (AXE-822). Le
-> design system est [DESIGN.md](../DESIGN.md), passé en v2.0 le 2026-11-11
-> (refonte AXE-873, direction C2,
-> [ADR-008](adr/ADR-008-design-system-monochrome.md)) : monochrome à l'encre,
-> un accent orange foncé, navigation en barre latérale claire.
-> Les revues UX d'Arthur (AXE-563, AXE-564) ont été traitées le 04/11 et
-> le 05/11.
+> est caduque (doc 19). Écrans réels :
+> - Chauffeur (mobile) : Activité, À traiter (avec les versements de
+>   plateformes « à vérifier », AXE-891), Exercice (avec « Véhicule et
+>   matériel » et « LOA », AXE-802 et AXE-803), Mon résultat, Ma TVA
+>   (AXE-805), Ma société (siège, capital, associés, AXE-846), Reprendre mes
+>   comptes (bilan d'ouverture depuis un FEC, AXE-804), Compte (« Mes
+>   comptes bancaires », AXE-832 et AXE-729 ; « Mes plateformes » avec
+>   Rollee Connect et les derniers versements, AXE-819 et AXE-821 ; « Accès
+>   à votre dossier », AXE-812), la carte « Vérifiez votre entreprise »
+>   (AXE-730, et les écarts avec les registres, AXE-849) et la cloche. Une
+>   dépense sans ticket montre sa TVA estimée (AXE-831).
+> - Gestionnaire : Entreprises (tags, AXE-829 ; nouveaux chauffeurs
+>   Digifactory et « Synchroniser », AXE-845 ; comptes à choisir, AXE-851 ;
+>   comptes Rollee à choisir et filtre Rollee, AXE-911 ; écarts avec les
+>   registres, AXE-849), Importer des entreprises (AXE-809), Invitations,
+>   Rappels (suivi des envois, AXE-808 ; « plateformes non reliées »,
+>   AXE-890), Équipe (habilitation de l'expert, réinitialisation de la MFA),
+>   Intégrations (plusieurs accès par type : Digifactory, e-mail, SMS,
+>   Rollee, avec Tester, AXE-872 ; activité de l'IA en nombre de libellés,
+>   AXE-887), Mode expert (engagement, motifs, opérations classées, bilan
+>   d'ouverture, AXE-800, AXE-823, AXE-804) et Anomalies (historique,
+>   opérations bancaires à revoir, AXE-814 et AXE-424).
+> - Écran « Double authentification » à la connexion (AXE-812) ; bandeau
+>   « Mode test, lecture seule » du compte de test (AXE-822) ; textes
+>   juridiques publics sur `/legal/…` (AXE-859).
+> - Le design system est [DESIGN.md](../DESIGN.md), passé en v2.0 le
+>   2026-11-11 (refonte AXE-873, direction C2,
+>   [ADR-008](adr/ADR-008-design-system-monochrome.md)) : monochrome à
+>   l'encre, un accent orange foncé, navigation en barre latérale claire,
+>   tous les écrans repris (PR #137 à #151).
+> - Les revues UX d'Arthur (AXE-563, AXE-564) ont été traitées le 04/11 et
+>   le 05/11.
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-16
 >

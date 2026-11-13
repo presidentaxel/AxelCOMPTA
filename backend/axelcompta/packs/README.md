@@ -56,6 +56,14 @@ par un expert-comptable* de ces artefacts pour la V1.
   (`_AUDIT_DONNEES/packs_vtc/regles_regex.csv`), plus les règles génériques
   de `categorize/`. Mesure sur le premier flux réel : AXE-732. Relecture
   de la taxonomie par un expert-comptable : AXE-815.
+- **Au 2026-11-13** : règles ajoutées d'après la mesure du premier flux
+  réel (AXE-732, AXE-871) : `POP SVCS` (recettes), URSSAF abrégé, repas
+  (cafés, boulangeries) et usage personnel probable (pharmacie, tabac) en
+  confiance basse. La LOA a sa règle (612), la LLD garde la sienne (613,
+  AXE-803) ; l'achat du véhicule va en 2182 (AXE-802).
+  `tva_deductible.toml` + `tva_deductible.py` (AXE-831) : taux supposé et
+  part récupérable de chaque catégorie, avec leur source (CGI, BOFiP) ; en
+  cas de doute, rien n'est récupéré. À faire valider (AXE-815).
 - **V1 (doc 12, phase 1.1 + 0.2)** : taxonomie complète et mapping
   compte-par-catégorie validés avec le comptable du client (aujourd'hui un
   brouillon d'audit, premier compte listé pris arbitrairement).

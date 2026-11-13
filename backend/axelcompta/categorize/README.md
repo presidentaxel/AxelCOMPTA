@@ -119,10 +119,19 @@ B'CARS 6 % → 44 %.
   « Annuler », correction depuis Mouvements) et mode expert côté
   gestionnaire. Le pipeline garde son résultat par (libellé, montant),
   borné à 50 000 entrées, en mémoire de l'instance (AXE-565).
-- **Étage 3 (LLM)** : la porte existe dans `pseudonymize/` (prompt
-  pseudonymisé obligatoire, LLM interrogé seulement sous le seuil ML,
-  jamais d'imputation par le LLM seul), mais aucun fournisseur n'est
-  branché et `categorize` ne l'appelle pas encore.
+- **Étage 3 (LLM), depuis le 2026-11-13** : `llm.py` construit le prompt
+  (consignes fixes et taxonomie dans `consignes_systeme`, opérations dans
+  `texte_operations`, `VERSION_PROMPT` gardée avec chaque proposition) et
+  le schéma de réponse limité à la taxonomie. L'appel passe par
+  `pseudonymize/` (fournisseur Anthropic, API Batch) depuis
+  `axelcompta/llm_synchro.py` ; budget et lots dans `workflow/` (AXE-887).
+  Le LLM ne fait que proposer.
+- **Ajouté du 2026-11-11 au 2026-11-13** : `objectifs.py` (pur) mesure les
+  objectifs du doc 01 §6 sur un jeu étiqueté, lancé par
+  `scripts/mesurer_objectifs.py` (AXE-816) ; `seuils.py` (pur) calcule le
+  seuil sans erreur de chaque catégorie, prêt mais pas branché (AXE-871) ;
+  `modele_requis.py` arrête la synchro sans modèle (AXE-825). Règles du
+  premier flux réel ajoutées au pack (AXE-871).
 - **V1 (doc 12, phase 2)** : pipeline complet à 4 étages, boucle de feedback
   continue (doc 07 §5).
 
