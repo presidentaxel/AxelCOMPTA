@@ -9,12 +9,12 @@ from typing import cast
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from axelcompta.api.routes import get_decisions, get_propositions, get_propositions_ia
 from axelcompta.categorize.llm import VERSION_PROMPT, cle_libelle
 from axelcompta.categorize.models import Etage, ProposedEntry
 from axelcompta.categorize.rules_and_ml import CATEGORIE_PAR_DEFAUT
 from axelcompta.core.ids import DossierId, EcritureId, TransactionId
 from axelcompta.core.money import Money
-from axelcompta.api.routes import get_decisions, get_propositions, get_propositions_ia
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.workflow.decisions import DecisionRepository
 from axelcompta.workflow.propositions_ia import PropositionIa, PropositionsIaMemoire
