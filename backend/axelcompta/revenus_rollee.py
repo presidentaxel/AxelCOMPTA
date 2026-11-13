@@ -35,6 +35,7 @@ from axelcompta.core.pcg import est_compte_banque
 from axelcompta.ingestion.ecritures_settlement import (
     SUFFIXE_VENTILATION,
     ecriture_de_ventilation,
+    id_ventilation_plateforme,
 )
 from axelcompta.ingestion.journal import JournalIngestion
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
@@ -48,7 +49,7 @@ from axelcompta.ingestion.settlements_plateforme import (
     fusionner,
 )
 from axelcompta.ingestion.settlements_plateforme_postgres import PostgresSettlements
-from axelcompta.ledger.contrepassation import annulees
+from axelcompta.ledger.contrepassation import annulees, id_contrepassation
 from axelcompta.ledger.models import Ecriture, Journal, Sens
 from axelcompta.ledger.periodes import Periode
 from axelcompta.ledger.repository import PostgresLedgerService
@@ -198,7 +199,25 @@ def rapprocher(
             resultat.stockes.append(replace(suite, maj_le=maintenant))
         if od is not None:
             resultat.ecritures.append(od)
+    resultat.stockes.extend(_ventilations_annulees(stockes, grand_livre, maintenant))
     return resultat
+
+
+def _ventilations_annulees(
+    stockes: Sequence[SettlementStocke], grand_livre: Sequence[Ecriture], maintenant: datetime
+) -> list[SettlementStocke]:
+    """AXE-889 : un relevé rapproché dont la ventilation a été contre-passée
+    (virement reclassé hors recette) repasse « à vérifier »."""
+    ids = {e.id for e in grand_livre}
+    return [
+        replace(
+            s, etat="a_verifier", motif="ventilation annulée : virement reclassé", maj_le=maintenant
+        )
+        for s in stockes
+        if s.etat == "reconcilie"
+        and s.ecriture_id
+        and id_contrepassation(id_ventilation_plateforme(EcritureId(s.ecriture_id))) in ids
+    ]
 
 
 async def _lire(

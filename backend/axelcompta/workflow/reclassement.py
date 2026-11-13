@@ -28,6 +28,7 @@ from datetime import date
 
 from axelcompta.core.ids import EcritureId
 from axelcompta.core.money import Money
+from axelcompta.ingestion.ecritures_settlement import id_ventilation_plateforme
 from axelcompta.ledger.contrepassation import contrepasser, id_contrepassation, origine
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.ledger.periodes import Periode, date_de_report
@@ -41,6 +42,8 @@ MARQUE = ":decision-"
 # AXE-831 : OD qui sépare la TVA déductible d'une opération imputée TTC
 # avant la règle (reprise). Elle complète S, sans la contre-passer.
 MARQUE_TVA = ":tva-"
+# AXE-889 : compte de recette d'un virement de plateforme ventilé (AXE-821).
+COMPTE_RECETTE = "706"
 
 
 def id_reclassement(source_id: EcritureId, rang: int) -> EcritureId:
@@ -269,8 +272,12 @@ def annuler_reclassements(
     """Les contre-passations des reclassements encore en vigueur de S, à
     écrire avec celle de S : sinon le compte final resterait chargé.
     `debut_ouvert` date ces OD comme la contre-passation de S (AXE-838).
-    Le complément de TVA de S (AXE-831) est annulé avec elle."""
+    Le complément de TVA de S (AXE-831) est annulé avec elle.
+    La ventilation d'un virement de plateforme (AXE-821) part avec elle."""
     a_annuler = _actifs(source_id, ecritures) + complements_tva_actifs(source_id, ecritures)
+    ventilation = ventilation_active(source_id, ecritures)
+    if ventilation is not None:
+        a_annuler.append(ventilation)
     return [contrepasser(r, periodes_closes, debut_ouvert) for r in a_annuler]
 
 
@@ -286,6 +293,35 @@ def _remplacer_attente(ecriture: Ecriture, imputation: tuple[LigneEcriture, ...]
         else:
             lignes.extend(dataclasses.replace(x, sens=_sens_oppose(x.sens)) for x in imputation)
     return dataclasses.replace(ecriture, lignes=tuple(lignes))
+
+
+def ventilation_active(source_id: EcritureId, ecritures: Sequence[Ecriture]) -> Ecriture | None:
+    """L'OD de ventilation d'un virement de plateforme (AXE-821), si elle
+    n'est pas contre-passée."""
+    cible = id_ventilation_plateforme(source_id)
+    if id_contrepassation(cible) in {e.id for e in ecritures}:
+        return None
+    return next((e for e in ecritures if e.id == cible), None)
+
+
+def annulations_liees(
+    source: Ecriture, ecritures: Sequence[Ecriture], periodes_closes: Sequence[Periode] = ()
+) -> list[Ecriture]:
+    """AXE-889 : après une décision sur S, ce qui ne tient plus. Un virement
+    ventilé qui n'est plus en recette perd sa ventilation : sinon le 706
+    resterait débité du net, et la TVA collectée comptée."""
+    ventilation = ventilation_active(source.id, ecritures)
+    if ventilation is None or _compte_actuel(source, ecritures) == COMPTE_RECETTE:
+        return []
+    return [contrepasser(ventilation, periodes_closes)]
+
+
+def _compte_actuel(source: Ecriture, ecritures: Sequence[Ecriture]) -> str:
+    """Le compte de S : celui de ses reclassements si elle passait par
+    l'attente, sinon sa propre contrepartie."""
+    if any(ligne.compte == COMPTE_ATTENTE for ligne in source.lignes):
+        return compte_en_vigueur(source.id, ecritures)
+    return next((x.compte for x in source.lignes if not x.compte.startswith("512")), COMPTE_ATTENTE)
 
 
 def projeter(ecritures: Sequence[Ecriture]) -> tuple[Ecriture, ...]:

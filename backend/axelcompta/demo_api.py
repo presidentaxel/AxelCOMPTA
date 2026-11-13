@@ -401,6 +401,7 @@ from axelcompta.workflow.rappels_envoi import (
 )
 from axelcompta.workflow.rappels_envoi_postgres import PostgresEnvois
 from axelcompta.workflow.reclassement import (
+    annulations_liees,
     annuler_reclassements,
     grand_livre_comptable,
     grand_livre_tranche,
@@ -2068,6 +2069,10 @@ def _reclassements(
         if reclassement is not None:
             calculees.append(reclassement)
             ecritures.append(reclassement)
+        # AXE-889 : un virement ventilé qui quitte le 706 perd sa ventilation.
+        liees = annulations_liees(source, ecritures, periodes)
+        calculees.extend(liees)
+        ecritures.extend(liees)
     return calculees
 
 
