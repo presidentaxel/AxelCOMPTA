@@ -28,6 +28,7 @@ from axelcompta.ingestion.providers.rollee import (
     centimes,
     fin_de_periode,
     lire_revenus,
+    premiere_fiche,
 )
 from axelcompta.packs.vtc_demo import charger_plateformes
 
@@ -231,15 +232,88 @@ def test_tous_les_users_sont_lus_page_apres_page() -> None:
     assert vus[1].url.params["page"] == "2"
 
 
-def test_profil_et_iban_d_un_compte_sont_lus_sans_renouveler_le_jeton() -> None:
+# AXE-917 : forme réelle des réponses (lue le 14/11, valeurs inventées).
+PROFIL_ROLLEE = {
+    "account_id": "acc-1",
+    "connected": True,
+    "size": 1,
+    "user_id": "u-1",
+    "data": [
+        {
+            "first_name": "Élodie",
+            "last_name": "Martin",
+            "full_name": "Élodie Martin",
+            "email": "e@m.fr",
+            "phone": "+33600000000",
+        }
+    ],
+}
+
+
+def test_profil_et_iban_d_un_compte_sont_lus_dans_leur_enveloppe() -> None:
     vus: list[httpx.Request] = []
     client = _client(
         [
-            httpx.Response(200, json={"first_name": "Élodie", "last_name": "Martin"}),
-            httpx.Response(200, json={"iban": "FR76..."}),
+            httpx.Response(200, json=PROFIL_ROLLEE),
+            httpx.Response(
+                200,
+                json={"account_id": "acc-1", "connected": True, "data": [{"iban": "FR76..."}]},
+            ),
         ],
         vus,
     )
-    assert asyncio.run(client.profil("acc-1"))["first_name"] == "Élodie"
+    profil = asyncio.run(client.profil("acc-1"))
+    assert (profil["first_name"], profil["email"]) == ("Élodie", "e@m.fr")
     assert asyncio.run(client.coordonnees_bancaires("acc-1"))["iban"] == "FR76..."
     assert [r.url.path.rsplit("/", 1)[-1] for r in vus] == ["profile", "banking_info"]
+
+
+def test_bolt_sans_iban_rend_une_fiche_vide_et_uber_en_400_leve() -> None:
+    client = _client(
+        [
+            httpx.Response(200, json={"account_id": "a", "connected": True, "data": []}),
+            httpx.Response(400, json={"detail": "not supported"}),
+        ],
+        [],
+    )
+    assert asyncio.run(client.coordonnees_bancaires("bolt")) == {}
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(client.coordonnees_bancaires("uber"))
+
+
+def test_premiere_fiche_accepte_une_reponse_sans_enveloppe() -> None:
+    assert premiere_fiche({"first_name": "A"}) == {"first_name": "A"}
+    assert premiere_fiche({"data": {"iban": "X"}}) == {"iban": "X"}
+    assert premiere_fiche({"data": None}) == {}
+    assert premiere_fiche(None) == {}
+
+
+def test_des_401_simultanes_ne_renouvellent_le_jeton_qu_une_fois() -> None:
+    renouvellements: list[str] = []
+    jetons: list[str] = []
+
+    async def repondre(requete: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0.01)  # les appels se croisent
+        if requete.url.path.endswith("/token/refresh"):
+            renouvellements.append(requete.headers["Authorization"])
+            return httpx.Response(200, json={"token": "jeton-2"})
+        if requete.headers["Authorization"] == "Bearer jeton-1":
+            return httpx.Response(401)
+        return httpx.Response(200, json=[])
+
+    client = RolleeHttpClient(
+        "sandbox",
+        "jeton-1",
+        client=httpx.AsyncClient(
+            transport=httpx.MockTransport(repondre),
+            base_url="https://api.sand.getrollee.com/api/v0.5",
+        ),
+        sur_nouveau_jeton=jetons.append,
+    )
+
+    async def plusieurs() -> list[list[dict[str, Any]]]:
+        return list(await asyncio.gather(*(client.comptes(f"u-{i}") for i in range(5))))
+
+    assert asyncio.run(plusieurs()) == [[]] * 5
+    assert renouvellements == ["Bearer jeton-1"]
+    assert jetons == ["jeton-2"]

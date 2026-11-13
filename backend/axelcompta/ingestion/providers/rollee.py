@@ -77,6 +77,21 @@ def _fin_unix(jour: date) -> int:
     return int(datetime.combine(jour, time.max, tzinfo=UTC).timestamp())
 
 
+def premiere_fiche(reponse: object) -> dict[str, Any]:
+    """AXE-917 : Rollee enveloppe le profil et les coordonnées bancaires d'un
+    compte (`{account_id, connected, data, user_id}`), `data` étant une liste
+    de fiches, parfois vide (Bolt sans IBAN). Rend la première fiche, ou la
+    réponse elle-même si elle n'a pas d'enveloppe."""
+    if not isinstance(reponse, dict):
+        return {}
+    if "data" not in reponse:
+        return reponse
+    donnees = reponse["data"]
+    if isinstance(donnees, list):
+        return next((d for d in donnees if isinstance(d, dict)), {})
+    return donnees if isinstance(donnees, dict) else {}
+
+
 class RolleeHttpClient:
     """Vrais appels à l'API utilisateur Rollee. N'appelle rien à la
     construction. `sur_nouveau_jeton` reçoit le jeton renouvelé, pour que le
@@ -99,6 +114,9 @@ class RolleeHttpClient:
         self._client = client or httpx.AsyncClient(base_url=URLS[environnement], timeout=timeout)
         self._sur_nouveau_jeton = sur_nouveau_jeton
         self._attendre = attendre
+        # AXE-917 : des appels en parallèle peuvent prendre un 401 ensemble ;
+        # un seul renouvelle, les autres reprennent le nouveau jeton.
+        self._verrou_jeton = asyncio.Lock()
 
     @classmethod
     def depuis_parametres(
@@ -123,9 +141,12 @@ class RolleeHttpClient:
 
     async def _requete(self, methode: str, chemin: str, **options: Any) -> Any:
         """Un 401 renouvelle le jeton une fois, puis réessaie."""
+        jeton_utilise = self._jeton
         reponse = await self._une_requete(methode, chemin, **options)
         if reponse.status_code == 401:
-            await self.renouveler()
+            async with self._verrou_jeton:
+                if self._jeton == jeton_utilise:
+                    await self.renouveler()
             reponse = await self._une_requete(methode, chemin, **options)
             if reponse.status_code == 401:
                 raise RolleeAuthError(f"401 sur {chemin} : jeton refusé ({self.environnement})")
@@ -179,18 +200,14 @@ class RolleeHttpClient:
         return tous
 
     async def profil(self, account_id: str) -> dict[str, Any]:
-        """`GET /accounts/{id}/profile` : `first_name`, `last_name`, `email`, `phone`…
-        Lu pour comparer, jamais gardé (AXE-911)."""
-        resultat: dict[str, Any] = await self._requete("GET", f"/accounts/{account_id}/profile")
-        return resultat or {}
+        """`GET /accounts/{id}/profile`, déballé : `first_name`, `last_name`,
+        `full_name`, `email`, `phone`… Lu pour comparer (AXE-911, AXE-917)."""
+        return premiere_fiche(await self._requete("GET", f"/accounts/{account_id}/profile"))
 
     async def coordonnees_bancaires(self, account_id: str) -> dict[str, Any]:
-        """`GET /accounts/{id}/banking_info` : `iban`, `recipient`, `swift`.
-        Lu pour comparer, jamais gardé (AXE-911)."""
-        resultat: dict[str, Any] = await self._requete(
-            "GET", f"/accounts/{account_id}/banking_info"
-        )
-        return resultat or {}
+        """`GET /accounts/{id}/banking_info`, déballé : `iban`, `recipient`,
+        `swift`. Vide pour Bolt ; Uber répond 400 (levé). AXE-911, AXE-917."""
+        return premiere_fiche(await self._requete("GET", f"/accounts/{account_id}/banking_info"))
 
     async def revenus(self, account_id: str, depuis: date, jusqua: date) -> dict[str, Any]:
         """`GET /accounts/{id}/income` sur la période, bornes comprises."""

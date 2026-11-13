@@ -107,15 +107,26 @@ async def lire_user(client: RolleeHttpClient, brut: Mapping[str, Any], cle: byte
     )
 
 
+# AXE-917 : un passage lit ~2 200 users (comptes, profil, IBAN). En série,
+# plus de 10 minutes ; quelques appels à la fois restent polis avec Rollee.
+APPELS_SIMULTANES = 8
+
+
 async def lire_users(
     client: RolleeHttpClient, cle: bytes, seulement: str | None = None
 ) -> list[UserRollee]:
-    bruts = await client.utilisateurs()
-    return [
-        await lire_user(client, brut, cle)
-        for brut in bruts
+    bruts = [
+        brut
+        for brut in await client.utilisateurs()
         if "id" in brut and (seulement is None or str(brut["id"]) == seulement)
     ]
+    limite = asyncio.Semaphore(APPELS_SIMULTANES)
+
+    async def un(brut: Mapping[str, Any]) -> UserRollee:
+        async with limite:
+            return await lire_user(client, brut, cle)
+
+    return list(await asyncio.gather(*(un(brut) for brut in bruts)))
 
 
 @dataclass(frozen=True, slots=True)
