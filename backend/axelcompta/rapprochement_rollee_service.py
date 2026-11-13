@@ -107,9 +107,9 @@ async def lire_user(client: RolleeHttpClient, brut: Mapping[str, Any], cle: byte
     )
 
 
-# AXE-917 : un passage lit ~2 200 users (comptes, profil, IBAN). En série,
-# plus de 10 minutes ; quelques appels à la fois restent polis avec Rollee.
-APPELS_SIMULTANES = 8
+# AXE-917 : un passage lit ~2 200 users (comptes, profil, IBAN). À 8 appels
+# simultanés, Rollee répond 429 en 20 s (mesuré le 14/11) : 3 à la fois.
+APPELS_SIMULTANES = 3
 
 
 async def lire_users(

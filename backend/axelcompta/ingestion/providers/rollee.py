@@ -49,7 +49,9 @@ URLS = {
     "production": "https://api.getrollee.com/api/v0.5",
 }
 UNITE_MONTANTS = "euros"  # à confirmer sur le sandbox (AXE-817)
-ESSAIS = 3
+# Un passage sur tous les users Rollee touche la limite de débit (AXE-917) ;
+# 1, 2, 4 puis 8 s d'attente avant d'abandonner.
+ESSAIS = 5
 ATTENTE_MAX_S = 30.0
 
 SurNouveauJeton = Callable[[str], None]

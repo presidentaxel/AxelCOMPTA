@@ -19,6 +19,7 @@ import pytest
 
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.ingestion.providers.rollee import (
+    ESSAIS,
     CompteRollee,
     RevenuIllisible,
     RolleeAuthError,
@@ -109,7 +110,7 @@ def test_429_puis_succes_et_5xx_persistant() -> None:
     vus: list[httpx.Request] = []
     client = _client([httpx.Response(429), httpx.Response(200, json=[])], vus)
     assert asyncio.run(client.comptes("u")) == [] and len(vus) == 2
-    panne = _client([httpx.Response(503)] * 3, [])
+    panne = _client([httpx.Response(503)] * ESSAIS, [])
     with pytest.raises(RolleeIndisponible):
         asyncio.run(panne.comptes("u"))
 
