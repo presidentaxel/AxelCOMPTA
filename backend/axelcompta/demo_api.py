@@ -98,7 +98,24 @@ from axelcompta.closing.affectation import (
 from axelcompta.closing.bilan_simplifie import ClotureSimplifieeService
 from axelcompta.closing.cloture_fiscale import chiffre_affaires_ht
 from axelcompta.closing.dividendes import RetenuesDividendes, retenues
-from axelcompta.closing.models import LiassePivot, ParametresCloture, ProvisionCloture
+from axelcompta.closing.immobilisations import (
+    DUREE_PAR_DEFAUT,
+    DUREES_PROPOSEES,
+    Cession,
+    Immobilisation,
+    ImmobilisationInvalide,
+    dotation,
+    plus_ou_moins_value,
+    valeur_nette,
+    valider,
+)
+from axelcompta.closing.models import (
+    SANS_SAISIE,
+    LiassePivot,
+    ParametresCloture,
+    ProvisionCloture,
+    SaisiesCloture,
+)
 from axelcompta.closing.ouverture import id_a_nouveaux
 from axelcompta.closing.ouverture_depot import (
     ROLE_DIRIGEANT,
@@ -195,7 +212,7 @@ from axelcompta.ledger.banque import (
 )
 from axelcompta.ledger.contrepassation import annulees, contrepasser
 from axelcompta.ledger.memory import InMemoryLedgerService
-from axelcompta.ledger.models import Ecriture, Journal, Sens
+from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
 from axelcompta.nouveaux_contacts import fiche_sirene, recherche_entreprises
@@ -779,7 +796,7 @@ def _statut_invitation_vue(statut: StatutInvitation) -> str:
 def _construire_liasse(
     dossier: Dossier,
     ledger: InMemoryLedgerService,
-    provisions: tuple[ProvisionCloture, ...] = (),
+    provisions: SaisiesCloture = SANS_SAISIE,
 ) -> LiassePivot:
     """Semaine 4 (doc 17 §9) : même appel que `_resume` (clôture) et que les
     exports de `demo_chauffeurs_type._executer_un_chauffeur`, mais sur le
@@ -793,9 +810,7 @@ def _construire_liasse(
     )
 
 
-def _parametres(
-    dossier: Dossier, provisions: tuple[ProvisionCloture, ...] = ()
-) -> ParametresCloture:
+def _parametres(dossier: Dossier, provisions: SaisiesCloture = SANS_SAISIE) -> ParametresCloture:
     """Bornes déclarées de l'exercice et identité du dossier : ce qui fait
     passer la clôture du bilan simplifié à la liasse fiscale complète."""
     return ParametresCloture(
@@ -805,15 +820,18 @@ def _parametres(
         identite=dossier.identite,
         soumis_is=_colonne(dossier).soumis_is,
         associes=_colonne(dossier).associes,
-        provisions=provisions,
+        provisions=provisions.provisions,
+        immobilisations=provisions.immobilisations,
         deficits_anterieurs=dossier.deficits_anterieurs_euros,
     )
 
 
-def _provisions_saisies(
-    dossier: Dossier, depot: ProvisionsClotureRepository
-) -> tuple[ProvisionCloture, ...]:
-    return depot.lister(dossier.tenant_id, dossier.id, dossier.fin_exercice().year)
+def _provisions_saisies(dossier: Dossier, depot: ProvisionsClotureRepository) -> SaisiesCloture:
+    """Estimations CCA/FNP de l'exercice et registre des immobilisations (AXE-802)."""
+    return SaisiesCloture(
+        depot.lister(dossier.tenant_id, dossier.id, dossier.fin_exercice().year),
+        depot.lister_immobilisations(dossier.tenant_id, dossier.id),
+    )
 
 
 def _regimes_a_venir(
@@ -903,7 +921,7 @@ def _exiger_operations_tranchees(dossier: Dossier, ledger: InMemoryLedgerService
 def _ecritures_avec_cloture(
     dossier: Dossier,
     ledger: InMemoryLedgerService,
-    provisions: tuple[ProvisionCloture, ...] = (),
+    provisions: SaisiesCloture = SANS_SAISIE,
 ) -> tuple[Ecriture, ...]:
     """Écritures de l'exercice (mêmes bornes que la liasse) + écritures
     d'inventaire (TVA, IS) : FEC, grand livre et balance téléchargés
@@ -932,7 +950,7 @@ def _resume(
     comptes: CompteRepository,
     signatures: SignatureRepository,
     digifactory_branche: bool = True,
-    provisions: tuple[ProvisionCloture, ...] = (),
+    provisions: SaisiesCloture = SANS_SAISIE,
 ) -> DossierResume:
     ecritures = ledger.grand_livre(dossier.id)
     liasse = _construire_liasse(dossier, ledger, provisions)
@@ -3942,7 +3960,7 @@ def _enregistrer_routes_balance(app: FastAPI) -> None:
 def _document_greffe_inpi(
     dossier: Dossier,
     ledger: InMemoryLedgerService,
-    provisions: tuple[ProvisionCloture, ...] = (),
+    provisions: SaisiesCloture = SANS_SAISIE,
 ) -> bytes:
     """doc 20 §4 : le PDF non signé (« document de synthèse » de démo, pas
     celui que le Guichet Unique génère réellement — on ne peut pas
@@ -4712,7 +4730,7 @@ def _preparer_cloture(
     ledger: LedgerService,
     decisions: DecisionRepository,
     avenants: AvenantRegimeRepository,
-    provisions: tuple[ProvisionCloture, ...] = (),
+    provisions: SaisiesCloture = SANS_SAISIE,
 ) -> PassageExercice:
     """Lève `PassageRefuse` (un `Conflit` : 409 avec sa phrase, AXE-839) ;
     l'aperçu la lit pour dire pourquoi, avec son code (AXE-853)."""
@@ -4774,7 +4792,7 @@ def _enregistrer_routes_provisions(app: FastAPI) -> None:
         dossier: DossierDep, provisions: ProvisionsDep, identite: IdentiteDep
     ) -> ProvisionsVue:
         _verifier_acces_dossier(dossier.id, identite)
-        return _vue_provisions(_provisions_saisies(dossier, provisions))
+        return _vue_provisions(_provisions_saisies(dossier, provisions).provisions)
 
     @app.put("/dossiers/{dossier_id}/provisions-cloture", response_model=ProvisionsVue)
     def enregistrer_provisions(
@@ -4787,6 +4805,175 @@ def _enregistrer_routes_provisions(app: FastAPI) -> None:
         saisies = _lire_provisions(corps)
         provisions.remplacer(dossier.tenant_id, dossier.id, dossier.fin_exercice().year, saisies)
         return _vue_provisions(saisies)
+
+
+class ImmobilisationVue(BaseModel):
+    id: str
+    designation: str
+    compte: str
+    mise_en_service: str
+    base_cts: int
+    duree_mois: int
+    dotation_exercice_cts: int  # dotation de l'exercice ouvert
+    valeur_nette_cts: int  # à la fin de l'exercice ouvert (ou à la cession)
+    cede_le: str | None = None
+    prix_cession_cts: int | None = None
+    plus_ou_moins_value_cts: int | None = None
+
+
+class BienADeclarerVue(BaseModel):
+    """Une opération imputée sur un compte d'immobilisation, pas encore au registre."""
+
+    ecriture_id: str
+    date: str
+    libelle: str
+    compte: str
+    base_cts: int
+    duree_proposee_mois: int
+
+
+class RegistreVue(BaseModel):
+    immobilisations: list[ImmobilisationVue]
+    a_declarer: list[BienADeclarerVue]
+
+
+class DeclarationEntree(BaseModel):
+    ecriture_id: str
+    designation: str
+    mise_en_service: date
+    duree_mois: int
+
+
+class CessionEntree(BaseModel):
+    le: date
+    prix_cts: int = 0
+
+
+def _ligne_immobilisee(ecriture: Ecriture) -> LigneEcriture | None:
+    """La ligne d'acquisition d'un bien : compte 2 hors amortissements (28)."""
+    return next(
+        (
+            x
+            for x in ecriture.lignes
+            if x.compte.startswith("2") and not x.compte.startswith("28") and x.sens is Sens.DEBIT
+        ),
+        None,
+    )
+
+
+def _vue_immobilisation(dossier: Dossier, immo: Immobilisation) -> ImmobilisationVue:
+    debut, fin = dossier.exercice_debut, dossier.fin_exercice()
+    return ImmobilisationVue(
+        id=immo.id,
+        designation=immo.designation,
+        compte=immo.compte,
+        mise_en_service=immo.mise_en_service.isoformat(),
+        base_cts=immo.base_cts,
+        duree_mois=immo.duree_mois,
+        dotation_exercice_cts=dotation(immo, debut, fin),
+        valeur_nette_cts=valeur_nette(immo, fin),
+        cede_le=immo.cession.le.isoformat() if immo.cession else None,
+        prix_cession_cts=immo.cession.prix_cts if immo.cession else None,
+        plus_ou_moins_value_cts=plus_ou_moins_value(immo),
+    )
+
+
+def _registre(
+    dossier: Dossier, ledger: InMemoryLedgerService, depot: ProvisionsClotureRepository
+) -> RegistreVue:
+    fiches = depot.lister_immobilisations(dossier.tenant_id, dossier.id)
+    declarees = {f.ecriture_acquisition for f in fiches}
+    exclues = annulees(ledger.grand_livre(dossier.id))
+    a_declarer = [
+        BienADeclarerVue(
+            ecriture_id=e.id,
+            date=e.date.isoformat(),
+            libelle=sans_categorie(e.libelle),
+            compte=ligne.compte,
+            base_cts=ligne.montant.centimes,
+            duree_proposee_mois=DUREES_PROPOSEES.get(ligne.compte, DUREE_PAR_DEFAUT),
+        )
+        for e in ledger.grand_livre(dossier.id)
+        if e.id not in declarees
+        and e.id not in exclues
+        and (ligne := _ligne_immobilisee(e)) is not None
+        and ligne_banque(e) is not None
+    ]
+    return RegistreVue(
+        immobilisations=[_vue_immobilisation(dossier, f) for f in fiches], a_declarer=a_declarer
+    )
+
+
+def _declarer(
+    dossier: Dossier, ledger: InMemoryLedgerService, entree: DeclarationEntree
+) -> Immobilisation:
+    """La fiche d'un bien acquis par une opération : compte et base viennent
+    de l'écriture (HT quand la TVA a été séparée), le reste du chauffeur."""
+    ecriture = next((e for e in ledger.grand_livre(dossier.id) if e.id == entree.ecriture_id), None)
+    ligne = _ligne_immobilisee(ecriture) if ecriture is not None else None
+    if ecriture is None or ligne is None:
+        raise ImmobilisationInvalide("Cette opération n'est pas l'achat d'un bien à amortir.")
+    fiche = Immobilisation(
+        id=f"{entree.ecriture_id}:immo",
+        designation=entree.designation.strip(),
+        compte=ligne.compte,
+        mise_en_service=entree.mise_en_service,
+        base_cts=ligne.montant.centimes,
+        duree_mois=entree.duree_mois,
+        ecriture_acquisition=entree.ecriture_id,
+    )
+    valider(fiche)
+    return fiche
+
+
+def _enregistrer_routes_immobilisations(app: FastAPI) -> None:
+    """AXE-802 : registre des immobilisations. Lu par la clôture, qui en tire
+    les dotations aux amortissements et la sortie des biens cédés."""
+
+    @app.get("/dossiers/{dossier_id}/immobilisations", response_model=RegistreVue)
+    def lire_registre(
+        dossier: DossierDep,
+        ledger: LedgerDossierDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+    ) -> RegistreVue:
+        _verifier_acces_dossier(dossier.id, identite)
+        return _registre(dossier, ledger, provisions)
+
+    @app.post("/dossiers/{dossier_id}/immobilisations", response_model=RegistreVue)
+    def declarer_immobilisation(
+        entree: DeclarationEntree,
+        dossier: DossierDep,
+        ledger: LedgerDossierDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+    ) -> RegistreVue:
+        _verifier_acces_dossier(dossier.id, identite)
+        fiche = _declarer(dossier, ledger, entree)
+        provisions.ajouter_immobilisation(dossier.tenant_id, dossier.id, fiche)
+        return _registre(dossier, ledger, provisions)
+
+    @app.post(
+        "/dossiers/{dossier_id}/immobilisations/{immobilisation_id}/cession",
+        response_model=RegistreVue,
+    )
+    def ceder_immobilisation(
+        immobilisation_id: str,
+        entree: CessionEntree,
+        dossier: DossierDep,
+        ledger: LedgerDossierDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+    ) -> RegistreVue:
+        _verifier_acces_dossier(dossier.id, identite)
+        fiches = {f.id: f for f in provisions.lister_immobilisations(dossier.tenant_id, dossier.id)}
+        fiche = fiches.get(immobilisation_id)
+        if fiche is None:
+            raise HTTPException(status_code=404, detail="Ce bien n'est pas au registre.")
+        cession = Cession(entree.le, entree.prix_cts)
+        valider(dataclasses.replace(fiche, cession=cession))
+        provisions.enregistrer_cession(dossier.tenant_id, dossier.id, immobilisation_id, cession)
+        return _registre(dossier, ledger, provisions)
 
 
 def _prouver_cloture(
@@ -7369,6 +7556,7 @@ def create_app() -> FastAPI:
     _enregistrer_routes_balance(app)
     _enregistrer_routes_comptes_bancaires(app)
     _enregistrer_routes_provisions(app)
+    _enregistrer_routes_immobilisations(app)
     _enregistrer_routes_declarations(app)
     _enregistrer_routes_pieces_greffe(app)
     _enregistrer_routes_greffe_inpi(app)

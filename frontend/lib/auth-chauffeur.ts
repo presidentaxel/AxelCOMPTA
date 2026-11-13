@@ -31,6 +31,7 @@ import { appelAuthentifie, erreurApi, lireCorps } from "./session";
 import type { Identite, IdentiteDossierVue, PreRemplissage } from "./identite-entreprise";
 import type { AnalyseFec, OuvertureVue } from "./ouverture";
 import type { RegistreVue } from "./registre";
+import type { RegistreImmobilisationsVue } from "./immobilisations";
 import type { TvaVue } from "./tva";
 import type {
   ConfigurationDossier,
@@ -619,6 +620,41 @@ export async function enregistrerProvisionsCloture(
   }
   const vue = (await reponse.json()) as { lignes: ProvisionClotureVue[] };
   return vue.lignes;
+}
+
+/** AXE-802 : le registre des immobilisations, et ce qui reste à y déclarer. */
+export async function lireRegistreImmobilisations(dossierId: string): Promise<RegistreImmobilisationsVue> {
+  return fetchAvecAuthChauffeur<RegistreImmobilisationsVue>(`/dossiers/${dossierId}/immobilisations`);
+}
+
+async function posterRegistreImmobilisations(chemin: string, corps: unknown): Promise<RegistreImmobilisationsVue> {
+  const reponse = await appelChauffeur(chemin, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(corps),
+  });
+  if (!reponse.ok) {
+    throw erreurApi(await lireCorps(reponse), reponse);
+  }
+  return (await reponse.json()) as RegistreImmobilisationsVue;
+}
+
+export async function declarerImmobilisation(
+  dossierId: string,
+  corps: { ecriture_id: string; designation: string; mise_en_service: string; duree_mois: number },
+): Promise<RegistreImmobilisationsVue> {
+  return posterRegistreImmobilisations(`/dossiers/${dossierId}/immobilisations`, corps);
+}
+
+export async function cederImmobilisation(
+  dossierId: string,
+  immobilisationId: string,
+  corps: { le: string; prix_cts: number },
+): Promise<RegistreImmobilisationsVue> {
+  return posterRegistreImmobilisations(
+    `/dossiers/${dossierId}/immobilisations/${encodeURIComponent(immobilisationId)}/cession`,
+    corps,
+  );
 }
 
 /** AXE-805 : la TVA de l'exercice, période par période. */
