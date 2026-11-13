@@ -12,6 +12,7 @@ from axelcompta.core.identite import IdentiteEntreprise
 from axelcompta.core.ids import DossierId
 
 from .immobilisations import Immobilisation
+from .loa import ContratLoa
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +83,8 @@ class ParametresCloture:
     provisions: tuple[ProvisionCloture, ...] = ()
     # Registre des immobilisations (AXE-802) : dotations et cessions.
     immobilisations: tuple[Immobilisation, ...] = ()
+    # Contrats de LOA (AXE-803) : premier loyer étalé, engagement hors bilan.
+    contrats_loa: tuple[ContratLoa, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +94,7 @@ class SaisiesCloture:
 
     provisions: tuple[ProvisionCloture, ...] = ()
     immobilisations: tuple[Immobilisation, ...] = ()
+    contrats_loa: tuple[ContratLoa, ...] = ()
 
 
 # Aucune saisie : valeur par défaut des fonctions (immuable, partageable).

@@ -109,6 +109,14 @@ from axelcompta.closing.immobilisations import (
     valeur_nette,
     valider,
 )
+from axelcompta.closing.loa import (
+    ContratLoa,
+    cca,
+    charge_premier_loyer,
+    engagement_restant,
+    terme,
+)
+from axelcompta.closing.loa import valider as valider_contrat_loa
 from axelcompta.closing.models import (
     SANS_SAISIE,
     LiassePivot,
@@ -822,6 +830,7 @@ def _parametres(dossier: Dossier, provisions: SaisiesCloture = SANS_SAISIE) -> P
         associes=_colonne(dossier).associes,
         provisions=provisions.provisions,
         immobilisations=provisions.immobilisations,
+        contrats_loa=provisions.contrats_loa,
         deficits_anterieurs=dossier.deficits_anterieurs_euros,
     )
 
@@ -831,6 +840,7 @@ def _provisions_saisies(dossier: Dossier, depot: ProvisionsClotureRepository) ->
     return SaisiesCloture(
         depot.lister(dossier.tenant_id, dossier.id, dossier.fin_exercice().year),
         depot.lister_immobilisations(dossier.tenant_id, dossier.id),
+        depot.lister_contrats_loa(dossier.tenant_id, dossier.id),
     )
 
 
@@ -4974,6 +4984,84 @@ def _enregistrer_routes_immobilisations(app: FastAPI) -> None:
         valider(dataclasses.replace(fiche, cession=cession))
         provisions.enregistrer_cession(dossier.tenant_id, dossier.id, immobilisation_id, cession)
         return _registre(dossier, ledger, provisions)
+
+    _enregistrer_routes_loa(app)
+
+
+class ContratLoaEntree(BaseModel):
+    loueur: str
+    vehicule: str
+    debut: date
+    duree_mois: int
+    loyer_mensuel_cts: int
+    premier_loyer_cts: int = 0
+    prix_levee_cts: int = 0
+    co2_g_km: int | None = None
+
+
+class ContratLoaVue(ContratLoaEntree):
+    id: str
+    terme: str
+    charge_premier_loyer_exercice_cts: int  # part du premier loyer de l'exercice ouvert
+    cca_fin_exercice_cts: int  # 486 à la clôture de l'exercice ouvert
+    engagement_restant_cts: int  # hors bilan à la clôture : loyers restants + levée
+
+
+def _vue_contrat(dossier: Dossier, contrat: ContratLoa) -> ContratLoaVue:
+    debut, fin = dossier.exercice_debut, dossier.fin_exercice()
+    return ContratLoaVue(
+        id=contrat.id,
+        loueur=contrat.loueur,
+        vehicule=contrat.vehicule,
+        debut=contrat.debut,
+        duree_mois=contrat.duree_mois,
+        loyer_mensuel_cts=contrat.loyer_mensuel_cts,
+        premier_loyer_cts=contrat.premier_loyer_cts,
+        prix_levee_cts=contrat.prix_levee_cts,
+        co2_g_km=contrat.co2_g_km,
+        terme=terme(contrat).isoformat(),
+        charge_premier_loyer_exercice_cts=charge_premier_loyer(contrat, debut, fin),
+        cca_fin_exercice_cts=cca(contrat, fin),
+        engagement_restant_cts=engagement_restant(contrat, fin),
+    )
+
+
+def _enregistrer_routes_loa(app: FastAPI) -> None:
+    """AXE-803 : contrats de LOA. La clôture en tire l'étalement du premier
+    loyer (486) et l'engagement hors bilan. La levée d'option se déclare comme
+    un achat, dans le registre des immobilisations."""
+
+    @app.get("/dossiers/{dossier_id}/loa", response_model=list[ContratLoaVue])
+    def lire_contrats_loa(
+        dossier: DossierDep, provisions: ProvisionsDep, identite: IdentiteDep
+    ) -> list[ContratLoaVue]:
+        _verifier_acces_dossier(dossier.id, identite)
+        contrats = provisions.lister_contrats_loa(dossier.tenant_id, dossier.id)
+        return [_vue_contrat(dossier, c) for c in contrats]
+
+    @app.post("/dossiers/{dossier_id}/loa", response_model=list[ContratLoaVue])
+    def ajouter_contrat_loa(
+        entree: ContratLoaEntree,
+        dossier: DossierDep,
+        provisions: ProvisionsDep,
+        identite: IdentiteDep,
+    ) -> list[ContratLoaVue]:
+        _verifier_acces_dossier(dossier.id, identite)
+        contrat = ContratLoa(
+            id=f"loa-{uuid.uuid4().hex[:12]}",
+            loueur=entree.loueur.strip(),
+            vehicule=entree.vehicule.strip(),
+            debut=entree.debut,
+            duree_mois=entree.duree_mois,
+            loyer_mensuel_cts=entree.loyer_mensuel_cts,
+            premier_loyer_cts=entree.premier_loyer_cts,
+            prix_levee_cts=entree.prix_levee_cts,
+            co2_g_km=entree.co2_g_km,
+        )
+        valider_contrat_loa(contrat)
+        provisions.ajouter_contrat_loa(dossier.tenant_id, dossier.id, contrat)
+        contrats = provisions.lister_contrats_loa(dossier.tenant_id, dossier.id)
+        return [_vue_contrat(dossier, c) for c in contrats]
 
 
 def _prouver_cloture(

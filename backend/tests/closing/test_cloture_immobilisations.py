@@ -64,3 +64,27 @@ def test_relancer_la_cloture_ne_compte_pas_la_dotation_deux_fois() -> None:
     premiere = ecritures_de_cloture(D, ECRITURES, PARAMETRES)
     avec_inventaire = ECRITURES + premiere
     assert ecritures_de_cloture(D, avec_inventaire, PARAMETRES) == premiere
+
+
+def test_la_cloture_etale_le_premier_loyer_de_loa() -> None:
+    """AXE-803 : 486 en fin d'exercice, engagement hors bilan dans la liasse."""
+    from axelcompta.closing.loa import ContratLoa
+
+    contrat = ContratLoa("c1", "DIAC", "Austral", date(2026, 4, 1), 36, 450_00, 3_000_00, 9_000_00)
+    ecritures = (
+        _ecriture("apport", date(2026, 1, 2), "512", "101", 5_000_00),
+        _ecriture("loyer1", date(2026, 4, 1), "612", "512", 3_000_00),
+        _ecriture("courses", date(2026, 6, 30), "512", "706", 20_000_00),
+    )
+    parametres = ParametresCloture(
+        exercice_debut=date(2026, 1, 1),
+        exercice_fin=date(2026, 12, 31),
+        forme_juridique="SASU",
+        soumis_is=True,
+        contrats_loa=(contrat,),
+    )
+    ids = [e.id for e in ecritures_de_cloture(D, ecritures, parametres)]
+    assert "D1:cloture-loa-2026-c1" in ids
+    liasse = cloturer_fiscalement(D, "2026", ecritures, parametres)
+    assert liasse.cases["ENGAGEMENTS_CREDIT_BAIL"] == 27 * 450_00 + 9_000_00
+    controler_liasse(liasse)

@@ -9,11 +9,12 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
 from axelcompta.closing.immobilisations import Cession, Immobilisation
+from axelcompta.closing.loa import ContratLoa
 from axelcompta.closing.models import ProvisionCloture
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.core.rls import appliquer_rls
 
-from .orm import cessions_immobilisations, immobilisations
+from .orm import cessions_immobilisations, contrats_loa, immobilisations
 from .orm import provisions_cloture as table
 from .provisions_cloture import ImmobilisationConnue, ProvisionsClotureRepository
 
@@ -156,3 +157,54 @@ class PostgresProvisionsClotureRepository(ProvisionsClotureRepository):
                 )
         except IntegrityError as erreur:
             raise ImmobilisationConnue("Ce bien est inconnu ou déjà cédé.") from erreur
+
+    def lister_contrats_loa(
+        self, tenant_id: TenantId, dossier_id: DossierId
+    ) -> tuple[ContratLoa, ...]:
+        requete = (
+            select(contrats_loa)
+            .where(contrats_loa.c.tenant_id == tenant_id, contrats_loa.c.dossier_id == dossier_id)
+            .order_by(contrats_loa.c.debut, contrats_loa.c.id)
+        )
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            lignes = connexion.execute(requete).all()
+        return tuple(
+            ContratLoa(
+                id=ligne.id,
+                loueur=ligne.loueur,
+                vehicule=ligne.vehicule,
+                debut=ligne.debut,
+                duree_mois=ligne.duree_mois,
+                loyer_mensuel_cts=ligne.loyer_mensuel_cts,
+                premier_loyer_cts=ligne.premier_loyer_cts,
+                prix_levee_cts=ligne.prix_levee_cts,
+                co2_g_km=ligne.co2_g_km,
+            )
+            for ligne in lignes
+        )
+
+    def ajouter_contrat_loa(
+        self, tenant_id: TenantId, dossier_id: DossierId, contrat: ContratLoa
+    ) -> None:
+        try:
+            with self._engine.begin() as connexion:
+                appliquer_rls(connexion)
+                connexion.execute(
+                    contrats_loa.insert().values(
+                        id=contrat.id,
+                        tenant_id=tenant_id,
+                        dossier_id=dossier_id,
+                        loueur=contrat.loueur,
+                        vehicule=contrat.vehicule,
+                        debut=contrat.debut,
+                        duree_mois=contrat.duree_mois,
+                        loyer_mensuel_cts=contrat.loyer_mensuel_cts,
+                        premier_loyer_cts=contrat.premier_loyer_cts,
+                        prix_levee_cts=contrat.prix_levee_cts,
+                        co2_g_km=contrat.co2_g_km,
+                        cree_le=datetime.now(UTC),
+                    )
+                )
+        except IntegrityError as erreur:
+            raise ImmobilisationConnue("Ce contrat est déjà enregistré.") from erreur

@@ -118,6 +118,7 @@ def preparer_passage(
         associes=colonne.associes,
         provisions=provisions.provisions,
         immobilisations=provisions.immobilisations,
+        contrats_loa=provisions.contrats_loa,
         deficits_anterieurs=dossier.deficits_anterieurs_euros,
     )
     de_l_exercice = hors_inventaire(

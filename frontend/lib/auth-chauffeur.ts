@@ -32,6 +32,7 @@ import type { Identite, IdentiteDossierVue, PreRemplissage } from "./identite-en
 import type { AnalyseFec, OuvertureVue } from "./ouverture";
 import type { RegistreVue } from "./registre";
 import type { RegistreImmobilisationsVue } from "./immobilisations";
+import type { ContratLoaEntree, ContratLoaVue } from "./loa";
 import type { TvaVue } from "./tva";
 import type {
   ConfigurationDossier,
@@ -655,6 +656,26 @@ export async function cederImmobilisation(
     `/dossiers/${dossierId}/immobilisations/${encodeURIComponent(immobilisationId)}/cession`,
     corps,
   );
+}
+
+/** AXE-803 : les contrats de LOA du dossier. */
+export async function lireContratsLoa(dossierId: string): Promise<ContratLoaVue[]> {
+  return fetchAvecAuthChauffeur<ContratLoaVue[]>(`/dossiers/${dossierId}/loa`);
+}
+
+export async function ajouterContratLoa(
+  dossierId: string,
+  corps: ContratLoaEntree,
+): Promise<ContratLoaVue[]> {
+  const reponse = await appelChauffeur(`/dossiers/${dossierId}/loa`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(corps),
+  });
+  if (!reponse.ok) {
+    throw erreurApi(await lireCorps(reponse), reponse);
+  }
+  return (await reponse.json()) as ContratLoaVue[];
 }
 
 /** AXE-805 : la TVA de l'exercice, période par période. */

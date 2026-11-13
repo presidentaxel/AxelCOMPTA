@@ -190,6 +190,24 @@ cessions_immobilisations = Table(
     Column("cree_le", DateTime(timezone=True), nullable=False),
 )
 
+# Contrats de LOA (AXE-803), append-only (migration d8a2c6e4f1b9).
+contrats_loa = Table(
+    "contrats_loa",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("loueur", String, nullable=False),
+    Column("vehicule", String, nullable=False),
+    Column("debut", Date, nullable=False),
+    Column("duree_mois", Integer, nullable=False),
+    Column("loyer_mensuel_cts", BigInteger, nullable=False),
+    Column("premier_loyer_cts", BigInteger, nullable=False),
+    Column("prix_levee_cts", BigInteger, nullable=False),
+    Column("co2_g_km", Integer, nullable=True),
+    Column("cree_le", DateTime(timezone=True), nullable=False),
+)
+
 # Avenants de régime d'imposition (doc 06 §7), append-only : verrou en base
 # contre UPDATE et DELETE (migration `a4d7e2c9b518`).
 avenants_regime = Table(
