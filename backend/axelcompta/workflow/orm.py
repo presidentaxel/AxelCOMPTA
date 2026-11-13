@@ -22,6 +22,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     DateTime,
@@ -33,6 +34,7 @@ from sqlalchemy import (
     String,
     Table,
 )
+from sqlalchemy.dialects.postgresql import ARRAY
 
 from axelcompta.core.db import metadata
 
@@ -83,6 +85,41 @@ propositions_ia = Table(
     Column("justification", String, nullable=False),
     Column("modele", String, nullable=False),
     Column("cree_le", DateTime(timezone=True), nullable=False),
+)
+
+# AXE-887 : lots envoyés à l'API Batch, leur coût et leur statut (migration
+# d5f9c3a7e2b1). Base du budget mensuel, des nouvelles tentatives et de
+# l'idempotence. Mis à jour en place : réservé, soumis, puis relevé.
+lots_llm = Table(
+    "lots_llm",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False),
+    Column("version", String, nullable=False),
+    Column("modele", String, nullable=False),
+    Column("cles", ARRAY(String), nullable=False),
+    Column("statut", String, nullable=False),
+    Column("estimation_usd", Float, nullable=False),
+    Column("soumis_le", DateTime(timezone=True), nullable=False, index=True),
+    Column("batch_id", String, nullable=True),
+    Column("cout_usd", Float, nullable=False, server_default="0"),
+    Column("jetons_entree", Integer, nullable=False, server_default="0"),
+    Column("jetons_sortie", Integer, nullable=False, server_default="0"),
+    Column("jetons_cache", Integer, nullable=False, server_default="0"),
+    Column("termine_le", DateTime(timezone=True), nullable=True),
+    CheckConstraint("statut IN ('soumis', 'termine', 'echec', 'refus')", name="ck_lots_llm_statut"),
+)
+
+# AXE-887 : une alerte de budget déjà envoyée, une fois par portée, mois et seuil.
+alertes_llm = Table(
+    "alertes_llm",
+    metadata,
+    Column("portee", String, primary_key=True),
+    Column("cle", String, primary_key=True),
+    Column("mois", String, primary_key=True),
+    Column("seuil", String, primary_key=True),
+    Column("envoyee_le", DateTime(timezone=True), nullable=False),
 )
 
 propositions_categorisation = Table(

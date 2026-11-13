@@ -59,7 +59,19 @@ Ces métriques sont exposées comme compteurs/gauges Prometheus depuis le backen
 | `transaction_vers_ecriture_p95_heures` | p95 du délai entre la date de l'opération et son imputation (synchro ou première décision ; âge à ce jour si encore en attente). Les recettes qui attendent leur rapprochement n'en font pas partie. |
 | `categorisation_operations_30j` | nombre d'opérations mesurées |
 
-Seules les opérations écrites depuis le 12/11/2026 sont mesurées : avant, la date de passage de la synchro n'était pas gardée. Le recours au LLM s'ajoutera quand l'IA passera dans la synchro (AXE-887).
+Seules les opérations écrites depuis le 12/11/2026 sont mesurées : avant, la date de passage de la synchro n'était pas gardée.
+
+**Étage LLM (AXE-887)**, mêmes conditions, sur le mois civil en cours (table `lots_llm`) :
+
+| Jauge | Sens |
+|-------|------|
+| `llm_cout_mois_usd` | dépense du mois, estimation des lots pas encore relevés comprise |
+| `llm_cout_moyen_chauffeur_usd` | dépense moyenne par chauffeur servi (plafond : 0,50 $) |
+| `llm_libelles_mois` | libellés envoyés (le cache évite les doublons) |
+| `llm_part_cache` | % des jetons d'entrée lus depuis le cache de prompt |
+| `llm_lots_en_echec_mois` | lots en échec ou refusés |
+
+Alertes de budget (une fois par seuil et par mois) : 50, 80 et 100 % par chauffeur, par cabinet et au global, dans Sentry (erreur à 100 % du global). Le cabinet n'est pas prévenu : il ne voit pas le coût. La projection de fin de mois prévient avant les seuils, dès le 5 du mois.
 
 ## 3. Métriques techniques
 

@@ -88,7 +88,15 @@ def schema_reponse(categories: Sequence[str]) -> dict[str, Any]:
     }
 
 
-def texte_demande(demandes: Sequence[DemandeIa], categories: Sequence[str]) -> str:
+def consignes_systeme(categories: Sequence[str]) -> str:
+    """Partie fixe, sans aucune donnée du dossier : mise en cache côté
+    Anthropic (prompt caching) d'un lot à l'autre."""
+    return f"{CONSIGNES}\n\nCatégories autorisées : {', '.join(categories)}"
+
+
+def texte_operations(demandes: Sequence[DemandeIa]) -> str:
+    """Partie variable, à pseudonymiser avant tout envoi. Les libellés y sont
+    une donnée JSON délimitée, jamais une instruction."""
     operations = [
         {
             "id": rang,
@@ -99,10 +107,12 @@ def texte_demande(demandes: Sequence[DemandeIa], categories: Sequence[str]) -> s
         }
         for rang, d in enumerate(demandes)
     ]
-    return (
-        f"{CONSIGNES}\n\nCatégories autorisées : {', '.join(categories)}\n\n"
-        f"Opérations :\n{json.dumps(operations, ensure_ascii=False)}"
-    )
+    return f"Opérations :\n{json.dumps(operations, ensure_ascii=False)}"
+
+
+def texte_demande(demandes: Sequence[DemandeIa], categories: Sequence[str]) -> str:
+    """Les deux parties d'un seul tenant (appel direct, script de démo)."""
+    return f"{consignes_systeme(categories)}\n\n{texte_operations(demandes)}"
 
 
 def lire_reponse(

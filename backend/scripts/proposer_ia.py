@@ -26,9 +26,7 @@ from datetime import UTC, datetime
 from axelcompta.categorize.llm import VERSION_PROMPT, DemandeIa, schema_reponse
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId
-from axelcompta.ledger.banque import montant_bancaire
-from axelcompta.ledger.contrepassation import annulees
-from axelcompta.ledger.repository import PostgresLedgerService
+from axelcompta.llm_synchro import operations_a_trancher
 from axelcompta.packs.vtc_demo import charger_compte_par_categorie
 from axelcompta.pseudonymize.fournisseur_anthropic import (
     BudgetDepasse,
@@ -47,9 +45,6 @@ from axelcompta.workflow.propositions_ia import (
     proposer,
 )
 from axelcompta.workflow.propositions_ia_postgres import PostgresPropositionsIa
-from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
-from axelcompta.workflow.reclassement import projeter
-from axelcompta.workflow.revue import COMPTE_ATTENTE
 
 
 def main() -> int:
@@ -73,19 +68,9 @@ def main() -> int:
     dossier = PostgresDossierRepository(engine).obtenir(DossierId(arguments.dossier))
     if dossier is None:
         raise SystemExit(f"dossier inconnu : {arguments.dossier}")
-    ecritures = PostgresLedgerService(engine).grand_livre(dossier.id)
-    exclues = annulees(ecritures)
-    a_trancher = [
-        e
-        for e in projeter(ecritures)
-        if e.id not in exclues and any(x.compte == COMPTE_ATTENTE for x in e.lignes)
-    ]
-    moyens = PostgresPropositionRepository(engine).moyens_de_paiement([e.id for e in a_trancher])
+    a_trancher = operations_a_trancher(engine, dossier).operations
     cache = PostgresPropositionsIa(engine)
-    demandes = demandes_a_envoyer(
-        ((e.libelle, montant_bancaire(e), moyens.get(e.id)) for e in a_trancher),
-        cache.lister(dossier.id, VERSION_PROMPT),
-    )
+    demandes = demandes_a_envoyer(a_trancher, cache.lister(dossier.id, VERSION_PROMPT))
     nombre = f"{len(a_trancher)} opération(s) à trancher"
     print(f"{dossier.id} : {nombre}, {len(demandes)} libellé(s) à envoyer")
     if not arguments.appliquer or not demandes:

@@ -11,6 +11,7 @@ import {
   type Branchement,
 } from "@/lib/auth-gestionnaire";
 import { ORDRE_TYPES } from "@/lib/branchements";
+import { resumeActiviteLlm } from "@/lib/activite-llm";
 import { useDroitGestionnaire } from "@/lib/use-droit";
 import type { EtatCategorisation } from "@/lib/types";
 
@@ -86,6 +87,9 @@ export default function IntegrationsPage() {
             : (categorisation.raison ??
               "le modèle n'est pas chargé. La synchronisation est arrêtée.")}
         </p>
+      )}
+      {categorisation?.llm && (
+        <p className="mt-2 text-sm text-subtle">{resumeActiviteLlm(categorisation.llm)}</p>
       )}
       <section className="mt-10">
         <h2 className="text-sm font-medium text-ink">Pas encore disponibles</h2>

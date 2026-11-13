@@ -152,3 +152,118 @@ class FournisseurAnthropic:
         if reponse.stop_reason in ("refusal", "max_tokens"):
             raise ReponseInutilisable(f"Réponse inutilisable ({reponse.stop_reason}).")
         return str(next(b.text for b in reponse.content if b.type == "text"))
+
+
+# --- API Batch (AXE-887) : moitié prix, la latence ne compte pas -------------
+
+
+@dataclass(frozen=True, slots=True)
+class RequeteLot:
+    """Un lot de libellés d'un dossier : une requête de l'API Batch."""
+
+    custom_id: str
+    prompt: PseudonymizedPrompt
+    max_tokens: int
+
+
+@dataclass(frozen=True, slots=True)
+class ResultatLot:
+    custom_id: str
+    statut: str  # termine | echec | refus
+    texte: str = ""
+    entree: int = 0
+    sortie: int = 0
+    cache: int = 0  # jetons lus depuis le cache de prompt
+
+
+class ClientLots(Protocol):
+    """Ce qu'on utilise de `client.messages.batches` (remplaçable dans les tests)."""
+
+    def create(self, **kwargs: Any) -> Any: ...
+
+    def retrieve(self, message_batch_id: str) -> Any: ...
+
+    def results(self, message_batch_id: str) -> Any: ...
+
+
+def _client_lots_reel() -> ClientLots:
+    import anthropic
+
+    client: Any = anthropic.Anthropic(max_retries=2).messages.batches
+    return cast(ClientLots, client)
+
+
+def _resultat(brut: Any) -> ResultatLot:
+    """Un résultat de l'API Batch. Refus et réponse coupée : `refus`, le
+    libellé n'est pas renvoyé. Erreur, annulation, expiration : `echec`."""
+    custom_id = str(brut.custom_id)
+    if brut.result.type != "succeeded":
+        return ResultatLot(custom_id, "echec")
+    message = brut.result.message
+    usage = message.usage
+    jetons = (
+        _jetons_entree(usage),
+        int(usage.output_tokens),
+        int(getattr(usage, "cache_read_input_tokens", 0) or 0),
+    )
+    if message.stop_reason in ("refusal", "max_tokens"):
+        return ResultatLot(custom_id, "refus", "", *jetons)
+    texte = next((b.text for b in message.content if b.type == "text"), "")
+    return ResultatLot(custom_id, "termine", str(texte), *jetons)
+
+
+class FournisseurLotsAnthropic:
+    """Soumet des lots à l'API Batch, puis les relève à un passage suivant.
+
+    `systeme` (consignes et taxonomie) ne contient aucune donnée du dossier :
+    il est marqué pour le cache de prompt. Chaque prompt pseudonymisé est
+    journalisé et revérifié avant de partir."""
+
+    nom = "anthropic-batch"
+
+    def __init__(
+        self,
+        schema: dict[str, Any],
+        systeme: str,
+        journal: JournalPrompts,
+        lots: ClientLots | None = None,
+        modele: str = MODELE_PAR_DEFAUT,
+    ) -> None:
+        self._lots: ClientLots = lots if lots is not None else _client_lots_reel()
+        self._schema = schema
+        self._systeme = systeme
+        self._journal = journal
+        self.modele = modele
+
+    @property
+    def taille_systeme(self) -> int:
+        return len(self._systeme)
+
+    def _params(self, requete: RequeteLot) -> dict[str, Any]:
+        return {
+            "model": self.modele,
+            "max_tokens": requete.max_tokens,
+            "system": [
+                {"type": "text", "text": self._systeme, "cache_control": {"type": "ephemeral"}}
+            ],
+            "output_config": {
+                "effort": "low",
+                "format": {"type": "json_schema", "schema": self._schema},
+            },
+            "messages": [{"role": "user", "content": requete.prompt.texte}],
+        }
+
+    def soumettre(self, requetes: list[RequeteLot]) -> str:
+        """L'identifiant du lot Anthropic."""
+        for requete in requetes:
+            self._journal.ecrire(requete.prompt, self.nom)
+        lot = self._lots.create(
+            requests=[{"custom_id": r.custom_id, "params": self._params(r)} for r in requetes]
+        )
+        return str(lot.id)
+
+    def relever(self, batch_id: str) -> list[ResultatLot] | None:
+        """None tant que le lot n'est pas fini."""
+        if self._lots.retrieve(batch_id).processing_status != "ended":
+            return None
+        return [_resultat(brut) for brut in self._lots.results(batch_id)]
