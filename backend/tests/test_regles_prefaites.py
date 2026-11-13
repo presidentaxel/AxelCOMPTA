@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.pool import StaticPool
 
-import axelcompta.demo_api as demo_api
+import axelcompta.api.routes as demo_api
 from axelcompta.core.ids import TenantId
 from axelcompta.tenants.orm import regles_rappel
 

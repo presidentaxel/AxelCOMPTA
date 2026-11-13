@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
 
-import axelcompta.demo_api as demo_api
+import axelcompta.api.routes as demo_api
 from axelcompta.api.app import create_app
 from axelcompta.core.schema import (
     VARIABLE_SANS_VERIFICATION,

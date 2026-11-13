@@ -7,7 +7,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from axelcompta.demo_api import get_reception_rollee
+from axelcompta.api.routes import get_reception_rollee
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client_et_stubs,
     _jwks_factice,

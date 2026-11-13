@@ -6,7 +6,7 @@ from datetime import date
 
 import pytest
 
-from axelcompta.demo_digifactory import (
+from axelcompta.ingestion.digifactory_contacts import (
     dossier_depuis_contact,
     nom_affiche,
     numero_contact,

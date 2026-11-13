@@ -9,8 +9,8 @@ from typing import Any
 import pytest
 
 from axelcompta import rappels
+from axelcompta.comptes import Invitation, StatutInvitation, SupabaseConfig
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.demo_comptes import Invitation, StatutInvitation, SupabaseConfig
 from axelcompta.tenants.branchements import BranchementsMemoire, nouveau
 from axelcompta.workflow.rappels_envoi import EnvoisMemoire, envois_du_rappel
 

@@ -5,10 +5,10 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+from axelcompta.api.routes import _ledger_avec_decisions
 from axelcompta.categorize.models import Etage
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, UserId
 from axelcompta.core.money import Money
-from axelcompta.demo_api import _ledger_avec_decisions
 from axelcompta.ledger.contrepassation import contrepasser
 from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens

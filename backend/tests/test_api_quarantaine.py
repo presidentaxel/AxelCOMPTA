@@ -8,9 +8,9 @@ from typing import cast
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from axelcompta.api.routes import get_journal_ingestion
 from axelcompta.core.ids import DossierId, EcritureId
 from axelcompta.core.money import Money
-from axelcompta.demo_api import get_journal_ingestion
 from axelcompta.ingestion.journal import InMemoryJournalIngestion
 from axelcompta.ledger.contrepassation import contrepasser
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens

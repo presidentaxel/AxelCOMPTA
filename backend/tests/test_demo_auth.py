@@ -15,7 +15,7 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from axelcompta.demo_auth import (
+from axelcompta.api.auth import (
     JetonInvalideError,
     identite_chauffeur_optionnelle,
     verifier_jwt,
@@ -133,7 +133,7 @@ def test_dependance_sans_en_tete_retourne_none() -> None:
 def test_dependance_avec_en_tete_valide_retourne_lidentite(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import axelcompta.demo_auth as demo_auth
+    import axelcompta.api.auth as demo_auth
 
     monkeypatch.setenv("SUPABASE_URL", "https://exemple.supabase.co")
     monkeypatch.setattr(demo_auth, "_jwks_client", lambda url: _ClientJwksFactice())
@@ -146,7 +146,7 @@ def test_dependance_avec_en_tete_valide_retourne_lidentite(
 def test_dependance_avec_en_tete_invalide_leve_401(monkeypatch: pytest.MonkeyPatch) -> None:
     from fastapi import HTTPException
 
-    import axelcompta.demo_auth as demo_auth
+    import axelcompta.api.auth as demo_auth
 
     monkeypatch.setenv("SUPABASE_URL", "https://exemple.supabase.co")
     monkeypatch.setattr(demo_auth, "_jwks_client", lambda url: _ClientJwksFactice())

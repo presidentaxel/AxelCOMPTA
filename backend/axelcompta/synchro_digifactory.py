@@ -1,6 +1,6 @@
 """Synchronisation Digifactory de tout un portefeuille (doc 16 §9).
 
-Composition root comme `demo_api.py` et `demo_seed.py` (doc 18). Pas de
+Composition root comme `api/routes.py` (doc 18). Pas de
 planificateur : tant que la file de jobs (ADR-002) n'existe pas, on lance ça à
 la main ou depuis un cron. Chaque dossier est indépendant : l'échec de l'un
 n'empêche pas les autres, et le code de sortie vaut 1 si l'un a échoué.

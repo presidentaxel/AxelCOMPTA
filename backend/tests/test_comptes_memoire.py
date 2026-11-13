@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from axelcompta.core.ids import DossierId
-from axelcompta.demo_comptes import (
+from axelcompta.comptes import (
     CompteDejaInviteError,
     InvitationAbsente,
     InvitationFermee,
     StatutInvitation,
 )
-from axelcompta.demo_comptes_memory import InMemoryCompteRepository
+from axelcompta.comptes_memoire import InMemoryCompteRepository
+from axelcompta.core.ids import DossierId
 
 DOSSIER = DossierId("DEMO_sophie")
 

@@ -5,14 +5,14 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from axelcompta.core.ids import DossierId
-from axelcompta.demo_api import (
+from axelcompta.api.routes import (
     MESSAGE_MFA_REQUISE,
     get_comptes,
     get_journal_acces,
     get_journal_portefeuille,
 )
-from axelcompta.demo_comptes_memory import InMemoryCompteRepository
+from axelcompta.comptes_memoire import InMemoryCompteRepository
+from axelcompta.core.ids import DossierId
 from axelcompta.tenants.journal_portefeuille import (
     ACTE_CONNEXION_MEMBRE,
     ACTE_MFA_REINITIALISEE,

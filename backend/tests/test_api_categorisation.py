@@ -6,8 +6,8 @@ from typing import cast
 
 from fastapi import FastAPI
 
+from axelcompta.api.routes import get_etat_categorisation
 from axelcompta.categorize.modele_requis import MESSAGE_ABSENT, EtatCategorisation
-from axelcompta.demo_api import get_etat_categorisation
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client,
     _en_tete,

@@ -23,7 +23,7 @@ import sys
 
 import httpx
 
-from axelcompta.demo_comptes import SupabaseConfig
+from axelcompta.comptes import SupabaseConfig
 from axelcompta.demo_seed import TENANT_DEMO
 
 

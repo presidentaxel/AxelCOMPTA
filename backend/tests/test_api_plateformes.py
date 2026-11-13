@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from axelcompta import demo_api
-from axelcompta.demo_api import get_services_rollee
+import axelcompta.api.routes as routes
+from axelcompta.api.routes import get_services_rollee
 from axelcompta.ingestion.comptes_rollee import ComptesRolleeMemoire
 from axelcompta.plateformes_rollee import Session
 from axelcompta.tenants.branchements import BranchementsMemoire
@@ -40,7 +40,7 @@ def test_le_chauffeur_ouvre_un_lien_rollee_connect(monkeypatch: pytest.MonkeyPat
     async def lien(_s: object, dossier: object) -> Session:
         return Session("https://connect/x", None)
 
-    monkeypatch.setattr(demo_api, "ouvrir_session", lien)
+    monkeypatch.setattr(routes, "ouvrir_session", lien)
     reponse = _client().post(
         "/dossiers/DEMO_karim/plateformes/session", headers=_en_tete("DEMO_karim")
     )

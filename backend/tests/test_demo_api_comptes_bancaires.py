@@ -7,15 +7,15 @@ from datetime import UTC, date, datetime
 from fastapi.testclient import TestClient
 from httpx import Response
 
-from axelcompta.core.ids import DossierId, EcritureId, UserId
-from axelcompta.core.money import Money
-from axelcompta.demo_api import (
+from axelcompta.api.routes import (
     get_comptes_bancaires,
     get_ledger,
     get_notifications,
     libelles_banques,
     vues_comptes_bancaires,
 )
+from axelcompta.core.ids import DossierId, EcritureId, UserId
+from axelcompta.core.money import Money
 from axelcompta.ingestion.comptes_bancaires import (
     CompteBancaire,
     CompteBancaireMemoire,

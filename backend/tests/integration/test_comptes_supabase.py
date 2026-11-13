@@ -20,13 +20,13 @@ from typing import Any
 import httpx
 import pytest
 
-from axelcompta.core.ids import DossierId
-from axelcompta.demo_comptes import (
+from axelcompta.comptes import (
     CompteDejaInviteError,
     StatutInvitation,
     SupabaseCompteRepository,
     SupabaseConfig,
 )
+from axelcompta.core.ids import DossierId
 
 pytestmark = pytest.mark.supabase
 

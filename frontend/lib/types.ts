@@ -1,4 +1,4 @@
-// Miroir des modèles Pydantic de axelcompta/demo_api.py — garder les deux
+// Miroir des modèles Pydantic de axelcompta/api/routes.py — garder les deux
 // synchronisés à la main (pas de génération OpenAPI pour la démo, doc 17 §8).
 
 export type RegimeAVenir = {
@@ -61,7 +61,7 @@ export type GuideGreffe = {
 };
 
 // Vue gestionnaire (doc 19 §2.1/§2.4) : agrégats et onboarding seulement.
-// Miroir de `DossierAgregat` (demo_api.py), volontairement distinct de
+// Miroir de `DossierAgregat` (api/routes.py), volontairement distinct de
 // `DossierResume` : rien de dérivé du détail d'un dossier n'y figure.
 export type DossierAgregat = {
   dossier_id: string;
@@ -168,7 +168,7 @@ export type FileExpert = {
 };
 
 // doc 17 §9 Semaine 4 + AXE-417/418 : exports de clôture (PDF + CSV),
-// servis en téléchargement direct par demo_api.py.
+// servis en téléchargement direct par api/routes.py.
 export type DocumentCloture =
   | "liasse-fiscale.pdf"
   | "liasse.pdf"

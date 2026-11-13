@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from datetime import date
 
+from axelcompta.api.routes import get_ledger
 from axelcompta.core.ids import DossierId, EcritureId
 from axelcompta.core.money import Money
-from axelcompta.demo_api import get_ledger
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.ledger.service import LedgerService
 from tests.test_demo_api import (  # noqa: F401 — fixtures autouse réutilisées

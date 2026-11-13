@@ -12,9 +12,9 @@ from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from axelcompta.api.routes import prechauffer_caches
 from axelcompta.core.ids import DossierId, EcritureId, TenantId
 from axelcompta.core.money import Money
-from axelcompta.demo_api import prechauffer_caches
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.tenants.models import Dossier, Tenant

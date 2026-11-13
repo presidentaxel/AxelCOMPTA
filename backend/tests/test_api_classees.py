@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from axelcompta.api.routes import get_cache_classees
 from axelcompta.core.ids import DossierId
-from axelcompta.demo_api import get_cache_classees
 from axelcompta.workflow.classees_cache import VERSION_CLASSEES
 from axelcompta.workflow.file_expert_cache import SujetsGardes
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)

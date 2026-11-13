@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from axelcompta.core.ids import DossierId, EcritureId, TenantId
-from axelcompta.demo_justificatifs import (
+from axelcompta.documents.justificatifs import (
     FichierJustificatifRepository,
     InMemoryJustificatifRepository,
     JustificatifRepository,

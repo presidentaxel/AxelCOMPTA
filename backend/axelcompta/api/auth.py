@@ -1,10 +1,8 @@
-"""Vérification des jetons Supabase Auth côté chauffeur (doc 17 §9 bloc B,
-« reste du bloc B », doc 19 §5.1-2).
+"""Vérification des jetons Supabase Auth (doc 17 §9 bloc B, doc 19 §5.1-2).
 
-Composition root de démo comme `demo_comptes.py`/`demo_api.py` (doc 18) :
-intentionnellement **hors** du découpage `axelcompta/*` défini en doc 03
-§3, pas une nouvelle brique d'architecture — même raisonnement que
-`demo_comptes.py` (implémentation maison prévue en V1, ADR-003).
+À côté des routes (`api/routes.py`). Même raisonnement que `comptes.py`
+(doc 18) : pas une nouvelle brique d'architecture — l'implémentation
+maison est prévue en V1 (ADR-003).
 
 **Deux liens indépendants sur un même compte (doc 03 §7, 2026-09-21)** :
 `dossier_id` (accès indiv) et `tenant_id` (accès gestionnaire), tous deux
@@ -194,7 +192,7 @@ def identite_chauffeur_optionnelle(
 
 def identite_tolerante(authorization: str | None) -> IdentiteAuthentifiee | None:
     """Comme `_identite_depuis_en_tete`, mais ne lève jamais — `None` sur un
-    jeton absent ou invalide. Réservé au middleware RLS de `demo_api.py`
+    jeton absent ou invalide. Réservé au middleware RLS de `api/routes.py`
     (`core/rls.py`) : lui seul pose le contexte, la décision d'autoriser
     ou non reste entièrement dans `_verifier_acces_dossier` et les
     dépendances existantes, jamais ici."""

@@ -6,7 +6,7 @@ Serenity et ne contient plus aucun dossier ni compte de démo.** Ce module
 n'a plus de commande : `amorcer_demo` et `poser_jalons_demo` servent aux
 tests (jeux en mémoire, et base locale des tests d'intégration).
 
-Composition root comme `demo_api.py` (doc 18). Avant le 2026-09-21, l'API
+Composition root comme `api/routes.py` (doc 18). Avant le 2026-09-21, l'API
 recalculait tout ça à chaque requête depuis `chauffeurs_demo.py` ; depuis,
 elle lit Postgres, et ce module y écrit **une fois** ce que le pipeline
 calculait à la volée. Ce sera aussi le point d'entrée des vrais dossiers du
@@ -27,12 +27,12 @@ from axelcompta.closing.models import ParametresCloture
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, UserId
 from axelcompta.demo_chauffeurs_type import construire_ledger, fin_exercice
 from axelcompta.demo_identites import IDENTITES_DEMO
-from axelcompta.demo_jalons import JALONS_EXERCICE
 from axelcompta.filings.inpi_depot import PdfDepotInpiRenderer
 from axelcompta.ingestion.providers.chauffeurs_demo import PROFILS_DEMO, ProfilChauffeurType
 from axelcompta.ledger.service import LedgerService
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.repository import DossierRepository
+from axelcompta.workflow.jalons import JALONS_EXERCICE
 from axelcompta.workflow.propositions import PropositionRepository
 from axelcompta.workflow.signature import DocumentSigne, SignatureRepository
 

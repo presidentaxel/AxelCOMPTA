@@ -173,7 +173,7 @@ toute autre vente.
 - Observabilité (AXE-426) : `GET /metrics` (Prometheus), journal JSON,
   Sentry s'il y a un DSN (vide en local).
 - `api.app` est le point d'entrée (`uvicorn axelcompta.api.app:app`, AXE-428)
-  avec `GET /sante`. Les routes vivent encore dans `demo_api.py` : la
+  avec `GET /sante`. Les routes vivent dans `api/routes.py` (AXE-840) : la
   migration route par route vers les façades reste à faire.
 
 **Gestionnaire**
@@ -312,8 +312,7 @@ accès), AXE-814 (qualifications d'anomalies en base). Détail plus haut.
   données depuis l'autre poste), AXE-847 (le stocker hors du poste :
   bucket privé, version, empreinte).
 - Exploitation : AXE-843 (mesurer les temps réels en production après
-  AXE-824), AXE-840 (renommer les fichiers `demo_*` du chemin de
-  production).
+  AXE-824).
 - Design : AXE-870 (mettre à jour le design system, [DESIGN.md](../DESIGN.md)).
 
 ### Décisions à prendre (ouvertes dans Linear)

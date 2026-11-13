@@ -1,14 +1,13 @@
-"""Comptes gestionnaire/chauffeur pour la démo, via Supabase Auth (doc 17
-§9 bloc B, doc 19 §3). **Exception assumée à ADR-003** (« jamais Supabase
-Auth ») — implémentation maison prévue en V1.
+"""Comptes gestionnaire et chauffeur, via Supabase Auth (doc 17 §9 bloc B,
+doc 19 §3). **Exception assumée à ADR-003** (« jamais Supabase Auth ») —
+implémentation maison prévue en V1.
 
-Composition root de démo comme `demo_api.py`/`demo_chauffeurs_type.py`
-(doc 18) : intentionnellement **hors** du découpage `axelcompta/*` défini
-en doc 03 §3, pas une nouvelle brique d'architecture. Étendre l'arbre
-`tenants`/`api` pour un vrai module de comptes est une vraie décision de
-structure (graphe de dépendances, contrat import-linter, doc 18) qui n'a
-pas été prise ici — à faire quand on remplacera Supabase Auth par
-l'implémentation maison (V1), pas avant.
+À la racine du paquet (doc 18), intentionnellement **hors** du découpage
+`axelcompta/*/` défini en doc 03 §3 : pas une nouvelle brique
+d'architecture. Étendre l'arbre `tenants`/`api` pour un vrai module de
+comptes est une décision de structure (graphe de dépendances, contrat
+import-linter) qui n'a pas été prise ici — à faire en remplaçant
+Supabase Auth, pas avant.
 
 Supabase est la **seule source de vérité** pour qui a été invité :
 chaque utilisateur créé porte `app_metadata.dossier_id`, pas de table

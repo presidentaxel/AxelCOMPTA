@@ -154,9 +154,9 @@ de dev, `AXELCOMPTA_SCHEMA_NON_VERIFIE=1` saute la vérification (AXE-841).
 **RLS depuis le 2026-09-22** (doc 03 §7, doc 12 §1.1) : `alembic upgrade
 head` crée aussi le rôle `axelcompta_web`, restreint par des policies —
 `DATABASE_URL_WEB` (voir `.env.example`) doit être défini avant de lancer
-`uvicorn`, sinon `demo_api.py` refuse de démarrer (pas de repli silencieux
+`uvicorn`, sinon `api/routes.py` refuse de démarrer (pas de repli silencieux
 sur `DATABASE_URL`, ce qui ferait tourner l'API sans RLS). `DATABASE_URL`
-reste celui des scripts d'administration ci-dessus (`demo_seed`,
+reste celui des scripts d'administration ci-dessus (amorçage des jeux de test,
 `synchro_digifactory`, `notifier`), jamais soumis aux policies.
 
 `python -m axelcompta.demo_seed` refuse de compléter un ledger à moitié
@@ -350,7 +350,7 @@ Détail complet de la correspondance arbre ↔ docs : [docs/18-organisation-code
 | [`closing/`](axelcompta/closing/README.md) | Clôture d'exercice, états financiers | Liasse 2033/2031, réel normal en totaux, CA3 annuelle et par période (AXE-805) | Immobilisations (AXE-802), LOA (AXE-803), bilan d'ouverture (AXE-804) |
 | [`filings/`](axelcompta/filings/README.md) | Renderers FEC, PDF, EDI-TDFC, INPI | FEC validé, CERFA 2065/2031/2033, dossier INPI | Test Compta Demat (AXE-484), signature RGS (AXE-441) |
 | [`workflow/`](axelcompta/workflow/README.md) | Validation, revue, notifications, signature | Décisions en OD de reclassement (AXE-420), quarantaine (AXE-424), expert-comptable (AXE-800), rappels envoyés (AXE-808) | Signature RGS (AXE-441) |
-| [`api/`](axelcompta/api/README.md) | Routes FastAPI, auth, permissions | `api.app`, rôles dont expert, MFA, `/metrics` à jeton, erreurs 4xx | Routes hors `demo_api` et fichiers `demo_*` renommés (AXE-840) |
+| [`api/`](axelcompta/api/README.md) | Routes FastAPI, auth, permissions | `api.app`, `api/routes.py`, `api/auth.py` (AXE-840), rôles dont expert, MFA, `/metrics` à jeton, erreurs 4xx | Chaque route vers la façade de son module (AXE-428) |
 | [`pseudonymize/`](axelcompta/pseudonymize/) | Seule porte vers un LLM | Fait (AXE-436) | Fournisseur branché |
 | [`jobs/`](axelcompta/jobs/) | File de jobs Postgres (ADR-002) | Utilisée par le worker (AXE-809, AXE-845, AXE-808) | — |
 | [`ml/`](axelcompta/ml/README.md) | Entraînement, évaluation, registry modèles | Entraînement dans `_AUDIT_DONNEES/` | Registry, dérive |

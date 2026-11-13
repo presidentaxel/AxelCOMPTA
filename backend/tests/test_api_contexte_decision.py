@@ -6,8 +6,8 @@ from typing import cast
 
 from fastapi import FastAPI
 
+from axelcompta.api.routes import get_decisions
 from axelcompta.core.ids import DossierId
-from axelcompta.demo_api import get_decisions
 from axelcompta.workflow.decisions import DecisionRepository
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client,

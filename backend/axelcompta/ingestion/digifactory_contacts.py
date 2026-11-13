@@ -1,6 +1,6 @@
 """Dossiers du portefeuille branchés sur les contacts Digifactory.
 
-Composition root, comme `demo_seed.py`. Aucun compte n'est créé ici
+Mapping contact Digifactory → dossier. Aucun compte n'est créé ici
 (depuis le 2026-11-05) : le dirigeant est invité avec sa vraie adresse. Les
 transactions viennent de l'API au moment de la synchro : rien de bancaire
 n'est écrit dans le dépôt.

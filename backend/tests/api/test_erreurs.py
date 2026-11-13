@@ -79,7 +79,7 @@ def test_les_erreurs_rattachees_a_une_famille() -> None:
     from axelcompta.affectations import AffectationImpossible
     from axelcompta.closing.paie import BulletinIncoherent
     from axelcompta.closing.provisions import ProvisionInvalide
-    from axelcompta.demo_comptes import CompteDejaInviteError, InvitationAbsente, InvitationFermee
+    from axelcompta.comptes import CompteDejaInviteError, InvitationAbsente, InvitationFermee
     from axelcompta.ledger.periodes import PeriodeClose
     from axelcompta.tenants.exercices import ExerciceDejaClos
 

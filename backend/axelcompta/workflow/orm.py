@@ -10,7 +10,8 @@ font que des `INSERT` (doc 06 §1, même logique que `ledger/orm.py`).
 `ledger/orm.py`, jusqu'au 2026-09-22** : à l'origine (2026-09-07),
 dossiers et écritures étaient recalculés en mémoire et jamais écrits, donc
 une FK aurait fait échouer tout `INSERT`. Ces tables sont peuplées depuis le
-2026-09-21 (`demo_seed`, synchro Digifactory) et les FK sont posées (migration
+2026-09-21 (amorçage des jeux de test, synchro Digifactory) et les FK
+sont posées (migration
 `7cd5053e8209`) : décisions et annotations vers `dossiers` et `ecritures`,
 propositions vers `dossiers` seulement (voir le commentaire de la table).
 """

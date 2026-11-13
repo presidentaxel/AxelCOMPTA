@@ -67,7 +67,7 @@ seul module autorisé à transformer une `ProposedEntry` (sortie de
 
 - **Démo (doc 17 §9)** : `auto_accept.py` reste actif pour les cas
   nominaux (Karim, Yanis). **Bloc A et C finis (2026-09-07)** : la file de
-  revue est réelle de bout en bout — `demo_api.py` expose
+  revue est réelle de bout en bout — `api/routes.py` expose
   `POST .../decision`, le clic dans l'UI déclenche vraiment
   `revue.py`/`decisions_postgres.py`, testé en HTTP réel (`curl`) et dans
   un vrai navigateur (clic → Postgres → rafraîchissement). `auto_accept.py`

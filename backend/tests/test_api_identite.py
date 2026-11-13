@@ -10,8 +10,8 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from axelcompta.api.routes import get_dossiers, get_lire_fiche_officielle, get_lire_registre
 from axelcompta.core.ids import DossierId
-from axelcompta.demo_api import get_dossiers, get_lire_fiche_officielle, get_lire_registre
 from axelcompta.demo_identites import IDENTITE_KARIM
 from axelcompta.tenants.identite_json import identite_vers_json
 from axelcompta.tenants.registres import FicheOfficielle, PersonneOfficielle

@@ -7,8 +7,8 @@ from datetime import datetime
 import pytest
 from fastapi.testclient import TestClient
 
+from axelcompta.api.routes import get_branchements, get_envois
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.demo_api import get_branchements, get_envois
 from axelcompta.tenants.branchements import BranchementsMemoire
 from axelcompta.workflow.rappels_envoi import (
     EnvoisMemoire,

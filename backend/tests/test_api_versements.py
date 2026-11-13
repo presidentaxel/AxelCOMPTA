@@ -6,8 +6,8 @@ from dataclasses import replace
 
 from fastapi.testclient import TestClient
 
+from axelcompta.api.routes import get_settlements
 from axelcompta.core.ids import DossierId
-from axelcompta.demo_api import get_settlements
 from axelcompta.ingestion.settlements_plateforme import SettlementsMemoire
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client_et_stubs,

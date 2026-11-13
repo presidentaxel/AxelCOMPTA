@@ -8,8 +8,8 @@ from typing import cast
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from axelcompta.api.routes import get_contacts_proposes, get_demandes_jobs
 from axelcompta.core.ids import TenantId
-from axelcompta.demo_api import get_contacts_proposes, get_demandes_jobs
 from axelcompta.jobs.file import FileMemoire
 from axelcompta.tenants.contacts_proposes import ContactsProposesMemoire, PropositionStockee
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)

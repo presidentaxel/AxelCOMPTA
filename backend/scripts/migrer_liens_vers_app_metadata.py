@@ -2,7 +2,7 @@
 
 Avant le 2026-09-21, le lien chauffeur -> dossier était posé dans
 `user_metadata`, que l'utilisateur peut modifier lui-même (API Auth
-Supabase). `demo_auth.py` lit désormais `app_metadata` uniquement : sans
+Supabase). `api/auth.py` lit désormais `app_metadata` uniquement : sans
 cette migration, les comptes chauffeur déjà invités n'ont plus accès à leur
 dossier.
 
@@ -22,7 +22,7 @@ from typing import Any
 
 import httpx
 
-from axelcompta.demo_comptes import SupabaseConfig
+from axelcompta.comptes import SupabaseConfig
 
 
 def main() -> int:

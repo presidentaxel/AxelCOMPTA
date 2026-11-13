@@ -32,10 +32,10 @@ from pathlib import Path
 from sqlalchemy.engine import Engine
 
 from axelcompta.api.observabilite import installer_sentry
+from axelcompta.api.routes import prechauffer_caches
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.core.metriques import METRIQUES
-from axelcompta.demo_api import prechauffer_caches
 from axelcompta.ledger.balance import SoldeJournal, ecarts
 from axelcompta.ledger.repository import soldes_par_journal
 from axelcompta.modeles_distants import assurer_modele

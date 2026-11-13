@@ -5,7 +5,7 @@
  * `app_metadata.tenant_id` (posé côté serveur, jamais modifiable par
  * l'utilisateur), là `app_metadata.dossier_id` (même emplacement). Le décodage du jeton plus
  * bas ne sert qu'à refuser tôt un compte sans lien gestionnaire ; la
- * vérification réelle est côté serveur (`demo_auth.verifier_jwt`) à chaque
+ * vérification réelle est côté serveur (`api/auth.py`, `verifier_jwt`) à chaque
  * appel.
  *
  * Session en `localStorage`, clé distincte de celle du chauffeur : un même
@@ -165,7 +165,7 @@ export async function changerEmailGestionnaire(email: string): Promise<void> {
   }
 }
 
-/** Requête authentifiée vers `demo_api` (`lib/session.ts`) : jeton renouvelé
+/** Requête authentifiée vers l'API (`lib/session.ts`) : jeton renouvelé
  * au besoin, retour à la connexion si la session ne peut plus l'être. Un
  * 403 est un refus de rôle (membre, lecture) : la session reste, l'appelant
  * reçoit la réponse et affiche le refus. */

@@ -2,7 +2,7 @@
 
 > Carte du code : où vit chaque module et quelles dépendances il a le droit
 > d'avoir. L'état d'avancement n'est pas ici, il est dans le
-> [doc 12](12-roadmap-todo.md). Dernière mise à jour : 2026-11-10.
+> [doc 12](12-roadmap-todo.md). Dernière mise à jour : 2026-11-13.
 
 Ce doc fait le lien entre l'arborescence réelle du repo (`backend/`,
 `frontend/`) et le découpage en modules défini en [doc 03 §3](03-architecture.md#3--découpage-en-modules-monolithe-modulaire).
@@ -35,7 +35,7 @@ AxeLCompta/
 │   ├── closing/       # clôture fiscale : TVA, IS (si la colonne est à l'IS), liasse 2033
 │   ├── filings/       # CERFA 2065, 2031 et 2033 officiels, FEC légal, PDF (V1 : EDI/INPI)
 │   ├── workflow/      # décisions humaines, signatures démo, journal d'audit, notifications internes
-│   ├── api/           # point d'entrée api.app (+ /sante, /metrics) ; les routes vivent encore dans demo_api.py
+│   ├── api/           # api.app (+ /sante, /metrics) ; routes dans api/routes.py, jetons dans api/auth.py
 │   ├── pseudonymize/  # seule porte vers un LLM : prompt pseudonymisé, LLMProvider (aucun fournisseur branché)
 │   ├── jobs/          # file de jobs Postgres (ADR-002), exécutée par worker.py depuis le 2026-11-09
 │   └── ml/            # V1 ; le modèle (v2) s'entraîne dans _AUDIT_DONNEES/entrainer_modele.py
@@ -107,13 +107,14 @@ au lieu d'ecritures_settlement, pas de ventilation TVA :
 ```
 
 `tenants`, `packs`, `core` et `api` restent transverses. Les deux chemins
-convergent dans le même `ledger` (Postgres, amorcé par `demo_seed`).
+convergent dans le même `ledger` (Postgres). Les jeux de test sont
+amorcés par `demo_seed`.
 
 `backend/axelcompta/demo.py` est la composition root qui câble tout ça —
 absent du découpage doc 03 §3 exprès : c'est un point d'entrée (comme `api/`),
 pas un module d'architecture, donc pas soumis aux mêmes contraintes de
 dépendance. Même statut pour les autres points d'entrée à la racine du
-paquet : `demo_api.py` (l'API), `synchro_digifactory.py`, `notifier.py`,
+paquet : `api/routes.py` (l'API), `synchro_digifactory.py`, `notifier.py`,
 `taches.py` (les tâches planifiées, lancées par
 `scripts/taches_planifiees.sh` depuis un cron), `exercices.py` (le
 passage d'un dossier à l'exercice suivant) et `affectations.py`
@@ -129,11 +130,20 @@ AXE-808).
 
 `api/app.py` est le point d'entrée HTTP depuis le 2026-10-25
 (`uvicorn axelcompta.api.app:app`). Il sert l'app construite par
-`demo_api.py` : l'arête `api.app -> demo_api` est la seule exception
-d'import-linter (`pyproject.toml`), à retirer quand chaque route passera
-par la façade de son module (AXE-428). `demo_digifactory.py`
-porte le mapping contact Digifactory → dossier de démo, appelé par
-`scripts/ajouter_chauffeurs_digifactory.py`.
+`api/routes.py`. Depuis le 2026-11-13 (AXE-840), les anciens fichiers
+`demo_*` du chemin de production ont un nom de produit : `api/routes.py`,
+`api/auth.py`, `comptes.py`, `comptes_memoire.py`,
+`ingestion/digifactory_contacts.py`, `documents/justificatifs.py`,
+`workflow/jalons.py`. `api/routes.py` reste hors du contrat
+import-linter qui interdit à `api/` d'importer les modèles des modules
+(`pyproject.toml`) : l'arête `api.app -> api.routes` est ignorée, à
+retirer quand chaque route passera par la façade de son module
+(AXE-428). `ingestion/digifactory_contacts.py` porte le mapping contact
+Digifactory → dossier, appelé par
+`scripts/ajouter_chauffeurs_digifactory.py`. Les scripts de jeux de
+test gardent leur nom : `demo_seed.py`, `demo_chauffeurs_type.py`,
+`demo_identites.py`, `demo_dossier_reel.py`, `demo_multi_dossiers.py`,
+`ingestion/providers/chauffeurs_demo.py`.
 
 ## État
 

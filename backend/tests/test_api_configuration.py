@@ -7,8 +7,8 @@ import dataclasses
 
 from fastapi.testclient import TestClient
 
+from axelcompta.api.routes import get_dossiers
 from axelcompta.core.ids import DossierId
-from axelcompta.demo_api import get_dossiers
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client,
     _en_tete,

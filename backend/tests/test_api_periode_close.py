@@ -6,8 +6,8 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 
+from axelcompta.api.routes import create_app
 from axelcompta.core.ids import DossierId, EcritureId
-from axelcompta.demo_api import create_app
 from axelcompta.ledger.periodes import PeriodeClose
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client_expert,

@@ -18,7 +18,7 @@ from datetime import date
 import httpx
 
 from axelcompta.core.ids import DossierId
-from axelcompta.demo_digifactory import (
+from axelcompta.ingestion.digifactory_contacts import (
     dossier_depuis_contact,
     nom_affiche,
     numero_contact,

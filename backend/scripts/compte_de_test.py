@@ -26,8 +26,8 @@ from datetime import UTC, date, datetime, timedelta
 
 import httpx
 
-from axelcompta.demo_auth import ROLE_LECTEUR_TEST
-from axelcompta.demo_comptes import SupabaseConfig
+from axelcompta.api.auth import ROLE_LECTEUR_TEST
+from axelcompta.comptes import SupabaseConfig
 from axelcompta.demo_seed import TENANT_DEMO
 
 DUREE_MAX = timedelta(days=90)

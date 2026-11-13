@@ -416,7 +416,7 @@ plus de signature — tout ça a migré côté indiv (§5). Ce qui reste :
   — **fait le 2026-09-11, même jour** : `ClotureSection.tsx` et
   `GreffeInpiSection.tsx` ont migré vers `/chauffeur/[dossierId]`, appel
   de signature authentifié (`signerGreffeInpiChauffeur`,
-  `lib/auth-chauffeur.ts`) pour que `demo_api.py` attribue vraiment la
+  `lib/auth-chauffeur.ts`) pour que `api/routes.py` attribue vraiment la
   signature à l'indiv connecté. La fiche dossier gestionnaire
   (`app/(gestionnaire)/dossiers/[id]`) et `TrancherActions.tsx` sont
   supprimés — le gestionnaire n'a plus que le dashboard agrégé (§2.1),
@@ -432,7 +432,7 @@ plus de signature — tout ça a migré côté indiv (§5). Ce qui reste :
 
 ### 8bis. Jeton obligatoire + preuve de signature — **fait le 2026-09-11, même jour**
 
-~~Les routes indiv de `demo_api.py` acceptaient un appel sans en-tête
+~~Les routes indiv de `api/routes.py` acceptaient un appel sans en-tête
 `Authorization`~~ — corrigé. Louis (même jour, suite immédiate) : « on
 peut faire les appels avec les jetons pour la sécu... et avec des logs, je
 veux pouvoir prouver légalement que la personne a signé donc il faut une

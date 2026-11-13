@@ -1,7 +1,7 @@
 /** Connexion et session chauffeur (doc 17 §9 bloc B, doc 19 §5.1-2).
  *
  * Appels REST directs à Supabase Auth — jamais le SDK
- * `@supabase/supabase-js`, même choix que le backend (`demo_comptes.py`,
+ * `@supabase/supabase-js`, même choix que le backend (`comptes.py`,
  * appels `httpx` bruts) : cohérent avec la règle anti-lock-in d'ADR-003
  * (« n'utiliser que la connection string/API standard, jamais un SDK
  * propriétaire qui s'installe par défaut »). La clé anon est faite pour
@@ -78,7 +78,7 @@ export function enTetesSupabase(accessToken?: string): Record<string, string> {
 
 /** Décodage du payload d'un JWT — **aucune vérification de signature**,
  * uniquement pour peupler l'URL après connexion. La vérification réelle
- * est côté serveur (`demo_auth.verifier_jwt`) à chaque appel API. */
+ * est côté serveur (`api/auth.py`, `verifier_jwt`) à chaque appel API. */
 export function decoderChargeUtileJwt(jeton: string): Record<string, unknown> {
   const partie = jeton.split(".")[1];
   if (!partie) {
@@ -95,7 +95,7 @@ export function decoderChargeUtileJwt(jeton: string): Record<string, unknown> {
 function liensDepuisJeton(accessToken: string): { dossierId: string; lecteurTest: boolean } {
   const charge = decoderChargeUtileJwt(accessToken);
   // `app_metadata` (écrit côté serveur), jamais `user_metadata` (modifiable
-  // par l'utilisateur) : voir demo_auth.py.
+  // par l'utilisateur) : voir api/auth.py.
   const liens = liensDuJeton(charge.app_metadata);
   if (!liens) {
     const cote = coteOuverte(charge.app_metadata, "chauffeur");
@@ -353,7 +353,7 @@ async function requeteAvecAuthChauffeur(path: string): Promise<Response> {
   return reponse;
 }
 
-/** Appel à `demo_api` avec le jeton chauffeur — pour toute route côté
+/** Appel à l'API avec le jeton chauffeur — pour toute route côté
  * chauffeur (doc 19 §4 : le serveur vérifie que le dossier appartient bien
  * à l'appelant, ceci ne fait qu'ajouter l'en-tête). */
 export async function fetchAvecAuthChauffeur<T>(path: string): Promise<T> {
@@ -462,7 +462,7 @@ export async function trancherTransactionChauffeur(
 }
 
 /** doc 19 §5.3, doc 20 §4bis : signature (démo, jamais qualifiée RGS) du
- * dossier de dépôt greffe/INPI — authentifiée pour que `demo_api.py`
+ * dossier de dépôt greffe/INPI — authentifiée pour que `api/routes.py`
  * attribue vraiment `signataire` à l'indiv connecté (`identite.user_id`),
  * pas au stub `UTILISATEUR_DEMO`. Déplacé depuis lib/api.ts le
  * 2026-09-11 : cet écran quitte le gestionnaire (doc 19 §2.1/§2.4), donc
