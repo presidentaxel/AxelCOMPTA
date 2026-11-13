@@ -21,7 +21,7 @@ import sys
 
 import httpx
 
-from axelcompta.demo_comptes import SupabaseConfig
+from axelcompta.comptes import SupabaseConfig
 
 
 def _trouver_id(client: httpx.Client, email: str) -> str | None:

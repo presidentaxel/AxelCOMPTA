@@ -35,7 +35,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from axelcompta.core.db import engine_depuis_env
-from axelcompta.demo_digifactory import (
+from axelcompta.ingestion.digifactory_contacts import (
     TENANT_DEMO,
     dossier_depuis_contact,
     nom_affiche,

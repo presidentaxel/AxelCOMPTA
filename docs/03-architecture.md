@@ -4,8 +4,8 @@
 > - Modules ajoutés au découpage : `pseudonymize/` (seule porte vers un LLM)
 >   et `jobs/` (file Postgres, ADR-002). Carte à jour dans le
 >   [doc 18](18-organisation-code.md).
-> - Point d'entrée HTTP : `axelcompta.api.app`. Les routes vivent encore
->   dans `demo_api.py` (renommage des fichiers `demo_*` : AXE-840). Les
+> - Point d'entrée HTTP : `axelcompta.api.app`. Les routes vivent dans
+>   `api/routes.py`, les jetons dans `api/auth.py` (AXE-840). Les
 >   erreurs métier répondent 4xx avec leur phrase, par un seul gestionnaire
 >   (`api/erreurs.py`, AXE-839). L'API refuse de démarrer sur une base dont
 >   la migration Alembic est en retard (AXE-841).
@@ -250,7 +250,7 @@ pas l'inverse.
 gestionnaire » (doc 17 §9, jadis « chantier séparé, pas commencé ») n'est
 **pas** un système à part —
 c'est la vérification de token Supabase déjà construite pour l'indiv
-(`demo_auth.py`, doc 17 §9 Semaine 3) à laquelle on ajoute la lecture du
+(`api/auth.py`, doc 17 §9 Semaine 3) à laquelle on ajoute la lecture du
 lien `tenant_id`. Pas de nouveau mécanisme d'authentification, juste une
 donnée en plus dans les métadonnées du compte et des vérifications d'accès
 supplémentaires côté API. **Les deux liens sont lus dans `app_metadata`**
@@ -269,8 +269,8 @@ la faille du lien `dossier_id`, corrigée le 2026-09-21.
   suit la même logique que l'isolation tenant↔tenant, pas un mécanisme
   différent. **RLS posée pour de vrai le 2026-09-22** (doc 12 §1.1,
   migration `87fc7238e52e`) : un second rôle Postgres (`axelcompta_web`,
-  ni propriétaire ni superuser) exécute les requêtes de `demo_api.py`,
-  soumis aux policies — `user` (migrations, `demo_seed`,
+  ni propriétaire ni superuser) exécute les requêtes de `api/routes.py`,
+  soumis aux policies — `user` (migrations, amorçage des jeux de test,
   `synchro_digifactory`, `notifier`) reste propriétaire, jamais concerné,
   ces scripts traitent volontairement plusieurs dossiers à la fois. Le
   contexte (`app.dossier_id`/`app.tenant_id`) est posé par requête via un

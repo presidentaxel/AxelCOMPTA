@@ -6,7 +6,7 @@ checklist complète, V1 seulement).
 
 Le pipeline démo et la synchro Digifactory produisent, en plus des
 classes 6 et 7 : `512` (banque), `44566`/`44571` (TVA), `1013` (capital
-libéré, `demo_chauffeurs_type`) et `218` (immobilisation véhicule, mapping
+libéré, jeux de chauffeurs type) et `218` (immobilisation véhicule, mapping
 du pack, volontairement pas ramené en charge). Tout autre compte (classe 3,
 classe 4 hors TVA, classe 5 hors `512`) est nommé `COMPTES_NON_VENTILES` :
 il n'a pas de ligne de bilan, mais il reste dans l'identité.

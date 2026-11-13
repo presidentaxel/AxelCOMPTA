@@ -21,8 +21,8 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 
+from axelcompta.comptes import SupabaseCompteRepository, SupabaseConfig
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.demo_comptes import SupabaseCompteRepository, SupabaseConfig
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.tenants.branchements import types_branches
 from axelcompta.tenants.branchements_postgres import PostgresBranchements

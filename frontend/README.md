@@ -7,7 +7,7 @@ accent orange foncé, Inter ; décision dans
 [ADR-008](../docs/adr/ADR-008-design-system-monochrome.md)).
 
 **Dépendances :** le frontend parle à `axelcompta.api.app` (voir
-Statuts ci-dessous). Les routes sont encore câblées dans `demo_api`.
+Statuts ci-dessous). Les routes sont câblées dans `api/routes.py`.
 Aucun accès direct à la base ou aux modules métier.
 
 ## Démarrer en local (démo)
@@ -54,7 +54,7 @@ chauffeur (mobile) est cadré dans [doc 19](../docs/19-parcours-utilisateur.md).
 
 - **Démo (doc 17 §9)** : **une vraie UI**, plus un rapport HTML statique —
   Next.js + Tailwind, tokens `DESIGN.md`, parle à `axelcompta.api.app`
-  (`demo_api` câble encore les routes). Fait côté gestionnaire : dashboard, fiche dossier, file de
+  (`api/routes.py` câble les routes). Fait côté gestionnaire : dashboard, fiche dossier, file de
   revue réelle sur la dépense de Sophie (bloc C), invitation chauffeur
   (bloc B). Interface chauffeur : connexion réelle via Supabase Auth
   (appels REST directs, pas le SDK JS), session en `localStorage`.
@@ -83,7 +83,7 @@ chauffeur (mobile) est cadré dans [doc 19](../docs/19-parcours-utilisateur.md).
   sur la fiche dossier — compte de résultat (CA HT/Charges/Résultat) +
   bilan simplifié (Trésorerie/TVA à payer, absents de l'écran avant ce
   lot) + 5 liens de téléchargement (liasse/CERFA 2065/FEC/grand livre/
-  balance, `demo_api.py`) reflétant les décisions humaines appliquées, pas
+  balance, `api/routes.py`) reflétant les décisions humaines appliquées, pas
   le ledger brut.
 - **Au 2026-11-05** : écrans gestionnaire Entreprises (filtres, tri,
   pagination, état dans l'URL), Invitations, Rappels, Équipe, Intégrations,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from axelcompta.demo_api import get_demandes_jobs
+from axelcompta.api.routes import get_demandes_jobs
 from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, FileMemoire
 from axelcompta.tenants.import_dossiers import COLONNES
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)

@@ -1,12 +1,9 @@
-"""API FastAPI dédiée à la démo produit (doc 17 §9, doc 19) — sert les 3
-chauffeurs type au frontend Next.js.
+"""Routes HTTP du produit (doc 17 §9, doc 19).
 
-Distincte de `axelcompta.api.app`, le point d'entrée HTTP : celui-ci
-délègue ici tant que les routes n'ont pas chacune leur façade. Ceci est
-une composition root comme `demo_chauffeurs_type.py` (doc 18), pas
-soumise aux mêmes contraintes de dépendance qu'un module métier — elle
-peut importer n'importe quoi directement, y compris une autre composition
-root.
+`axelcompta.api.app` est le point d'entrée HTTP : il délègue ici tant que
+les routes n'ont pas chacune leur façade (AXE-428). Ceci reste une
+composition root (doc 18), pas un module métier — elle peut importer
+les modules directement, y compris une autre composition root.
 
 **Bloc A/C (doc 17 §9) : la file de revue est maintenant réelle.**
 `POST /dossiers/{id}/transactions/{ecriture_id}/decision` accepte/reclasse
@@ -69,6 +66,11 @@ from axelcompta.anomaly.instruction import InstructionsRepository
 from axelcompta.anomaly.instruction_postgres import PostgresInstructions
 from axelcompta.anomaly.models import Alerte, MouvementSurveille
 from axelcompta.anomaly.service import analyser
+from axelcompta.api.auth import (
+    IdentiteAuthentifiee,
+    identite_chauffeur_optionnelle,
+    identite_tolerante,
+)
 from axelcompta.api.erreurs import brancher_erreurs
 from axelcompta.categorize.appris import (
     OperationTranchee,
@@ -119,18 +121,7 @@ from axelcompta.closing.tva_periodique import (
     type_preuve,
     verifier_parametres,
 )
-from axelcompta.core.db import engine_depuis_env
-from axelcompta.core.identite import Adresse, Associe, IdentiteEntreprise
-from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, UserId
-from axelcompta.core.libelles import categorie_du_suffixe, sans_categorie
-from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
-from axelcompta.core.rls import appliquer_rls, contexte_identite
-from axelcompta.demo_auth import (
-    IdentiteAuthentifiee,
-    identite_chauffeur_optionnelle,
-    identite_tolerante,
-)
-from axelcompta.demo_comptes import (
+from axelcompta.comptes import (
     CompteRepository,
     InvitationAbsente,
     InvitationFermee,
@@ -138,8 +129,13 @@ from axelcompta.demo_comptes import (
     SupabaseCompteRepository,
     SupabaseConfig,
 )
-from axelcompta.demo_jalons import JALONS_EXERCICE, etape_depuis_preuves
-from axelcompta.demo_justificatifs import JustificatifRepository
+from axelcompta.core.db import engine_depuis_env
+from axelcompta.core.identite import Adresse, Associe, IdentiteEntreprise
+from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, UserId
+from axelcompta.core.libelles import categorie_du_suffixe, sans_categorie
+from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
+from axelcompta.core.rls import appliquer_rls, contexte_identite
+from axelcompta.documents.justificatifs import JustificatifRepository
 from axelcompta.documents.postgres import PostgresJustificatifRepository
 from axelcompta.exercices import (
     PassageExercice,
@@ -343,6 +339,7 @@ from axelcompta.workflow.file_expert_cache_postgres import (
     PostgresCacheFileExpert,
     cache_operations_classees,
 )
+from axelcompta.workflow.jalons import JALONS_EXERCICE, etape_depuis_preuves
 from axelcompta.workflow.journal_acces import (
     ACTES_VISIBLES_DU_DIRIGEANT,
     JournalAcces,
@@ -778,7 +775,7 @@ def _construire_liasse(
     provisions: tuple[ProvisionCloture, ...] = (),
 ) -> LiassePivot:
     """Semaine 4 (doc 17 §9) : même appel que `_resume` (clôture) et que les
-    exports de `demo_chauffeurs_type._executer_un_chauffeur`, mais sur le
+    exports du script de chauffeurs type (`_executer_un_chauffeur`), mais sur le
     ledger **avec les décisions humaines déjà appliquées**
     (`_ledger_avec_decisions`) : une transaction tranchée en 455/108 doit
     sortir de la liasse téléchargée, pas seulement du dashboard."""
@@ -1398,7 +1395,7 @@ _ENGINE_DEMO: Engine | None = None
 
 def _engine() -> Engine:
     """Engine Postgres partagé, construit **à la première requête réelle**,
-    pas à l'import du module : importer `demo_api` (pour ses tests, par
+    pas à l'import du module : importer `api.routes` (pour ses tests, par
     exemple) ne doit pas exiger `DATABASE_URL_WEB`. Les tests surchargent
     les dépendances ci-dessous (`app.dependency_overrides[...] = ...`) avec
     des implémentations en mémoire pour ne jamais l'appeler du tout.
@@ -3947,7 +3944,7 @@ def _enregistrer_routes_greffe_inpi(app: FastAPI) -> None:
         document = SignatureDemoProvider().signer(pdf_non_signe, identite.user_id)
         signatures.enregistrer(dossier.id, TYPE_DOCUMENT_GREFFE_INPI, document)
         # Preuve greffe enregistrée. La frise n'avance que si clôture et
-        # signature de validation sont déjà là (préfixe, demo_jalons).
+        # signature de validation sont déjà là (préfixe, workflow/jalons).
         return SignatureGreffeVue(
             dossier_id=dossier.id,
             signe=True,

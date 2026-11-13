@@ -1,7 +1,7 @@
 """Exports PDF grand livre + balance (démo, AXE-417 / AXE-418).
 
 Même source que le CSV (`export_comptable.py`) : tuple d'écritures du ledger
-(avec décisions humaines quand servi via `demo_api`). Présentation lisible
+(avec décisions humaines quand servi via les routes). Présentation lisible
 pour la démo — pas un rendu CERFA / outil expert-comptable V1.
 """
 

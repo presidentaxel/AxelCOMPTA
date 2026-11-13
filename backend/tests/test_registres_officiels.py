@@ -11,8 +11,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from axelcompta.api.routes import _sujets_ecarts, get_dossiers, get_registres
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.demo_api import _sujets_ecarts, get_dossiers, get_registres
 from axelcompta.registres_officiels import (
     Insee,
     Rne,

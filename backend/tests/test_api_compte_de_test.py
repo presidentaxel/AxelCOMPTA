@@ -8,8 +8,8 @@ from datetime import UTC, date, datetime, timedelta
 import jwt
 from fastapi.testclient import TestClient
 
+from axelcompta.api.routes import get_consultations, get_dossiers
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.demo_api import get_consultations, get_dossiers
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.workflow.consultations import JournalConsultationsMemoire
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)

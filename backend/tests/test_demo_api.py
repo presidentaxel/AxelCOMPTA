@@ -28,15 +28,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
-import axelcompta.demo_api as demo_api
-import axelcompta.demo_auth as demo_auth
+import axelcompta.api.auth as demo_auth
+import axelcompta.api.routes as demo_api
 import axelcompta.demo_seed as demo_seed
 from axelcompta.anomaly.instruction import RegistreInstructions
-from axelcompta.categorize.models import Etage, ProposedEntry
-from axelcompta.categorize.rules_and_ml import RulesAndMlPipeline
-from axelcompta.core.ids import DossierId, EcritureId, TenantId, UserId
-from axelcompta.core.money import Money
-from axelcompta.demo_api import (
+from axelcompta.api.routes import (
     DossierResume,
     GuideGreffeVue,
     IdentiteDep,
@@ -79,11 +75,15 @@ from axelcompta.demo_api import (
     get_tags,
     get_verdicts,
 )
+from axelcompta.categorize.models import Etage, ProposedEntry
+from axelcompta.categorize.rules_and_ml import RulesAndMlPipeline
+from axelcompta.comptes import Invitation
+from axelcompta.comptes_memoire import InMemoryCompteRepository
+from axelcompta.core.ids import DossierId, EcritureId, TenantId, UserId
+from axelcompta.core.money import Money
 from axelcompta.demo_chauffeurs_type import construire_ledger
-from axelcompta.demo_comptes import Invitation
-from axelcompta.demo_comptes_memory import InMemoryCompteRepository
 from axelcompta.demo_identites import IDENTITE_SOPHIE
-from axelcompta.demo_justificatifs import InMemoryJustificatifRepository
+from axelcompta.documents.justificatifs import InMemoryJustificatifRepository
 from axelcompta.exercices import attestation as attestation_exercice
 from axelcompta.ingestion.comptes_bancaires import CompteBancaireMemoire
 from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion
@@ -2360,7 +2360,7 @@ def test_file_expert_ne_calcule_aucune_proposition(monkeypatch: pytest.MonkeyPat
     def interdit(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("propositions calculées pour la file expert")
 
-    monkeypatch.setattr("axelcompta.demo_api.propositions_apprises", interdit)
+    monkeypatch.setattr("axelcompta.api.routes.propositions_apprises", interdit)
 
     reponse = _client_expert().get("/expert/file", headers=_en_tete_gestionnaire())
 

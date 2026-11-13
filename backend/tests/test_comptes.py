@@ -3,12 +3,12 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from axelcompta.core.ids import DossierId
-from axelcompta.demo_comptes import (
+from axelcompta.comptes import (
     StatutInvitation,
     SupabaseCompteRepository,
     SupabaseConfig,
 )
+from axelcompta.core.ids import DossierId
 
 
 def test_depuis_env_leve_si_url_manquante(monkeypatch: pytest.MonkeyPatch) -> None:

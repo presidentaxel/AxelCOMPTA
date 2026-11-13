@@ -1,17 +1,17 @@
 """Contexte RLS (Row-Level Security) Postgres — doc 12 §1.1.
 
 Isolation multi-tenant en profondeur : avant ce module, seule
-`demo_api.py` (`_verifier_acces_dossier`) empêchait un dossier d'en lire
+`api/routes.py` (`_verifier_acces_dossier`) empêchait un dossier d'en lire
 un autre — une couche applicative, jamais vérifiée si un bug de requête
 oublie le filtre `WHERE dossier_id = ...` (doc 19 §8bis l'avait déjà
 signalé comme un vrai gap connu, pas hypothétique). Ce module ajoute une
 seconde barrière, au niveau base : les policies RLS (migration
 `ROLE_WEB_ET_POLICIES`) filtrent chaque ligne côté Postgres, pour le rôle
 `axelcompta_web` uniquement — `user` (les scripts d'administration :
-migrations, `demo_seed`, `synchro_digifactory`, `notifier`) reste
+migrations, l'amorçage des jeux de test, `synchro_digifactory`, `notifier`) reste
 propriétaire des tables et n'est jamais concerné.
 
-Le contexte est posé une fois par requête HTTP (middleware `demo_api.py`),
+Le contexte est posé une fois par requête HTTP (middleware de `api/routes.py`),
 lu ici via un `ContextVar` (pas un argument à faire passer dans chaque
 repository), et appliqué à chaque transaction Postgres via `set_config(...,
 true)` — l'équivalent de `SET LOCAL`, jamais `SET` : la portée doit rester
@@ -39,7 +39,7 @@ _tenant_id: ContextVar[str | None] = ContextVar("_rls_tenant_id", default=None)
 @contextmanager
 def contexte_identite(dossier_id: str | None, tenant_id: str | None) -> Iterator[None]:
     """Pose le contexte RLS pour la durée du bloc (une requête HTTP
-    entière, doc `demo_api.py` middleware). Réentrant : un contexte imbriqué
+    entière, middleware de `api/routes.py`). Réentrant : un contexte imbriqué
     (tests) restaure l'ancien en sortant, pas `None`."""
     jeton_dossier = _dossier_id.set(dossier_id)
     jeton_tenant = _tenant_id.set(tenant_id)

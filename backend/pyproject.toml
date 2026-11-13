@@ -159,16 +159,23 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "api n'importe que les façades publiques (pas les internes des modules)"
 type = "forbidden"
-source_modules = ["axelcompta.api"]
+source_modules = [
+    "axelcompta.api.app",
+    "axelcompta.api.auth",
+    "axelcompta.api.erreurs",
+    "axelcompta.api.observabilite",
+]
 forbidden_modules = [
     "axelcompta.ledger.models",
     "axelcompta.categorize.models",
     "axelcompta.closing.models",
 ]
-# Temporaire (AXE-428) : api.app délègue au composition root demo_api,
-# qui importe ces modèles. L'arête disparaît quand chaque route aura
-# sa façade. api/ n'importe toujours pas ces modèles lui-même.
-ignore_imports = ["axelcompta.api.app -> axelcompta.demo_api"]
+# Temporaire (AXE-428) : api/routes.py est encore la composition root
+# et importe ces modèles. On l'exclut du contrat, et on ignore l'arête
+# depuis api.app pour que la chaîne ne remonte pas. Les autres modules
+# de api/ restent tenus. L'exception disparaît quand chaque route aura
+# sa façade.
+ignore_imports = ["axelcompta.api.app -> axelcompta.api.routes"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -7,10 +7,10 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from axelcompta.api.routes import get_dossiers, get_signatures_inpi
 from axelcompta.closing.tva_rappels import notifier_tva
 from axelcompta.core.ids import DossierId, EcritureId
 from axelcompta.core.money import Money
-from axelcompta.demo_api import get_dossiers, get_signatures_inpi
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.workflow.notifications import TYPE_TVA_J7, InMemoryNotificationRepository
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)

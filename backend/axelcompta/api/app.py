@@ -1,6 +1,6 @@
 """Point d'entrée HTTP du produit.
 
-Les corps de routes vivent encore dans `demo_api` (composition root).
+Les corps de routes vivent dans `api/routes.py` (composition root).
 Ce module est la façade : uvicorn pointe ici, et `/sante` est à nous.
 Chaque route migrera vers la façade publique de son module, une par une.
 """
@@ -17,9 +17,9 @@ def verifier_schema_au_demarrage() -> None:
     du serveur, pas à l'import : les tests importent l'app sans base."""
     if not verification_demandee():
         return
-    from axelcompta import demo_api
+    from axelcompta.api import routes
 
-    verifier_schema(demo_api._engine(), tete_unique())
+    verifier_schema(routes._engine(), tete_unique())
 
 
 def recuperer_modele_au_demarrage() -> None:
@@ -32,11 +32,11 @@ def recuperer_modele_au_demarrage() -> None:
 
 
 def create_app() -> FastAPI:
-    # Import local : demo_api construit son app au chargement, et ne doit
+    # Import local : routes construit son app au chargement, et ne doit
     # pas être tiré par un simple import de ce module.
-    from axelcompta import demo_api
+    from axelcompta.api import routes
 
-    app: FastAPI = demo_api.app
+    app: FastAPI = routes.app
     if verifier_schema_au_demarrage not in app.router.on_startup:
         app.router.on_startup.append(verifier_schema_au_demarrage)
     if recuperer_modele_au_demarrage not in app.router.on_startup:

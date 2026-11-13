@@ -1,8 +1,8 @@
-"""Adaptateur démo vers `documents/` (doc 18).
+"""Protocole et dépôts mémoire ou fichier des justificatifs (doc 18).
 
-Le stockage, le cloisonnement par tenant et la RLS vivent dans le module.
-Ce fichier ne fait que garder les deux noms historiques utilisés par
-`demo_api` et ses tests.
+Le stockage Postgres, le cloisonnement par tenant et la RLS vivent dans
+`documents/postgres.py`. Ce fichier garde le protocole et les dépôts
+utilisés par `api/routes.py` et ses tests.
 """
 
 from __future__ import annotations

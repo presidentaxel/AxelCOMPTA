@@ -13,12 +13,12 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
-import axelcompta.demo_api as demo_api
-import axelcompta.demo_auth as demo_auth
+import axelcompta.api.auth as demo_auth
+import axelcompta.api.routes as demo_api
+from axelcompta.comptes_memoire import InMemoryCompteRepository
 from axelcompta.core.db import metadata
-from axelcompta.demo_comptes_memory import InMemoryCompteRepository
-from axelcompta.demo_justificatifs import InMemoryJustificatifRepository
 from axelcompta.demo_seed import AmorcageIncompletError, amorcer_demo
+from axelcompta.documents.justificatifs import InMemoryJustificatifRepository
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository

@@ -6,8 +6,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from axelcompta import demo_api
-from axelcompta.demo_api import get_branchements
+import axelcompta.api.routes as routes
+from axelcompta.api.routes import get_branchements
 from axelcompta.tenants.branchements import BranchementsMemoire
 from axelcompta.tester_branchement import Essai
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
@@ -160,7 +160,7 @@ def test_tester_un_branchement_ne_renvoie_qu_un_statut_et_un_message(
         vus.append(getattr(b, "nom", ""))
         return Essai("ok", "Connexion et identifiants acceptés. Aucun e-mail envoyé.")
 
-    monkeypatch.setattr(demo_api, "tester_branchement", faux_test)
+    monkeypatch.setattr(routes, "tester_branchement", faux_test)
     reponse = client.post(
         f"/portefeuille/integrations/{branchement}/tester", headers=_en_tete_gestionnaire()
     )

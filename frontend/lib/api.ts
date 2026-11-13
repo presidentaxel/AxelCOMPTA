@@ -13,7 +13,7 @@ export class ApiError extends Error {
 }
 
 // doc 19 §8bis (2026-09-11) : ces routes exigent désormais un jeton indiv
-// (demo_api.py) — un `<a href>` ne peut porter d'en-tête `Authorization`,
+// (api/routes.py) — un `<a href>` ne peut porter d'en-tête `Authorization`,
 // donc ce ne sont plus des URLs complètes à mettre directement dans un
 // lien, seulement des **chemins** pour `telechargerAvecAuthChauffeur`
 // (lib/auth-chauffeur.ts), qui fait le fetch authentifié puis déclenche
@@ -23,7 +23,7 @@ export function cheminTelechargementCloture(dossierId: string, document: Documen
 }
 
 // doc 20 : dossier de dépôt greffe/INPI — même logique, le PDF reflète
-// automatiquement l'état signé/non signé côté serveur (demo_api.py).
+// automatiquement l'état signé/non signé côté serveur (api/routes.py).
 export function cheminGreffeInpi(dossierId: string): string {
   return `/dossiers/${dossierId}/greffe-inpi.pdf`;
 }

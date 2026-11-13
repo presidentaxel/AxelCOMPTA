@@ -2,7 +2,7 @@
   "name": "axelcompta-frontend",
   "version": "0.0.1",
   "private": true,
-  "description": "Démo produit AxeLCompta (doc 17, doc 19) — dashboard gestionnaire, consomme axelcompta.demo_api.",
+  "description": "Démo produit AxeLCompta (doc 17, doc 19) — dashboard gestionnaire, consomme axelcompta.api.routes.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

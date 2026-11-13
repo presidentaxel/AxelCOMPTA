@@ -29,9 +29,9 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from axelcompta.api.routes import calculer_agregat
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import TenantId
-from axelcompta.demo_api import calculer_agregat
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
 from axelcompta.tenants.agregats import AgregatsRepository, AgregatStocke

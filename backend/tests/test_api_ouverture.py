@@ -9,10 +9,10 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from axelcompta.api.routes import get_dossiers, get_experts, get_ledger, get_ouvertures
 from axelcompta.closing.ouverture import id_a_nouveaux
 from axelcompta.closing.ouverture_depot import OuverturesMemoire
 from axelcompta.core.ids import DossierId
-from axelcompta.demo_api import get_dossiers, get_experts, get_ledger, get_ouvertures
 from axelcompta.demo_identites import IDENTITE_KARIM
 from tests.closing.fec_externe import ECRITURES, NOM, fec
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)

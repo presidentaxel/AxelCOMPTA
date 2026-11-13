@@ -1,7 +1,7 @@
 /** Compte de test (AXE-822) : il lit l'espace chauffeur de n'importe quel
  * dossier de son portefeuille, en lecture seule, jusqu'à sa date de fin.
  * Exception de la période de test, retirée avant que les chauffeurs se
- * connectent. Le serveur vérifie tout (`demo_api.get_identite`) : ces
+ * connectent. Le serveur vérifie tout (`api/routes.py`, `get_identite`) : ces
  * fonctions ne font que choisir l'adresse et l'en-tête. */
 
 export const ROLE_LECTEUR_TEST = "lecteur_tous_dossiers";

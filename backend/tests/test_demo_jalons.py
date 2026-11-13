@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from axelcompta.demo_jalons import JALONS_EXERCICE, etape_depuis_preuves
+from axelcompta.workflow.jalons import JALONS_EXERCICE, etape_depuis_preuves
 
 
 def test_compte_ferme_reste_a_compte_meme_avec_des_preuves() -> None:

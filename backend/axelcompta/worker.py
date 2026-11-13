@@ -262,7 +262,7 @@ async def contacts_du_portefeuille(
 
 def dependances_reelles() -> Dependances:
     engine = engine_depuis_env()
-    from axelcompta.demo_api import prechauffer_caches
+    from axelcompta.api.routes import prechauffer_caches
 
     branchements = PostgresBranchements(engine)
 

@@ -150,7 +150,7 @@ export function ClotureSection({
   async function telecharger(document: DocumentCloture) {
     setErreur(null);
     // Même schéma de nom que le Content-Disposition côté serveur
-    // (demo_api.py : "liasse-{dossier_id}.pdf" etc.) — utile dès qu'on
+    // (api/routes.py : "liasse-{dossier_id}.pdf" etc.) — utile dès qu'on
     // télécharge plusieurs dossiers dans le même dossier de téléchargements.
     const [nom, extension] = document.split(/\.(?=[^.]+$)/);
     const nomFichier = `${nom}-${dossier.dossier_id}.${extension}`;

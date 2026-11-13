@@ -210,7 +210,7 @@ prod »). Ajouté :
   DOCUMENT FICTIF » en diagonale rouge + mention signataire/horodatage) —
   `qualifie=False` toujours, signal explicite qu'aucun document produit
   par ce provider ne doit être déposé pour de vrai.
-- `demo_api.py` : `GET /dossiers/{id}/greffe-inpi.pdf` (non signé par
+- `api/routes.py` : `GET /dossiers/{id}/greffe-inpi.pdf` (non signé par
   défaut, signé après action) et `POST
   /dossiers/{id}/greffe-inpi/signature` (« zone de signature qui finit le
   document », pas juste un badge React — persisté en mémoire, `dernier`

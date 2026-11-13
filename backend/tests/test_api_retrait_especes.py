@@ -7,11 +7,11 @@ from datetime import date
 import pytest
 from fastapi.testclient import TestClient
 
+from axelcompta.api.routes import get_propositions
 from axelcompta.categorize.models import Etage, ProposedEntry
 from axelcompta.categorize.rules_and_ml import CATEGORIE_RETRAIT_ESPECES, RulesAndMlPipeline
 from axelcompta.core.ids import DossierId, EcritureId, TransactionId
 from axelcompta.core.money import Money
-from axelcompta.demo_api import get_propositions
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.packs.vtc_demo import charger_compte_par_categorie, charger_regles

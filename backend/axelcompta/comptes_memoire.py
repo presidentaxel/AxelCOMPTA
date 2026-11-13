@@ -1,5 +1,5 @@
 """Implémentation en mémoire de CompteRepository — pour les tests rapides
-et pour brancher `demo_api.py` sans dépendre d'un accès réseau à Supabase
+et pour brancher `api/routes.py` sans dépendre d'un accès réseau à Supabase
 (Louis, 2026-09-07 : « je ne veux pas dépendre de Supabase pour tous les
 tests »). Comme `workflow/decisions_memory.py` pour les décisions.
 """
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from axelcompta.core.ids import DossierId
 
-from .demo_comptes import (
+from .comptes import (
     CompteDejaInviteError,
     CompteRepository,
     Invitation,

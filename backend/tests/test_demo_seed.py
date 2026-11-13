@@ -10,7 +10,6 @@ import pytest
 import axelcompta.demo_seed as demo_seed
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.demo_chauffeurs_type import construire_ledger
-from axelcompta.demo_jalons import etape_depuis_preuves
 from axelcompta.demo_seed import (
     TENANT_DEMO,
     AmorcageIncompletError,
@@ -19,6 +18,7 @@ from axelcompta.demo_seed import (
 )
 from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.tenants.memory import InMemoryDossierRepository
+from axelcompta.workflow.jalons import etape_depuis_preuves
 from axelcompta.workflow.propositions import InMemoryPropositionRepository
 from axelcompta.workflow.signature_memory import InMemorySignatureRepository
 

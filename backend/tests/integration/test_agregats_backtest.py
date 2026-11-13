@@ -31,13 +31,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine, make_url
 
-import axelcompta.demo_api as demo_api
-import axelcompta.demo_auth as demo_auth
+import axelcompta.api.auth as demo_auth
+import axelcompta.api.routes as demo_api
+from axelcompta.comptes_memoire import InMemoryCompteRepository
 from axelcompta.core.ids import DossierId, EcritureId, UserId
 from axelcompta.core.money import Money
-from axelcompta.demo_comptes_memory import InMemoryCompteRepository
-from axelcompta.demo_justificatifs import InMemoryJustificatifRepository
 from axelcompta.demo_seed import TENANT_DEMO, amorcer_demo
+from axelcompta.documents.justificatifs import InMemoryJustificatifRepository
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.tenants.agregats import AgregatStocke

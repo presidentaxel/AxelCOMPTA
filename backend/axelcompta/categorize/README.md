@@ -63,7 +63,7 @@ entrée, doc 13 §2.2), `documents` (matching pièce, V1 seulement).
   opération déjà tranchée par l'indiv, dans le même sens, reprend sa
   catégorie en proposition. Mesuré sur le jeu d'audit en simulant un indiv
   qui tranche dans l'ordre : 81 % des lignes couvertes, 92 % justes.
-- **Proposition à la lecture** (`demo_api._avec_propositions`) : pour chaque
+- **Proposition à la lecture** (`api/routes.py`, `_avec_propositions`) : pour chaque
   opération à trancher, d'abord la proposition apprise, sinon les règles et
   le modèle en vigueur (`categoriser_lot`, un seul appel au modèle). Un
   nouveau modèle vaut donc tout de suite pour les opérations en attente. La

@@ -6,8 +6,8 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 
+from axelcompta.api.routes import get_experts
 from axelcompta.core.ids import DossierId
-from axelcompta.demo_api import get_experts
 from axelcompta.workflow.expert_comptable import (
     ROLE_EXPERT,
     TEXTE_ENGAGEMENT,

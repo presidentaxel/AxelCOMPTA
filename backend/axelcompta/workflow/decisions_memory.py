@@ -1,5 +1,5 @@
 """Implémentation en mémoire de DecisionRepository — pour les tests et pour
-brancher rapidement `demo_api.py` avant que la persistance Postgres (doc 17
+brancher rapidement les routes avant que la persistance Postgres (doc 17
 §9 bloc A, suite) ne soit câblée. Comme `ledger/memory.py` : prouve le
 contrat sans dépendre d'une base, l'implémentation réelle viendra à côté,
 pas à la place.
