@@ -196,6 +196,8 @@ from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
 from axelcompta.ingestion.journal import EntreeQuarantaine, JournalIngestion
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
+from axelcompta.ingestion.liens_rollee import Lien, LienDejaPris, LiensRollee, lien_manuel
+from axelcompta.ingestion.liens_rollee_postgres import PostgresLiensRollee
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ingestion.providers.digifactory import normaliser_payload
 from axelcompta.ingestion.settlements_plateforme import (
@@ -240,6 +242,7 @@ from axelcompta.plateformes_rollee import (
     recevoir,
     relire_comptes,
 )
+from axelcompta.revenus_rollee import delier_revenus
 from axelcompta.tenants.affectations import AffectationRepository
 from axelcompta.tenants.affectations_postgres import PostgresAffectationRepository
 from axelcompta.tenants.agregats import AgregatsRepository, AgregatStocke, LigneAgregat
@@ -7049,6 +7052,270 @@ def _vue_versement(s: SettlementStocke) -> VersementPlateformeVue:
     )
 
 
+def get_liens_rollee() -> LiensRollee:
+    """AXE-911 : liens dossier ↔ user Rollee, leur historique, la file à choisir."""
+    return PostgresLiensRollee(_engine())
+
+
+LiensRolleeDep = Annotated[LiensRollee, Depends(get_liens_rollee)]
+ACTE_LIEN_ROLLEE = "lien_rollee"
+
+
+class CandidatRolleeVue(BaseModel):
+    dossier_id: str
+    nom: str
+    raisons: list[str]
+
+
+class AChoisirRolleeVue(BaseModel):
+    """Doc 19 : initiales, plateformes, fin d'IBAN. Jamais un montant ni un nom."""
+
+    rollee_user_id: str
+    etat: str  # a_choisir | non_trouve
+    initiales: str
+    plateformes: list[str]
+    iban_fin: str | None
+    candidats: list[CandidatRolleeVue]
+
+
+class RolleePortefeuilleVue(BaseModel):
+    # relie_auto | relie_gestionnaire | relie_chauffeur | a_choisir | non_relie
+    etats: dict[str, str]
+    a_choisir: list[AChoisirRolleeVue]
+
+
+class LienRolleeVue(BaseModel):
+    origine: str
+    comment: str
+    relie_le: str
+
+
+class LienRetireVue(BaseModel):
+    comment: str
+    relie_le: str
+    retire_le: str
+    retire_par: str
+    motif: str
+
+
+class FicheRolleeVue(BaseModel):
+    lien: LienRolleeVue | None
+    historique: list[LienRetireVue]
+    versements_a_contrepasser: int  # ce que « délier » changerait, en nombre
+
+
+class ChoixRolleeEntree(BaseModel):
+    rollee_user_id: str
+    dossier_id: str | None  # None : « aucun de ces comptes »
+
+
+class DelierRolleeEntree(BaseModel):
+    motif: str
+
+
+class DelierRolleeVue(BaseModel):
+    versements_contrepasses: int
+
+
+_ETAT_PAR_ORIGINE = {
+    "auto": "relie_auto",
+    "manuel": "relie_gestionnaire",
+    "cree": "relie_chauffeur",
+}
+
+
+def _vue_lien(lien: Lien) -> LienRolleeVue:
+    return LienRolleeVue(
+        origine=lien.origine, comment=lien.comment, relie_le=lien.relie_le.isoformat()
+    )
+
+
+def _rollee_du_portefeuille(
+    tenant_id: TenantId, dossiers: DossierRepository, liens: LiensRollee
+) -> RolleePortefeuilleVue:
+    du_tenant = dossiers.lister_par_tenant(tenant_id)
+    noms = {str(d.id): d.nom for d in du_tenant}
+    etats = {str(d.id): "non_relie" for d in du_tenant}
+    attente = [a for a in liens.a_choisir(tenant_id) if a.etat != "ecarte"]
+    for a in attente:
+        for c in a.candidats:
+            if c.dossier_id in etats:
+                etats[c.dossier_id] = "a_choisir"
+    for lien in liens.liens(tenant_id):
+        etats[str(lien.dossier_id)] = _ETAT_PAR_ORIGINE[lien.origine]
+    return RolleePortefeuilleVue(
+        etats=etats,
+        a_choisir=[
+            AChoisirRolleeVue(
+                rollee_user_id=a.rollee_user_id,
+                etat=a.etat,
+                initiales=a.apercu.initiales,
+                plateformes=list(a.apercu.plateformes),
+                iban_fin=a.apercu.iban_fin,
+                candidats=[
+                    CandidatRolleeVue(
+                        dossier_id=c.dossier_id, nom=noms[c.dossier_id], raisons=list(c.raisons)
+                    )
+                    for c in a.candidats
+                    if c.dossier_id in noms
+                ],
+            )
+            for a in attente
+        ],
+    )
+
+
+def _choisir_rollee(
+    entree: ChoixRolleeEntree,
+    tenant_id: TenantId,
+    identite: IdentiteAuthentifiee,
+    dossiers: DossierRepository,
+    liens: LiensRollee,
+    journal: JournalAcces,
+) -> None:
+    attente = next(
+        (a for a in liens.a_choisir(tenant_id) if a.rollee_user_id == entree.rollee_user_id), None
+    )
+    if attente is None:
+        raise HTTPException(status_code=404, detail="Ce compte Rollee n'attend pas de choix.")
+    maintenant = datetime.now(UTC)
+    if entree.dossier_id is None:
+        liens.ecarter(attente.rollee_user_id, maintenant)
+        return
+    dossier = dossiers.obtenir(DossierId(entree.dossier_id))
+    if dossier is None or dossier.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Dossier introuvable.")
+    try:
+        liens.lier(lien_manuel(dossier.id, attente, identite.email, maintenant))
+    except LienDejaPris as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Cette entreprise ou ce compte Rollee est déjà relié : retirez d'abord le lien.",
+        ) from exc
+    liens.retirer_a_choisir(attente.rollee_user_id)
+    journal.noter(
+        dossier.id,
+        ACTE_LIEN_ROLLEE,
+        f"choisi:{attente.rollee_user_id}",
+        identite.user_id,
+        maintenant,
+    )
+
+
+def _delier_rollee(
+    dossier: Dossier,
+    motif: str,
+    identite: IdentiteAuthentifiee,
+    depots: tuple[LiensRollee, ServicesRollee, SettlementsRepository, LedgerService],
+    journal: JournalAcces,
+) -> int:
+    """Retire le lien, garde l'historique, contre-passe les ventilations de
+    l'ancien user. Les comptes de l'ancien user ne sont plus relus."""
+    liens, services, settlements, ledger = depots
+    maintenant = datetime.now(UTC)
+    comptes = frozenset(c.account_id for c in services.comptes.comptes(dossier.id))
+    lien = liens.delier(dossier.id, identite.email, motif, maintenant)
+    if lien is None:
+        raise HTTPException(status_code=404, detail="Cette entreprise n'a pas de lien Rollee.")
+    services.comptes.remplacer_comptes(dossier.id, [])
+    inverses, delies = delier_revenus(
+        settlements.lister(dossier.id),
+        comptes,
+        ledger.grand_livre(dossier.id),
+        ledger.periodes_closes(dossier.id),
+        dossier.exercice_debut,
+        maintenant,
+    )
+    for inverse in inverses:
+        ledger.enregistrer(inverse)
+    settlements.enregistrer(delies)
+    journal.noter(
+        dossier.id, ACTE_LIEN_ROLLEE, f"retire:{lien.rollee_user_id}", identite.user_id, maintenant
+    )
+    return len(inverses)
+
+
+def _fiche_rollee(
+    dossier: Dossier, liens: LiensRollee, settlements: SettlementsRepository
+) -> FicheRolleeVue:
+    lien = liens.lien(dossier.id)
+    return FicheRolleeVue(
+        lien=_vue_lien(lien) if lien else None,
+        historique=[
+            LienRetireVue(
+                comment=r.lien.comment,
+                relie_le=r.lien.relie_le.isoformat(),
+                retire_le=r.retire_le.isoformat(),
+                retire_par=r.retire_par,
+                motif=r.motif,
+            )
+            for r in liens.historique(dossier.id)
+        ],
+        versements_a_contrepasser=sum(
+            1 for s in settlements.lister(dossier.id) if s.etat == "reconcilie"
+        ),
+    )
+
+
+def _enregistrer_routes_liens_rollee(app: FastAPI) -> None:
+    """AXE-911 : le gestionnaire choisit, voit et corrige le lien Rollee."""
+
+    @app.get("/portefeuille/rollee", response_model=RolleePortefeuilleVue)
+    def lire_rollee_portefeuille(
+        identite: IdentiteDep, dossiers: DossiersDep, liens: LiensRolleeDep
+    ) -> RolleePortefeuilleVue:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _rollee_du_portefeuille(tenant_id, dossiers, liens)
+
+    @app.post("/portefeuille/rollee/choix", status_code=204)
+    def choisir_rollee(
+        entree: ChoixRolleeEntree,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        dossiers: DossiersDep,
+        liens: LiensRolleeDep,
+        journal: JournalAccesDep,
+    ) -> None:
+        tenant_id, identite_ok = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, "La lecture seule ne relie pas de compte Rollee.")
+        _choisir_rollee(entree, tenant_id, identite_ok, dossiers, liens, journal)
+
+    @app.get("/dossiers/{dossier_id}/rollee", response_model=FicheRolleeVue)
+    def lire_lien_rollee(
+        dossier: DossierPortefeuilleDep, liens: LiensRolleeDep, settlements: SettlementsDep
+    ) -> FicheRolleeVue:
+        return _fiche_rollee(dossier, liens, settlements)
+
+    @app.post("/dossiers/{dossier_id}/rollee/delier", response_model=DelierRolleeVue)
+    def delier_rollee(
+        entree: DelierRolleeEntree,
+        dossier: DossierPortefeuilleDep,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        depots: Annotated[
+            tuple[LiensRollee, ServicesRollee, SettlementsRepository, LedgerService],
+            Depends(_depots_delier),
+        ],
+        journal: JournalAccesDep,
+    ) -> DelierRolleeVue:
+        _tenant_id, identite_ok = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, "La lecture seule ne retire pas de lien.")
+        motif = entree.motif.strip()
+        if not motif:
+            raise HTTPException(status_code=400, detail="Dites pourquoi le lien est retiré.")
+        contrepasses = _delier_rollee(dossier, motif[:200], identite_ok, depots, journal)
+        return DelierRolleeVue(versements_contrepasses=contrepasses)
+
+
+def _depots_delier(
+    liens: LiensRolleeDep,
+    services: ServicesRolleeDep,
+    settlements: SettlementsDep,
+    ledger: LedgerBaseDep,
+) -> tuple[LiensRollee, ServicesRollee, SettlementsRepository, LedgerService]:
+    return liens, services, settlements, ledger
+
+
 def _enregistrer_routes_integrations(app: FastAPI) -> None:
     """Branchements, envois et plateformes Rollee (AXE-872, AXE-808, AXE-819)."""
     _enregistrer_routes_branchements(app)
@@ -7059,6 +7326,7 @@ def _enregistrer_routes_integrations(app: FastAPI) -> None:
     _enregistrer_routes_plateformes(app)
     _enregistrer_route_webhook_rollee(app)
     _enregistrer_route_versements(app)
+    _enregistrer_routes_liens_rollee(app)
 
 
 def _enregistrer_routes_envoi(app: FastAPI) -> None:

@@ -49,7 +49,7 @@ from axelcompta.ingestion.settlements_plateforme import (
     fusionner,
 )
 from axelcompta.ingestion.settlements_plateforme_postgres import PostgresSettlements
-from axelcompta.ledger.contrepassation import annulees, id_contrepassation
+from axelcompta.ledger.contrepassation import annulees, contrepasser, id_contrepassation
 from axelcompta.ledger.models import Ecriture, Journal, Sens
 from axelcompta.ledger.periodes import Periode
 from axelcompta.ledger.repository import PostgresLedgerService
@@ -218,6 +218,35 @@ def _ventilations_annulees(
         and s.ecriture_id
         and id_contrepassation(id_ventilation_plateforme(EcritureId(s.ecriture_id))) in ids
     ]
+
+
+MOTIF_DELIE = "lien Rollee retiré"
+
+
+def delier_revenus(
+    stockes: Sequence[SettlementStocke],
+    account_ids: frozenset[str],
+    grand_livre: Sequence[Ecriture],
+    periodes_closes: Sequence[Periode],
+    debut_ouvert: date,
+    maintenant: datetime,
+) -> tuple[list[Ecriture], list[SettlementStocke]]:
+    """AXE-911 : le lien avec un user Rollee est retiré. Ses relevés passent
+    « délié » ; ceux déjà ventilés voient leur ventilation contre-passée,
+    jamais supprimée. Dans un exercice clos, la contre-passation est datée
+    du premier jour de l'exercice ouvert. Pur : l'appelant enregistre."""
+    connues = {e.id: e for e in grand_livre}
+    inverses: list[Ecriture] = []
+    delies: list[SettlementStocke] = []
+    for stocke in stockes:
+        if stocke.account_id not in account_ids or stocke.etat == "delie":
+            continue
+        if stocke.etat == "reconcilie" and stocke.ecriture_id:
+            ventilation = connues.get(id_ventilation_plateforme(EcritureId(stocke.ecriture_id)))
+            if ventilation is not None and id_contrepassation(ventilation.id) not in connues:
+                inverses.append(contrepasser(ventilation, periodes_closes, debut_ouvert))
+        delies.append(replace(stocke, etat="delie", motif=MOTIF_DELIE, maj_le=maintenant))
+    return inverses, delies
 
 
 async def _lire(

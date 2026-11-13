@@ -276,3 +276,19 @@ def test_le_rattrapage_relit_chaque_dossier_relie() -> None:
     lignes = rattraper(_suivi(services, [], revenus))
     assert revenus == ["DIGI_1"] and "comptes user-1" in journal
     assert lignes == ["revenus lus"]
+
+
+def test_un_webhook_d_un_user_inconnu_lance_son_rapprochement() -> None:
+    """AXE-911 : un user Rollee qu'aucun dossier ne connaît est rapproché tout de suite."""
+    services, _journal, _ = _services()
+    suivi = _suivi(services, [])
+    vus: list[tuple[str, str]] = []
+
+    async def rapprocher(tenant_id: TenantId, user: str) -> str:
+        vus.append((tenant_id, user))
+        return f"user {user} : à choisir"
+
+    suivi.rapprocher_inconnu = rapprocher
+    suivi.evenements.garder(_evenement({"type": "update_endpoint", "data": {"user_id": "u-x"}}))
+    traiter_evenements(suivi, T)
+    assert vus == [(T, "u-x")]

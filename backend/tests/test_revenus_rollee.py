@@ -25,8 +25,15 @@ from axelcompta.ingestion.settlements_plateforme import (
 )
 from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
+from axelcompta.ledger.periodes import Periode
 from axelcompta.plateformes_rollee import ServicesRollee
-from axelcompta.revenus_rollee import DepotsRevenus, rapprocher, relever_revenus
+from axelcompta.revenus_rollee import (
+    MOTIF_DELIE,
+    DepotsRevenus,
+    delier_revenus,
+    rapprocher,
+    relever_revenus,
+)
 from axelcompta.tenants.branchements import BranchementsMemoire, nouveau
 from axelcompta.tenants.models import Dossier
 
@@ -254,3 +261,40 @@ def test_la_contrepassation_du_virement_emporte_sa_ventilation() -> None:
     resultat = _rapprocher([_stocke()], [virement])
     (annulation,) = annuler_reclassements(virement.id, [virement, *resultat.ecritures])
     assert annulation.id.startswith("S1:ventilation-plateforme")
+
+
+def test_delier_contre_passe_les_ventilations_sans_rien_supprimer() -> None:
+    """AXE-911 : le lien Rollee était faux."""
+    ventile = _rapprocher([_stocke()], [_virement("S1", 848_00)])
+    autre = replace(
+        _stocke(replace(SEMAINE, period_start=date(2026, 10, 12), period_end=date(2026, 10, 18))),
+    )
+    grand_livre = [_virement("S1", 848_00), *ventile.ecritures]
+    inverses, delies = delier_revenus(
+        [*ventile.stockes, autre], frozenset({"acc-uber"}), grand_livre, (), date(2026, 1, 1), LE
+    )
+    ((inverse,),) = (inverses,)
+    assert inverse.id == "S1:ventilation-plateforme:contrepassation"
+    assert [(s.etat, s.motif) for s in delies] == [("delie", MOTIF_DELIE)] * 2
+    # Rejoué : déjà délié, déjà contre-passé, rien de plus.
+    assert delier_revenus(
+        delies, frozenset({"acc-uber"}), [*grand_livre, inverse], (), date(2026, 1, 1), LE
+    ) == ([], [])
+
+
+def test_delier_ne_touche_pas_les_comptes_d_un_autre_lien() -> None:
+    ventile = _rapprocher([_stocke()], [_virement("S1", 848_00)])
+    grand_livre = [_virement("S1", 848_00), *ventile.ecritures]
+    assert delier_revenus(
+        ventile.stockes, frozenset({"acc-bolt"}), grand_livre, (), date(2026, 1, 1), LE
+    ) == ([], [])
+
+
+def test_delier_dans_un_exercice_clos_passe_par_l_exercice_ouvert() -> None:
+    ventile = _rapprocher([_stocke()], [_virement("S1", 848_00)])
+    grand_livre = [_virement("S1", 848_00), *ventile.ecritures]
+    clos: tuple[Periode, ...] = ((date(2026, 1, 1), date(2026, 12, 31)),)
+    inverses, _ = delier_revenus(
+        ventile.stockes, frozenset({"acc-uber"}), grand_livre, clos, date(2027, 1, 1), LE
+    )
+    assert inverses[0].date == date(2027, 1, 1)

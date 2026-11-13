@@ -213,3 +213,33 @@ def test_health_renouvelle_le_jeton() -> None:
     client = _client([httpx.Response(200, json={"token": "neuf"})], [], jetons)
     sante = asyncio.run(RolleeProvider(client=client, comptes_du_dossier=lambda _d: ()).health())
     assert sante.ok and jetons == ["neuf"]
+
+
+def test_tous_les_users_sont_lus_page_apres_page() -> None:
+    """AXE-911 : `next_page_link` jusqu'à la dernière page, en lecture seule."""
+    vus: list[httpx.Request] = []
+    suivante = "https://api.sand.getrollee.com/api/v0.5/users?page=2"
+    client = _client(
+        [
+            httpx.Response(200, json={"data": [{"id": "u1"}], "next_page_link": suivante}),
+            httpx.Response(200, json={"data": [{"id": "u2", "metadata": {}}]}),
+        ],
+        vus,
+    )
+    assert [u["id"] for u in asyncio.run(client.utilisateurs())] == ["u1", "u2"]
+    assert [r.method for r in vus] == ["GET", "GET"]
+    assert vus[1].url.params["page"] == "2"
+
+
+def test_profil_et_iban_d_un_compte_sont_lus_sans_renouveler_le_jeton() -> None:
+    vus: list[httpx.Request] = []
+    client = _client(
+        [
+            httpx.Response(200, json={"first_name": "Élodie", "last_name": "Martin"}),
+            httpx.Response(200, json={"iban": "FR76..."}),
+        ],
+        vus,
+    )
+    assert asyncio.run(client.profil("acc-1"))["first_name"] == "Élodie"
+    assert asyncio.run(client.coordonnees_bancaires("acc-1"))["iban"] == "FR76..."
+    assert [r.url.path.rsplit("/", 1)[-1] for r in vus] == ["profile", "banking_info"]

@@ -45,6 +45,7 @@ from axelcompta.modeles_distants import assurer_modele
 from axelcompta.notifier import notifier_depuis_base
 from axelcompta.plateformes_rollee import rattraper, suivi_postgres
 from axelcompta.rappels import envoyer, planifier
+from axelcompta.rapprochement_rollee_service import passer_tous, rapprochement_actif
 from axelcompta.registres_officiels import relire_si_configure
 from axelcompta.synchro_digifactory import ResultatDossier, synchroniser_portefeuille
 from axelcompta.tenants.avenants import programmer_bascules
@@ -303,6 +304,10 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001 — la relecture n'arrête pas le passage
         bilan.lignes.append(f"registres : échec ({type(exc).__name__})")
     if debut.hour == HEURE_RATTRAPAGE_ROLLEE:
+        # AXE-911 : relier les nouveaux users d'abord, pour relire leurs revenus cette
+        # nuit. Seulement une fois activé ; avant, la simulation passe par le script.
+        if rapprochement_actif():
+            bilan.lignes += _rollee(lambda: passer_tous(engine, True, debut))
         bilan.lignes += _rollee(lambda: rattraper(suivi_postgres(engine)))
     if debut.hour == HEURE_CONTROLE_BALANCE:
         installer_sentry()

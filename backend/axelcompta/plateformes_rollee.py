@@ -193,6 +193,8 @@ class Suivi:
     dossiers: DossierRepository
     notifier: Notifier
     relever_revenus: ReleverRevenus | None = None  # AXE-821
+    # AXE-911 : un webhook d'un user Rollee inconnu lance son rapprochement.
+    rapprocher_inconnu: Callable[[TenantId, str], Awaitable[str]] | None = None
 
 
 async def _suivre_dossier(suivi: Suivi, dossier: Dossier, donnees: bool) -> str:
@@ -221,7 +223,10 @@ async def _un_evenement(suivi: Suivi, evenement: EvenementRollee) -> str:
         dossier_id = suivi.services.comptes.dossier_du_user(user)
         dossier = suivi.dossiers.obtenir(dossier_id) if dossier_id else None
         if dossier is None or dossier.tenant_id != evenement.tenant_id:
-            morceaux.append(f"user {user} inconnu")
+            if suivi.rapprocher_inconnu is not None:
+                morceaux.append(await suivi.rapprocher_inconnu(evenement.tenant_id, user))
+            else:
+                morceaux.append(f"user {user} inconnu")
             continue
         morceaux.append(await _suivre_dossier(suivi, dossier, evenement.type in TYPES_DONNEES))
     return " ; ".join(morceaux) or "aucun user"
@@ -273,6 +278,7 @@ def suivi_postgres(engine: Engine) -> Suivi:
         )
 
     # Import différé : `revenus_rollee` s'appuie sur ce module (AXE-821).
+    from axelcompta.rapprochement_rollee_service import rapprocher_inconnu
     from axelcompta.revenus_rollee import depots_postgres, relever_revenus
 
     services = ServicesRollee(PostgresBranchements(engine), PostgresComptesRollee(engine))
@@ -283,6 +289,7 @@ def suivi_postgres(engine: Engine) -> Suivi:
         dossiers=PostgresDossierRepository(engine),
         notifier=notifier,
         relever_revenus=lambda d: relever_revenus(services, depots, d, date.today()),
+        rapprocher_inconnu=lambda tenant_id, user: rapprocher_inconnu(engine, tenant_id, user),
     )
 
 

@@ -8,6 +8,8 @@ import { Aide, pourquoiEnvoi } from "@/components/Aide";
 import { useCanauxEnvoi } from "@/lib/use-canaux-envoi";
 import { IntegrationsDossier } from "@/components/IntegrationsDossier";
 import { SuiviEnvois } from "@/components/SuiviEnvois";
+import { ComptesRolleeAChoisir } from "@/components/ComptesRolleeAChoisir";
+import { LienRollee } from "@/components/LienRollee";
 import { SynthesePlateformes } from "@/components/SynthesePlateformes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +18,7 @@ import {
   declencherRappel,
   ErreurAuthGestionnaire,
   lireConnexionsBancaires,
+  lireRolleePortefeuille,
   lirePortefeuilleSession,
   listerDossiers,
   listerDossiersRetires,
@@ -31,6 +34,7 @@ import {
   phraseComptesAChoisir,
 } from "@/lib/comptes-a-choisir";
 import { phraseAConfirmer } from "@/lib/configuration-dossier";
+import { LIBELLES_ETAT_ROLLEE, type RolleePortefeuille } from "@/lib/liens-rollee";
 import { phraseTvaADeclarer } from "@/lib/tva";
 import {
   libelleBanque,
@@ -64,6 +68,9 @@ import {
 } from "@/components/TagsEntreprises";
 
 const COMPTES_A_CHOISIR = "a_choisir";
+// AXE-911 : filtre sur l'état du lien Rollee de chaque entreprise.
+const FILTRES_ROLLEE = ["tous", "a_choisir", "non_relie", "relie"] as const;
+type FiltreRollee = (typeof FILTRES_ROLLEE)[number];
 type FiltreCompte = "tous" | "sans_compte" | "invite" | "ouvert";
 type FiltreResultat = "tous" | "negatif" | "positif";
 
@@ -85,6 +92,9 @@ export function EcranEntreprises() {
   const etape = params.get("etape") ?? "toutes";
   const banque = params.get("banque") === COMPTES_A_CHOISIR ? COMPTES_A_CHOISIR : "toutes";
   const tag = params.get("tag") ?? TOUS_LES_TAGS;
+  const filtreRollee: FiltreRollee =
+    FILTRES_ROLLEE.find((f) => f === params.get("rollee")) ?? "tous";
+  const [rollee, setRollee] = useState<RolleePortefeuille | null>(null);
   const [reglageTags, setReglageTags] = useState<ReglageTags | null>(null);
   const [coches, setCoches] = useState<string[]>([]);
   const tri = lireTri(params.get("tri"));
@@ -108,6 +118,16 @@ export function EcranEntreprises() {
       });
   }, [router]);
   const synchro = useSynchronisationPortefeuille(charger);
+  const chargerRollee = useCallback(() => {
+    lireRolleePortefeuille()
+      .then(setRollee)
+      .catch(() => {
+        // Non lu : pas de section ni de filtre Rollee, plutôt qu'un faux « non trouvé ».
+      });
+  }, []);
+  useEffect(() => {
+    chargerRollee();
+  }, [chargerRollee]);
 
   useEffect(() => {
     const memo = lirePortefeuilleSession();
@@ -162,6 +182,11 @@ export function EcranEntreprises() {
       if (tva !== "toutes" && dossier.tva_recettes_regime !== tva) return false;
       if (etape !== "toutes" && !gardeEtape(dossier, etape)) return false;
       if (banque === COMPTES_A_CHOISIR && !attendUnChoixDeCompte(dossier)) return false;
+      if (filtreRollee !== "tous" && rollee) {
+        const etatRollee = rollee.etats[dossier.dossier_id] ?? "non_relie";
+        const relie = etatRollee.startsWith("relie_");
+        if (filtreRollee === "relie" ? !relie : etatRollee !== filtreRollee) return false;
+      }
       if (!gardeTag({ tags: dossier.tags ?? [] }, tag)) return false;
       if (!aiguille) return true;
       return `${dossier.nom} ${dossier.plateformes.join(" ")}`.toLowerCase().includes(aiguille);
@@ -176,7 +201,7 @@ export function EcranEntreprises() {
       }
       return a.nom.localeCompare(b.nom, "fr");
     });
-  }, [banque, compte, dossiers, etape, forme, recherche, resultat, tag, tri, tva]);
+  }, [banque, compte, dossiers, etape, filtreRollee, forme, recherche, resultat, rollee, tag, tri, tva]);
 
   const bandeau = useMemo(() => bandeauComptesAChoisir(dossiers ?? []), [dossiers]);
   const pages = Math.max(1, Math.ceil(visibles.length / PAR_PAGE));
@@ -190,6 +215,7 @@ export function EcranEntreprises() {
     tva !== "toutes" ||
     etape !== "toutes" ||
     banque !== "toutes" ||
+    filtreRollee !== "tous" ||
     tag !== TOUS_LES_TAGS ||
     tri !== "nom";
 
@@ -297,6 +323,10 @@ export function EcranEntreprises() {
         </div>
       )}
 
+      {rollee && (
+        <ComptesRolleeAChoisir vue={rollee} ecriture={droit.ecriture} onChoisi={chargerRollee} />
+      )}
+
       <div className="mt-8 flex items-center gap-2">
         <Input
           value={recherche}
@@ -351,6 +381,19 @@ export function EcranEntreprises() {
           ]}
           onChoisir={(valeur) => ecrire({ banque: valeur })}
         />
+        {rollee && (
+          <Filtre
+            libelle="Rollee"
+            valeur={filtreRollee}
+            options={[
+              { id: "tous", libelle: "Tous" },
+              { id: "a_choisir", libelle: LIBELLES_ETAT_ROLLEE.a_choisir },
+              { id: "non_relie", libelle: LIBELLES_ETAT_ROLLEE.non_relie },
+              { id: "relie", libelle: "relié" },
+            ]}
+            onChoisir={(valeur) => ecrire({ rollee: valeur })}
+          />
+        )}
         {reglageTags && (
           <Filtre
             libelle="Tag"
@@ -375,7 +418,7 @@ export function EcranEntreprises() {
         />
         {filtresActifs && (
           <Button type="button" variant="ghost" size="sm" onClick={() => ecrire({
-            q: null, compte: null, resultat: null, forme: null, tva: null, etape: null, banque: null, tag: null,
+            q: null, compte: null, resultat: null, forme: null, tva: null, etape: null, banque: null, rollee: null, tag: null,
             tri: null,
           })}>
             Réinitialiser
@@ -593,6 +636,7 @@ export function EcranEntreprises() {
             )}
           </dl>
           <SynthesePlateformes dossierId={choisi.dossier_id} />
+          <LienRollee dossierId={choisi.dossier_id} ecriture={droit.ecriture} onChange={chargerRollee} />
           <IntegrationsDossier dossierId={choisi.dossier_id} admin={droit.admin} />
           <div className="mt-8">
             <p className="text-sm font-medium text-ink">
