@@ -11,6 +11,9 @@ from datetime import date
 from axelcompta.core.identite import IdentiteEntreprise
 from axelcompta.core.ids import DossierId
 
+from .immobilisations import Immobilisation
+from .loa import ContratLoa
+
 
 @dataclass(frozen=True, slots=True)
 class LiassePivot:
@@ -78,3 +81,21 @@ class ParametresCloture:
     regime_liasse: str = "2033"
     # Estimations saisies (CCA, FNP). Vide : le moteur n'en invente pas.
     provisions: tuple[ProvisionCloture, ...] = ()
+    # Registre des immobilisations (AXE-802) : dotations et cessions.
+    immobilisations: tuple[Immobilisation, ...] = ()
+    # Contrats de LOA (AXE-803) : premier loyer étalé, engagement hors bilan.
+    contrats_loa: tuple[ContratLoa, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SaisiesCloture:
+    """Ce que le chauffeur saisit pour la clôture, en plus de ses écritures :
+    estimations CCA/FNP de l'exercice et registre des immobilisations."""
+
+    provisions: tuple[ProvisionCloture, ...] = ()
+    immobilisations: tuple[Immobilisation, ...] = ()
+    contrats_loa: tuple[ContratLoa, ...] = ()
+
+
+# Aucune saisie : valeur par défaut des fonctions (immuable, partageable).
+SANS_SAISIE = SaisiesCloture()

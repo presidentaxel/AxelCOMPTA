@@ -8,6 +8,8 @@ import { ChiffresExercice, ClotureSection } from "@/components/ClotureSection";
 import { GreffeInpiSection } from "@/components/GreffeInpiSection";
 import { PaieSection } from "@/components/PaieSection";
 import { ProvisionsCloture } from "@/components/ProvisionsCloture";
+import { ContratsLoa } from "@/components/ContratsLoa";
+import { RegistreImmobilisations } from "@/components/RegistreImmobilisations";
 import { useDossierChauffeur } from "@/app/chauffeur/use-dossier";
 import { Etat } from "@/components/Etat";
 import { Squelette, SqueletteLignes } from "@/components/Squelette";
@@ -94,6 +96,20 @@ export default function ExerciceChauffeurPage({
             <>
               <ChiffresExercice dossier={fiche} />
               <ProvisionsCloture
+                dossierId={dossierId}
+                onChange={() => {
+                  setRevisionProvisions((valeur) => valeur + 1);
+                  recharger();
+                }}
+              />
+              <RegistreImmobilisations
+                dossierId={dossierId}
+                onChange={() => {
+                  setRevisionProvisions((valeur) => valeur + 1);
+                  recharger();
+                }}
+              />
+              <ContratsLoa
                 dossierId={dossierId}
                 onChange={() => {
                   setRevisionProvisions((valeur) => valeur + 1);

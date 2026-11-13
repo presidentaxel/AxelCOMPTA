@@ -6,6 +6,7 @@ import { intituleProposition, libelleCategorie, questionSelonSigne } from "./lan
 test("l'origine de la proposition se dit sans parler du modèle", () => {
   assert.equal(intituleProposition("Carburant", "regle"), "Proposition : Carburant");
   assert.equal(intituleProposition("Carburant", "modele"), "Proposition : Carburant");
+  assert.equal(intituleProposition("Carburant", "ia"), "Proposition de l'IA : Carburant");
   assert.equal(
     intituleProposition("Carburant", "appris"),
     "Comme une opération déjà classée : Carburant",

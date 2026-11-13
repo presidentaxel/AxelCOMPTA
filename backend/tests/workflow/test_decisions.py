@@ -87,3 +87,25 @@ def test_une_annotation_dev_ne_change_pas_la_decision_courante() -> None:
 
     assert repo.decision_courante(DOSSIER, ECRITURE) == decision
     assert repo.lister_annotations(DOSSIER) == (annotation,)
+
+
+def test_la_nature_dit_si_l_humain_a_suivi_la_proposition() -> None:
+    """AXE-871."""
+    from axelcompta.workflow.decisions import (
+        NATURE_CONFIRMEE,
+        NATURE_CORRIGEE,
+        NATURE_SANS_PROPOSITION,
+        nature_decision,
+    )
+
+    assert nature_decision("carburant", "carburant") == NATURE_CONFIRMEE
+    assert nature_decision("peage_stationnement", "carburant") == NATURE_CORRIGEE
+    assert nature_decision("non_categorise_a_verifier", "carburant") == NATURE_SANS_PROPOSITION
+    assert nature_decision(None, "carburant") == NATURE_SANS_PROPOSITION
+
+
+def test_le_contexte_se_relit_a_l_identique() -> None:
+    from axelcompta.workflow.decisions import ContexteDecision
+
+    contexte = ContexteDecision("CB TOTAL", -6000, "card", "carburant", "REGLE", 0.95, "confirmee")
+    assert ContexteDecision.depuis_dict(contexte.en_dict()) == contexte
