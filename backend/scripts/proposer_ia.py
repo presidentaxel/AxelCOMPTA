@@ -6,6 +6,8 @@ dédoublonnés, par lots. Un libellé déjà envoyé ne repart jamais.
 
 Simulation par défaut : compte les libellés à envoyer, sans aucun appel.
 `--appliquer` appelle Claude (clé `ANTHROPIC_API_KEY` requise) et enregistre.
+Le modèle vient de `ANTHROPIC_MODEL`, sinon Claude Fable 5.2 ; `--modele`
+l'emporte. Une clé non limitée à un workspace exige `ANTHROPIC_WORKSPACE_ID`.
 Le plafond de dépense (1 $ par défaut) arrête les appels dès qu'il est atteint.
 
 Usage, depuis backend/ (DATABASE_URL défini, migrations appliquées) :
@@ -29,10 +31,11 @@ from axelcompta.ledger.contrepassation import annulees
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.packs.vtc_demo import charger_compte_par_categorie
 from axelcompta.pseudonymize.fournisseur_anthropic import (
-    MODELE_PAR_DEFAUT,
     BudgetDepasse,
     FournisseurAnthropic,
     ReponseInutilisable,
+    WorkspaceRequis,
+    modele_configure,
 )
 from axelcompta.pseudonymize.llm import JournalPrompts
 from axelcompta.tenants.models import Dossier
@@ -56,8 +59,13 @@ def main() -> int:
         "--appliquer", action="store_true", help="appeler Claude (sinon simulation)"
     )
     parseur.add_argument("--plafond-usd", type=float, default=1.0)
-    parseur.add_argument("--modele", default=MODELE_PAR_DEFAUT)
+    parseur.add_argument(
+        "--modele",
+        default=None,
+        help="modèle Claude (défaut : ANTHROPIC_MODEL, sinon claude-fable-5-2)",
+    )
     arguments = parseur.parse_args()
+    arguments.modele = modele_configure(arguments.modele)
     if arguments.appliquer and not os.environ.get("ANTHROPIC_API_KEY"):
         raise SystemExit("ANTHROPIC_API_KEY n'est pas définie : rien n'est envoyé.")
 
@@ -103,6 +111,8 @@ def _envoyer(
         except BudgetDepasse as erreur:
             print(f"Arrêt : {erreur}")
             break
+        except WorkspaceRequis as erreur:
+            raise SystemExit(str(erreur)) from erreur
         except ReponseInutilisable as erreur:
             print(f"Lot ignoré, laissé à l'humain : {erreur}")
             continue

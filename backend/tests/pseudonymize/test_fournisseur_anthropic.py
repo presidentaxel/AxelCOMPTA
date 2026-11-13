@@ -12,7 +12,10 @@ from axelcompta.pseudonymize.fournisseur_anthropic import (
     BudgetDepasse,
     FournisseurAnthropic,
     ReponseInutilisable,
+    WorkspaceRequis,
     cout,
+    entetes_anthropic,
+    modele_configure,
 )
 from axelcompta.pseudonymize.llm import JournalPrompts
 from axelcompta.pseudonymize.prompt import PseudonymizedPrompt
@@ -77,4 +80,36 @@ def test_au_dela_du_plafond_plus_aucun_appel() -> None:
 def test_un_refus_ou_une_reponse_coupee_reste_a_l_humain(raison: str) -> None:
     fournisseur = FournisseurAnthropic({}, JournalPrompts(), 1.0, messages=ClientFactice(raison))
     with pytest.raises(ReponseInutilisable):
+        fournisseur.completer(PROMPT)
+
+
+def test_le_modele_vient_de_l_environnement_sauf_si_on_le_precise(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    assert modele_configure(None) == "claude-fable-5-2"
+    monkeypatch.setenv("ANTHROPIC_MODEL", " claude-haiku-5-5 ")
+    assert modele_configure(None) == "claude-haiku-5-5"
+    assert modele_configure("claude-sonnet-5-5") == "claude-sonnet-5-5"
+
+
+def test_le_workspace_part_en_en_tete_quand_il_est_defini(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ANTHROPIC_WORKSPACE_ID", raising=False)
+    assert entetes_anthropic() == {}
+    monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", " wrkspc_axe ")
+    assert entetes_anthropic() == {"anthropic-workspace-id": "wrkspc_axe"}
+
+
+def test_une_cle_sans_workspace_dit_quelle_variable_manque() -> None:
+    class ClientSansWorkspace:
+        def create(self, **kwargs: Any) -> Any:
+            raise RuntimeError(
+                "This API key is not scoped to a workspace, so this request must include "
+                "the anthropic-workspace-id header"
+            )
+
+    fournisseur = FournisseurAnthropic({}, JournalPrompts(), 1.0, messages=ClientSansWorkspace())
+    with pytest.raises(WorkspaceRequis, match="ANTHROPIC_WORKSPACE_ID"):
         fournisseur.completer(PROMPT)
