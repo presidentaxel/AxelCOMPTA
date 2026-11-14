@@ -109,24 +109,34 @@ class FileMemoire:
 
     def echouer(self, identifiant: str) -> None:
         actuel = self._jobs[identifiant]
-        statut = "echec" if actuel.tentatives >= TENTATIVES_MAX else "en_attente"
+        doublon = any(
+            j.id != identifiant
+            and j.statut == "en_attente"
+            and (j.tenant_id, j.type, j.payload) == (actuel.tenant_id, actuel.type, actuel.payload)
+            for j in self._jobs.values()
+        )
+        statut = "echec" if actuel.tentatives >= TENTATIVES_MAX or doublon else "en_attente"
         self._jobs[identifiant] = replace(actuel, statut=statut, verrou_par=None)
 
     def lire(self, identifiant: str) -> Job:
         return self._jobs[identifiant]
 
     def demander(self, tenant_id: str, type_job: str, payload: str = "{}") -> Job:
-        """Comme `FilePostgres.demander` : la demande active si elle existe."""
-        actif = next(
+        """Comme `FilePostgres.demander` : la même demande en attente si elle
+        existe. Un job en cours ne l'absorbe pas (AXE-921)."""
+        en_attente = next(
             (
                 j
                 for j in self._jobs.values()
-                if j.tenant_id == tenant_id and j.type == type_job and j.actif
+                if j.tenant_id == tenant_id
+                and j.type == type_job
+                and j.payload == payload
+                and j.statut == "en_attente"
             ),
             None,
         )
-        if actif is not None:
-            return actif
+        if en_attente is not None:
+            return en_attente
         job = self.deposer(f"job-{self._ordre + 1}", tenant_id, type_job, payload)
         job = replace(job, cree_le=datetime.now(UTC))
         self._jobs[job.id] = job

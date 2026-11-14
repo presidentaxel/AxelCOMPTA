@@ -26,11 +26,25 @@ LIMIT 1
 """
 
 
+REQUETE_ECHOUER = """
+UPDATE jobs SET statut = d.statut, verrou_par = NULL, derniere_erreur = :e,
+  termine_le = CASE WHEN d.statut = 'echec' THEN now() END
+FROM (
+  SELECT CASE WHEN j.tentatives >= :max OR EXISTS (
+      SELECT 1 FROM jobs k WHERE k.id <> j.id AND k.statut = 'en_attente'
+        AND k.tenant_id = j.tenant_id AND k.type = j.type AND k.payload = j.payload
+    ) THEN 'echec' ELSE 'en_attente' END AS statut
+  FROM jobs j WHERE j.id = :id
+) d
+WHERE jobs.id = :id
+"""
+
+
 class FilePostgres:
-    """La file en base (AXE-845). Au plus une demande active (en attente ou
-    en cours) par portefeuille et par type : redemander pendant qu'une
-    synchro tourne rend la demande en cours, sans en créer une seconde
-    (index unique partiel `jobs_un_actif_par_type`)."""
+    """La file en base (AXE-845). Deux demandes identiques (portefeuille,
+    type, payload) **en attente** n'en font qu'une (index unique partiel
+    `jobs_une_demande_en_attente`). Une demande faite pendant qu'un job tourne
+    attend son tour : ce job a déjà lu ce qu'il devait faire (AXE-921)."""
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
@@ -51,9 +65,22 @@ class FilePostgres:
                 ),
                 {"id": str(uuid.uuid4()), "t": tenant_id, "type": type_job, "payload": payload},
             )
-        job = self.dernier(tenant_id, type_job)
+        job = self._en_attente(tenant_id, type_job, payload) or self.dernier(tenant_id, type_job)
         assert job is not None
         return job
+
+    def _en_attente(self, tenant_id: str, type_job: str, payload: str) -> Job | None:
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            ligne = connexion.execute(
+                text(
+                    "SELECT * FROM jobs WHERE tenant_id = :t AND type = :type "
+                    "AND payload = :payload AND statut = 'en_attente' "
+                    "ORDER BY cree_le DESC LIMIT 1"
+                ),
+                {"t": tenant_id, "type": type_job, "payload": payload},
+            ).first()
+        return None if ligne is None else _job(ligne)
 
     def dernier(self, tenant_id: str, type_job: str) -> Job | None:
         with self._engine.connect() as connexion:
@@ -85,14 +112,12 @@ class FilePostgres:
         self._fermer(identifiant, "fait", resultat=resultat)
 
     def echouer(self, identifiant: str, erreur: str) -> None:
+        """Réessayé plus tard, sauf au dernier essai, ou si la même demande
+        attend déjà (AXE-921) : elle refera le travail, et deux demandes
+        identiques en attente sont interdites par l'index."""
         with self._engine.begin() as connexion:
             connexion.execute(
-                text(
-                    "UPDATE jobs SET statut = CASE WHEN tentatives >= :max THEN 'echec' "
-                    "ELSE 'en_attente' END, verrou_par = NULL, derniere_erreur = :e, "
-                    "termine_le = CASE WHEN tentatives >= :max THEN now() END WHERE id = :id"
-                ),
-                {"id": identifiant, "e": erreur, "max": TENTATIVES_MAX},
+                text(REQUETE_ECHOUER), {"id": identifiant, "e": erreur, "max": TENTATIVES_MAX}
             )
 
     def _fermer(self, identifiant: str, statut: str, resultat: str) -> None:
