@@ -12,7 +12,9 @@ from typing import Any
 import pytest
 
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.ingestion.comptes_rollee import ComptesRolleeMemoire
+from axelcompta.ingestion.comptes_rollee import ComptesRolleeMemoire, UtilisateurRollee
+from axelcompta.ingestion.providers.rollee import RolleeIndisponible
+from axelcompta.ingestion.rapprochement_rollee import empreinte, nom_du_profil
 from axelcompta.ingestion.webhooks_rollee import EvenementRollee, EvenementsRolleeMemoire
 from axelcompta.plateformes_rollee import (
     RolleeNonBranche,
@@ -22,8 +24,11 @@ from axelcompta.plateformes_rollee import (
     rattraper,
     recevoir,
     relire_comptes,
+    synchroniser_dossier,
     traiter_evenements,
 )
+from axelcompta.rapprochement_rollee_service import cle_empreintes
+from axelcompta.revenus_rollee import _lire
 from axelcompta.tenants.branchements import (
     Branchement,
     BranchementsMemoire,
@@ -140,6 +145,97 @@ def test_plusieurs_rollee_sans_choix_ne_prennent_pas_un_defaut() -> None:
     services.branchements.enregistrer([second], "admin", LE)
     with pytest.raises(RolleeNonBranche, match="Plusieurs comptes"):
         asyncio.run(ouvrir_session(services, DOSSIER))
+
+
+def _deux_allocab(profils: dict[str, dict[str, str]] | None, erreur: int | None = None) -> Any:
+    class Client:
+        def __init__(self) -> None:
+            self.lus: list[str] = []
+
+        async def comptes(self, _user_id: str) -> list[dict[str, Any]]:
+            return [
+                {"id": "acc-barry", "name": "allocab-fleet-rev", "connected": True},
+                {"id": "acc-autre", "name": "allocab-fleet-rev", "connected": True},
+            ]
+
+        async def profil(self, account_id: str) -> dict[str, str]:
+            if erreur is not None:
+                raise RolleeIndisponible("profil illisible", erreur)
+            return (profils or {})[account_id]
+
+        async def revenus(self, account_id: str, _depuis: date, _jusqua: date) -> dict[str, Any]:
+            self.lus.append(account_id)
+            return {}
+
+        async def aclose(self) -> None:
+            return None
+
+    return Client()
+
+
+def test_un_lien_cree_retient_tous_les_comptes_sans_lire_le_profil() -> None:
+    services, _, branchement = _services()
+    assert branchement is not None
+    services.fabrique = lambda _b, _g: _deux_allocab(None)
+    services.comptes.enregistrer_utilisateur(
+        UtilisateurRollee(DOSSIER.id, "user-cree", branchement.id), LE
+    )
+    comptes = asyncio.run(relire_comptes(services, DOSSIER))
+    assert [(c.account_id, c.retenu, c.titulaire_autre) for c in comptes] == [
+        ("acc-barry", True, False),
+        ("acc-autre", True, False),
+    ]
+
+
+def test_deux_comptes_allocab_ne_retiennent_que_le_nom_du_dossier() -> None:
+    services, _, branchement = _services()
+    assert branchement is not None
+    client = _deux_allocab(
+        {
+            "acc-barry": {"full_name": "BARRY Boubacar"},
+            "acc-autre": {"full_name": "GABI GALESSAN LEVAH"},
+        }
+    )
+    services.fabrique = lambda _b, _g: client
+    barry = empreinte(cle_empreintes(), nom_du_profil({"full_name": "BARRY Boubacar"}))
+    services.comptes.enregistrer_utilisateur(
+        UtilisateurRollee(DOSSIER.id, "927b77da", branchement.id, (barry,)), LE
+    )
+    comptes = asyncio.run(relire_comptes(services, DOSSIER))
+    par_id = {c.account_id: c for c in comptes}
+    assert (par_id["acc-barry"].retenu, par_id["acc-barry"].titulaire_autre) == (True, False)
+    assert (par_id["acc-autre"].retenu, par_id["acc-autre"].titulaire_autre) == (False, True)
+    asyncio.run(_lire(services, DOSSIER, date(2026, 1, 1), date(2026, 11, 14)))
+    assert client.lus == ["acc-barry"]
+
+
+def test_un_profil_en_500_n_est_pas_retenu() -> None:
+    services, _, branchement = _services()
+    assert branchement is not None
+    services.fabrique = lambda _b, _g: _deux_allocab(None, 500)
+    services.comptes.enregistrer_utilisateur(
+        UtilisateurRollee(DOSSIER.id, "user-500", branchement.id, ("nom",)), LE
+    )
+    phrase = asyncio.run(synchroniser_dossier(services, DOSSIER))
+    assert "illisible" in phrase
+    assert [(c.retenu, c.titulaire_autre) for c in services.comptes.comptes(DOSSIER.id)] == [
+        (False, False),
+        (False, False),
+    ]
+
+
+def test_synchroniser_sans_user_n_appelle_pas_rollee() -> None:
+    services, journal, _ = _services()
+    phrase = asyncio.run(synchroniser_dossier(services, DOSSIER))
+    assert phrase == "Aucun compte Rollee relié : rien à synchroniser."
+    assert journal == []
+
+
+def test_synchroniser_relit_les_comptes_deja_relies() -> None:
+    services, _journal, _ = _services()
+    asyncio.run(ouvrir_session(services, DOSSIER))
+    phrase = asyncio.run(synchroniser_dossier(services, DOSSIER))
+    assert phrase == "Rollee synchronisé : Uber, Bolt. Bolt est à reconnecter."
 
 
 def test_sans_branchement_rollee_le_chauffeur_sait_quoi_faire() -> None:

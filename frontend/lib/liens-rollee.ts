@@ -25,7 +25,13 @@ export type RolleePortefeuille = {
   a_choisir: AChoisirRollee[];
 };
 
-export type LienRollee = { origine: string; comment: string; relie_le: string };
+export type LienRollee = {
+  rollee_user_id: string;
+  origine: string;
+  comment: string;
+  relie_le: string;
+  versements_a_contrepasser: number;
+};
 export type LienRetire = {
   comment: string;
   relie_le: string;
@@ -35,6 +41,7 @@ export type LienRetire = {
 };
 export type FicheRollee = {
   lien: LienRollee | null;
+  liens: LienRollee[];
   historique: LienRetire[];
   versements_a_contrepasser: number;
 };
@@ -57,6 +64,15 @@ export function apercuCompte(compte: AChoisirRollee): string {
   return morceaux.join(" · ");
 }
 
+/** Les comptes Rollee à relier depuis la fiche de cette entreprise. */
+export function comptesPourLaFiche(vue: RolleePortefeuille, dossierId: string): AChoisirRollee[] {
+  return vue.a_choisir.filter(
+    (compte) =>
+      compte.etat === "a_choisir" &&
+      compte.candidats.some((candidat) => candidat.dossier_id === dossierId),
+  );
+}
+
 /** Le bandeau au-dessus de la liste, ou `null` s'il n'y a rien à choisir. */
 export function bandeauRollee(vue: RolleePortefeuille): string | null {
   const a = vue.a_choisir.filter((c) => c.etat === "a_choisir").length;
@@ -66,6 +82,28 @@ export function bandeauRollee(vue: RolleePortefeuille): string | null {
   if (a > 0) parties.push(a === 1 ? "1 compte Rollee attend votre choix" : `${a} comptes Rollee attendent votre choix`);
   if (n > 0) parties.push(n === 1 ? "1 n'a été rapproché d'aucune entreprise" : `${n} n'ont été rapprochés d'aucune entreprise`);
   return `${parties.join(", ")}. Sans ce lien, les revenus Uber et Bolt n'arrivent pas.`;
+}
+
+/** Un user Rollee trouvé dans la carte du portefeuille. */
+export type FicheAnnuaireRollee = {
+  rollee_user_id: string;
+  nom: string;
+  plateformes: string[];
+  compte: string;
+  email_masque: string | null;
+  relie_a: string | null;
+};
+
+/** « Uber, Bolt · Serenity Mobilité · e•••n@exemple.fr ». */
+export function detailFiche(fiche: FicheAnnuaireRollee): string {
+  return [fiche.plateformes.join(", ") || "aucune plateforme", fiche.compte, fiche.email_masque]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** On ne cherche qu'à partir de 2 lettres (comme l'API). */
+export function rechercheAssezLongue(requete: string): boolean {
+  return requete.replace(/[^\p{L}]/gu, "").length >= 2;
 }
 
 /** Ce que retirer le lien change, dit avant de confirmer. */

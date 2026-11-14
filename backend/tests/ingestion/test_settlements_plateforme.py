@@ -8,10 +8,13 @@ from datetime import UTC, date, datetime
 from axelcompta.core.ids import DossierId
 from axelcompta.ingestion.providers.base import PlatformSettlement
 from axelcompta.ingestion.settlements_plateforme import (
+    MOTIF_DOUBLON,
+    MOTIF_ECART,
     SettlementsMemoire,
     a_verifier,
     cle,
     fusionner,
+    marquer_doublons,
 )
 
 LE = datetime(2026, 11, 11, tzinfo=UTC)
@@ -70,3 +73,14 @@ def test_a_verifier_ne_garde_que_les_releves_a_regarder() -> None:
     assert nouveau is not None
     bloque = replace(nouveau, id="b", etat="a_verifier", motif="virement déjà rapproché")
     assert a_verifier([nouveau, bloque, replace(nouveau, id="c", etat="reconcilie")]) == [bloque]
+
+
+def test_le_meme_versement_lu_deux_fois_ne_reste_rapprochable_qu_une_fois() -> None:
+    premier = fusionner(None, "acc-a", SEMAINE, LE)
+    second = fusionner(None, "acc-b", SEMAINE, LE)
+    partiel = fusionner(None, "acc-c", replace(SEMAINE, net_payout_cts=400_00), LE)
+    assert premier is not None and second is not None and partiel is not None
+    marques = {s.id: s for s in marquer_doublons([premier, second, partiel], LE)}
+    assert marques[second.id].etat == "a_verifier" and marques[second.id].motif == MOTIF_DOUBLON
+    assert premier.id not in marques
+    assert marques[partiel.id].motif == MOTIF_ECART

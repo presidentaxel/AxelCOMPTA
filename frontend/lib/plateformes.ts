@@ -5,6 +5,7 @@ type PlateformeReliee = {
   nom: string;
   etat: "connecte" | "en_cours" | "a_reconnecter";
   relie_le: string | null;
+  titulaire_autre?: boolean;
 };
 type SynthesePlateformes = {
   reliees: number;
@@ -16,6 +17,7 @@ type SynthesePlateformes = {
 
 /** AXE-819 : « Uber : relié le 06/11 », « Bolt : à reconnecter ». */
 export function etatPlateforme(compte: PlateformeReliee, formatDate: (iso: string) => string): string {
+  if (compte.titulaire_autre) return "au nom d'un autre chauffeur, ignoré";
   if (compte.etat === "connecte") {
     return compte.relie_le ? `relié le ${formatDate(compte.relie_le.slice(0, 10))}` : "relié";
   }

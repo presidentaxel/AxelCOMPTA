@@ -93,6 +93,8 @@
     "lib/ouverture.ts",
     "lib/ouverture.test.ts",
     "lib/plateformes.ts",
-    "lib/plateformes.test.ts"
+    "lib/plateformes.test.ts",
+    "lib/logos.ts",
+    "lib/logos.test.ts"
   ]
 }

@@ -47,7 +47,7 @@ export function TagsDuDossier({
   const [erreur, setErreur] = useState<string | null>(null);
   if (!reglage) return null;
   return (
-    <div className="mt-8">
+    <div>
       <p className="text-sm font-medium text-ink">Tags</p>
       <div className="mt-2 flex flex-wrap gap-2">
         {reglage.tags.map((tag) => {
