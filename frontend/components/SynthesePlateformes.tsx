@@ -17,6 +17,20 @@ const RANG_ETAT: Record<ComptePlateformeSynthese["etat"], number> = {
   connecte: 2,
 };
 
+function groupesDe(comptes: ComptePlateformeSynthese[]) {
+  const ordre: { cle: string; titre: string; comptes: ComptePlateformeSynthese[] }[] = [];
+  for (const compte of comptes) {
+    const cle = compte.rollee_user_id || "";
+    const connu = ordre.find((groupe) => groupe.cle === cle);
+    if (connu) {
+      connu.comptes.push(compte);
+    } else {
+      ordre.push({ cle, titre: compte.compte_rollee || "", comptes: [compte] });
+    }
+  }
+  return ordre;
+}
+
 function joindre(noms: string[]): string {
   if (noms.length <= 1) return noms[0] ?? "";
   return `${noms.slice(0, -1).join(", ")} et ${noms[noms.length - 1]}`;
@@ -68,32 +82,45 @@ export function SynthesePlateformes({
         </p>
       )}
       {liste && (
-        <ul className="mt-2 space-y-1" aria-label="Plateformes Rollee">
-          {comptes.map((compte, index) => (
-            <li
-              key={`${compte.nom}-${index}`}
-              className={`flex min-w-0 items-center gap-2 rounded-md px-1 py-1 ${
-                compte.etat === "a_reconnecter" ? "bg-danger-subtle" : ""
-              }`}
-            >
-              <span className="min-w-0 flex-1">
-                <LogoPlateforme nom={compte.nom} />
-              </span>
-              <span
-                className={`shrink-0 text-sm leading-none ${
-                  compte.etat === "a_reconnecter" ? "font-medium text-danger" : "text-subtle"
-                }`}
-              >
-                {etatPlateforme(compte, formatDate)}
-              </span>
-            </li>
+        <div className="mt-2 space-y-3">
+          {groupesDe(comptes).map((groupe) => (
+            <div key={groupe.cle || groupe.titre || "plateformes"}>
+              {groupe.titre && (
+                <p className="px-1 text-xs font-medium text-subtle">{groupe.titre}</p>
+              )}
+              <ul className="space-y-1" aria-label={groupe.titre || "Plateformes Rollee"}>
+                {groupe.comptes.map((compte, index) => (
+                  <li
+                    key={`${groupe.cle}-${compte.nom}-${index}`}
+                    className={`flex min-w-0 items-center gap-2 rounded-md px-1 py-1 ${
+                      compte.etat === "a_reconnecter" ? "bg-danger-subtle" : ""
+                    }`}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <LogoPlateforme nom={compte.nom} />
+                    </span>
+                    <span
+                      className={`shrink-0 text-sm leading-none ${
+                        compte.etat === "a_reconnecter" ? "font-medium text-danger" : "text-subtle"
+                      }`}
+                    >
+                      {etatPlateforme(compte, formatDate)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ))}
-          {sansCompte.map((nom) => (
-            <li key={nom} className="flex h-8 items-center px-1">
-              <LogoPlateforme nom={nom} />
-            </li>
-          ))}
-        </ul>
+          {sansCompte.length > 0 && (
+            <ul className="space-y-1">
+              {sansCompte.map((nom) => (
+                <li key={nom} className="flex h-8 items-center px-1">
+                  <LogoPlateforme nom={nom} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
       {synthese.manquantes.length > 0 && (
         <p className="mt-2 text-sm text-subtle">

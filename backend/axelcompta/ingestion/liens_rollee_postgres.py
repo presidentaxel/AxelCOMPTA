@@ -84,17 +84,23 @@ class PostgresLiensRollee:
                 select(utilisateurs_rollee)
                 .join(dossiers, dossiers.c.id == utilisateurs_rollee.c.dossier_id)
                 .where(dossiers.c.tenant_id == str(tenant_id))
-                .order_by(utilisateurs_rollee.c.dossier_id)
+                .order_by(utilisateurs_rollee.c.dossier_id, utilisateurs_rollee.c.rollee_user_id)
+            ).all()
+        return [_lien(ligne) for ligne in lignes]
+
+    def liens_du(self, dossier_id: DossierId) -> list[Lien]:
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            lignes = connexion.execute(
+                select(utilisateurs_rollee)
+                .where(utilisateurs_rollee.c.dossier_id == dossier_id)
+                .order_by(utilisateurs_rollee.c.cree_le, utilisateurs_rollee.c.rollee_user_id)
             ).all()
         return [_lien(ligne) for ligne in lignes]
 
     def lien(self, dossier_id: DossierId) -> Lien | None:
-        with self._engine.connect() as connexion:
-            appliquer_rls(connexion)
-            ligne = connexion.execute(
-                select(utilisateurs_rollee).where(utilisateurs_rollee.c.dossier_id == dossier_id)
-            ).first()
-        return _lien(ligne) if ligne is not None else None
+        trouves = self.liens_du(dossier_id)
+        return trouves[0] if trouves else None
 
     def historique(self, dossier_id: DossierId) -> list[LienRetire]:
         with self._engine.connect() as connexion:
@@ -122,14 +128,36 @@ class PostgresLiensRollee:
                     )
                 )
         except IntegrityError as exc:
-            raise LienDejaPris("Ce dossier ou ce compte Rollee est déjà relié.") from exc
+            raise LienDejaPris("Ce compte Rollee est déjà relié.") from exc
 
-    def delier(self, dossier_id: DossierId, par: str, motif: str, le: datetime) -> Lien | None:
+    def delier(
+        self,
+        dossier_id: DossierId,
+        par: str,
+        motif: str,
+        le: datetime,
+        rollee_user_id: str | None = None,
+    ) -> Lien | None:
         with self._engine.begin() as connexion:
             appliquer_rls(connexion)
+            if rollee_user_id is None:
+                poses = connexion.execute(
+                    select(utilisateurs_rollee.c.rollee_user_id).where(
+                        utilisateurs_rollee.c.dossier_id == dossier_id
+                    )
+                ).scalars()
+                ids = list(poses)
+                if len(ids) > 1:
+                    raise LienDejaPris("Plusieurs comptes Rollee : précisez lequel retirer.")
+                rollee_user_id = ids[0] if ids else None
+            if rollee_user_id is None:
+                return None
             ligne = connexion.execute(
                 delete(utilisateurs_rollee)
-                .where(utilisateurs_rollee.c.dossier_id == dossier_id)
+                .where(
+                    utilisateurs_rollee.c.dossier_id == dossier_id,
+                    utilisateurs_rollee.c.rollee_user_id == rollee_user_id,
+                )
                 .returning(*utilisateurs_rollee.c)
             ).first()
             if ligne is None:

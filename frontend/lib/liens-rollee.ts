@@ -25,7 +25,13 @@ export type RolleePortefeuille = {
   a_choisir: AChoisirRollee[];
 };
 
-export type LienRollee = { origine: string; comment: string; relie_le: string };
+export type LienRollee = {
+  rollee_user_id: string;
+  origine: string;
+  comment: string;
+  relie_le: string;
+  versements_a_contrepasser: number;
+};
 export type LienRetire = {
   comment: string;
   relie_le: string;
@@ -35,6 +41,7 @@ export type LienRetire = {
 };
 export type FicheRollee = {
   lien: LienRollee | null;
+  liens: LienRollee[];
   historique: LienRetire[];
   versements_a_contrepasser: number;
 };

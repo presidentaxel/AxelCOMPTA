@@ -14,6 +14,9 @@ période, puis rapproché du virement reçu en banque :
   exercice clos, ou relevé modifié après ventilation. Rien n'est écrit.
 * `delie` : relevé d'un compte Rollee dont le lien avec le dossier a été
   retiré (AXE-911). Sa ventilation est contre-passée ; il n'est plus traité.
+
+Un même versement lu sur deux comptes Rollee du même chauffeur est gardé
+deux fois. Un seul reste rapprochable ; la copie passe « à vérifier ».
 """
 
 from __future__ import annotations
@@ -74,6 +77,84 @@ def fusionner(
             connu, etat="a_verifier", motif="relevé modifié après ventilation", maj_le=maintenant
         )
     return replace(connu, settlement=lu, maj_le=maintenant)
+
+
+MOTIF_DOUBLON = "même versement déjà lu sur un autre compte Rollee"
+MOTIF_ECART = "même période lue sur un autre compte Rollee, montants différents"
+
+
+def _plateforme(stocke: SettlementStocke) -> str:
+    return stocke.settlement.platform.casefold().strip()
+
+
+def _copies_identiques(actifs: Sequence[SettlementStocke]) -> dict[str, str]:
+    """Même plateforme, même période, même net : une copie reste, les autres non."""
+    par_empreinte: dict[tuple[str, object, object, int], list[SettlementStocke]] = {}
+    for stocke in actifs:
+        cle_eco = (
+            _plateforme(stocke),
+            stocke.settlement.period_start,
+            stocke.settlement.period_end,
+            stocke.settlement.net_payout_cts,
+        )
+        par_empreinte.setdefault(cle_eco, []).append(stocke)
+    marques: dict[str, str] = {}
+    for groupe in par_empreinte.values():
+        if len(groupe) < 2:
+            continue
+        ventiles = [s for s in groupe if s.etat == "reconcilie"]
+        garde = ventiles[0] if ventiles else min(groupe, key=lambda s: s.id)
+        for stocke in groupe:
+            if stocke.id != garde.id and stocke.etat in A_RAPPROCHER:
+                marques[stocke.id] = MOTIF_DOUBLON
+    return marques
+
+
+def _ecarts_de_periode(actifs: Sequence[SettlementStocke], deja: set[str]) -> dict[str, str]:
+    """Même période, montants différents : le plus complet reste rapprochable."""
+    par_periode: dict[tuple[str, object, object], list[SettlementStocke]] = {}
+    for stocke in actifs:
+        if stocke.id in deja:
+            continue
+        par_periode.setdefault(
+            (_plateforme(stocke), stocke.settlement.period_start, stocke.settlement.period_end),
+            [],
+        ).append(stocke)
+    marques: dict[str, str] = {}
+    for groupe in par_periode.values():
+        marques.update(_ecart_du_groupe(groupe))
+    return marques
+
+
+def _ecart_du_groupe(groupe: Sequence[SettlementStocke]) -> dict[str, str]:
+    if len({s.settlement.net_payout_cts for s in groupe}) < 2:
+        return {}
+    if any(s.etat == "reconcilie" for s in groupe):
+        return {s.id: MOTIF_ECART for s in groupe if s.etat in A_RAPPROCHER}
+    eligibles = [s for s in groupe if s.etat in A_RAPPROCHER]
+    if len(eligibles) < 2:
+        return {}
+    garde = max(eligibles, key=lambda s: (s.settlement.net_payout_cts, s.id))
+    return {s.id: MOTIF_ECART for s in eligibles if s.id != garde.id}
+
+
+def marquer_doublons(
+    stockes: Sequence[SettlementStocke], maintenant: datetime
+) -> list[SettlementStocke]:
+    """Garde chaque relevé. Un seul de chaque versement identique (plateforme,
+    période, net) reste rapprochable : celui déjà ventilé, sinon le plus
+    ancien identifiant. Les copies passent « à vérifier » et ne s'écrivent pas.
+    Même période, montants différents : le plus élevé reste rapprochable
+    (le relevé le plus complet), les autres attendent un regard. Si l'un est
+    déjà ventilé, les autres de la même période attendent aussi."""
+    actifs = [s for s in stockes if s.etat != "delie"]
+    a_marquer = _copies_identiques(actifs)
+    a_marquer.update(_ecarts_de_periode(actifs, set(a_marquer)))
+    return [
+        replace(s, etat="a_verifier", motif=a_marquer[s.id], maj_le=maintenant)
+        for s in stockes
+        if s.id in a_marquer
+    ]
 
 
 def a_verifier(stockes: Sequence[SettlementStocke]) -> list[SettlementStocke]:

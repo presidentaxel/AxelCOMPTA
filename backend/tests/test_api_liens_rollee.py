@@ -105,7 +105,7 @@ def test_aucun_de_ces_comptes_ecarte_le_user() -> None:
     assert vue["a_choisir"] == []
 
 
-def test_un_dossier_deja_relie_refuse_un_second_lien() -> None:
+def test_un_second_compte_rollee_se_relie_au_meme_chauffeur() -> None:
     client, liens, _s = _monter()
     liens.lier(Lien(KARIM, "u-1", "b1", "auto", LE, "iban"))
     reponse = client.post(
@@ -113,7 +113,8 @@ def test_un_dossier_deja_relie_refuse_un_second_lien() -> None:
         json={"rollee_user_id": "u-9", "dossier_id": "DEMO_karim"},
         headers=_en_tete_gestionnaire(),
     )
-    assert reponse.status_code == 409
+    assert reponse.status_code == 204
+    assert [lien.rollee_user_id for lien in liens.liens_du(KARIM)] == ["u-1", "u-9"]
 
 
 def test_la_lecture_seule_ne_relie_rien_et_le_chauffeur_ne_voit_pas_la_file() -> None:

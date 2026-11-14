@@ -32,6 +32,7 @@ from sqlalchemy.engine import Engine
 from axelcompta.core.errors import DomaineError
 from axelcompta.core.ids import EcritureId, TransactionId
 from axelcompta.core.pcg import est_compte_banque
+from axelcompta.ingestion.comptes_rollee import CompteRelie
 from axelcompta.ingestion.ecritures_settlement import (
     SUFFIXE_VENTILATION,
     ecriture_de_ventilation,
@@ -47,6 +48,7 @@ from axelcompta.ingestion.settlements_plateforme import (
     SettlementsRepository,
     SettlementStocke,
     fusionner,
+    marquer_doublons,
 )
 from axelcompta.ingestion.settlements_plateforme_postgres import PostgresSettlements
 from axelcompta.ledger.contrepassation import annulees, contrepasser, id_contrepassation
@@ -57,9 +59,11 @@ from axelcompta.ledger.service import LedgerService
 from axelcompta.packs.vtc_demo import charger_plateformes
 from axelcompta.plateformes_rollee import (
     ServicesRollee,
+    _branchement_du_user,
     branchement_du_dossier,
     client_du_branchement,
 )
+from axelcompta.tenants.branchements import Branchement
 from axelcompta.tenants.models import Dossier
 from axelcompta.workflow.reclassement import projeter
 
@@ -249,24 +253,45 @@ def delier_revenus(
     return inverses, delies
 
 
+def _groupes(
+    services: ServicesRollee, dossier: Dossier, comptes: list[CompteRelie]
+) -> list[tuple[Branchement, list[CompteRelie]]]:
+    """Un client Rollee par compte Rollee. Les plateformes sans user
+    (liens posés avant) passent par le branchement du dossier."""
+    par_user: dict[str | None, list[CompteRelie]] = {}
+    for compte in comptes:
+        par_user.setdefault(compte.rollee_user_id, []).append(compte)
+    utilisateurs = {u.rollee_user_id: u for u in services.comptes.utilisateurs(dossier.id)}
+    groupes: list[tuple[Branchement, list[CompteRelie]]] = []
+    for user_id, groupe in par_user.items():
+        utilisateur = utilisateurs.get(user_id) if user_id else None
+        if utilisateur is None:
+            branchement = branchement_du_dossier(services, dossier)
+        else:
+            branchement = _branchement_du_user(services, dossier, utilisateur)
+        groupes.append((branchement, groupe))
+    return groupes
+
+
 async def _lire(
     services: ServicesRollee, dossier: Dossier, depuis: date, jusqua: date
 ) -> tuple[list[tuple[str, PlatformSettlement]], list[Rejet]]:
     comptes = [c for c in services.comptes.comptes(dossier.id) if c.connecte]
     if not comptes:
         return [], []
-    client = client_du_branchement(services, branchement_du_dossier(services, dossier))
     plateformes = charger_plateformes()
     lus: list[tuple[str, PlatformSettlement]] = []
     rejets: list[Rejet] = []
-    try:
-        for compte in comptes:
-            reponse = await client.revenus(compte.account_id, depuis, jusqua)
-            releve = lire_revenus(dossier.id, compte.pour_releve(), reponse, plateformes)
-            lus += [(compte.account_id, s) for s in releve.settlements]
-            rejets += releve.rejets
-    finally:
-        await client.aclose()
+    for branchement, groupe in _groupes(services, dossier, comptes):
+        client = client_du_branchement(services, branchement)
+        try:
+            for compte in groupe:
+                reponse = await client.revenus(compte.account_id, depuis, jusqua)
+                releve = lire_revenus(dossier.id, compte.pour_releve(), reponse, plateformes)
+                lus += [(compte.account_id, s) for s in releve.settlements]
+                rejets += releve.rejets
+        finally:
+            await client.aclose()
     return lus, rejets
 
 
@@ -299,6 +324,10 @@ async def relever_revenus(
         if stocke is not None:
             nouveaux.append(stocke)
             connus[stocke.id] = stocke
+    for doublon in marquer_doublons(list(connus.values()), maintenant):
+        connus[doublon.id] = doublon
+        nouveaux = [s for s in nouveaux if s.id != doublon.id]
+        nouveaux.append(doublon)
     depots.settlements.enregistrer(nouveaux)
     return _ventiler(depots, dossier, list(connus.values()), aujourd_hui, maintenant, len(rejets))
 

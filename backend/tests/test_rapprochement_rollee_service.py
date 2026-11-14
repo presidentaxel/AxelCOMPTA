@@ -25,6 +25,7 @@ from axelcompta.rapprochement_rollee_service import (
     lire_user,
     lire_users,
     passer_tenant,
+    phrase_carte,
     phrase_lecture,
     rapprocher_dossier,
 )
@@ -143,6 +144,85 @@ def test_la_phrase_de_lecture_dit_ou_on_en_est() -> None:
     assert phrase_lecture("Flotte", 400, 400, 40) == "Flotte : 400 comptes Rollee lus."
 
 
+def test_la_carte_evite_de_relire_le_profil_des_comptes_connus() -> None:
+    rollee = FauxRollee()
+    connu = UserRollee("u-iban", None, Empreintes(), Apercu("É.M.", ("Uber",), "0189"))
+    gardes: list[str] = []
+    users = asyncio.run(
+        lire_users(
+            rollee,  # type: ignore[arg-type]
+            CLE,
+            connus={"u-iban": connu},
+            garder=lambda user: gardes.append(user.user_id),
+        )
+    )
+    assert [u.user_id for u in users] == ["u-iban", "u-nom", "u-rien"]
+    assert users[0] is connu
+    assert "profil u-iban-uber" not in rollee.appels
+    assert gardes == ["u-nom", "u-rien"]
+
+
+def test_la_liste_rafraichit_le_dossier_inscrit_sans_relire_le_profil() -> None:
+    class AvecDossier(FauxRollee):
+        async def utilisateurs(self) -> list[dict[str, Any]]:
+            return [{"id": "u-iban", "metadata": {"dossier_id": "d-iban"}}]
+
+    connu = UserRollee("u-iban", None, Empreintes(), Apercu())
+    (user,) = asyncio.run(
+        lire_users(AvecDossier(), CLE, connus={"u-iban": connu})  # type: ignore[arg-type]
+    )
+    assert user.dossier_metadata == "d-iban"
+    assert user.empreintes == connu.empreintes
+
+
+def test_un_passage_plafonne_ne_lit_que_les_premiers_absents() -> None:
+    rollee = FauxRollee()
+    laisses: list[int] = []
+    users = asyncio.run(
+        lire_users(rollee, CLE, plafond=1, laisses=laisses)  # type: ignore[arg-type]
+    )
+    assert [u.user_id for u in users] == ["u-iban"]
+    assert laisses == [2]
+    profils = [appel for appel in rollee.appels if appel.startswith("profil")]
+    assert profils == ["profil u-iban-uber"]
+
+
+def test_l_entretien_remplit_la_carte_sans_poser_de_lien() -> None:
+    rollee = FauxRollee()
+    depots = _depots(rollee)
+    branchement = depots.services.branchements.lister(T)[0].id
+    lignes = asyncio.run(passer_tenant(depots, T, False, LE, entretenir=True, plafond=1))
+    assert depots.liens.liens(T) == [] and depots.liens.a_choisir(T) == []
+    assert list(depots.cartes.lire(T, branchement)) == ["u-iban"]
+    assert "carte mise à jour" in lignes[0] and "2 encore absents" in lignes[0]
+    rollee.appels.clear()
+    asyncio.run(passer_tenant(depots, T, False, LE, entretenir=True, plafond=1))
+    assert "profil u-iban-uber" not in rollee.appels
+    assert set(depots.cartes.lire(T, branchement)) == {"u-iban", "u-nom"}
+
+
+def test_la_phrase_de_carte_separe_le_connu_et_le_nouveau() -> None:
+    assert phrase_carte("Flotte", 120, 0, 40, 0) == (
+        "Flotte : 120 comptes déjà connus, 40 nouveaux à lire."
+    )
+    assert phrase_carte("Flotte", 120, 10, 40, 10) == (
+        "Flotte : 120 déjà connus, 10/40 nouveaux lus, environ 30 s."
+    )
+    assert phrase_carte("Flotte", 120, 0, 0, 0) == "Flotte : 120 comptes déjà connus."
+
+
+def test_le_second_passage_compare_la_carte_sans_relire_les_profils() -> None:
+    rollee = FauxRollee()
+    depots = _depots(rollee)
+    dossier = next(d for d in depots.dossiers.lister_par_tenant(T) if d.id == "d-nom")
+    asyncio.run(rapprocher_dossier(depots, dossier, LE))
+    rollee.appels.clear()
+    phrase = asyncio.run(rapprocher_dossier(depots, dossier, LE))
+    assert phrase == "Un compte Rollee correspond. Reliez-le sur cette fiche."
+    assert [appel for appel in rollee.appels if appel.startswith("profil")] == []
+    assert [a.rollee_user_id for a in depots.liens.a_choisir(T)] == ["u-nom"]
+
+
 def test_la_lecture_annonce_l_avancement_et_saute_les_deja_relies() -> None:
     rollee = FauxRollee()
     phrases: list[str] = []
@@ -245,7 +325,7 @@ def test_un_user_ecarte_le_reste_et_un_passage_partiel_garde_la_file() -> None:
 
 def test_un_lien_pose_entre_temps_renvoie_le_user_au_gestionnaire() -> None:
     liens = LiensRolleeMemoire(tenants={"d1": T})
-    liens.lier(Lien(DossierId("d1"), "u-avant", "b1", "manuel", LE, None, "marie"))
+    liens.lier(Lien(DossierId("d1"), "u1", "b1", "manuel", LE, None, "marie"))
     users = [UserRollee("u1", None, Empreintes())]
     appliquer(liens, [Issue("u1", "relie_auto", "d1", "iban")], users, Passage(T, "b1", LE))
     assert [(a.rollee_user_id, a.etat) for a in liens.a_choisir(T)] == [("u1", "a_choisir")]

@@ -14,9 +14,8 @@ import {
 import { ORDRE_TYPES, TYPES_BRANCHEMENT } from "@/lib/branchements";
 
 /** AXE-872 : l'accès qu'une entreprise utilise, pour chaque intégration qui
- * en a plusieurs. Rien à choisir quand il n'y en a qu'un. Le bouton
- * « Synchroniser Rollee » cherche le compte, ou relit Uber et Bolt s'il est
- * déjà relié. La phrase sous le bouton dit où en est la lecture. */
+ * en a plusieurs. Rollee n'a pas de menu : le bouton lit tous les comptes
+ * et relit Uber, Bolt… La phrase sous le bouton dit où en est la lecture. */
 export function IntegrationsDossier({
   dossierId,
   admin,
@@ -51,12 +50,26 @@ export function IntegrationsDossier({
     };
   }, [dossierId]);
 
+  const ficheRelue = useRef(false);
+  const surSynchro = useRef(onSynchronise);
+  useEffect(() => {
+    surSynchro.current = onSynchronise;
+  }, [onSynchronise]);
   useEffect(() => {
     if (!enCours) return;
+    ficheRelue.current = false;
     let actif = true;
     const lire = () => {
       void lireAvancementRollee(dossierId).then((phrase) => {
-        if (actif && enCoursRef.current && phrase) setSynchro(phrase);
+        if (!actif || !enCoursRef.current || !phrase) return;
+        setSynchro(phrase);
+        if (
+          !ficheRelue.current &&
+          (phrase.includes("Reliez") || phrase.includes("lien est posé"))
+        ) {
+          ficheRelue.current = true;
+          surSynchro.current();
+        }
       });
     };
     const id = setInterval(lire, 2000);
@@ -67,7 +80,8 @@ export function IntegrationsDossier({
   }, [enCours, dossierId]);
 
   const types = ORDRE_TYPES.filter(
-    (type) => branchements.filter((b) => b.type === type && b.actif).length > 1,
+    (type) =>
+      type !== "rollee" && branchements.filter((b) => b.type === type && b.actif).length > 1,
   );
   if (types.length === 0 && !ecriture) return null;
 

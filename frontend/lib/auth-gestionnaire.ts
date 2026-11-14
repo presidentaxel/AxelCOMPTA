@@ -402,6 +402,8 @@ export type ComptePlateformeSynthese = {
   nom: string;
   etat: "connecte" | "en_cours" | "a_reconnecter";
   relie_le: string | null;
+  compte_rollee?: string;
+  rollee_user_id?: string;
 };
 
 /** AXE-819 : plateformes reliées par le chauffeur (doc 19). */
@@ -1253,13 +1255,17 @@ export async function synchroniserRollee(dossierId: string): Promise<string> {
   return ((await reponse.json()) as { phrase: string }).phrase;
 }
 
-export async function delierRollee(dossierId: string, motif: string): Promise<number> {
+export async function delierRollee(
+  dossierId: string,
+  motif: string,
+  rolleeUserId?: string,
+): Promise<number> {
   const reponse = await requeteGestionnaire(
     `/dossiers/${encodeURIComponent(dossierId)}/rollee/delier`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ motif }),
+      body: JSON.stringify({ motif, rollee_user_id: rolleeUserId ?? null }),
     },
   );
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);

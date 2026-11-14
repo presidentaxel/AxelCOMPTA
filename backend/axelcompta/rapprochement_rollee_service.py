@@ -26,7 +26,7 @@ import os
 import time
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -34,6 +34,8 @@ from sqlalchemy.engine import Engine
 
 from axelcompta.comptes import SupabaseCompteRepository, SupabaseConfig
 from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.ingestion.cartes_rollee import CartesRollee, CartesRolleeMemoire
+from axelcompta.ingestion.cartes_rollee_postgres import PostgresCartesRollee
 from axelcompta.ingestion.comptes_rollee_postgres import PostgresComptesRollee
 from axelcompta.ingestion.liens_rollee import AChoisir, Lien, LienDejaPris, LiensRollee
 from axelcompta.ingestion.liens_rollee_postgres import PostgresLiensRollee
@@ -86,6 +88,22 @@ def retenir_avancement(dossier_id: str) -> Callable[[str], None]:
 
 def avancement_dossier(dossier_id: str) -> str | None:
     return _avancement.get(dossier_id)
+
+
+def phrase_carte(nom: str, connus: int, faits: int, manquants: int, secondes: float) -> str:
+    """La partie déjà en carte est comparée ; seuls les nouveaux se lisent."""
+    if manquants == 0:
+        return f"{nom} : {connus} comptes déjà connus."
+    if faits <= 0:
+        return f"{nom} : {connus} comptes déjà connus, {manquants} nouveaux à lire."
+    if faits >= manquants:
+        return f"{nom} : {connus} comptes déjà connus, {manquants} nouveaux lus."
+    rythme = faits / secondes if secondes > 0 else 0.0
+    reste = int((manquants - faits) / rythme) if rythme else 0
+    return (
+        f"{nom} : {connus} déjà connus, {faits}/{manquants} nouveaux lus, "
+        f"environ {_duree_restante(reste)}."
+    )
 
 
 def phrase_lecture(nom: str, faits: int, total: int, secondes: float) -> str:
@@ -172,6 +190,19 @@ async def lire_user(
 # simultanés, Rollee répond 429 en 20 s (mesuré le 14/11). 5 à la fois :
 # un 429 est journalisé et réessayé par le client.
 APPELS_SIMULTANES = 5
+# Chaque heure, le parc est complété par tranches : le passage reste court,
+# le suivant reprend les comptes encore absents de la carte.
+NOUVEAUX_PAR_PASSAGE = 120
+
+
+def _avec_metadata(user: UserRollee, brut: Mapping[str, Any]) -> UserRollee:
+    """Le dossier inscrit sur la liste Rollee, sans relire le profil."""
+    metadata = brut.get("metadata") or {}
+    dossier = metadata.get("dossier_id") if isinstance(metadata, Mapping) else None
+    if not dossier:
+        return user
+    meta = str(dossier)
+    return user if user.dossier_metadata == meta else replace(user, dossier_metadata=meta)
 
 
 async def lire_users(
@@ -182,11 +213,22 @@ async def lire_users(
     nom: str = "Rollee",
     noter: Callable[[str], None] | None = None,
     sauf: Collection[str] = (),
+    connus: Mapping[str, UserRollee] | None = None,
+    garder: Callable[[UserRollee], None] | None = None,
+    avant_nouveaux: Callable[[Sequence[UserRollee]], None] | None = None,
+    plafond: int | None = None,
+    laisses: list[int] | None = None,
 ) -> list[UserRollee]:
     """Lit les users d'un compte Rollee. `sauf` : déjà reliés, rien à relire.
-    `noter` reçoit la phrase d'avancement, aussi écrite dans le journal."""
+
+    `connus` : la carte déjà lue. Ces users sont comparés tout de suite,
+    sans profil ni IBAN. `avant_nouveaux` reçoit cette partie avant que les
+    users absents de la carte soient lus, en parallèle. `garder` enregistre
+    chaque user nouvellement lu.
+    """
     _publier(noter, f"{nom} : lecture de la liste…")
     deja = set(sauf)
+    carte = dict(connus or {})
     bruts = [
         brut
         for brut in await client.utilisateurs()
@@ -194,10 +236,25 @@ async def lire_users(
         and (seulement is None or str(brut["id"]) == seulement)
         and str(brut["id"]) not in deja
     ]
-    total = len(bruts)
-    _publier(noter, phrase_lecture(nom, 0, total, 0))
+    reutilises = [
+        _avec_metadata(carte[str(brut["id"])], brut) for brut in bruts if str(brut["id"]) in carte
+    ]
+    a_lire = [brut for brut in bruts if str(brut["id"]) not in carte]
+    if plafond is not None and len(a_lire) > plafond:
+        if laisses is not None:
+            laisses.append(len(a_lire) - plafond)
+        a_lire = a_lire[:plafond]
+    elif laisses is not None:
+        laisses.append(0)
+    if reutilises and avant_nouveaux is not None:
+        avant_nouveaux(reutilises)
+    total = len(a_lire)
+    if reutilises:
+        _publier(noter, phrase_carte(nom, len(reutilises), 0, total, 0))
+    else:
+        _publier(noter, phrase_lecture(nom, 0, total, 0))
     if total == 0:
-        return []
+        return reutilises
     limite = asyncio.Semaphore(APPELS_SIMULTANES)
     faits = 0
     dernier = 0.0
@@ -206,14 +263,23 @@ async def lire_users(
     async def un(brut: Mapping[str, Any]) -> UserRollee:
         nonlocal faits, dernier
         user = await lire_user(client, brut, cle, limite)
+        if garder is not None:
+            garder(user)
         faits += 1
         maintenant = time.monotonic()
         if faits == 1 or faits == total or maintenant - dernier >= 5:
             dernier = maintenant
-            _publier(noter, phrase_lecture(nom, faits, total, maintenant - debut))
+            phrase = (
+                phrase_carte(nom, len(reutilises), faits, total, maintenant - debut)
+                if reutilises
+                else phrase_lecture(nom, faits, total, maintenant - debut)
+            )
+            _publier(noter, phrase)
         return user
 
-    return list(await asyncio.gather(*(un(brut) for brut in bruts)))
+    nouveaux = list(await asyncio.gather(*(un(brut) for brut in a_lire)))
+    par_id = {user.user_id: user for user in (*reutilises, *nouveaux)}
+    return [par_id[str(brut["id"])] for brut in bruts if str(brut["id"]) in par_id]
 
 
 def _publier(noter: Callable[[str], None] | None, phrase: str) -> None:
@@ -242,6 +308,16 @@ def ibans_digifactory(payload: object) -> list[str]:
     return [str(v["iban"]) for v in valeurs if isinstance(v, Mapping) and v.get("iban")]
 
 
+_CLES_TELEPHONE = ("phone", "mobile", "telephone", "cell", "phoneNumber", "mobilePhone")
+
+
+def telephones_contact(contact: Mapping[str, Any] | None) -> list[str]:
+    """Le contact Digifactory n'a pas un seul nom de champ pour le numéro."""
+    if not contact:
+        return []
+    return [str(contact[cle]) for cle in _CLES_TELEPHONE if contact.get(cle)]
+
+
 def indices_dossier(dossier: Dossier, sources: SourcesDossiers, cle: bytes) -> DossierIndices:
     noms: list[str] = []
     contact = sources.contacts.get(str(dossier.contact_nr)) if dossier.contact_nr else None
@@ -253,7 +329,13 @@ def indices_dossier(dossier: Dossier, sources: SourcesDossiers, cle: bytes) -> D
         noms += [normaliser_nom(a.prenoms, a.nom) for a in dossier.identite.associes]
     return DossierIndices(
         str(dossier.id),
-        empreintes(cle, sources.ibans.get(str(dossier.id), ()), noms, emails),
+        empreintes(
+            cle,
+            sources.ibans.get(str(dossier.id), ()),
+            noms,
+            emails,
+            telephones_contact(contact),
+        ),
     )
 
 
@@ -371,6 +453,7 @@ class DepotsRapprochement:
     dossiers: DossierRepository
     sources: Callable[[TenantId, tuple[Dossier, ...]], Awaitable[SourcesDossiers]]
     prevenir: Callable[[TenantId, list[AChoisir]], str] | None = None
+    cartes: CartesRollee = field(default_factory=CartesRolleeMemoire)
 
 
 async def rapprocher_dossier(
@@ -387,32 +470,69 @@ async def rapprocher_dossier(
     sources = await depots.sources(dossier.tenant_id, dossiers)
     indices = [indices_dossier(d, sources, cle) for d in dossiers]
     liste = depots.services.branchements.lister(dossier.tenant_id)
-    choix = depots.services.branchements.choix_du_dossier(dossier.tenant_id, dossier.id)
-    comptes = a_interroger(liste, TYPE_ROLLEE, choix.get(TYPE_ROLLEE))
+    # La fiche n'a plus de menu : on lit tous les comptes Rollee du portefeuille.
+    comptes = a_interroger(liste, TYPE_ROLLEE, None)
     if not comptes:
         return "Rollee n'est pas branché : ajoutez-le dans Intégrations."
     liens = depots.liens.liens(dossier.tenant_id)
     retires = depots.liens.paires_retirees(dossier.tenant_id)
     deja = frozenset(lien.rollee_user_id for lien in liens)
     trouves: list[Issue] = []
+    a_signaler: list[AChoisir] = []
+    decide = {"phrase": ""}
+
+    def noter_fiche(phrase: str) -> None:
+        if noter is None:
+            return
+        texte = f"{decide['phrase']} {phrase}" if decide["phrase"] else phrase
+        noter(texte)
+
     for indice, branchement in enumerate(comptes, start=1):
+        passage = Passage(dossier.tenant_id, branchement.id, maintenant, partiel=True)
+
+        def integrer(users: Sequence[UserRollee], passage_courant: Passage = passage) -> None:
+            poses = depots.liens.liens(dossier.tenant_id)
+            lies = {lien.rollee_user_id for lien in poses}
+            carte = depots.cartes.lire(dossier.tenant_id, passage_courant.branchement_id)
+            deja_la = [
+                connu
+                for user_id, connu in carte.items()
+                if user_id in lies and user_id not in {u.user_id for u in users}
+            ]
+            du_dossier = _du_dossier(
+                trancher_tous([*deja_la, *users], indices, poses, retires), str(dossier.id)
+            )
+            if not du_dossier:
+                return
+            nouveaux = appliquer(depots.liens, du_dossier, users, passage_courant)
+            a_signaler.extend(nouveaux)
+            trouves.extend(du_dossier)
+            decide["phrase"] = phrase_rapprochement(trouves)
+            if noter is not None:
+                noter(decide["phrase"])
+
+        def garder(user: UserRollee, passage_courant: Passage = passage) -> None:
+            depots.cartes.garder(
+                dossier.tenant_id, passage_courant.branchement_id, user, maintenant
+            )
+            integrer([user], passage_courant)
+
         client = client_du_branchement(depots.services, branchement)
         try:
-            users = await lire_users(
+            await lire_users(
                 client,
                 cle,
                 nom=f"{branchement.nom} ({indice}/{len(comptes)})",
-                noter=noter,
+                noter=noter_fiche,
                 sauf=deja,
+                connus=depots.cartes.lire(dossier.tenant_id, branchement.id),
+                garder=garder,
+                avant_nouveaux=integrer,
             )
         finally:
             await client.aclose()
-        du_dossier = _du_dossier(trancher_tous(users, indices, liens, retires), str(dossier.id))
-        passage = Passage(dossier.tenant_id, branchement.id, maintenant, partiel=True)
-        nouveaux = appliquer(depots.liens, du_dossier, users, passage)
-        if nouveaux and depots.prevenir is not None:
-            depots.prevenir(dossier.tenant_id, nouveaux)
-        trouves += du_dossier
+    if a_signaler and depots.prevenir is not None:
+        depots.prevenir(dossier.tenant_id, a_signaler)
     return phrase_rapprochement(trouves)
 
 
@@ -422,9 +542,14 @@ async def passer_tenant(
     ecrire: bool,
     maintenant: datetime,
     seulement: str | None = None,
+    *,
+    entretenir: bool = False,
+    plafond: int | None = None,
 ) -> list[str]:
-    """Un passage sur un portefeuille. `ecrire` faux : simulation, rien
-    n'est écrit. `seulement` : un seul user (webhook d'un user inconnu)."""
+    """Un passage sur un portefeuille. `ecrire` faux : simulation, les liens
+    ne sont pas posés. `entretenir` garde quand même chaque user lu dans la
+    carte. `seulement` : un seul user (webhook). `plafond` : nombre de
+    users absents de la carte lus dans ce passage."""
     cle = cle_empreintes()
     dossiers = depots.dossiers.lister_par_tenant(tenant_id)
     sources = await depots.sources(tenant_id, dossiers)
@@ -437,6 +562,11 @@ async def passer_tenant(
     lignes = []
     liens_poses = depots.liens.liens(tenant_id)
     for branchement in rollee:
+
+        def garder(user: UserRollee, branchement_id: str = branchement.id) -> None:
+            depots.cartes.garder(tenant_id, branchement_id, user, maintenant)
+
+        laisses: list[int] = []
         client = client_du_branchement(depots.services, branchement)
         try:
             users = await lire_users(
@@ -445,12 +575,22 @@ async def passer_tenant(
                 seulement,
                 nom=branchement.nom,
                 sauf=frozenset(lien.rollee_user_id for lien in liens_poses),
+                connus=depots.cartes.lire(tenant_id, branchement.id),
+                garder=garder if ecrire or entretenir else None,
+                plafond=plafond,
+                laisses=laisses,
             )
         finally:
             await client.aclose()
         issues = trancher_tous(users, indices, liens_poses, depots.liens.paires_retirees(tenant_id))
-        mode = "" if ecrire else " (simulation : rien n'est écrit)"
-        lignes.append(f"{tenant_id} / {branchement.nom} : {resume(issues)}{mode}")
+        if ecrire:
+            mode = ""
+        elif entretenir:
+            mode = " (carte mise à jour, liens inchangés)"
+        else:
+            mode = " (simulation : rien n'est écrit)"
+        encore = f", {laisses[-1]} encore absents de la carte" if laisses and laisses[-1] else ""
+        lignes.append(f"{tenant_id} / {branchement.nom} : {resume(issues)}{mode}{encore}")
         if not ecrire:
             continue
         passage = Passage(tenant_id, branchement.id, maintenant, seulement is not None)
@@ -511,9 +651,35 @@ def depots_postgres(engine: Engine) -> DepotsRapprochement:
         services=ServicesRollee(PostgresBranchements(engine), PostgresComptesRollee(engine)),
         liens=PostgresLiensRollee(engine),
         dossiers=PostgresDossierRepository(engine),
+        cartes=PostgresCartesRollee(engine),
         sources=lambda tenant_id, dossiers: sources_reelles(engine, tenant_id, dossiers),
         prevenir=prevenir,
     )
+
+
+def entretenir_cartes(engine: Engine, maintenant: datetime) -> list[str]:
+    """Passage horaire : les comptes absents de la carte sont lus, par
+    tranches. Un compte nouveau arrivé par webhook est lu tout de suite
+    (`rapprocher_inconnu`). Les liens ne sont posés que si le rapprochement
+    automatique est activé."""
+    depots = depots_postgres(engine)
+    ecrire = rapprochement_actif()
+    lignes: list[str] = []
+    for tenant in depots.dossiers.lister_tenants():
+        try:
+            lignes += asyncio.run(
+                passer_tenant(
+                    depots,
+                    tenant.id,
+                    ecrire,
+                    maintenant,
+                    entretenir=True,
+                    plafond=NOUVEAUX_PAR_PASSAGE,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 — un portefeuille en échec n'arrête pas les autres
+            lignes.append(f"{tenant.id} : carte Rollee en échec ({type(exc).__name__})")
+    return lignes
 
 
 def passer_tous(engine: Engine, ecrire: bool, maintenant: datetime) -> list[str]:
@@ -529,13 +695,18 @@ def passer_tous(engine: Engine, ecrire: bool, maintenant: datetime) -> list[str]
 
 
 async def rapprocher_inconnu(engine: Engine, tenant_id: TenantId, user_id: str) -> str:
-    """Webhook d'un user Rollee qu'aucun dossier ne connaît : on le rapproche
-    tout de suite, s'il n'est pas déjà dans la file. Écrit seulement si le
-    rapprochement automatique est activé."""
-    if not rapprochement_actif():
-        return f"user {user_id} inconnu"
+    """Webhook d'un user Rollee qu'aucun dossier ne connaît : il entre dans
+    la carte tout de suite. Le lien n'est posé que si le rapprochement
+    automatique est activé. Déjà dans la file : rien à relire."""
     depots = depots_postgres(engine)
     if any(a.rollee_user_id == user_id for a in depots.liens.a_choisir(tenant_id)):
         return f"user {user_id} inconnu, déjà à choisir"
-    lignes = await passer_tenant(depots, tenant_id, True, datetime.now(UTC), seulement=user_id)
+    lignes = await passer_tenant(
+        depots,
+        tenant_id,
+        rapprochement_actif(),
+        datetime.now(UTC),
+        seulement=user_id,
+        entretenir=True,
+    )
     return " ; ".join(lignes) or f"user {user_id} inconnu"

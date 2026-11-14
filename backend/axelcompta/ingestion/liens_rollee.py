@@ -25,8 +25,8 @@ Origine = Literal["cree", "auto", "manuel"]
 LIBELLES_INDICE = {
     "metadata": "créé depuis l'espace du chauffeur",
     "iban": "par l'IBAN",
-    "nom_email": "par le nom et l'e-mail",
-    "nom_telephone": "par le nom et le téléphone",
+    "nom_email": "par l'e-mail",
+    "nom_telephone": "par le téléphone",
 }
 
 
@@ -70,7 +70,7 @@ class AChoisir:
 
 
 class LienDejaPris(ValueError):
-    """Le dossier ou le user Rollee a déjà un lien : il faut d'abord le retirer."""
+    """Ce compte Rollee est déjà relié, ou le retrait ne dit pas lequel."""
 
 
 class LiensRollee(Protocol):
@@ -78,16 +78,28 @@ class LiensRollee(Protocol):
 
     def lien(self, dossier_id: DossierId) -> Lien | None: ...
 
+    def liens_du(self, dossier_id: DossierId) -> list[Lien]:
+        """Tous les comptes Rollee de cette entreprise, du plus ancien au plus récent."""
+        ...
+
     def historique(self, dossier_id: DossierId) -> list[LienRetire]:
         """Les plus récents d'abord."""
         ...
 
     def lier(self, lien: Lien) -> None:
-        """Lève `LienDejaPris` si le dossier ou le user est déjà relié."""
+        """Lève `LienDejaPris` si ce compte Rollee est déjà relié à une entreprise."""
         ...
 
-    def delier(self, dossier_id: DossierId, par: str, motif: str, le: datetime) -> Lien | None:
-        """Retire le lien et le garde à l'historique. None s'il n'y en avait pas."""
+    def delier(
+        self,
+        dossier_id: DossierId,
+        par: str,
+        motif: str,
+        le: datetime,
+        rollee_user_id: str | None = None,
+    ) -> Lien | None:
+        """Retire un lien et le garde à l'historique. Sans user, retire le seul
+        lien du dossier. Plusieurs liens sans user : `LienDejaPris`."""
         ...
 
     def paires_retirees(self, tenant_id: TenantId) -> frozenset[tuple[str, str]]:
@@ -119,10 +131,21 @@ class LiensRolleeMemoire:
     attente: dict[str, AChoisir] = field(default_factory=dict)
 
     def liens(self, tenant_id: TenantId) -> list[Lien]:
-        return [lien for d, lien in self.poses.items() if self.tenants.get(d) == tenant_id]
+        return [
+            lien
+            for lien in self.poses.values()
+            if self.tenants.get(str(lien.dossier_id)) == tenant_id
+        ]
+
+    def liens_du(self, dossier_id: DossierId) -> list[Lien]:
+        return sorted(
+            (lien for lien in self.poses.values() if lien.dossier_id == dossier_id),
+            key=lambda lien: (lien.relie_le, lien.rollee_user_id),
+        )
 
     def lien(self, dossier_id: DossierId) -> Lien | None:
-        return self.poses.get(dossier_id)
+        trouves = self.liens_du(dossier_id)
+        return trouves[0] if trouves else None
 
     def historique(self, dossier_id: DossierId) -> list[LienRetire]:
         return sorted(
@@ -132,15 +155,28 @@ class LiensRolleeMemoire:
         )
 
     def lier(self, lien: Lien) -> None:
-        pris = any(p.rollee_user_id == lien.rollee_user_id for p in self.poses.values())
-        if lien.dossier_id in self.poses or pris:
-            raise LienDejaPris("Ce dossier ou ce compte Rollee est déjà relié.")
-        self.poses[lien.dossier_id] = lien
+        if lien.rollee_user_id in self.poses:
+            raise LienDejaPris("Ce compte Rollee est déjà relié.")
+        self.poses[lien.rollee_user_id] = lien
 
-    def delier(self, dossier_id: DossierId, par: str, motif: str, le: datetime) -> Lien | None:
-        lien = self.poses.pop(dossier_id, None)
-        if lien is not None:
-            self.retires.append(LienRetire(lien, le, par, motif))
+    def delier(
+        self,
+        dossier_id: DossierId,
+        par: str,
+        motif: str,
+        le: datetime,
+        rollee_user_id: str | None = None,
+    ) -> Lien | None:
+        if rollee_user_id is None:
+            du_dossier = self.liens_du(dossier_id)
+            if len(du_dossier) > 1:
+                raise LienDejaPris("Plusieurs comptes Rollee : précisez lequel retirer.")
+            rollee_user_id = du_dossier[0].rollee_user_id if du_dossier else None
+        lien = self.poses.get(rollee_user_id) if rollee_user_id else None
+        if lien is None or lien.dossier_id != dossier_id:
+            return None
+        self.poses.pop(lien.rollee_user_id)
+        self.retires.append(LienRetire(lien, le, par, motif))
         return lien
 
     def paires_retirees(self, tenant_id: TenantId) -> frozenset[tuple[str, str]]:

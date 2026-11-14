@@ -152,6 +152,14 @@ def test_la_synthese_nomme_la_plateforme_a_reconnecter() -> None:
             "nom": "uber.com-rev",
             "etat": "connecte",
             "relie_le": "2026-11-14T00:00:00+00:00",
+            "compte_rollee": "",
+            "rollee_user_id": "",
         },
-        {"nom": "bolt.eu-rev", "etat": "a_reconnecter", "relie_le": None},
+        {
+            "nom": "bolt.eu-rev",
+            "etat": "a_reconnecter",
+            "relie_le": None,
+            "compte_rollee": "",
+            "rollee_user_id": "",
+        },
     ]

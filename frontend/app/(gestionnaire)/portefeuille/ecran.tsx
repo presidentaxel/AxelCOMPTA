@@ -618,12 +618,6 @@ export function EcranEntreprises() {
                 />
               )}
               <SynthesePlateformes dossierId={choisi.dossier_id} relecture={relectureRollee} />
-              <LienRollee
-                dossierId={choisi.dossier_id}
-                ecriture={droit.ecriture}
-                relecture={relectureRollee}
-                onChange={chargerRollee}
-              />
               <IntegrationsDossier
                 dossierId={choisi.dossier_id}
                 admin={droit.admin}
@@ -722,6 +716,13 @@ export function EcranEntreprises() {
               {infoRappel && <p className="mt-2 text-sm text-subtle">{infoRappel}</p>}
               <SuiviEnvois dossierId={choisi.dossier_id} />
             </div>
+
+            <LienRollee
+              dossierId={choisi.dossier_id}
+              ecriture={droit.ecriture}
+              relecture={relectureRollee}
+              onChange={chargerRollee}
+            />
 
             {droit.admin && (
               <div className="mt-5 border-t border-border pt-4">

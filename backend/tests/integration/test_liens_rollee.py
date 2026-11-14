@@ -32,15 +32,20 @@ def test_lier_delier_et_historique(engine: Engine, creer_dossier: Callable[[str]
     assert liens.lien(DossierId("d2")) == Lien(DossierId("d2"), "u-cree", "b1", "cree", LE)
     auto = Lien(DossierId("d1"), "u-1", "b1", "auto", LE, "iban")
     liens.lier(auto)
+    second = Lien(DossierId("d1"), "u-2", "b1", "manuel", LE, None, "marie")
+    liens.lier(second)
     with pytest.raises(LienDejaPris):
-        liens.lier(Lien(DossierId("d1"), "u-2", "b1", "manuel", LE, None, "marie"))
-    assert [x.rollee_user_id for x in liens.liens(T)] == ["u-1", "u-cree"]
+        liens.lier(Lien(DossierId("d2"), "u-1", "b1", "manuel", LE, None, "marie"))
+    assert [x.rollee_user_id for x in liens.liens(T)] == ["u-1", "u-2", "u-cree"]
     retire_le = LE + timedelta(days=1)
-    assert liens.delier(DossierId("d1"), "marie@cabinet.fr", "homonyme", retire_le) == auto
+    assert liens.delier(DossierId("d1"), "marie@cabinet.fr", "homonyme", retire_le, "u-1") == auto
+    restant = liens.lien(DossierId("d1"))
+    assert restant is not None and restant.rollee_user_id == "u-2"
+    assert liens.delier(DossierId("d1"), "marie@cabinet.fr", "le second", retire_le) == second
     assert liens.lien(DossierId("d1")) is None
-    (trace,) = liens.historique(DossierId("d1"))
-    assert (trace.lien, trace.retire_par, trace.motif) == (auto, "marie@cabinet.fr", "homonyme")
-    assert liens.paires_retirees(T) == frozenset({("u-1", "d1")})
+    traces = liens.historique(DossierId("d1"))
+    assert {t.motif for t in traces} == {"homonyme", "le second"}
+    assert liens.paires_retirees(T) == frozenset({("u-1", "d1"), ("u-2", "d1")})
 
 
 def test_la_file_a_choisir_se_remplace_et_s_ecarte(
