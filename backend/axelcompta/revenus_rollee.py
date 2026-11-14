@@ -79,8 +79,6 @@ SUFFIXES_SEMAINE = (SUFFIXE_RECETTE, SUFFIXE_SOLDE, SUFFIXE_FRAIS)
 COMPTE_RECETTE = "706"
 COMPTE_ATTENTE = "471"
 SOURCE = "rollee"
-# Les jours déjà gardés sont relus : Rollee complète une période au fil des jours.
-RECOUVREMENT = timedelta(days=14)
 
 
 @dataclass
@@ -331,9 +329,11 @@ async def _lire(
 
 
 def _depuis(dossier: Dossier, stockes: Sequence[SettlementStocke]) -> date:
-    if not stockes:
-        return dossier.exercice_debut
-    return max(s.settlement.period_end for s in stockes) - RECOUVREMENT
+    """AXE-924 : tout l'exercice est relu à chaque passage (un appel par
+    compte) : un jour écarté par une ancienne règle, ou complété tard par
+    Rollee, revient ainsi dans sa semaine."""
+    del stockes
+    return dossier.exercice_debut
 
 
 async def relever_revenus(
