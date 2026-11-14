@@ -27,6 +27,7 @@ from axelcompta.ingestion.providers.rollee import (
     RolleeIndisponible,
     RolleeProvider,
     centimes,
+    especes_cts,
     fin_de_periode,
     lire_revenus,
     premiere_fiche,
@@ -35,9 +36,10 @@ from axelcompta.packs.vtc_demo import charger_plateformes
 
 D = DossierId("DIGI_1")
 PLATEFORMES = charger_plateformes()
-SEMAINE_UBER = {
+# AXE-924 : seuls les jours Rollee comptent (forme réelle lue le 14/11).
+JOUR_UBER = {
     "time_period_start_date": "2026-10-05",
-    "time_period_type": "weekly",
+    "time_period_type": "daily",
     "gross_earnings": 1040.0,
     "platform_fee": 180.5,
     "other_fees": 11.5,
@@ -139,32 +141,59 @@ def test_fin_de_periode() -> None:
         fin_de_periode(date(2026, 2, 1), "custom")
 
 
-def test_une_semaine_uber_devient_un_settlement_brut_moins_frais_egal_verse() -> None:
-    releve = lire_revenus(D, CompteRollee("acc-1", "Uber"), {"data": [SEMAINE_UBER]}, PLATEFORMES)
+def test_un_jour_uber_devient_un_settlement_d_un_jour() -> None:
+    releve = lire_revenus(D, CompteRollee("acc-1", "Uber"), {"data": [JOUR_UBER]}, PLATEFORMES)
     (s,) = releve.settlements
     assert (s.platform, s.commission_tva_regime) == ("uber", "france_20")
     assert (s.gross_earnings_cts, s.commission_cts, s.net_payout_cts) == (1_040_00, 192_00, 848_00)
-    assert (s.period_start, s.period_end, s.payout_date) == (
-        date(2026, 10, 5),
-        date(2026, 10, 11),
-        date(2026, 10, 11),
-    )
-    assert releve.rejets == []
+    assert (s.period_start, s.period_end, s.payout_date) == (date(2026, 10, 5),) * 3
+    assert releve.rejets == [] and especes_cts(s) == 0
+
+
+def test_le_gagne_est_le_net_et_pas_le_retrait_du_jour() -> None:
+    """`payouts` est le retrait du jour (souvent 0 ou vide) : il ne compte pas."""
+    revenu = {**JOUR_UBER, "payouts": 0}
+    (s,) = lire_revenus(
+        D, CompteRollee("acc-1", "Uber"), {"data": [revenu]}, PLATEFORMES
+    ).settlements
+    assert s.net_payout_cts == 848_00
+
+
+def test_les_especes_restent_dans_le_jour() -> None:
+    revenu = {**JOUR_UBER, "cash_earnings": 120.5}
+    (s,) = lire_revenus(
+        D, CompteRollee("acc-1", "Uber"), {"data": [revenu]}, PLATEFORMES
+    ).settlements
+    assert especes_cts(s) == 120_50
+
+
+def test_un_bonus_au_dela_du_brut_devient_le_brut_sans_commission() -> None:
+    revenu = {**JOUR_UBER, "gross_earnings": 100.0, "platform_fee": -20.0, "net_amount": 120.0}
+    (s,) = lire_revenus(
+        D, CompteRollee("acc-1", "Uber"), {"data": [revenu]}, PLATEFORMES
+    ).settlements
+    assert (s.gross_earnings_cts, s.commission_cts, s.net_payout_cts) == (120_00, 0, 120_00)
+
+
+def test_les_semaines_et_les_mois_sont_ignores_sans_quarantaine() -> None:
+    semaines = [{**JOUR_UBER, "time_period_type": t} for t in ("weekly", "monthly", "custom")]
+    for compte in (CompteRollee("acc-1", "Uber"), CompteRollee("acc-9", "Heetch")):
+        releve = lire_revenus(D, compte, {"data": semaines}, PLATEFORMES)
+        assert releve.settlements == [] and releve.rejets == []
 
 
 @pytest.mark.parametrize(
     ("changement", "motif"),
     [
-        ({"payouts": 900.0}, "écart"),
         ({"currency": "GBP"}, "devise"),
-        ({"time_period_type": "custom"}, "custom"),
         ({"gross_earnings": 1040.001}, "décimales"),
+        ({"cash_earnings": -5}, "espèces"),
     ],
 )
 def test_une_periode_incoherente_part_en_quarantaine_avec_la_raison(
     changement: dict[str, Any], motif: str
 ) -> None:
-    revenu = {**SEMAINE_UBER, **changement}
+    revenu = {**JOUR_UBER, **changement}
     releve = lire_revenus(D, CompteRollee("acc-1", "Uber"), {"data": [revenu]}, PLATEFORMES)
     assert releve.settlements == []
     (rejet,) = releve.rejets
@@ -172,22 +201,23 @@ def test_une_periode_incoherente_part_en_quarantaine_avec_la_raison(
 
 
 def test_une_plateforme_inconnue_du_pack_est_mise_de_cote() -> None:
-    releve = lire_revenus(D, CompteRollee("acc-9", "Heetch"), {"data": [SEMAINE_UBER]}, PLATEFORMES)
+    releve = lire_revenus(D, CompteRollee("acc-9", "Heetch"), {"data": [JOUR_UBER]}, PLATEFORMES)
     assert releve.settlements == [] and "Heetch" in releve.rejets[0].motif
 
 
 def test_le_provider_lit_chaque_compte_connecte_du_dossier() -> None:
     vus: list[httpx.Request] = []
     bolt = {
-        **SEMAINE_UBER,
+        **JOUR_UBER,
         "gross_earnings": 500.0,
         "platform_fee": 50.0,
         "other_fees": 0,
+        "net_amount": 450.0,
         "payouts": 450.0,
     }
     client = _client(
         [
-            httpx.Response(200, json={"data": [SEMAINE_UBER]}),
+            httpx.Response(200, json={"data": [JOUR_UBER]}),
             httpx.Response(200, json={"data": [bolt]}),
         ],
         vus,

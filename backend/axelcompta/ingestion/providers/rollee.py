@@ -336,6 +336,64 @@ def settlement_depuis_revenu(
     )
 
 
+PERIODE_JOUR = "daily"
+
+
+def especes_cts(settlement: PlatformSettlement) -> int:
+    """AXE-924 : les courses payées en espèces d'un jour (`cash_earnings`),
+    que la plateforme ne verse pas. Toutes les plateformes, Uber compris."""
+    return centimes(settlement.raw_payload.get("cash_earnings"), "cash_earnings")
+
+
+def jour_depuis_revenu(
+    dossier_id: DossierId, plateforme: Plateforme, revenu: dict[str, Any]
+) -> PlatformSettlement | None:
+    """AXE-924 : un jour Rollee → un `PlatformSettlement` d'un jour. Les
+    semaines et les mois (qui chevauchent les jours) rendent None.
+
+    Le gagné du jour est `net_amount` (brut − commission) ; `payouts` n'est
+    pas le gagné (retrait du jour, souvent vide ou à 0). La commission est
+    brut − net, ce qui garde l'écriture équilibrée ; un net supérieur au brut
+    (bonus) devient le brut, sans commission. Les espèces restent dans le
+    payload (`especes_cts`)."""
+    if str(revenu.get("time_period_type", "")) != PERIODE_JOUR:
+        return None
+    if str(revenu.get("currency", "")).upper() != "EUR":
+        raise RevenuIllisible(f"devise {revenu.get('currency')!r} : seul l'euro est pris en charge")
+    try:
+        jour = date.fromisoformat(str(revenu["time_period_start_date"]))
+    except (KeyError, ValueError) as exc:
+        raise RevenuIllisible("début de période illisible") from exc
+    brut = centimes(revenu.get("gross_earnings"), "gross_earnings")
+    frais = centimes(revenu.get("platform_fee"), "platform_fee") + centimes(
+        revenu.get("other_fees"), "other_fees"
+    )
+    brut_moins_frais = brut - frais
+    net = (
+        centimes(revenu["net_amount"], "net_amount")
+        if revenu.get("net_amount") is not None
+        else brut_moins_frais
+    )
+    brut = max(brut, net)
+    especes = centimes(revenu.get("cash_earnings"), "cash_earnings")
+    if especes < 0 or especes > brut:
+        raise RevenuIllisible(f"espèces {especes} hors de 0 à brut {brut} (centimes)")
+    return PlatformSettlement(
+        dossier_id=dossier_id,
+        platform=plateforme.nom,
+        period_start=jour,
+        period_end=jour,
+        payout_date=jour,
+        gross_earnings_cts=brut,
+        commission_cts=brut - net,
+        commission_tva_regime=plateforme.commission_tva_regime,
+        net_payout_cts=net,
+        currency="EUR",
+        source_provider=SOURCE,
+        raw_payload=dict(revenu),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Rejet:
     """Une période lue mais pas comptabilisable : en quarantaine (AXE-424)."""
@@ -362,14 +420,19 @@ def lire_revenus(
     releve = Releve()
     plateforme = plateforme_de(compte.nom, plateformes)
     for revenu in reponse.get("data") or []:
+        if str(revenu.get("time_period_type", "")) != PERIODE_JOUR:
+            continue  # AXE-924 : seuls les jours comptent, même pour une plateforme inconnue
         if plateforme is None:
             motif = f"plateforme « {compte.nom} » absente du pack (plateformes.csv)"
             releve.rejets.append(Rejet(compte.account_id, motif, revenu))
             continue
         try:
-            releve.settlements.append(settlement_depuis_revenu(dossier_id, plateforme, revenu))
+            jour = jour_depuis_revenu(dossier_id, plateforme, revenu)
         except RevenuIllisible as exc:
             releve.rejets.append(Rejet(compte.account_id, str(exc), revenu))
+            continue
+        if jour is not None:  # AXE-924 : semaines et mois ignorés, sans quarantaine
+            releve.settlements.append(jour)
     return releve
 
 

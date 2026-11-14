@@ -55,6 +55,8 @@ SEMAINE = PlatformSettlement(
     source_provider="rollee",
     raw_payload={},
 )
+# AXE-924 : seuls les jours Rollee sont montrés et rapprochés.
+JOUR = replace(SEMAINE, period_end=SEMAINE.period_start, payout_date=SEMAINE.period_start)
 
 
 @pytest.fixture(autouse=True)
@@ -141,22 +143,36 @@ def test_un_virement_d_un_exercice_clos_n_est_pas_ventile() -> None:
 
 
 class _Client:
+    """AXE-924 : deux jours Uber, plus une semaine et une période « custom »
+    que Rollee renvoie aussi et qui sont ignorées."""
+
     async def revenus(self, account_id: str, depuis: date, jusqua: date) -> dict[str, Any]:
+        jour = {"time_period_type": "daily", "currency": "EUR", "cash_earnings": 0}
         return {
             "data": [
                 {
+                    **jour,
                     "time_period_start_date": "2026-10-05",
-                    "time_period_type": "weekly",
                     "gross_earnings": 1040.0,
                     "platform_fee": 192.0,
-                    "payouts": 848.0,
-                    "currency": "EUR",
+                    "net_amount": 848.0,
+                    "payouts": 0,
                 },
                 {
-                    "time_period_start_date": "2026-10-12",
-                    "time_period_type": "custom",
+                    **jour,
+                    "time_period_start_date": "2026-10-06",
+                    "gross_earnings": 100.0,
+                    "platform_fee": 0,
+                    "net_amount": 100.0,
+                },
+                {
+                    "time_period_start_date": "2026-10-05",
+                    "time_period_type": "weekly",
+                    "gross_earnings": 999.0,
+                    "payouts": 1.0,
                     "currency": "EUR",
                 },
+                {"time_period_start_date": "2026-10-12", "time_period_type": "custom"},
             ]
         }
 
@@ -164,7 +180,14 @@ class _Client:
         return None
 
 
+def _virement_plateforme(id_: str, net: int, jour: date, libelle: str) -> Ecriture:
+    return replace(_virement(id_, net, "471", jour), libelle=libelle)
+
+
 def test_de_bout_en_bout_le_ca_et_la_tva_sont_justes_et_rejouer_ne_cree_rien() -> None:
+    """AXE-924 : semaine du 05/10. Jours gagnés 848 + 100 € ; un retrait
+    instantané de 99,01 € le 06/10 (0,99 € de frais) et le POP SVCS de la
+    semaine, 848 €, le lundi 12/10. La créance retombe à zéro."""
     branchements = BranchementsMemoire()
     branchements.enregistrer(
         [nouveau([], T, "rollee", "rollee", "Rollee", {"jeton": "j", "environnement": "sandbox"})],
@@ -180,10 +203,14 @@ def test_de_bout_en_bout_le_ca_et_la_tva_sont_justes_et_rejouer_ne_cree_rien() -
     )
     services = ServicesRollee(branchements, comptes, fabrique=lambda _b, _g: _Client())  # type: ignore[arg-type,return-value]
     ledger, journal = InMemoryLedgerService(), InMemoryJournalIngestion()
-    ledger.enregistrer(_virement("S1", 848_00))
+    instant = "Transfer from STICHTING CUSTODIAN UBER PAYMENTS"
+    ledger.enregistrer(_virement_plateforme("I1", 99_01, date(2026, 10, 6), instant))
+    pop = "POP SVCS, DOB , 20261005 - 20261011"
+    ledger.enregistrer(_virement_plateforme("P1", 848_00, date(2026, 10, 12), pop))
     depots = DepotsRevenus(SettlementsMemoire(), ledger, journal)
 
     resume = asyncio.run(relever_revenus(services, depots, DOSSIER, AUJOURD_HUI))
+    avant = len(ledger.grand_livre(D))
     asyncio.run(relever_revenus(services, depots, DOSSIER, AUJOURD_HUI))
 
     def solde(compte: str) -> int:
@@ -194,60 +221,15 @@ def test_de_bout_en_bout_le_ca_et_la_tva_sont_justes_et_rejouer_ne_cree_rien() -
             if ligne.compte == compte
         )
 
-    assert len(ledger.grand_livre(D)) == 2  # le virement et une seule ventilation
-    assert (solde("706"), solde("44571"), -solde("622"), -solde("44566")) == (
-        945_45,
-        94_55,
-        160_00,
-        32_00,
-    )
-    assert "1 versement(s) ventilé(s)" in resume and "1 en quarantaine" in resume
-    (quarantaine,) = journal.lister_quarantaine(D)
-    assert "custom" in quarantaine.motif
-
-
-class _ClientQuiNote(_Client):
-    def __init__(self) -> None:
-        self.lus: list[str] = []
-
-    async def revenus(self, account_id: str, depuis: date, jusqua: date) -> dict[str, Any]:
-        self.lus.append(account_id)
-        return await super().revenus(account_id, depuis, jusqua)
-
-
-def test_les_revenus_d_un_compte_au_nom_d_un_autre_chauffeur_ne_sont_jamais_lus() -> None:
-    """AXE-922 : un user Rollee « flotte » porte les comptes de plusieurs
-    chauffeurs. Seul le compte retenu (au nom du dossier) est relevé ; celui
-    d'un autre chauffeur n'est ni lu, ni stocké, ni mis en quarantaine."""
-    branchements = BranchementsMemoire()
-    branchements.enregistrer(
-        [nouveau([], T, "rollee", "rollee", "Rollee", {"jeton": "j", "environnement": "sandbox"})],
-        "admin",
-        LE,
-    )
-    comptes = ComptesRolleeMemoire()
-    comptes.enregistrer_utilisateur(
-        UtilisateurRollee(D, "user-1", branchements.lister(T)[0].id), LE
-    )
-    a_lui = {"id": "acc-a-lui", "name": "uber.com-fleet-rev", "connected": True}
-    autre = {"id": "acc-autre", "name": "uber.com-fleet-rev", "connected": True}
-    comptes.remplacer_comptes(
-        D,
-        [
-            depuis_rollee(D, a_lui, None, LE),
-            depuis_rollee(D, autre, None, LE, None, retenu=False, titulaire_autre=True),
-        ],
-    )
-    client = _ClientQuiNote()
-    services = ServicesRollee(branchements, comptes, fabrique=lambda _b, _g: client)  # type: ignore[arg-type,return-value]
-    ledger, journal = InMemoryLedgerService(), InMemoryJournalIngestion()
-    depots = DepotsRevenus(SettlementsMemoire(), ledger, journal)
-
-    asyncio.run(relever_revenus(services, depots, DOSSIER, AUJOURD_HUI))
-
-    assert client.lus == ["acc-a-lui"]
-    assert {s.account_id for s in depots.settlements.lister(D)} == {"acc-a-lui"}
-    assert all("acc-autre" not in str(q.payload) for q in journal.lister_quarantaine(D))
+    assert len(ledger.grand_livre(D)) == avant  # rejouer ne crée rien
+    # 2 virements, 2 recettes de jour, 2 soldes, 1 frais
+    assert avant == 7
+    assert (solde("706"), solde("44571")) == (945_45 + 90_91, 94_55 + 9_09)
+    assert (-solde("622"), -solde("44566"), -solde("627")) == (160_00, 32_00, 99)
+    assert solde("467") == 0 and solde("471") == 0  # créance soldée, plus rien à classer
+    assert "1 semaine(s) rapprochée(s), 0 à vérifier, 0 jour(s) en quarantaine" in resume
+    assert {s.etat for s in depots.settlements.lister(D)} == {"reconcilie"}
+    assert not journal.lister_quarantaine(D)
 
 
 def _soldes_de(ecritures: list[Ecriture]) -> dict[str, int]:

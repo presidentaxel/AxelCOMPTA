@@ -14,6 +14,7 @@ from axelcompta.ingestion.settlements_plateforme import (
     a_verifier,
     cle,
     fusionner,
+    jours,
     marquer_doublons,
 )
 
@@ -69,7 +70,8 @@ def test_le_depot_en_memoire_trie_par_periode() -> None:
 
 
 def test_a_verifier_ne_garde_que_les_releves_a_regarder() -> None:
-    nouveau = fusionner(None, "acc-1", SEMAINE, LE)
+    jour = replace(SEMAINE, period_end=SEMAINE.period_start)
+    nouveau = fusionner(None, "acc-1", jour, LE)
     assert nouveau is not None
     bloque = replace(nouveau, id="b", etat="a_verifier", motif="virement déjà rapproché")
     assert a_verifier([nouveau, bloque, replace(nouveau, id="c", etat="reconcilie")]) == [bloque]
@@ -84,3 +86,14 @@ def test_le_meme_versement_lu_deux_fois_ne_reste_rapprochable_qu_une_fois() -> N
     assert marques[second.id].etat == "a_verifier" and marques[second.id].motif == MOTIF_DOUBLON
     assert premier.id not in marques
     assert marques[partiel.id].motif == MOTIF_ECART
+
+
+def test_les_semaines_gardees_avant_ne_sont_plus_montrees() -> None:
+    """AXE-924 : les semaines et mois Rollee du pilote restent en base, mais
+    seuls les jours sont montrés et rapprochés."""
+    semaine = fusionner(None, "acc-1", SEMAINE, LE)
+    jour = fusionner(None, "acc-1", replace(SEMAINE, period_end=SEMAINE.period_start), LE)
+    assert semaine is not None and jour is not None
+    a_regarder = [replace(semaine, etat="a_verifier"), replace(jour, etat="a_verifier")]
+    assert [s.id for s in a_verifier(a_regarder)] == [jour.id]
+    assert jours([semaine, jour]) == [jour]

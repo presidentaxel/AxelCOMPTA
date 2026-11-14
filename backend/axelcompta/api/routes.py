@@ -214,6 +214,7 @@ from axelcompta.ingestion.settlements_plateforme import (
     SettlementsRepository,
     SettlementStocke,
     a_verifier,
+    jours,
 )
 from axelcompta.ingestion.settlements_plateforme_postgres import PostgresSettlements
 from axelcompta.jobs.file import (
@@ -7151,7 +7152,7 @@ def _enregistrer_route_versements(app: FastAPI) -> None:
     ) -> list[VersementPlateformeVue]:
         """Les 20 dernières périodes : brut, commission, versé, et où en est
         le rapprochement avec la banque."""
-        return [_vue_versement(s) for s in reversed(settlements.lister(dossier.id)[-20:])]
+        return [_vue_versement(s) for s in reversed(jours(settlements.lister(dossier.id))[-20:])]
 
     @app.get(
         "/dossiers/{dossier_id}/versements-plateformes/a-verifier",
