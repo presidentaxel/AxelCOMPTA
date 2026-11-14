@@ -466,6 +466,28 @@ cache d'un dossier à la main (démo d'AXE-888, plafond `--plafond-usd`).
   branchement (`garder_parametre`) : un jeton renouvelé et perdu casse
   l'accès.
 
+## Mettre en route Rollee après la PR 170 (AXE-922)
+
+Dans cet ordre, sur la base réelle :
+
+1. `alembic upgrade head` (`e7c3a9b41d28` recherche par nom, `f3a9c7e15d82`
+   titulaire par compte), puis redémarrer l'API et le worker.
+2. **Avant toute synchro Rollee** : poser les noms attendus sur les liens
+   d'avant la PR 170. Sans eux, un lien retient tous les comptes du user
+   Rollee, y compris ceux d'un autre chauffeur (user « flotte »).
+
+       python scripts/poser_noms_attendus.py --tenant TENANT              # simulation
+       python scripts/poser_noms_attendus.py --tenant TENANT --appliquer
+
+3. Relire les comptes « flotte » restés sans nom dans la carte :
+
+       python scripts/relire_carte_rollee.py --tenant TENANT              # simulation
+       python scripts/relire_carte_rollee.py --tenant TENANT --appliquer
+
+4. B'CARS SERVICES : `python scripts/corriger_rollee_bcars.py`, puis
+   `--appliquer` (ajoute son compte Uber/Bolt flotte).
+5. Ensuite seulement, les synchros Rollee, qui lisent aussi les revenus.
+
 ## Modèle de catégorisation hors du poste (AXE-847)
 
 Le `.joblib` est gitignoré. Il vit dans un bucket S3 **privé**

@@ -7437,12 +7437,7 @@ def _enregistrer_routes_liens_rollee(app: FastAPI) -> None:
     ) -> None:
         tenant_id, identite_ok = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, "La lecture seule ne relie pas de compte Rollee.")
-        dossier = (
-            dossiers.obtenir(DossierId(entree.dossier_id))
-            if entree.dossier_id is not None
-            else None
-        )
-        noms = noms_pour_lien(dossier, branchements) if dossier is not None else ()
+        noms = _noms_du_choix(entree, dossiers, branchements)
         _choisir_rollee(entree, tenant_id, identite_ok, dossiers, liens, journal, noms)
 
     @app.get("/dossiers/{dossier_id}/rollee", response_model=FicheRolleeVue)
@@ -7548,6 +7543,34 @@ def _annuaire_rollee(
     ]
 
 
+MESSAGE_SANS_NOM = (
+    "Aucun nom connu pour cette entreprise (contact Digifactory, associés) : "
+    "impossible de vérifier à qui sont ses comptes Rollee. Complétez son identité "
+    "ou le contact Digifactory, puis recommencez."
+)
+
+
+def _noms_du_choix(
+    entree: ChoixRolleeEntree, dossiers: DossierRepository, branchements: BranchementsRepository
+) -> tuple[str, ...]:
+    """Les noms attendus du dossier choisi ; « aucun de ces comptes » n'en a pas besoin."""
+    if entree.dossier_id is None:
+        return ()
+    dossier = dossiers.obtenir(DossierId(entree.dossier_id))
+    if dossier is None:
+        return ()  # 404 plus loin
+    noms = noms_pour_lien(dossier, branchements)
+    _exiger_noms(noms)
+    return noms
+
+
+def _exiger_noms(noms: tuple[str, ...]) -> None:
+    """AXE-922 : un lien sans nom attendu ne retiendrait aucun compte, sans le
+    dire. On refuse plutôt."""
+    if not noms:
+        raise HTTPException(status_code=409, detail=MESSAGE_SANS_NOM)
+
+
 def _lier_depuis_carte(
     dossier: Dossier,
     rollee_user_id: str,
@@ -7636,14 +7659,10 @@ def _enregistrer_routes_rollee_carte(app: FastAPI) -> None:
     ) -> None:
         _tenant_id, identite_ok = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, "La lecture seule ne relie pas de compte Rollee.")
+        noms = noms_pour_lien(dossier, branchements)
+        _exiger_noms(noms)
         _lier_depuis_carte(
-            dossier,
-            entree.rollee_user_id,
-            identite_ok,
-            cartes,
-            liens,
-            journal,
-            noms_pour_lien(dossier, branchements),
+            dossier, entree.rollee_user_id, identite_ok, cartes, liens, journal, noms
         )
 
 
