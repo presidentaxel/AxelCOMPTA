@@ -345,6 +345,12 @@ def especes_cts(settlement: PlatformSettlement) -> int:
     return centimes(settlement.raw_payload.get("cash_earnings"), "cash_earnings")
 
 
+def pourboires_cts(settlement: PlatformSettlement) -> int:
+    """AXE-926 : les pourboires d'un jour (`tips`), compris dans le brut. Ils
+    ne sont pas le prix de la course et sortent de la base de TVA."""
+    return centimes(settlement.raw_payload.get("tips"), "tips")
+
+
 def jour_depuis_revenu(
     dossier_id: DossierId, plateforme: Plateforme, revenu: dict[str, Any]
 ) -> PlatformSettlement | None:
