@@ -96,3 +96,20 @@ def test_ignorer_puis_reprendre_et_droits() -> None:
     assert inconnu.status_code == 404
     lecture = _client("lecture")[0]
     assert lecture.post("/portefeuille/synchroniser", headers=EN_TETE).status_code == 403
+
+
+def test_rapprocher_rollee_depose_un_seul_job_et_se_suit() -> None:
+    """AXE-918 : le bouton dépose un job ; deux clics n'en lancent qu'un."""
+    client, file, _ = _client()
+    assert client.get("/portefeuille/rollee/rapprochement", headers=EN_TETE).json() is None
+    premier = client.post("/portefeuille/rollee/rapprocher", headers=EN_TETE).json()
+    second = client.post("/portefeuille/rollee/rapprocher", headers=EN_TETE).json()
+    assert premier["statut"] == second["statut"] == "en_attente"
+    job = file.prendre("worker")
+    assert job is not None and job.type == "rapprochement_rollee"
+    assert file.prendre("worker") is None
+    file.terminer(job.id)
+    suivi = client.get("/portefeuille/rollee/rapprochement", headers=EN_TETE).json()
+    assert suivi["statut"] == "fait"
+    lecture = _client("lecture")[0]
+    assert lecture.post("/portefeuille/rollee/rapprocher", headers=EN_TETE).status_code == 403

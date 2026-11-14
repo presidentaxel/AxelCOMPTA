@@ -27,6 +27,7 @@ LIBELLES_INDICE = {
     "iban": "par l'IBAN",
     "nom_email": "par le nom et l'e-mail",
     "nom_telephone": "par le nom et le téléphone",
+    "nom_unique": "par le nom",  # AXE-918 : seul compte Rollee à ce nom
 }
 
 

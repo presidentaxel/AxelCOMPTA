@@ -26,7 +26,14 @@ from datetime import UTC, date, datetime
 
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, TYPE_RAPPELS, TYPE_ROLLEE, TYPE_SYNCHRO, Job
+from axelcompta.jobs.file import (
+    TYPE_IMPORT_DOSSIERS,
+    TYPE_RAPPELS,
+    TYPE_RAPPROCHEMENT_ROLLEE,
+    TYPE_ROLLEE,
+    TYPE_SYNCHRO,
+    Job,
+)
 from axelcompta.jobs.postgres import FilePostgres
 from axelcompta.modeles_distants import assurer_modele
 from axelcompta.nouveaux_contacts import (
@@ -38,6 +45,7 @@ from axelcompta.nouveaux_contacts import (
 )
 from axelcompta.plateformes_rollee import suivi_postgres, traiter_evenements
 from axelcompta.rappels import envoyer
+from axelcompta.rapprochement_rollee_service import rapprocher_maintenant
 from axelcompta.synchro_digifactory import (
     TYPE_DIGIFACTORY,
     ResultatDossier,
@@ -85,6 +93,8 @@ class Dependances:
     choisir_branchement: Callable[[TenantId, DossierId, str], None] | None = None
     # AXE-820 : traite les webhooks Rollee gardés d'un portefeuille.
     traiter_rollee: Callable[[TenantId], str] | None = None
+    # AXE-918 : bouton « Rapprocher Rollee » ; bilan en nombres.
+    rapprocher_rollee: Callable[[TenantId], str] | None = None
 
 
 def _stockee(proposition: Proposition, maintenant: datetime) -> PropositionStockee:
@@ -229,6 +239,8 @@ def executer_job(job: Job, deps: Dependances, aujourd_hui: date) -> str:
         return resume_envois(deps.envoyer_rappels())
     if job.type == TYPE_ROLLEE and deps.traiter_rollee is not None:
         return deps.traiter_rollee(TenantId(job.tenant_id))
+    if job.type == TYPE_RAPPROCHEMENT_ROLLEE and deps.rapprocher_rollee is not None:
+        return deps.rapprocher_rollee(TenantId(job.tenant_id))
     if job.type != TYPE_SYNCHRO:
         raise ValueError(f"type de job non pris en charge : {job.type}")
     return synchroniser_portefeuille_suivi(TenantId(job.tenant_id), deps, aujourd_hui)
@@ -284,6 +296,7 @@ def dependances_reelles() -> Dependances:
             t, d, TYPE_DIGIFACTORY, b
         ),
         traiter_rollee=lambda t: traiter_evenements(suivi_postgres(engine), t),
+        rapprocher_rollee=lambda t: rapprocher_maintenant(engine, t),
     )
 
 

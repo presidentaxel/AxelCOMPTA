@@ -35,9 +35,14 @@ from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.ingestion.comptes_rollee_postgres import PostgresComptesRollee
 from axelcompta.ingestion.liens_rollee import AChoisir, Lien, LienDejaPris, LiensRollee
 from axelcompta.ingestion.liens_rollee_postgres import PostgresLiensRollee
-from axelcompta.ingestion.providers.rollee import RolleeHttpClient
+from axelcompta.ingestion.providers.rollee import (
+    RolleeAuthError,
+    RolleeHttpClient,
+    RolleeIndisponible,
+)
 from axelcompta.ingestion.rapprochement_rollee import (
     DossierIndices,
+    Empreintes,
     Issue,
     UserRollee,
     apercu,
@@ -48,6 +53,7 @@ from axelcompta.ingestion.rapprochement_rollee import (
 )
 from axelcompta.plateformes_rollee import TYPE_ROLLEE, ServicesRollee, client_du_branchement
 from axelcompta.prevenir_admins import prevenir_admins
+from axelcompta.tenants.branchements import Branchement
 from axelcompta.tenants.branchements_postgres import PostgresBranchements
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
@@ -69,20 +75,54 @@ def cle_empreintes() -> bytes:
     return hashlib.sha256(b"rapprochement-rollee:" + cle.encode()).digest()
 
 
-async def _infos_compte(client: RolleeHttpClient, compte_id: str) -> tuple[dict[str, Any], str]:
-    """Profil et IBAN d'un compte de plateforme. Un compte illisible ne bloque pas."""
+def _sans_iban(compte: Mapping[str, Any]) -> bool:
+    """Uber répond toujours 400 sur l'IBAN (mesuré le 14/11) : ne pas le
+    demander épargne la limite de débit de Rollee."""
+    return "uber" in str(compte.get("name") or compte.get("type") or "").lower()
+
+
+def _erreur_du_compte(exc: RolleeIndisponible) -> bool:
+    """Une 5xx répétée sur un compte précis (mesuré le 14/11 : 3 profils
+    toujours en 500), pas Rollee débordé (429)."""
+    return exc.statut is not None and exc.statut >= 500
+
+
+async def _infos_compte(
+    client: RolleeHttpClient, compte_id: str, avec_iban: bool = True, tolerer: bool = False
+) -> tuple[dict[str, Any], str]:
+    """Profil et IBAN d'un compte de plateforme. Un refus de Rollee (Uber
+    répond 400 sur l'IBAN) laisse l'indice vide. Rollee débordé ou jeton
+    refusé, non : le user est illisible (AXE-918), jamais pris pour un user
+    sans nom, sinon un homonyme passerait pour unique. `tolerer` : à la
+    relecture finale, un profil toujours en 5xx est compté sans nom."""
     try:
         profil = await client.profil(compte_id)
+    except RolleeIndisponible as exc:
+        if not (tolerer and _erreur_du_compte(exc)):
+            raise
+        profil = {}
+    except RolleeAuthError:
+        raise
     except Exception:  # noqa: BLE001 — Uber ou Bolt sans profil : on compare le reste
         profil = {}
+    if not avec_iban:
+        return profil, ""
     try:
         iban = str((await client.coordonnees_bancaires(compte_id)).get("iban") or "")
+    except RolleeIndisponible as exc:
+        if not (tolerer and _erreur_du_compte(exc)):
+            raise
+        iban = ""
+    except RolleeAuthError:
+        raise
     except Exception:  # noqa: BLE001
         iban = ""
     return profil, iban
 
 
-async def lire_user(client: RolleeHttpClient, brut: Mapping[str, Any], cle: bytes) -> UserRollee:
+async def lire_user(
+    client: RolleeHttpClient, brut: Mapping[str, Any], cle: bytes, tolerer: bool = False
+) -> UserRollee:
     """Un user Rollee, ses comptes de plateformes, réduits en empreintes."""
     user_id = str(brut["id"])
     metadata = brut.get("metadata") or {}
@@ -91,7 +131,9 @@ async def lire_user(client: RolleeHttpClient, brut: Mapping[str, Any], cle: byte
     premier: tuple[str | None, str | None] = (None, None)
     for compte in await client.comptes(user_id):
         plateformes.append(str(compte.get("name") or compte.get("type") or "plateforme"))
-        profil, iban = await _infos_compte(client, str(compte["id"]))
+        profil, iban = await _infos_compte(
+            client, str(compte["id"]), not _sans_iban(compte), tolerer
+        )
         prenom, nom = profil.get("first_name"), profil.get("last_name")
         if prenom or nom:
             noms.append(normaliser_nom(prenom, nom))
@@ -112,9 +154,33 @@ async def lire_user(client: RolleeHttpClient, brut: Mapping[str, Any], cle: byte
 APPELS_SIMULTANES = 3
 
 
-async def lire_users(
-    client: RolleeHttpClient, cle: bytes, seulement: str | None = None
-) -> list[UserRollee]:
+@dataclass(frozen=True, slots=True)
+class Lecture:
+    """Les users lus d'un compte Rollee, et ceux que Rollee n'a pas rendus."""
+
+    users: list[UserRollee]
+    erreurs: tuple[str, ...] = ()  # « GET /users/<id>/accounts : 429 après 5 essais »
+    # Users lus, mais dont un profil reste en 5xx chez Rollee : comptés sans
+    # nom, signalés dans le bilan, sans bloquer le lien par le nom.
+    profils_en_erreur: tuple[str, ...] = ()
+
+    @property
+    def illisibles(self) -> int:
+        return len(self.erreurs)
+
+
+def _sans_plateforme(brut: Mapping[str, Any]) -> UserRollee | None:
+    """`accounts_number` à 0 dans la liste des users : aucune plateforme, donc
+    aucun nom à lire. On ne l'interroge pas (plus de la moitié des users,
+    autant d'appels épargnés à la limite de débit de Rollee)."""
+    if brut.get("accounts_number") != 0:
+        return None
+    metadata = brut.get("metadata") or {}
+    dossier = metadata.get("dossier_id") if isinstance(metadata, Mapping) else None
+    return UserRollee(str(brut["id"]), str(dossier) if dossier else None, Empreintes())
+
+
+async def lire_users(client: RolleeHttpClient, cle: bytes, seulement: str | None = None) -> Lecture:
     bruts = [
         brut
         for brut in await client.utilisateurs()
@@ -122,11 +188,35 @@ async def lire_users(
     ]
     limite = asyncio.Semaphore(APPELS_SIMULTANES)
 
-    async def un(brut: Mapping[str, Any]) -> UserRollee:
+    async def un(brut: Mapping[str, Any]) -> UserRollee | None:
+        if (vide := _sans_plateforme(brut)) is not None:
+            return vide
         async with limite:
-            return await lire_user(client, brut, cle)
+            try:
+                return await lire_user(client, brut, cle)
+            except RolleeIndisponible:
+                return None
 
-    return list(await asyncio.gather(*(un(brut) for brut in bruts)))
+    lus = await asyncio.gather(*(un(brut) for brut in bruts))
+    users = [u for u in lus if u is not None]
+    # Rollee débordé sur quelques users : on les relit un par un, à la fin.
+    erreurs: list[str] = []
+    profils: list[str] = []
+    for brut, lu in zip(bruts, lus, strict=True):
+        if lu is not None:
+            continue
+        try:
+            users.append(await lire_user(client, brut, cle))
+        except RolleeIndisponible as exc:
+            if not _erreur_du_compte(exc):
+                erreurs.append(str(exc))
+                continue
+            try:
+                users.append(await lire_user(client, brut, cle, tolerer=True))
+                profils.append(str(exc))
+            except RolleeIndisponible as encore:
+                erreurs.append(str(encore))
+    return Lecture(users, tuple(erreurs), tuple(profils))
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,13 +290,17 @@ def appliquer(
                 continue
             except LienDejaPris:
                 pass  # posé entre-temps par quelqu'un d'autre : au gestionnaire
-        etat = "non_trouve" if issue.etat == "non_trouve" else "a_choisir"
+        if issue.etat == "non_trouve":
+            # AXE-918 : les comptes Rollee sont partagés avec d'autres
+            # cabinets (plus de 2 000 users pour 14 dossiers) ; un user sans
+            # candidat n'est pas à montrer au gestionnaire.
+            continue
         attente.append(
             AChoisir(
                 issue.user_id,
                 passage.tenant_id,
                 passage.branchement_id,
-                etat,  # type: ignore[arg-type]
+                "a_choisir",
                 issue.candidats,
                 apercus[issue.user_id],
                 passage.maintenant,
@@ -238,9 +332,10 @@ def trancher_tous(
     dossiers: Sequence[DossierIndices],
     liens: Sequence[Lien],
     retires: frozenset[tuple[str, str]] = frozenset(),
+    complet: bool = True,
 ) -> list[Issue]:
     poses = {x.rollee_user_id: str(x.dossier_id) for x in liens}
-    return rapprocher(users, dossiers, poses, retires)
+    return rapprocher(users, dossiers, poses, retires, complet)
 
 
 # --- Câblage : un portefeuille, ses branchements Rollee ----------------------
@@ -263,35 +358,72 @@ async def passer_tenant(
     seulement: str | None = None,
 ) -> list[str]:
     """Un passage sur un portefeuille. `ecrire` faux : simulation, rien
-    n'est écrit. `seulement` : un seul user (webhook d'un user inconnu)."""
+    n'est écrit. `seulement` : un seul user (webhook d'un user inconnu).
+
+    AXE-918 : les users de **tous** les comptes Rollee sont lus avant de
+    trancher, une seule fois : un nom n'est « unique » que sur l'ensemble, et
+    deux users de deux comptes qui visent le même dossier vont au
+    gestionnaire. Le lien est ensuite posé sur le compte du user."""
     cle = cle_empreintes()
     dossiers = depots.dossiers.lister_par_tenant(tenant_id)
     sources = await depots.sources(tenant_id, dossiers)
     indices = [indices_dossier(d, sources, cle) for d in dossiers]
-    rollee = [
-        b
-        for b in depots.services.branchements.lister(tenant_id)
-        if b.type == TYPE_ROLLEE and b.actif
-    ]
-    lignes = []
-    for branchement in rollee:
+    par_branchement = await _users_par_branchement(depots, tenant_id, cle, seulement)
+    tous = [u for _b, lecture in par_branchement for u in lecture.users]
+    erreurs = [e for _b, lecture in par_branchement for e in lecture.erreurs]
+    illisibles = len(erreurs)
+    issues = trancher_tous(
+        tous,
+        indices,
+        depots.liens.liens(tenant_id),
+        depots.liens.paires_retirees(tenant_id),
+        # Un user illisible pourrait porter le même nom : pas de lien par le
+        # nom seul tant que la liste n'est pas complète.
+        complet=seulement is None and illisibles == 0,
+    )
+    mode = "" if ecrire else " (simulation : rien n'est écrit)"
+    lignes = [f"{tenant_id} : {resume(issues)}{mode}"]
+    if illisibles:
+        lignes.append(
+            f"  {illisibles} user(s) Rollee illisible(s) (Rollee débordé) : "
+            "aucun lien par le nom seul à ce passage, relancez plus tard"
+        )
+        lignes += [f"    {erreur}" for erreur in erreurs[:5]]
+    profils = [p for _b, lecture in par_branchement for p in lecture.profils_en_erreur]
+    if profils:
+        lignes.append(
+            f"  {len(profils)} profil(s) toujours en erreur chez Rollee, comptés sans nom :"
+        )
+        lignes += [f"    {profil}" for profil in profils[:5]]
+    nouveaux: list[AChoisir] = []
+    for branchement, lecture in par_branchement:
+        users = lecture.users
+        siens = {u.user_id for u in users}
+        issues_du_compte = [i for i in issues if i.user_id in siens]
+        lignes.append(f"  {branchement.nom} : {resume(issues_du_compte)}")
+        if ecrire:
+            # Des users non relus gardent leur place dans la file.
+            partiel = seulement is not None or lecture.illisibles > 0
+            passage = Passage(tenant_id, branchement.id, maintenant, partiel)
+            nouveaux += appliquer(depots.liens, issues_du_compte, users, passage)
+    if nouveaux and depots.prevenir is not None:
+        lignes.append(f"{tenant_id} : {depots.prevenir(tenant_id, nouveaux)}")
+    return lignes
+
+
+async def _users_par_branchement(
+    depots: DepotsRapprochement, tenant_id: TenantId, cle: bytes, seulement: str | None
+) -> list[tuple[Branchement, Lecture]]:
+    lus = []
+    for branchement in depots.services.branchements.lister(tenant_id):
+        if branchement.type != TYPE_ROLLEE or not branchement.actif:
+            continue
         client = client_du_branchement(depots.services, branchement)
         try:
-            users = await lire_users(client, cle, seulement)
+            lus.append((branchement, await lire_users(client, cle, seulement)))
         finally:
             await client.aclose()
-        issues = trancher_tous(
-            users, indices, depots.liens.liens(tenant_id), depots.liens.paires_retirees(tenant_id)
-        )
-        mode = "" if ecrire else " (simulation : rien n'est écrit)"
-        lignes.append(f"{tenant_id} / {branchement.nom} : {resume(issues)}{mode}")
-        if not ecrire:
-            continue
-        passage = Passage(tenant_id, branchement.id, maintenant, seulement is not None)
-        nouveaux = appliquer(depots.liens, issues, users, passage)
-        if nouveaux and depots.prevenir is not None:
-            lignes.append(f"{tenant_id} : {depots.prevenir(tenant_id, nouveaux)}")
-    return lignes
+    return lus
 
 
 async def sources_reelles(
@@ -348,6 +480,13 @@ def depots_postgres(engine: Engine) -> DepotsRapprochement:
         sources=lambda tenant_id, dossiers: sources_reelles(engine, tenant_id, dossiers),
         prevenir=prevenir,
     )
+
+
+def rapprocher_maintenant(engine: Engine, tenant_id: TenantId) -> str:
+    """Bouton « Rapprocher Rollee » (AXE-918), exécuté par le worker : écrit,
+    même sans `AXELCOMPTA_ROLLEE_RAPPROCHEMENT` (qui ne vise que la nuit)."""
+    lignes = asyncio.run(passer_tenant(depots_postgres(engine), tenant_id, True, datetime.now(UTC)))
+    return " · ".join(ligne.strip() for ligne in lignes) or "aucun compte Rollee actif"
 
 
 def passer_tous(engine: Engine, ecrire: bool, maintenant: datetime) -> list[str]:
