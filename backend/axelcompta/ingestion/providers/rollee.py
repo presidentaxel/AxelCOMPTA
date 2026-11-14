@@ -30,6 +30,8 @@ from __future__ import annotations
 
 import asyncio
 import calendar
+import logging
+import time as temps
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
@@ -42,6 +44,8 @@ from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.packs.vtc_demo import Plateforme, plateforme_de
 
 from .base import DataProvider, NormalizedTransaction, PlatformSettlement, ProviderHealth
+
+_journal = logging.getLogger("uvicorn.error")
 
 SOURCE = "rollee"
 URLS = {
@@ -132,7 +136,18 @@ class RolleeHttpClient:
     async def _une_requete(self, methode: str, chemin: str, **options: Any) -> httpx.Response:
         en_tetes = {"Authorization": f"Bearer {self._jeton}", "accept": "application/json"}
         for essai in range(ESSAIS):
+            debut = temps.monotonic()
             reponse = await self._client.request(methode, chemin, headers=en_tetes, **options)
+            duree = temps.monotonic() - debut
+            if reponse.status_code == 429 or duree >= 5:
+                _journal.info(
+                    "Rollee %s %s → %s en %.1fs (essai %s)",
+                    methode,
+                    chemin,
+                    reponse.status_code,
+                    duree,
+                    essai + 1,
+                )
             if reponse.status_code != 429 and reponse.status_code < 500:
                 return reponse
             if essai < ESSAIS - 1:

@@ -23,7 +23,10 @@ from axelcompta.rapprochement_rollee_service import (
     ibans_digifactory,
     indices_dossier,
     lire_user,
+    lire_users,
     passer_tenant,
+    phrase_lecture,
+    rapprocher_dossier,
 )
 from axelcompta.tenants.branchements import BranchementsMemoire, nouveau
 from axelcompta.tenants.memory import InMemoryDossierRepository
@@ -131,6 +134,33 @@ def _cle(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AXELCOMPTA_CLE_INTEGRATIONS", Fernet.generate_key().decode())
 
 
+def test_la_phrase_de_lecture_dit_ou_on_en_est() -> None:
+    assert phrase_lecture("Flotte", 0, 400, 0) == "Flotte : 400 comptes Rollee à lire."
+    assert phrase_lecture("Flotte", 0, 0, 0) == "Flotte : aucun compte Rollee à lire."
+    assert phrase_lecture("Flotte", 100, 400, 10) == (
+        "Flotte : 100/400 comptes Rollee lus, environ 30 s."
+    )
+    assert phrase_lecture("Flotte", 400, 400, 40) == "Flotte : 400 comptes Rollee lus."
+
+
+def test_la_lecture_annonce_l_avancement_et_saute_les_deja_relies() -> None:
+    rollee = FauxRollee()
+    phrases: list[str] = []
+    users = asyncio.run(
+        lire_users(
+            rollee,  # type: ignore[arg-type]
+            CLE,
+            nom="Flotte",
+            noter=phrases.append,
+            sauf=frozenset({"u-rien"}),
+        )
+    )
+    assert [u.user_id for u in users] == ["u-iban", "u-nom"]
+    assert "u-rien-uber" not in " ".join(rollee.appels)
+    assert phrases[0] == "Flotte : lecture de la liste…"
+    assert phrases[-1] == "Flotte : 2 comptes Rollee lus."
+
+
 def test_un_user_est_lu_en_empreintes_et_en_apercu_masque() -> None:
     brut = {"id": "u-iban", "metadata": {"dossier_id": "d1"}}
     user = asyncio.run(lire_user(FauxRollee(), brut, CLE))  # type: ignore[arg-type]
@@ -164,6 +194,15 @@ def test_la_simulation_donne_le_bilan_sans_rien_ecrire() -> None:
     ]
     assert depots.liens.liens(T) == [] and depots.liens.a_choisir(T) == []
     assert rollee.appels[-1] == "fermé"
+
+
+def test_le_bouton_d_une_fiche_ne_relie_que_cette_entreprise() -> None:
+    depots = _depots(FauxRollee())
+    dossier = next(d for d in depots.dossiers.lister_par_tenant(T) if d.id == "d-nom")
+    phrase = asyncio.run(rapprocher_dossier(depots, dossier, LE))
+    assert phrase == "Un compte Rollee correspond. Reliez-le sur cette fiche."
+    assert depots.liens.liens(T) == []
+    assert [a.rollee_user_id for a in depots.liens.a_choisir(T)] == ["u-nom"]
 
 
 def test_l_application_relie_le_sur_et_previent_pour_le_reste() -> None:

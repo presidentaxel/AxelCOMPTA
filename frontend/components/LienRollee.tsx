@@ -15,10 +15,12 @@ import { effetDelier, type FicheRollee } from "@/lib/liens-rollee";
 export function LienRollee({
   dossierId,
   ecriture,
+  relecture,
   onChange,
 }: {
   dossierId: string;
   ecriture: boolean;
+  relecture: number;
   onChange: () => void;
 }) {
   const [fiche, setFiche] = useState<FicheRollee | null>(null);
@@ -39,7 +41,7 @@ export function LienRollee({
     return () => {
       actif = false;
     };
-  }, [dossierId, essai]);
+  }, [dossierId, essai, relecture]);
 
   const relire = useCallback(() => setEssai((n) => n + 1), []);
 

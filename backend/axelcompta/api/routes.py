@@ -41,6 +41,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol, cast
 
+import httpx
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
@@ -190,7 +191,7 @@ from axelcompta.ingestion.comptes_bancaires import (
     verifier_ecartable,
 )
 from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
-from axelcompta.ingestion.comptes_rollee import CompteRelie, synthese
+from axelcompta.ingestion.comptes_rollee import CompteRelie, noms_plateformes, synthese
 from axelcompta.ingestion.comptes_rollee_postgres import PostgresComptesRollee
 from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion, classer
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
@@ -200,6 +201,7 @@ from axelcompta.ingestion.liens_rollee import Lien, LienDejaPris, LiensRollee, l
 from axelcompta.ingestion.liens_rollee_postgres import PostgresLiensRollee
 from axelcompta.ingestion.providers.base import NormalizedTransaction
 from axelcompta.ingestion.providers.digifactory import normaliser_payload
+from axelcompta.ingestion.providers.rollee import RolleeAuthError, RolleeIndisponible
 from axelcompta.ingestion.settlements_plateforme import (
     SettlementsRepository,
     SettlementStocke,
@@ -241,6 +243,13 @@ from axelcompta.plateformes_rollee import (
     ouvrir_session,
     recevoir,
     relire_comptes,
+    synchroniser_dossier,
+)
+from axelcompta.rapprochement_rollee_service import (
+    avancement_dossier,
+    depots_postgres,
+    rapprocher_dossier,
+    retenir_avancement,
 )
 from axelcompta.revenus_rollee import delier_revenus
 from axelcompta.tenants.affectations import AffectationRepository
@@ -6900,13 +6909,21 @@ class SessionRolleeVue(BaseModel):
 
 
 class SyntheseRolleeVue(BaseModel):
-    """Côté gestionnaire (doc 19) : des nombres, jamais un montant."""
+    """Côté gestionnaire (doc 19) : l'état de chaque plateforme, jamais un montant."""
 
     reliees: int
     attendues: int
     a_reconnecter: int
     manquantes: list[str]
     versements_a_verifier: int = 0  # AXE-891 : un nombre, sans montant
+    noms: list[str] = []  # Uber, Bolt, Heetch… connus chez Rollee
+    comptes: list[PlateformeVue] = []  # chaque compte, avec « à reconnecter » nommé
+
+
+class SynchroRolleeVue(BaseModel):
+    """Ce que le bouton « Synchroniser Rollee » affiche sous la fiche."""
+
+    phrase: str
 
 
 def _vue_plateformes(
@@ -6953,19 +6970,75 @@ def _enregistrer_routes_plateformes(app: FastAPI) -> None:
 
     @app.get("/dossiers/{dossier_id}/plateformes/synthese", response_model=SyntheseRolleeVue)
     def synthese_plateformes(
-        dossier: DossierPortefeuilleDep, services: ServicesRolleeDep, settlements: SettlementsDep
+        dossier: DossierPortefeuilleDep,
+        services: ServicesRolleeDep,
+        settlements: SettlementsDep,
+        liens: LiensRolleeDep,
     ) -> SyntheseRolleeVue:
         """Ce qui est connu en base, sans appeler Rollee."""
-        resume = synthese(
-            services.comptes.comptes(dossier.id), dossier.plateformes, charger_plateformes()
-        )
+        comptes = services.comptes.comptes(dossier.id)
+        resume = synthese(comptes, dossier.plateformes, charger_plateformes())
+        chez_rollee = [
+            nom
+            for attente in liens.a_choisir(dossier.tenant_id)
+            if attente.etat == "a_choisir"
+            and any(c.dossier_id == str(dossier.id) for c in attente.candidats)
+            for nom in attente.apercu.plateformes
+        ]
         return SyntheseRolleeVue(
             reliees=resume.reliees,
             attendues=resume.attendues,
             a_reconnecter=resume.a_reconnecter,
             manquantes=list(resume.manquantes),
             versements_a_verifier=len(a_verifier(settlements.lister(dossier.id))),
+            noms=list(noms_plateformes([c.nom for c in comptes], chez_rollee)),
+            comptes=[
+                PlateformeVue(
+                    nom=c.nom,
+                    etat=c.etat,
+                    relie_le=c.relie_le.isoformat() if c.relie_le else None,
+                )
+                for c in comptes
+            ],
         )
+
+    @app.get("/dossiers/{dossier_id}/rollee/synchroniser", response_model=SynchroRolleeVue)
+    def avancement_rollee(
+        dossier: DossierPortefeuilleDep, identite: IdentiteDep
+    ) -> SynchroRolleeVue:
+        """La phrase d'avancement pendant que la synchronisation lit Rollee."""
+        _verifier_acces_gestionnaire(identite)
+        return SynchroRolleeVue(phrase=avancement_dossier(str(dossier.id)) or "")
+
+    @app.post("/dossiers/{dossier_id}/rollee/synchroniser", response_model=SynchroRolleeVue)
+    def synchroniser_rollee(
+        dossier: DossierPortefeuilleDep,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        services: ServicesRolleeDep,
+    ) -> SynchroRolleeVue:
+        """Sans lien : cherche le user Rollee. Déjà reliée : relit Uber et Bolt."""
+        _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, "La lecture seule ne synchronise pas Rollee.")
+        try:
+            phrase = _phrase_synchro_rollee(services, dossier)
+        except (RolleeIndisponible, RolleeAuthError, httpx.HTTPError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Rollee ne répond pas pour le moment."
+            ) from exc
+        return SynchroRolleeVue(phrase=phrase)
+
+
+def _phrase_synchro_rollee(services: ServicesRollee, dossier: Dossier) -> str:
+    """Pas de user Rollee : le rapprochement. Sinon, relecture des comptes."""
+    noter = retenir_avancement(str(dossier.id))
+    if services.comptes.utilisateur(dossier.id) is None:
+        noter("Recherche du compte Rollee…")
+        return asyncio.run(
+            rapprocher_dossier(depots_postgres(_engine()), dossier, datetime.now(UTC), noter)
+        )
+    noter("Relecture des comptes Uber et Bolt…")
+    return asyncio.run(synchroniser_dossier(services, dossier))
 
 
 def get_reception_rollee() -> DepotReception:

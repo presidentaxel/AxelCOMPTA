@@ -8,9 +8,10 @@ import pytest
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
-from axelcompta.api.routes import get_services_rollee, get_settlements
+from axelcompta.api.routes import get_liens_rollee, get_services_rollee, get_settlements
 from axelcompta.core.ids import DossierId
 from axelcompta.ingestion.comptes_rollee import ComptesRolleeMemoire
+from axelcompta.ingestion.liens_rollee import LiensRolleeMemoire
 from axelcompta.ingestion.settlements_plateforme import SettlementsMemoire
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client_et_stubs,
@@ -94,6 +95,7 @@ def test_le_gestionnaire_voit_le_nombre_a_verifier_sans_montant(
     services, _journal, _ = _services()
     services.comptes = ComptesRolleeMemoire()
     client.app.dependency_overrides[get_services_rollee] = lambda: services  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_liens_rollee] = lambda: LiensRolleeMemoire()  # type: ignore[attr-defined]
     synthese = client.get(
         "/dossiers/DEMO_karim/plateformes/synthese", headers=_en_tete_gestionnaire()
     )
