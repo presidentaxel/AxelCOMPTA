@@ -24,6 +24,11 @@ def _utc(valeur: datetime) -> datetime:
     return valeur if valeur.tzinfo is not None else valeur.replace(tzinfo=UTC)
 
 
+def _noms(ligne: Row[Any]) -> tuple[str, ...] | None:
+    brut = getattr(ligne, "noms_attendus", None)
+    return tuple(brut) if isinstance(brut, list) else None
+
+
 def _lien(ligne: Row[Any]) -> Lien:
     return Lien(
         dossier_id=DossierId(ligne.dossier_id),
@@ -33,6 +38,7 @@ def _lien(ligne: Row[Any]) -> Lien:
         relie_le=_utc(ligne.cree_le if hasattr(ligne, "cree_le") else ligne.relie_le),
         indice=ligne.indice,
         relie_par=ligne.relie_par,
+        noms_attendus=_noms(ligne),
     )
 
 
@@ -125,6 +131,9 @@ class PostgresLiensRollee:
                         origine=lien.origine,
                         indice=lien.indice,
                         relie_par=lien.relie_par,
+                        noms_attendus=(
+                            list(lien.noms_attendus) if lien.noms_attendus is not None else None
+                        ),
                     )
                 )
         except IntegrityError as exc:
@@ -220,6 +229,16 @@ class PostgresLiensRollee:
                     rapprochements_rollee.c.rollee_user_id == rollee_user_id
                 )
             )
+
+    def fixer_noms(self, rollee_user_id: str, noms: tuple[str, ...] | None) -> bool:
+        with self._engine.begin() as connexion:
+            appliquer_rls(connexion)
+            resultat = connexion.execute(
+                update(utilisateurs_rollee)
+                .where(utilisateurs_rollee.c.rollee_user_id == rollee_user_id)
+                .values(noms_attendus=list(noms) if noms is not None else None)
+            )
+        return resultat.rowcount == 1
 
 
 def _garder(connexion: Connection, lien: Lien, par: str, motif: str, le: datetime) -> None:

@@ -276,7 +276,7 @@ def _groupes(
 async def _lire(
     services: ServicesRollee, dossier: Dossier, depuis: date, jusqua: date
 ) -> tuple[list[tuple[str, PlatformSettlement]], list[Rejet]]:
-    comptes = [c for c in services.comptes.comptes(dossier.id) if c.connecte]
+    comptes = [c for c in services.comptes.comptes(dossier.id) if c.connecte and c.retenu]
     if not comptes:
         return [], []
     plateformes = charger_plateformes()

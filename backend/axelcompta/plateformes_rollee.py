@@ -22,7 +22,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from sqlalchemy.engine import Engine
 
@@ -36,9 +36,11 @@ from axelcompta.ingestion.comptes_rollee import (
     ComptesRolleeRepository,
     UtilisateurRollee,
     depuis_rollee,
+    retenir_compte,
 )
 from axelcompta.ingestion.comptes_rollee_postgres import PostgresComptesRollee
-from axelcompta.ingestion.providers.rollee import RolleeHttpClient
+from axelcompta.ingestion.providers.rollee import RolleeHttpClient, RolleeIndisponible
+from axelcompta.ingestion.rapprochement_rollee import empreinte, nom_du_profil
 from axelcompta.ingestion.webhooks_rollee import (
     TYPES_COMPTES,
     TYPES_DONNEES,
@@ -164,26 +166,57 @@ def _branchement_du_user(
 async def _relire_un(
     services: ServicesRollee, dossier: Dossier, utilisateur: UtilisateurRollee
 ) -> None:
-    """Remplace les plateformes de ce compte Rollee, sans toucher aux autres."""
+    """Remplace les plateformes de ce compte Rollee, sans toucher aux autres.
+    Avec des noms attendus, seul le compte à ce nom est retenu."""
     client = client_du_branchement(services, _branchement_du_user(services, dossier, utilisateur))
     try:
         bruts = await client.comptes(utilisateur.rollee_user_id)
+        comptes = [
+            await _compte_relu(client, dossier, utilisateur, brut, services)
+            for brut in bruts
+            if brut.get("id")
+        ]
     finally:
         await client.aclose()
-    connus = {c.account_id: c for c in services.comptes.comptes(dossier.id)}
-    maintenant = services.maintenant()
-    comptes = [
-        depuis_rollee(
-            dossier.id,
-            brut,
-            connus.get(str(brut.get("id"))),
-            maintenant,
-            utilisateur.rollee_user_id,
-        )
-        for brut in bruts
-        if brut.get("id")
-    ]
     services.comptes.remplacer_comptes(dossier.id, comptes, utilisateur.rollee_user_id)
+
+
+async def _compte_relu(
+    client: RolleeHttpClient,
+    dossier: Dossier,
+    utilisateur: UtilisateurRollee,
+    brut: dict[str, Any],
+    services: ServicesRollee,
+) -> CompteRelie:
+    connus = {c.account_id: c for c in services.comptes.comptes(dossier.id)}
+    retenu, autre = await _titulaire_du_compte(client, str(brut["id"]), utilisateur)
+    return depuis_rollee(
+        dossier.id,
+        brut,
+        connus.get(str(brut.get("id"))),
+        services.maintenant(),
+        utilisateur.rollee_user_id,
+        retenu,
+        autre,
+    )
+
+
+async def _titulaire_du_compte(
+    client: RolleeHttpClient, account_id: str, utilisateur: UtilisateurRollee
+) -> tuple[bool, bool]:
+    attendus = utilisateur.noms_attendus
+    if attendus is None:
+        return True, False
+    try:
+        profil = await client.profil(account_id)
+    except RolleeIndisponible as exc:
+        if exc.statut is not None and exc.statut >= 500:
+            return retenir_compte("", frozenset(attendus), True)
+        raise
+    nom = nom_du_profil(profil if isinstance(profil, dict) else {})
+    from axelcompta.rapprochement_rollee_service import cle_empreintes
+
+    return retenir_compte(empreinte(cle_empreintes(), nom), frozenset(attendus), False)
 
 
 async def relire_comptes(services: ServicesRollee, dossier: Dossier) -> list[CompteRelie]:
@@ -214,9 +247,19 @@ def _phrase_synchro(comptes: list[CompteRelie]) -> str:
     phrase = f"Rollee synchronisé : {', '.join(c.nom for c in comptes)}."
     perdus = [c.nom for c in comptes if c.etat == "a_reconnecter"]
     if len(perdus) == 1:
-        return f"{phrase} {perdus[0]} est à reconnecter."
-    if perdus:
-        return f"{phrase} {len(perdus)} à reconnecter."
+        phrase = f"{phrase} {perdus[0]} est à reconnecter."
+    elif perdus:
+        phrase = f"{phrase} {len(perdus)} à reconnecter."
+    return _preciser_titulaires(phrase, comptes)
+
+
+def _preciser_titulaires(phrase: str, comptes: list[CompteRelie]) -> str:
+    autres = sum(1 for c in comptes if c.titulaire_autre)
+    inconnus = sum(1 for c in comptes if not c.retenu and not c.titulaire_autre)
+    if autres:
+        phrase = f"{phrase} {autres} compte(s) au nom d'un autre chauffeur, ignoré(s)."
+    if inconnus:
+        phrase = f"{phrase} {inconnus} profil(s) illisible(s), compte non retenu."
     return phrase
 
 

@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from axelcompta.api.routes import (
+    get_branchements,
     get_journal_acces,
     get_ledger,
     get_liens_rollee,
@@ -60,6 +61,7 @@ def _monter(role: str = "admin") -> tuple[TestClient, LiensRolleeMemoire, Settle
     app.dependency_overrides[get_settlements] = lambda: settlements
     services = ServicesRollee(BranchementsMemoire(), ComptesRolleeMemoire())
     app.dependency_overrides[get_services_rollee] = lambda: services
+    app.dependency_overrides[get_branchements] = lambda: services.branchements
     return client, liens, settlements
 
 

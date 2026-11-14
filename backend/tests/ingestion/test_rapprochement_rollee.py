@@ -15,6 +15,8 @@ from axelcompta.ingestion.rapprochement_rollee import (
     bilan,
     empreinte,
     empreintes,
+    nom_du_profil,
+    noms_uniques,
     normaliser_iban,
     normaliser_nom,
     normaliser_telephone,
@@ -169,6 +171,29 @@ def test_une_liste_incomplete_ne_relie_pas_par_le_nom_seul() -> None:
         [_user("u1", noms=[MARTIN])], [_dossier("d1", noms=[MARTIN])], {}, complet=False
     )
     assert issue.etat == "a_choisir"
+
+
+def test_un_profil_flotte_a_le_meme_nom_que_prenom_et_nom() -> None:
+    assert nom_du_profil({"full_name": "BARRY Boubacar"}) == nom_du_profil(
+        {"first_name": "Boubacar", "last_name": "Barry"}
+    )
+
+
+def test_un_user_a_deux_noms_laisse_chacun_unique() -> None:
+    barry = empreinte(CLE, nom_du_profil({"full_name": "BARRY Boubacar"}))
+    autre = empreinte(CLE, nom_du_profil({"full_name": "GABI GALESSAN LEVAH"}))
+    user = UserRollee("927b77da", None, Empreintes(noms=frozenset({barry, autre})))
+    assert noms_uniques([user]) == frozenset({barry, autre})
+    (issue,) = rapprocher(
+        [user],
+        [_dossier("DIGI_86930", noms=[nom_du_profil({"full_name": "BARRY Boubacar"})])],
+        {},
+    )
+    assert (issue.etat, issue.indice, issue.dossier_id) == (
+        "relie_auto",
+        INDICE_NOM_UNIQUE,
+        "DIGI_86930",
+    )
 
 
 def test_les_empreintes_ne_contiennent_rien_en_clair() -> None:

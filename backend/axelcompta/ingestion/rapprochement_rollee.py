@@ -25,7 +25,7 @@ import unicodedata
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Literal
+from typing import Any, Literal
 
 INDICE_METADATA = "metadata"
 INDICE_IBAN = "iban"
@@ -42,6 +42,33 @@ RAISON_METADATA = "créé depuis ce dossier"
 RAISON_RETIRE = "lien déjà retiré par le gestionnaire"
 
 Etat = Literal["relie_auto", "a_choisir", "non_trouve"]
+
+
+def nom_du_profil(profil: Mapping[str, Any]) -> str:
+    """Nom normalisé d'un profil Rollee. Comptes « flotte » : full_name seul."""
+    prenom, nom = profil.get("first_name"), profil.get("last_name")
+    if prenom or nom:
+        return normaliser_nom(prenom, nom)
+    return normaliser_nom(profil.get("full_name"))
+
+
+def identite_apercu(profil: Mapping[str, Any]) -> tuple[str | None, str | None]:
+    """Prénom et nom pour l'aperçu. Sans les deux, le premier mot de
+    `full_name`, puis le reste."""
+    prenom = _texte(profil.get("first_name"))
+    nom = _texte(profil.get("last_name"))
+    if prenom or nom:
+        return prenom, nom
+    mots = (_texte(profil.get("full_name")) or "").split()
+    if not mots:
+        return None, None
+    return mots[0], " ".join(mots[1:]) or None
+
+
+def _texte(valeur: object) -> str | None:
+    if not isinstance(valeur, str) or not valeur.strip():
+        return None
+    return valeur.strip()
 
 
 def normaliser_nom(*parties: str | None) -> str:
@@ -135,6 +162,8 @@ class UserRollee:
     empreintes: Empreintes
     apercu: Apercu = field(default_factory=Apercu)
     accounts_number: int | None = None
+    titulaires: tuple[tuple[str, str], ...] = ()  # (account_id, empreinte du nom)
+    comptes: tuple[tuple[str, str, str], ...] = ()  # account_id, plateforme, empreinte
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,8 +201,9 @@ class Issue:
 
 
 def noms_uniques(users: Iterable[UserRollee]) -> frozenset[str]:
-    """Les empreintes de nom qu'un seul user porte. Uber et Bolt du même
-    user ne comptent qu'une fois."""
+    """Les empreintes de nom qu'un seul user porte, sur tout le parc.
+    Deux plateformes du même user, ou deux chauffeurs sur le même user,
+    ne comptent qu'une fois chacune : un nom peut rester unique."""
     compte = Counter(nom for user in users for nom in user.empreintes.noms)
     return frozenset(nom for nom, n in compte.items() if n == 1)
 

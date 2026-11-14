@@ -40,6 +40,7 @@ class Lien:
     relie_le: datetime
     indice: str | None = None
     relie_par: str | None = None  # e-mail du gestionnaire, pour un lien manuel
+    noms_attendus: tuple[str, ...] | None = None  # None : créé pour ce dossier, tout est à lui
 
     @property
     def comment(self) -> str:
@@ -122,6 +123,10 @@ class LiensRollee(Protocol):
         ...
 
     def retirer_a_choisir(self, rollee_user_id: str) -> None: ...
+
+    def fixer_noms(self, rollee_user_id: str, noms: tuple[str, ...] | None) -> bool:
+        """Pose les noms attendus d'un lien déjà en place. Faux si le lien n'existe pas."""
+        ...
 
 
 @dataclass
@@ -213,6 +218,28 @@ class LiensRolleeMemoire:
     def retirer_a_choisir(self, rollee_user_id: str) -> None:
         self.attente.pop(rollee_user_id, None)
 
+    def fixer_noms(self, rollee_user_id: str, noms: tuple[str, ...] | None) -> bool:
+        lien = self.poses.get(rollee_user_id)
+        if lien is None:
+            return False
+        self.poses[rollee_user_id] = replace(lien, noms_attendus=noms)
+        return True
 
-def lien_manuel(dossier_id: DossierId, attente: AChoisir, par: str, le: datetime) -> Lien:
-    return Lien(dossier_id, attente.rollee_user_id, attente.branchement_id, "manuel", le, None, par)
+
+def lien_manuel(
+    dossier_id: DossierId,
+    attente: AChoisir,
+    par: str,
+    le: datetime,
+    noms: tuple[str, ...] | None = (),
+) -> Lien:
+    return Lien(
+        dossier_id,
+        attente.rollee_user_id,
+        attente.branchement_id,
+        "manuel",
+        le,
+        None,
+        par,
+        noms,
+    )

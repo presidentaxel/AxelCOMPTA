@@ -30,7 +30,10 @@ class PostgresComptesRollee:
             ).all()
         return [
             UtilisateurRollee(
-                DossierId(ligne.dossier_id), ligne.rollee_user_id, ligne.branchement_id
+                DossierId(ligne.dossier_id),
+                ligne.rollee_user_id,
+                ligne.branchement_id,
+                tuple(ligne.noms_attendus) if isinstance(ligne.noms_attendus, list) else None,
             )
             for ligne in lignes
         ]
@@ -91,6 +94,8 @@ class PostgresComptesRollee:
                 relie_le=ligne.relie_le,
                 maj_le=ligne.maj_le,
                 rollee_user_id=ligne.rollee_user_id,
+                retenu=ligne.retenu,
+                titulaire_autre=ligne.titulaire_autre,
             )
             for ligne in lignes
         ]
@@ -124,6 +129,8 @@ class PostgresComptesRollee:
                             "relie_le": c.relie_le,
                             "maj_le": c.maj_le,
                             "rollee_user_id": c.rollee_user_id,
+                            "retenu": c.retenu,
+                            "titulaire_autre": c.titulaire_autre,
                         }
                         for c in comptes
                     ],

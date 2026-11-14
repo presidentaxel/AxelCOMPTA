@@ -123,6 +123,10 @@ Le provider `digifactory` alimente les transactions bancaires (canal actif pour 
 - **Mode B2C** : le chauffeur s'authentifie lui-même via Rollee Connect (SDK web/mobile).
 - **Mode B2B fleet** : la flotte (le client gestionnaire) gère un compte admin et invite ses chauffeurs en masse. **C'est le mode utilisé pour le client pilote.** Le gestionnaire a accès aux données agrégées de tous ses chauffeurs depuis un seul compte fleet.
 
+Les comptes « flotte » (`uber.com-fleet-rev`, `bolt.eu-fleet-rev`, `allocab-fleet-rev`) n'ont dans leur profil que `full_name`, jamais `first_name` / `last_name`. Le rapprochement lit ce nom. Un même user Rollee peut porter les comptes de plusieurs chauffeurs : le lien garde les empreintes de nom du dossier, et seul le compte à ce nom est retenu. Les autres s'affichent « au nom d'un autre chauffeur, ignoré », sans le nom de cet autre chauffeur, et leurs revenus ne sont pas lus. Un user créé depuis l'espace du chauffeur (`cree`) n'a pas de noms attendus : tous ses comptes sont à lui.
+
+Heetch et Allocab ne sont pas dans `plateformes.csv`. Tant que Louis n'a pas décidé le régime de TVA de leur commission, leurs relevés partent en quarantaine (« plateforme absente »). `charger_plateformes` ne change pas pour ça.
+
 ### 3.2 Données disponibles via l'API Rollee
 
 | Endpoint | Données retournées | Usage AxeLCompta |

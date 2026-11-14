@@ -65,14 +65,27 @@ def empreintes_json(empreintes: Empreintes) -> dict[str, list[str]]:
     }
 
 
-def apercu_json(apercu: Apercu) -> dict[str, object]:
-    return {
+def apercu_json(
+    apercu: Apercu, comptes: tuple[tuple[str, str, str], ...] = ()
+) -> dict[str, object]:
+    corps: dict[str, object] = {
         "initiales": apercu.initiales,
         "plateformes": list(apercu.plateformes),
         "iban_fin": apercu.iban_fin,
         "nom": apercu.nom,
         "email_masque": apercu.email_masque,
     }
+    if comptes:
+        corps["comptes"] = [
+            {"account_id": account, "plateforme": plateforme, "empreinte": empreinte_nom}
+            for account, plateforme, empreinte_nom in comptes
+        ]
+    return corps
+
+
+def sans_nom(user: UserRollee) -> bool:
+    """Compte flotte déjà vu, dont le profil n'a pas encore donné de nom."""
+    return bool(user.apercu.plateformes) and not user.empreintes.noms
 
 
 def user_depuis(
@@ -87,6 +100,7 @@ def user_depuis(
     nom_clair = nom if nom is not None else str(apercu.get("nom") or "")
     masque = email_masque if email_masque is not None else apercu.get("email_masque")
     fin = apercu.get("iban_fin")
+    comptes = _comptes(apercu)
     return UserRollee(
         user_id,
         dossier_metadata,
@@ -104,4 +118,24 @@ def user_depuis(
             masque if isinstance(masque, str) else None,
         ),
         accounts_number,
+        tuple((account, empreinte_nom) for account, _plateforme, empreinte_nom in comptes),
+        comptes,
     )
+
+
+def _comptes(apercu: dict[str, object]) -> tuple[tuple[str, str, str], ...]:
+    brut = apercu.get("comptes")
+    if not isinstance(brut, list):
+        return ()
+    lignes = []
+    for ligne in brut:
+        if not isinstance(ligne, dict) or not ligne.get("account_id"):
+            continue
+        lignes.append(
+            (
+                str(ligne.get("account_id")),
+                str(ligne.get("plateforme") or ""),
+                str(ligne.get("empreinte") or ""),
+            )
+        )
+    return tuple(lignes)

@@ -113,6 +113,7 @@ utilisateurs_rollee = Table(
     Column("origine", String, nullable=False, server_default="cree"),
     Column("indice", String, nullable=True),
     Column("relie_par", String, nullable=True),
+    Column("noms_attendus", JSON, nullable=True),
     CheckConstraint("origine IN ('cree', 'auto', 'manuel')", name="ck_utilisateurs_rollee_origine"),
 )
 
@@ -180,6 +181,8 @@ comptes_rollee = Table(
     Column("relie_le", DateTime(timezone=True), nullable=True),
     Column("maj_le", DateTime(timezone=True), nullable=False),
     Column("rollee_user_id", String, nullable=True),
+    Column("retenu", Boolean, nullable=False, server_default="true"),
+    Column("titulaire_autre", Boolean, nullable=False, server_default="false"),
 )
 
 # AXE-820 : webhooks Rollee reçus, gardés tels quels, traités par la file.

@@ -256,6 +256,7 @@ from axelcompta.plateformes_rollee import (
 from axelcompta.rapprochement_rollee_service import (
     avancement_dossier,
     depots_postgres,
+    noms_pour_lien,
     rapprocher_dossier,
     retenir_avancement,
 )
@@ -6903,6 +6904,7 @@ class PlateformeVue(BaseModel):
     relie_le: str | None
     compte_rollee: str = ""  # le compte Rollee (flotte) d'où vient cette plateforme
     rollee_user_id: str = ""
+    titulaire_autre: bool = False
 
 
 class PlateformesVue(BaseModel):
@@ -6966,6 +6968,7 @@ def _vue_plateformes(
                 nom=c.nom,
                 etat=c.etat,
                 relie_le=c.relie_le.isoformat() if c.relie_le else None,
+                titulaire_autre=c.titulaire_autre,
             )
             for c in comptes
         ],
@@ -7025,6 +7028,7 @@ def _enregistrer_routes_plateformes(app: FastAPI) -> None:
                     relie_le=c.relie_le.isoformat() if c.relie_le else None,
                     compte_rollee=libelles.get(c.rollee_user_id or "", ""),
                     rollee_user_id=c.rollee_user_id or "",
+                    titulaire_autre=c.titulaire_autre,
                 )
                 for c in comptes
             ],
@@ -7305,6 +7309,7 @@ def _choisir_rollee(
     dossiers: DossierRepository,
     liens: LiensRollee,
     journal: JournalAcces,
+    noms: tuple[str, ...] = (),
 ) -> None:
     attente = next(
         (a for a in liens.a_choisir(tenant_id) if a.rollee_user_id == entree.rollee_user_id), None
@@ -7319,7 +7324,7 @@ def _choisir_rollee(
     if dossier is None or dossier.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Dossier introuvable.")
     try:
-        liens.lier(lien_manuel(dossier.id, attente, identite.email, maintenant))
+        liens.lier(lien_manuel(dossier.id, attente, identite.email, maintenant, noms))
     except LienDejaPris as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     liens.retirer_a_choisir(attente.rollee_user_id)
@@ -7428,10 +7433,17 @@ def _enregistrer_routes_liens_rollee(app: FastAPI) -> None:
         dossiers: DossiersDep,
         liens: LiensRolleeDep,
         journal: JournalAccesDep,
+        branchements: BranchementsDep,
     ) -> None:
         tenant_id, identite_ok = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, "La lecture seule ne relie pas de compte Rollee.")
-        _choisir_rollee(entree, tenant_id, identite_ok, dossiers, liens, journal)
+        dossier = (
+            dossiers.obtenir(DossierId(entree.dossier_id))
+            if entree.dossier_id is not None
+            else None
+        )
+        noms = noms_pour_lien(dossier, branchements) if dossier is not None else ()
+        _choisir_rollee(entree, tenant_id, identite_ok, dossiers, liens, journal, noms)
 
     @app.get("/dossiers/{dossier_id}/rollee", response_model=FicheRolleeVue)
     def lire_lien_rollee(
@@ -7543,6 +7555,7 @@ def _lier_depuis_carte(
     cartes: CartesRollee,
     liens: LiensRollee,
     journal: JournalAcces,
+    noms: tuple[str, ...] = (),
 ) -> None:
     trouve = next(
         (
@@ -7569,6 +7582,7 @@ def _lier_depuis_carte(
                 maintenant,
                 None,
                 identite.email,
+                noms,
             )
         )
     except LienDejaPris as exc:
@@ -7618,10 +7632,19 @@ def _enregistrer_routes_rollee_carte(app: FastAPI) -> None:
         cartes: CartesRolleeDep,
         liens: LiensRolleeDep,
         journal: JournalAccesDep,
+        branchements: BranchementsDep,
     ) -> None:
         _tenant_id, identite_ok = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, "La lecture seule ne relie pas de compte Rollee.")
-        _lier_depuis_carte(dossier, entree.rollee_user_id, identite_ok, cartes, liens, journal)
+        _lier_depuis_carte(
+            dossier,
+            entree.rollee_user_id,
+            identite_ok,
+            cartes,
+            liens,
+            journal,
+            noms_pour_lien(dossier, branchements),
+        )
 
 
 def _enregistrer_routes_integrations(app: FastAPI) -> None:

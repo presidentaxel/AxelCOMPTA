@@ -5,7 +5,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from axelcompta.core.ids import DossierId
-from axelcompta.ingestion.comptes_rollee import depuis_rollee, noms_plateformes, synthese
+from axelcompta.ingestion.comptes_rollee import (
+    depuis_rollee,
+    noms_plateformes,
+    retenir_compte,
+    synthese,
+)
 from axelcompta.packs.vtc_demo import charger_plateformes
 
 D = DossierId("DIGI_1")
@@ -51,3 +56,10 @@ def test_la_synthese_compte_sans_montant_et_dit_ce_qui_manque() -> None:
     assert resume.manquantes == ("bolt",) and resume.non_declarees == ()
     sans_attente = synthese(comptes, [], charger_plateformes())
     assert sans_attente.non_declarees == () and sans_attente.attendues == 0
+
+
+def test_seul_le_nom_attendu_est_retenu() -> None:
+    assert retenir_compte("barry", frozenset({"barry"}), False) == (True, False)
+    assert retenir_compte("autre", frozenset({"barry"}), False) == (False, True)
+    assert retenir_compte("", frozenset({"barry"}), True) == (False, False)
+    assert retenir_compte("autre", None, False) == (True, False)

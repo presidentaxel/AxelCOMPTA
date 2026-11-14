@@ -61,7 +61,7 @@ class PostgresCartesRollee:
             "branchement_id": branchement_id,
             "dossier_metadata": user.dossier_metadata,
             "empreintes": empreintes_json(user.empreintes),
-            "apercu": apercu_json(user.apercu),
+            "apercu": apercu_json(user.apercu, user.comptes),
             "lu_le": le,
             "accounts_number": user.accounts_number,
             "nom": user.apercu.nom or None,

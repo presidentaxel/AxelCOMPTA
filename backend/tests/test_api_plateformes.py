@@ -154,6 +154,7 @@ def test_la_synthese_nomme_la_plateforme_a_reconnecter() -> None:
             "relie_le": "2026-11-14T00:00:00+00:00",
             "compte_rollee": "",
             "rollee_user_id": "",
+            "titulaire_autre": False,
         },
         {
             "nom": "bolt.eu-rev",
@@ -161,5 +162,6 @@ def test_la_synthese_nomme_la_plateforme_a_reconnecter() -> None:
             "relie_le": None,
             "compte_rollee": "",
             "rollee_user_id": "",
+            "titulaire_autre": False,
         },
     ]

@@ -52,13 +52,16 @@ from axelcompta.ingestion.rapprochement_rollee import (
     UserRollee,
     apercu,
     bilan,
+    empreinte,
     empreintes,
+    identite_apercu,
+    nom_du_profil,
     normaliser_nom,
     rapprocher,
 )
 from axelcompta.plateformes_rollee import TYPE_ROLLEE, ServicesRollee, client_du_branchement
 from axelcompta.prevenir_admins import prevenir_admins
-from axelcompta.tenants.branchements import a_interroger
+from axelcompta.tenants.branchements import BranchementsRepository, a_interroger
 from axelcompta.tenants.branchements_postgres import PostgresBranchements
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
@@ -177,25 +180,32 @@ async def lire_user(
     metadata = brut.get("metadata") or {}
     dossier = metadata.get("dossier_id") if isinstance(metadata, Mapping) else None
     noms, emails, telephones, plateformes = [], [], [], []
+    comptes: list[tuple[str, str, str]] = []
     premier: tuple[str | None, str | None] = (None, None)
     email_vu: str | None = None
     for compte in await _avec(limite, client.comptes(user_id)):
-        plateformes.append(str(compte.get("name") or compte.get("type") or "plateforme"))
+        plateforme = str(compte.get("name") or compte.get("type") or "plateforme")
+        plateformes.append(plateforme)
         profil = await _profil_compte(client, str(compte["id"]), limite, tolerer)
-        prenom, nom = profil.get("first_name"), profil.get("last_name")
-        if prenom or nom:
-            noms.append(normaliser_nom(prenom, nom))
-            premier = premier if premier != (None, None) else (prenom, nom)
+        nom = nom_du_profil(profil)
+        if nom:
+            noms.append(nom)
+        comptes.append((str(compte["id"]), plateforme, empreinte(cle, nom)))
+        if premier == (None, None):
+            premier = identite_apercu(profil)
         if email_vu is None and isinstance(profil.get("email"), str):
             email_vu = profil.get("email")
         emails.append(profil.get("email"))
         telephones.append(profil.get("phone"))
+    fiche = tuple(comptes)
     return UserRollee(
         user_id,
         str(dossier) if dossier else None,
         empreintes(cle, (), noms, emails, telephones),
         apercu(premier[0], premier[1], plateformes, None, masquer_email(email_vu)),
         _nombre_comptes(brut),
+        tuple((account, empreinte_nom) for account, _plateforme, empreinte_nom in fiche),
+        fiche,
     )
 
 
@@ -482,6 +492,37 @@ def telephones_contact(contact: Mapping[str, Any] | None) -> list[str]:
     return [str(contact[cle]) for cle in _CLES_TELEPHONE if contact.get(cle)]
 
 
+def noms_pour_lien(dossier: Dossier, branchements: BranchementsRepository) -> tuple[str, ...]:
+    """Empreintes de nom du dossier pour un lien posé à la main. Sans la clé
+    des empreintes (tests), liste vide : le lien ne retient rien tout seul."""
+    if not os.environ.get("AXELCOMPTA_CLE_INTEGRATIONS"):
+        return ()
+    contacts = asyncio.run(_contacts_du_dossier(dossier, branchements))
+    return tuple(
+        sorted(
+            indices_dossier(
+                dossier, SourcesDossiers(contacts, {}, {}), cle_empreintes()
+            ).empreintes.noms
+        )
+    )
+
+
+async def _contacts_du_dossier(
+    dossier: Dossier, branchements: BranchementsRepository
+) -> dict[str, dict[str, Any]]:
+    digi = [
+        b for b in branchements.lister(dossier.tenant_id) if b.type == "digifactory" and b.actif
+    ]
+    if not digi:
+        return {}
+    from axelcompta.worker import contacts_du_portefeuille
+
+    try:
+        return await contacts_du_portefeuille(digi)
+    except Exception:  # noqa: BLE001 — sans Digifactory, les associés suffisent
+        return {}
+
+
 def indices_dossier(dossier: Dossier, sources: SourcesDossiers, cle: bytes) -> DossierIndices:
     noms: list[str] = []
     contact = sources.contacts.get(str(dossier.contact_nr)) if dossier.contact_nr else None
@@ -509,6 +550,7 @@ class Passage:
     branchement_id: str
     maintenant: datetime
     partiel: bool = False  # un seul user (webhook) : le reste de la file est gardé
+    noms: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 def appliquer(
@@ -533,6 +575,7 @@ def appliquer(
                 "auto",
                 passage.maintenant,
                 issue.indice,
+                noms_attendus=passage.noms.get(issue.dossier_id) if passage.noms else None,
             )
             try:
                 liens.lier(lien)
@@ -697,7 +740,9 @@ def _conclure_dossier(
     for passage, lecture in lectures:
         siens = {user.user_id for user in lecture.users}
         du_dossier = _du_dossier([i for i in issues if i.user_id in siens], str(dossier.id))
-        a_signaler.extend(appliquer(depots.liens, du_dossier, lecture.users, passage))
+        a_signaler.extend(
+            appliquer(depots.liens, du_dossier, lecture.users, _passage_nomme(passage, indices))
+        )
         trouves.extend(du_dossier)
     if a_signaler and depots.prevenir is not None:
         depots.prevenir(dossier.tenant_id, a_signaler)
@@ -770,7 +815,9 @@ def _bilan_portefeuille(
     lignes = _lignes_de_bilan(tenant_id, lus, issues, ecrire, entretenir)
     if not ecrire:
         return lignes
-    return lignes + _poser_liens(depots, tenant_id, lus, issues, maintenant, incomplet)
+    return lignes + _poser_liens(
+        depots, tenant_id, lus, issues, maintenant, incomplet, _noms_des(indices)
+    )
 
 
 def _lignes_de_bilan(
@@ -806,6 +853,14 @@ def _lignes_de_bilan(
     return lignes
 
 
+def _noms_des(indices: Sequence[DossierIndices]) -> dict[str, tuple[str, ...]]:
+    return {indice.dossier_id: tuple(sorted(indice.empreintes.noms)) for indice in indices}
+
+
+def _passage_nomme(passage: Passage, indices: Sequence[DossierIndices]) -> Passage:
+    return replace(passage, noms=_noms_des(indices))
+
+
 def _poser_liens(
     depots: DepotsRapprochement,
     tenant_id: TenantId,
@@ -813,12 +868,13 @@ def _poser_liens(
     issues: Sequence[Issue],
     maintenant: datetime,
     incomplet: bool,
+    noms: Mapping[str, tuple[str, ...]],
 ) -> list[str]:
     lignes = []
     for branchement, lecture in lus:
         siens = {user.user_id for user in lecture.users}
         du_compte = [issue for issue in issues if issue.user_id in siens]
-        passage = Passage(tenant_id, branchement.id, maintenant, incomplet)
+        passage = Passage(tenant_id, branchement.id, maintenant, incomplet, noms)
         nouveaux = appliquer(depots.liens, du_compte, lecture.users, passage)
         if nouveaux and depots.prevenir is not None:
             lignes.append(f"{tenant_id} : {depots.prevenir(tenant_id, nouveaux)}")

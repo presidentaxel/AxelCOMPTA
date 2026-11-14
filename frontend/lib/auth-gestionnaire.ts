@@ -404,6 +404,7 @@ export type ComptePlateformeSynthese = {
   relie_le: string | null;
   compte_rollee?: string;
   rollee_user_id?: string;
+  titulaire_autre?: boolean;
 };
 
 /** AXE-819 : plateformes reliées par le chauffeur (doc 19). */

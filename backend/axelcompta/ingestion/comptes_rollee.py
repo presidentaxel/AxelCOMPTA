@@ -26,6 +26,7 @@ class UtilisateurRollee:
     dossier_id: DossierId
     rollee_user_id: str
     branchement_id: str
+    noms_attendus: tuple[str, ...] | None = None  # None : lien « cree », tous ses comptes
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +39,8 @@ class CompteRelie:
     relie_le: datetime | None  # première fois vu connecté
     maj_le: datetime
     rollee_user_id: str | None = None  # le compte Rollee qui a fourni cette plateforme
+    retenu: bool = True
+    titulaire_autre: bool = False
 
     @property
     def etat(self) -> Etat:
@@ -49,12 +52,26 @@ class CompteRelie:
         return CompteRollee(self.account_id, self.nom, self.connecte)
 
 
+def retenir_compte(
+    empreinte_nom: str, attendus: frozenset[str] | None, illisible: bool
+) -> tuple[bool, bool]:
+    """(retenu, titulaire_autre). Sans noms attendus, tous les comptes sont
+    à lui. Profil illisible ou sans nom : on ne sait pas, on ne retient pas."""
+    if attendus is None:
+        return True, False
+    if illisible or not empreinte_nom or empreinte_nom not in attendus:
+        return False, bool(empreinte_nom) and not illisible
+    return True, False
+
+
 def depuis_rollee(
     dossier_id: DossierId,
     brut: dict[str, Any],
     connu: CompteRelie | None,
     maintenant: datetime,
     rollee_user_id: str | None = None,
+    retenu: bool = True,
+    titulaire_autre: bool = False,
 ) -> CompteRelie:
     connecte = bool(brut.get("connected"))
     relie_le = connu.relie_le if connu and connu.relie_le else (maintenant if connecte else None)
@@ -67,6 +84,8 @@ def depuis_rollee(
         relie_le=relie_le,
         maj_le=maintenant,
         rollee_user_id=rollee_user_id or (connu.rollee_user_id if connu else None),
+        retenu=retenu,
+        titulaire_autre=titulaire_autre,
     )
 
 
