@@ -111,7 +111,11 @@ async def _infos_compte(
         return profil, ""
     try:
         iban = str((await client.coordonnees_bancaires(compte_id)).get("iban") or "")
-    except (RolleeIndisponible, RolleeAuthError):
+    except RolleeIndisponible as exc:
+        if not (tolerer and _erreur_du_compte(exc)):
+            raise
+        iban = ""
+    except RolleeAuthError:
         raise
     except Exception:  # noqa: BLE001
         iban = ""

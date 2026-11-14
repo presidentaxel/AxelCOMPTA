@@ -301,6 +301,11 @@ def test_un_profil_toujours_en_500_ne_bloque_pas_le_lien_par_le_nom() -> None:
                 raise RolleeIndisponible("GET /accounts/u-500-uber/profile : 500", 500)
             return await super().profil(compte_id)
 
+        async def coordonnees_bancaires(self, compte_id: str) -> dict[str, Any]:
+            if compte_id == "u-500-uber":  # mesuré : le même compte, en 500 partout
+                raise RolleeIndisponible("GET /accounts/u-500-uber/banking_info : 500", 500)
+            return await super().coordonnees_bancaires(compte_id)
+
     depots = _depots(ProfilCasse())
     lignes = asyncio.run(passer_tenant(depots, T, True, LE))
     assert ("u-nom", "nom_unique") in {(x.rollee_user_id, x.indice) for x in depots.liens.liens(T)}
