@@ -6,7 +6,8 @@ toutes rattachées à la semaine par leur pièce (« uber:2026-11-02 ») :
 * **recette du jour** : la créance sur la plateforme (467) pour ce qu'elle
   doit, le compte de l'associé (455, 108 en EI) pour les espèces gardées,
   contre 706 HT, 44571, et la commission (622, 44566) quand Rollee la donne.
-  Les pourboires vont en 7068, sans TVA (AXE-926) ;
+  Pourboires, bonus et autres montants hors course vont en 7068, sans TVA
+  (AXE-926) ;
 * **solde par un virement** : la contrepartie du virement (471 ou 706, telle
   que les écrans la voient) contre la créance ; le virement lui-même et le
   512 ne bougent pas ;
@@ -29,8 +30,9 @@ from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 
 COMPTE_CREANCE = "467"
 COMPTE_FRAIS = "627"
-# AXE-926 : dans le chiffre d'affaires (la liasse lit tout le 70), hors TVA.
-COMPTE_POURBOIRES = "7068"
+# AXE-926 : revenus de plateforme hors course (pourboires, bonus, autres) :
+# dans le chiffre d'affaires (la liasse lit tout le 70), sans TVA.
+COMPTE_HORS_COURSE = "7068"
 SUFFIXE_RECETTE = ":recette-plateforme"
 SUFFIXE_SOLDE = ":solde-plateforme"
 SUFFIXE_FRAIS = ":frais-plateforme"
@@ -59,18 +61,19 @@ def ecriture_recette(
     compte_especes: str | None,
     lundi: date,
     tva_recettes_regime: str,
-    pourboires_cts: int = 0,
+    hors_course_cts: int = 0,
 ) -> Ecriture:
     """La recette d'un jour : `construire_ecriture_settlement` (mêmes lignes
-    706, TVA, commission) sur le brut hors pourboires, la banque remplacée
-    par la créance, les pourboires en 7068 sans TVA, et la part en espèces
-    portée au compte de l'associé."""
-    if not 0 <= pourboires_cts <= min(jour.net_payout_cts, jour.gross_earnings_cts):
-        raise ValueError("pourboires illisibles")
+    706, TVA, commission) sur le brut sans ce qui n'est pas une course, la
+    banque remplacée par la créance, le hors course en 7068 sans TVA, et la
+    part en espèces portée au compte de l'associé."""
+    plafond = min(jour.net_payout_cts, jour.gross_earnings_cts)
+    if hors_course_cts < 0 or (hors_course_cts and hors_course_cts > plafond):
+        raise ValueError("pourboires, bonus ou autres montants illisibles")
     taxable = replace(
         jour,
-        gross_earnings_cts=jour.gross_earnings_cts - pourboires_cts,
-        net_payout_cts=jour.net_payout_cts - pourboires_cts,
+        gross_earnings_cts=jour.gross_earnings_cts - hors_course_cts,
+        net_payout_cts=jour.net_payout_cts - hors_course_cts,
     )
     transaction = NormalizedTransaction(
         id=TransactionId(settlement_id),
@@ -88,15 +91,15 @@ def ecriture_recette(
         tva_recettes_regime=tva_recettes_regime,
         compte_banque=COMPTE_CREANCE,
     )
-    # La créance porte tout le gagné, pourboires compris.
+    # La créance porte tout le gagné, hors course compris.
     lignes = [
         LigneEcriture(COMPTE_CREANCE, Sens.DEBIT, Money(jour.net_payout_cts))
         if x.compte == COMPTE_CREANCE
         else x
         for x in base.lignes
     ]
-    if pourboires_cts:
-        lignes.append(LigneEcriture(COMPTE_POURBOIRES, Sens.CREDIT, Money(pourboires_cts)))
+    if hors_course_cts:
+        lignes.append(LigneEcriture(COMPTE_HORS_COURSE, Sens.CREDIT, Money(hors_course_cts)))
     if especes_cts:
         lignes = _avec_especes(lignes, jour.net_payout_cts, especes_cts, compte_especes)
     return replace(

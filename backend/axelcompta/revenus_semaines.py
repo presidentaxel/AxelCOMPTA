@@ -29,7 +29,7 @@ from axelcompta.ingestion.ecritures_semaines import (
     ecriture_solde,
     id_recette,
 )
-from axelcompta.ingestion.providers.rollee import especes_cts, pourboires_cts
+from axelcompta.ingestion.providers.rollee import especes_cts, hors_course_cts
 from axelcompta.ingestion.semaines_plateforme import (
     Jour,
     Semaine,
@@ -142,7 +142,7 @@ def _ecritures_semaine(
                 contexte.compte_especes,
                 semaine.lundi,
                 contexte.dossier.tva_recettes_regime,
-                pourboires_cts(stocke.settlement),
+                hors_course_cts(stocke.settlement),
             )
         )
     for ident in semaine.virements:
