@@ -398,8 +398,7 @@ async def passer_tenant(
     indices = [indices_dossier(d, sources, cle) for d in dossiers]
     par_branchement = await _users_par_branchement(depots, tenant_id, cle, seulement)
     tous = [u for _b, lecture in par_branchement for u in lecture.users]
-    erreurs = [e for _b, lecture in par_branchement for e in lecture.erreurs]
-    illisibles = len(erreurs)
+    illisibles = sum(lecture.illisibles for _b, lecture in par_branchement)
     issues = trancher_tous(
         tous,
         indices,
@@ -410,19 +409,7 @@ async def passer_tenant(
         complet=seulement is None and illisibles == 0,
     )
     mode = "" if ecrire else " (simulation : rien n'est écrit)"
-    lignes = [f"{tenant_id} : {resume(issues)}{mode}"]
-    if illisibles:
-        lignes.append(
-            f"  {illisibles} user(s) Rollee illisible(s) (Rollee débordé) : "
-            "aucun lien par le nom seul à ce passage, relancez plus tard"
-        )
-        lignes += [f"    {erreur}" for erreur in erreurs[:5]]
-    profils = [p for _b, lecture in par_branchement for p in lecture.profils_en_erreur]
-    if profils:
-        lignes.append(
-            f"  {len(profils)} profil(s) toujours en erreur chez Rollee, comptés sans nom :"
-        )
-        lignes += [f"    {profil}" for profil in profils[:5]]
+    lignes = [f"{tenant_id} : {resume(issues)}{mode}", *_avertissements(par_branchement)]
     nouveaux: list[AChoisir] = []
     for branchement, lecture in par_branchement:
         users = lecture.users
@@ -443,6 +430,25 @@ async def passer_tenant(
                 )
     if nouveaux and depots.prevenir is not None:
         lignes.append(f"{tenant_id} : {depots.prevenir(tenant_id, nouveaux)}")
+    return lignes
+
+
+def _avertissements(par_branchement: Sequence[tuple[Branchement, Lecture]]) -> list[str]:
+    """Ce que Rollee n'a pas rendu, dit dans le bilan du passage."""
+    lignes = []
+    erreurs = [e for _b, lecture in par_branchement for e in lecture.erreurs]
+    if erreurs:
+        lignes.append(
+            f"  {len(erreurs)} user(s) Rollee illisible(s) (Rollee débordé) : "
+            "aucun lien par le nom seul à ce passage, relancez plus tard"
+        )
+        lignes += [f"    {erreur}" for erreur in erreurs[:5]]
+    profils = [p for _b, lecture in par_branchement for p in lecture.profils_en_erreur]
+    if profils:
+        lignes.append(
+            f"  {len(profils)} profil(s) toujours en erreur chez Rollee, comptés sans nom :"
+        )
+        lignes += [f"    {profil}" for profil in profils[:5]]
     return lignes
 
 
