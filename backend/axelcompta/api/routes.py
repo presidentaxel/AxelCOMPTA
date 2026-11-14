@@ -180,6 +180,8 @@ from axelcompta.filings.inpi_depot import GuideGreffe, PdfDepotInpiRenderer, gui
 from axelcompta.filings.liasse_fiscale import PdfLiasseFiscaleRenderer
 from axelcompta.filings.liasse_simplifiee import PdfLiasseSimplifieeRenderer
 from axelcompta.filings.pdf_export_comptable import rendre_balance_pdf, rendre_grand_livre_pdf
+from axelcompta.ingestion.annuaire_rollee import AnnuaireRollee, chercher
+from axelcompta.ingestion.annuaire_rollee_postgres import PostgresAnnuaireRollee
 from axelcompta.ingestion.comptes_bancaires import (
     CompteBancaire,
     CompteBancaireRepository,
@@ -7062,6 +7064,14 @@ LiensRolleeDep = Annotated[LiensRollee, Depends(get_liens_rollee)]
 ACTE_LIEN_ROLLEE = "lien_rollee"
 
 
+def get_annuaire_rollee() -> AnnuaireRollee:
+    """AXE-919 : les users Rollee du portefeuille, cherchés par leur nom."""
+    return PostgresAnnuaireRollee(_engine())
+
+
+AnnuaireRolleeDep = Annotated[AnnuaireRollee, Depends(get_annuaire_rollee)]
+
+
 class CandidatRolleeVue(BaseModel):
     dossier_id: str
     nom: str
@@ -7069,10 +7079,12 @@ class CandidatRolleeVue(BaseModel):
 
 
 class AChoisirRolleeVue(BaseModel):
-    """Doc 19 : initiales, plateformes, fin d'IBAN. Jamais un montant ni un nom."""
+    """Nom en clair depuis AXE-919 (décision du 14/11), plateformes, fin
+    d'IBAN. Jamais un montant."""
 
     rollee_user_id: str
     etat: str  # a_choisir | non_trouve
+    nom: str
     initiales: str
     plateformes: list[str]
     iban_fin: str | None
@@ -7108,6 +7120,21 @@ class FicheRolleeVue(BaseModel):
 class ChoixRolleeEntree(BaseModel):
     rollee_user_id: str
     dossier_id: str | None  # None : « aucun de ces comptes »
+
+
+class FicheAnnuaireVue(BaseModel):
+    """AXE-919 : un user Rollee cherché par son nom. Jamais un montant."""
+
+    rollee_user_id: str
+    nom: str
+    plateformes: list[str]
+    compte: str  # le compte Rollee du portefeuille (« Serenity Mobilité »)
+    email_masque: str | None
+    relie_a: str | None  # nom de l'entreprise déjà reliée, s'il y en a une
+
+
+class LierRolleeEntree(BaseModel):
+    rollee_user_id: str
 
 
 class DelierRolleeEntree(BaseModel):
@@ -7150,6 +7177,7 @@ def _rollee_du_portefeuille(
             AChoisirRolleeVue(
                 rollee_user_id=a.rollee_user_id,
                 etat=a.etat,
+                nom=a.apercu.nom,
                 initiales=a.apercu.initiales,
                 plateformes=list(a.apercu.plateformes),
                 iban_fin=a.apercu.iban_fin,
@@ -7280,6 +7308,101 @@ def _enregistrer_routes_rapprochement_rollee(app: FastAPI) -> None:
         return _synchronisation_vue(demandes.dernier(tenant_id, TYPE_RAPPROCHEMENT_ROLLEE))
 
 
+def _annuaire_rollee(
+    tenant_id: TenantId,
+    requete: str,
+    annuaire: AnnuaireRollee,
+    liens: LiensRollee,
+    dossiers: DossierRepository,
+    branchements: BranchementsRepository,
+) -> list[FicheAnnuaireVue]:
+    noms_dossiers = {str(d.id): d.nom for d in dossiers.lister_par_tenant(tenant_id)}
+    relies = {
+        x.rollee_user_id: noms_dossiers.get(str(x.dossier_id)) for x in liens.liens(tenant_id)
+    }
+    comptes = {b.id: b.nom for b in branchements.lister(tenant_id)}
+    return [
+        FicheAnnuaireVue(
+            rollee_user_id=f.rollee_user_id,
+            nom=f.nom,
+            plateformes=list(f.plateformes),
+            compte=comptes.get(f.branchement_id, "Rollee"),
+            email_masque=f.email_masque,
+            relie_a=relies.get(f.rollee_user_id),
+        )
+        for f in chercher(annuaire.fiches(tenant_id), requete)
+    ]
+
+
+def _lier_depuis_annuaire(
+    dossier: Dossier,
+    rollee_user_id: str,
+    identite: IdentiteAuthentifiee,
+    depots: tuple[AnnuaireRollee, LiensRollee],
+    journal: JournalAcces,
+) -> None:
+    annuaire, liens = depots
+    fiche = annuaire.fiche(dossier.tenant_id, rollee_user_id)
+    if fiche is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Ce compte Rollee n'est pas dans l'annuaire : lancez « Rapprocher Rollee ».",
+        )
+    maintenant = datetime.now(UTC)
+    lien = Lien(
+        dossier.id,
+        fiche.rollee_user_id,
+        fiche.branchement_id,
+        "manuel",
+        maintenant,
+        None,
+        identite.email,
+    )
+    try:
+        liens.lier(lien)
+    except LienDejaPris as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Cette entreprise ou ce compte Rollee est déjà relié : retirez d'abord le lien.",
+        ) from exc
+    liens.retirer_a_choisir(fiche.rollee_user_id)
+    journal.noter(
+        dossier.id, ACTE_LIEN_ROLLEE, f"choisi:{fiche.rollee_user_id}", identite.user_id, maintenant
+    )
+
+
+def _enregistrer_routes_annuaire_rollee(app: FastAPI) -> None:
+    """AXE-919 : chercher un user Rollee par son nom et le relier à l'entreprise."""
+
+    @app.get("/portefeuille/rollee/annuaire", response_model=list[FicheAnnuaireVue])
+    def chercher_rollee(
+        q: str,
+        identite: IdentiteDep,
+        annuaire: AnnuaireRolleeDep,
+        liens: LiensRolleeDep,
+        dossiers: DossiersDep,
+        branchements: BranchementsDep,
+    ) -> list[FicheAnnuaireVue]:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _annuaire_rollee(tenant_id, q, annuaire, liens, dossiers, branchements)
+
+    @app.post("/dossiers/{dossier_id}/rollee/lier", status_code=204)
+    def lier_rollee(
+        entree: LierRolleeEntree,
+        dossier: DossierPortefeuilleDep,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        annuaire: AnnuaireRolleeDep,
+        liens: LiensRolleeDep,
+        journal: JournalAccesDep,
+    ) -> None:
+        _tenant_id, identite_ok = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, "La lecture seule ne relie pas de compte Rollee.")
+        _lier_depuis_annuaire(
+            dossier, entree.rollee_user_id, identite_ok, (annuaire, liens), journal
+        )
+
+
 def _enregistrer_routes_liens_rollee(app: FastAPI) -> None:
     """AXE-911 : le gestionnaire choisit, voit et corrige le lien Rollee."""
 
@@ -7350,6 +7473,7 @@ def _enregistrer_routes_integrations(app: FastAPI) -> None:
     _enregistrer_route_webhook_rollee(app)
     _enregistrer_route_versements(app)
     _enregistrer_routes_liens_rollee(app)
+    _enregistrer_routes_annuaire_rollee(app)
     _enregistrer_routes_rapprochement_rollee(app)
 
 

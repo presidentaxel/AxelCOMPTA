@@ -103,21 +103,40 @@ def empreintes(
     )
 
 
+def masquer_email(email: str | None) -> str | None:
+    """« elodie.martin@exemple.fr » → « e•••n@exemple.fr »."""
+    if not email or "@" not in email:
+        return None
+    local, domaine = email.strip().rsplit("@", 1)
+    if len(local) <= 2:
+        return f"{local[:1]}•••@{domaine}"
+    return f"{local[0]}•••{local[-1]}@{domaine}"
+
+
 @dataclass(frozen=True, slots=True)
 class Apercu:
-    """Ce que le gestionnaire voit d'un user Rollee : rien qui identifie en clair."""
+    """Ce que le gestionnaire voit d'un user Rollee. Le nom en clair depuis
+    AXE-919 (décision de Louis du 14/11 : ce sont ses chauffeurs) ; l'e-mail
+    masqué, la fin de l'IBAN. Jamais un montant."""
 
     initiales: str = ""
     plateformes: tuple[str, ...] = ()
     iban_fin: str | None = None  # 4 derniers chiffres
+    nom: str = ""
+    email_masque: str | None = None
 
 
 def apercu(
-    prenom: str | None, nom: str | None, plateformes: Iterable[str], iban: str | None
+    prenom: str | None,
+    nom: str | None,
+    plateformes: Iterable[str],
+    iban: str | None,
+    email: str | None = None,
 ) -> Apercu:
     initiales = "".join(f"{p.strip()[0].upper()}." for p in (prenom, nom) if p and p.strip())
     fin = normaliser_iban(iban)[-4:] or None
-    return Apercu(initiales, tuple(sorted(set(plateformes))), fin)
+    complet = " ".join(p.strip() for p in (prenom, nom) if p and p.strip())
+    return Apercu(initiales, tuple(sorted(set(plateformes))), fin, complet, masquer_email(email))
 
 
 @dataclass(frozen=True, slots=True)

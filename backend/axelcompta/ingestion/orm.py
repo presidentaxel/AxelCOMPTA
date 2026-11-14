@@ -149,6 +149,21 @@ rapprochements_rollee = Table(
     ),
 )
 
+# AXE-919 : l'annuaire des users Rollee du portefeuille, pour que le
+# gestionnaire cherche un compte par son nom. Nom en clair (décision du
+# 14/11), e-mail masqué, aucun montant. Écrit par le passage de rapprochement.
+annuaire_rollee = Table(
+    "annuaire_rollee",
+    metadata,
+    Column("rollee_user_id", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False, index=True),
+    Column("branchement_id", String, nullable=False),
+    Column("nom", String, nullable=False),
+    Column("plateformes", JSON, nullable=False),
+    Column("email_masque", String, nullable=True),
+    Column("maj_le", DateTime(timezone=True), nullable=False),
+)
+
 # Les comptes de plateformes que le chauffeur a reliés dans Rollee Connect,
 # relus chez Rollee (jamais saisis ici). Aucun montant.
 comptes_rollee = Table(

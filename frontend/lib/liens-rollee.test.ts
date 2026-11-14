@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   apercuCompte,
   bandeauRollee,
+  detailFiche,
+  rechercheAssezLongue,
   effetDelier,
   phraseRapprochement,
   rapprochementEnCours,
@@ -14,6 +16,7 @@ import {
 const COMPTE: AChoisirRollee = {
   rollee_user_id: "u1",
   etat: "a_choisir",
+  nom: "",
   initiales: "K.B.",
   plateformes: ["Bolt", "Uber"],
   iban_fin: "0189",
@@ -67,4 +70,24 @@ test("AXE-918 : un rapprochement en attente ou en cours bloque le bouton", () =>
   assert.equal(rapprochementEnCours({ ...PASSAGE, statut: "en_cours" }), true);
   assert.equal(rapprochementEnCours({ ...PASSAGE, statut: "en_attente" }), true);
   assert.equal(rapprochementEnCours(PASSAGE), false);
+});
+
+test("AXE-919 : l'aperçu montre le nom en clair quand on l'a", () => {
+  assert.equal(apercuCompte({ ...COMPTE, nom: "Karim Benali" }), "Karim Benali · Bolt, Uber · IBAN …0189");
+});
+
+test("AXE-919 : le détail d'un user de l'annuaire, et la recherche à 2 lettres", () => {
+  const fiche = {
+    rollee_user_id: "u1",
+    nom: "Karim Benali",
+    plateformes: ["uber.com-rev"],
+    compte: "Serenity Mobilité",
+    email_masque: "k•••i@exemple.fr",
+    relie_a: null,
+  };
+  assert.equal(detailFiche(fiche), "uber.com-rev · Serenity Mobilité · k•••i@exemple.fr");
+  assert.equal(detailFiche({ ...fiche, plateformes: [], email_masque: null }), "aucune plateforme · Serenity Mobilité");
+  assert.equal(rechercheAssezLongue("k"), false);
+  assert.equal(rechercheAssezLongue(" é1"), false);
+  assert.equal(rechercheAssezLongue("ka"), true);
 });

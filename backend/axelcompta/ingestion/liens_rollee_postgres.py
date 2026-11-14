@@ -49,6 +49,8 @@ def _attente(ligne: Row[Any]) -> AChoisir:
             ligne.apercu.get("initiales", ""),
             tuple(ligne.apercu.get("plateformes", ())),
             ligne.apercu.get("iban_fin"),
+            ligne.apercu.get("nom", ""),
+            ligne.apercu.get("email_masque"),
         ),
         maj_le=_utc(ligne.maj_le),
     )
@@ -68,6 +70,8 @@ def _valeurs_attente(a: AChoisir) -> dict[str, Any]:
             "initiales": a.apercu.initiales,
             "plateformes": list(a.apercu.plateformes),
             "iban_fin": a.apercu.iban_fin,
+            "nom": a.apercu.nom,
+            "email_masque": a.apercu.email_masque,
         },
         "maj_le": a.maj_le,
     }

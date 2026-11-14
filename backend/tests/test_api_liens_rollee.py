@@ -6,10 +6,14 @@ from dataclasses import replace
 from datetime import UTC, date, datetime
 from typing import cast
 
+import pytest
+from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from axelcompta.api.routes import (
+    get_annuaire_rollee,
+    get_branchements,
     get_journal_acces,
     get_ledger,
     get_liens_rollee,
@@ -17,13 +21,14 @@ from axelcompta.api.routes import (
     get_settlements,
 )
 from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.ingestion.annuaire_rollee import AnnuaireRolleeMemoire, FicheAnnuaire
 from axelcompta.ingestion.comptes_rollee import CompteRelie, ComptesRolleeMemoire
 from axelcompta.ingestion.liens_rollee import AChoisir, Lien, LiensRolleeMemoire
 from axelcompta.ingestion.rapprochement_rollee import Apercu, Candidat
 from axelcompta.ingestion.settlements_plateforme import SettlementsMemoire
 from axelcompta.plateformes_rollee import ServicesRollee
 from axelcompta.revenus_rollee import rapprocher
-from axelcompta.tenants.branchements import BranchementsMemoire
+from axelcompta.tenants.branchements import BranchementsMemoire, nouveau
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client_et_stubs,
     _en_tete,
@@ -170,3 +175,80 @@ def test_delier_exige_un_motif() -> None:
         "/dossiers/DEMO_karim/rollee/delier", json={"motif": "  "}, headers=_en_tete_gestionnaire()
     )
     assert reponse.status_code == 400
+
+
+@pytest.fixture(autouse=True)
+def _cle(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Les identifiants d'un branchement sont chiffrés (AXE-872)."""
+    monkeypatch.setenv("AXELCOMPTA_CLE_INTEGRATIONS", Fernet.generate_key().decode())
+
+
+def _annuaire(client: TestClient) -> tuple[AnnuaireRolleeMemoire, BranchementsMemoire]:
+    """AXE-919 : deux users Rollee dans l'annuaire, sur le compte « Serenity »."""
+    app = cast(FastAPI, client.app)
+    branchements = BranchementsMemoire()
+    compte = nouveau(
+        [], T, "rollee", "rollee", "Serenity", {"jeton": "j", "environnement": "production"}
+    )
+    branchements.enregistrer([compte], "admin", LE)
+    annuaire = AnnuaireRolleeMemoire()
+    annuaire.remplacer(
+        T,
+        compte.id,
+        [
+            FicheAnnuaire(
+                "u-karim", T, compte.id, "Karim Benali", ("uber.com-rev",), "k•••i@x.fr", LE
+            ),
+            FicheAnnuaire("u-anne", T, compte.id, "Anne Arnaud", ("bolt.eu-rev",), None, LE),
+        ],
+    )
+    app.dependency_overrides[get_annuaire_rollee] = lambda: annuaire
+    app.dependency_overrides[get_branchements] = lambda: branchements
+    return annuaire, branchements
+
+
+def test_chercher_un_compte_rollee_par_son_nom_et_le_relier() -> None:
+    client, liens, _ = _monter()
+    _annuaire(client)
+    en_tete = _en_tete_gestionnaire()
+    trouves = client.get("/portefeuille/rollee/annuaire?q=benali kar", headers=en_tete).json()
+    assert trouves == [
+        {
+            "rollee_user_id": "u-karim",
+            "nom": "Karim Benali",
+            "plateformes": ["uber.com-rev"],
+            "compte": "Serenity",
+            "email_masque": "k•••i@x.fr",
+            "relie_a": None,
+        }
+    ]
+    assert client.get("/portefeuille/rollee/annuaire?q=k", headers=en_tete).json() == []
+    reponse = client.post(
+        "/dossiers/DEMO_karim/rollee/lier", json={"rollee_user_id": "u-karim"}, headers=en_tete
+    )
+    assert reponse.status_code == 204
+    lien = liens.lien(KARIM)
+    assert lien is not None and (lien.rollee_user_id, lien.origine) == ("u-karim", "manuel")
+    (relie,) = client.get("/portefeuille/rollee/annuaire?q=karim", headers=en_tete).json()
+    assert relie["relie_a"] is not None
+
+
+def test_relier_depuis_l_annuaire_refuse_un_user_pris_ou_inconnu_et_la_lecture() -> None:
+    client, liens, _ = _monter()
+    _annuaire(client)
+    en_tete = _en_tete_gestionnaire()
+    liens.lier(Lien(DossierId("DEMO_sophie"), "u-anne", "b1", "manuel", LE, None, "marie"))
+    pris = client.post(
+        "/dossiers/DEMO_karim/rollee/lier", json={"rollee_user_id": "u-anne"}, headers=en_tete
+    )
+    assert pris.status_code == 409
+    inconnu = client.post(
+        "/dossiers/DEMO_karim/rollee/lier", json={"rollee_user_id": "u-x"}, headers=en_tete
+    )
+    assert inconnu.status_code == 404 and "Rapprocher Rollee" in inconnu.json()["detail"]
+    lecture, _, _ = _monter("lecture")
+    _annuaire(lecture)
+    refuse = lecture.post(
+        "/dossiers/DEMO_karim/rollee/lier", json={"rollee_user_id": "u-karim"}, headers=en_tete
+    )
+    assert refuse.status_code == 403

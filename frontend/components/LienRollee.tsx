@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { ChercherCompteRollee } from "@/components/ChercherCompteRollee";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
@@ -65,6 +66,16 @@ export function LienRollee({
           ? `Rollee : ${fiche.lien.comment}, le ${formatDate(fiche.lien.relie_le.slice(0, 10))}.`
           : "Rollee : aucun compte relié."}
       </p>
+      {!fiche.lien && ecriture && (
+        <ChercherCompteRollee
+          dossierId={dossierId}
+          onRelie={() => {
+            setMessage("Compte Rollee relié. Ses revenus sont relus à la prochaine synchro Rollee.");
+            relire();
+            onChange();
+          }}
+        />
+      )}
       {fiche.lien && ecriture && !confirmer && (
         <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmer(true)}>
           Retirer ce lien
