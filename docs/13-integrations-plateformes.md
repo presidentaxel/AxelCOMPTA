@@ -39,9 +39,12 @@
 > - Écritures : chaque jour, recette contre une **créance sur la plateforme
 >   (467)** ; chaque virement solde la créance (sa contrepartie 471 ou 706 est
 >   vidée, le 512 ne bouge pas) ; les frais vont en 627.
-> - **Pourboires** (`tips`, compris dans le brut) : sortis de la base de TVA,
->   en **7068** (dans le chiffre d'affaires, sans TVA collectée). AXE-926, à
->   valider par l'expert-comptable (AXE-815).
+> - **Seules les courses portent la TVA** (règle validée par des experts
+>   fiscaux, AXE-926). Pourboires (`tips`), bonus (`bonus_amount`) et autres
+>   montants (`other_amount`), compris dans le brut, vont en **7068** : dans le
+>   chiffre d'affaires, sans TVA collectée. Ce que Rollee ne classe nulle part
+>   (brut − course − ces trois parts : 1 209 € sur 186 jours Uber en prod)
+>   reste avec la TVA, par prudence.
 > - Contrôle **par semaine** (`ingestion/semaines_plateforme.py`) : soldée si
 >   l'écart est nul ou vaut k × 0,99 € (k ≤ nombre de virements instantanés),
 >   éventuellement cumulée avec la semaine d'avant ; en attente du POP SVCS
