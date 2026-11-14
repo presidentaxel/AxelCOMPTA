@@ -22,6 +22,7 @@ from axelcompta.plateformes_rollee import (
     rattraper,
     recevoir,
     relire_comptes,
+    synchroniser_dossier,
     traiter_evenements,
 )
 from axelcompta.tenants.branchements import (
@@ -140,6 +141,20 @@ def test_plusieurs_rollee_sans_choix_ne_prennent_pas_un_defaut() -> None:
     services.branchements.enregistrer([second], "admin", LE)
     with pytest.raises(RolleeNonBranche, match="Plusieurs comptes"):
         asyncio.run(ouvrir_session(services, DOSSIER))
+
+
+def test_synchroniser_sans_user_n_appelle_pas_rollee() -> None:
+    services, journal, _ = _services()
+    phrase = asyncio.run(synchroniser_dossier(services, DOSSIER))
+    assert phrase == "Aucun compte Rollee relié : rien à synchroniser."
+    assert journal == []
+
+
+def test_synchroniser_relit_les_comptes_deja_relies() -> None:
+    services, _journal, _ = _services()
+    asyncio.run(ouvrir_session(services, DOSSIER))
+    phrase = asyncio.run(synchroniser_dossier(services, DOSSIER))
+    assert phrase == "Rollee synchronisé : Uber, Bolt. Bolt est à reconnecter."
 
 
 def test_sans_branchement_rollee_le_chauffeur_sait_quoi_faire() -> None:

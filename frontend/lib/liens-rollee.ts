@@ -57,6 +57,15 @@ export function apercuCompte(compte: AChoisirRollee): string {
   return morceaux.join(" · ");
 }
 
+/** Les comptes Rollee à relier depuis la fiche de cette entreprise. */
+export function comptesPourLaFiche(vue: RolleePortefeuille, dossierId: string): AChoisirRollee[] {
+  return vue.a_choisir.filter(
+    (compte) =>
+      compte.etat === "a_choisir" &&
+      compte.candidats.some((candidat) => candidat.dossier_id === dossierId),
+  );
+}
+
 /** Le bandeau au-dessus de la liste, ou `null` s'il n'y a rien à choisir. */
 export function bandeauRollee(vue: RolleePortefeuille): string | null {
   const a = vue.a_choisir.filter((c) => c.etat === "a_choisir").length;

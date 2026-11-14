@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from axelcompta.core.ids import DossierId
-from axelcompta.ingestion.comptes_rollee import depuis_rollee, synthese
+from axelcompta.ingestion.comptes_rollee import depuis_rollee, noms_plateformes, synthese
 from axelcompta.packs.vtc_demo import charger_plateformes
 
 D = DossierId("DIGI_1")
@@ -30,6 +30,14 @@ def test_les_etats_d_un_compte() -> None:
         "a_reconnecter",
         "en_cours",
         None,
+    )
+
+
+def test_les_noms_de_plateformes_viennent_de_rollee_sans_doublon() -> None:
+    assert noms_plateformes(["Uber", " bolt "], ["Bolt", "Heetch", ""]) == (
+        "Bolt",
+        "Heetch",
+        "Uber",
     )
 
 

@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import os
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+import time
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -48,12 +50,16 @@ from axelcompta.ingestion.rapprochement_rollee import (
 )
 from axelcompta.plateformes_rollee import TYPE_ROLLEE, ServicesRollee, client_du_branchement
 from axelcompta.prevenir_admins import prevenir_admins
+from axelcompta.tenants.branchements import a_interroger
 from axelcompta.tenants.branchements_postgres import PostgresBranchements
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.repository import DossierRepository
 
 VARIABLE_ACTIF = "AXELCOMPTA_ROLLEE_RAPPROCHEMENT"
+_journal = logging.getLogger("uvicorn.error")
+# Phrase en cours, par dossier, lue par le bouton pendant la synchronisation.
+_avancement: dict[str, str] = {}
 
 
 def rapprochement_actif() -> bool:
@@ -69,29 +75,84 @@ def cle_empreintes() -> bytes:
     return hashlib.sha256(b"rapprochement-rollee:" + cle.encode()).digest()
 
 
-async def _infos_compte(client: RolleeHttpClient, compte_id: str) -> tuple[dict[str, Any], str]:
-    """Profil et IBAN d'un compte de plateforme. Un compte illisible ne bloque pas."""
-    try:
-        profil = await client.profil(compte_id)
-    except Exception:  # noqa: BLE001 — Uber ou Bolt sans profil : on compare le reste
-        profil = {}
-    try:
-        iban = str((await client.coordonnees_bancaires(compte_id)).get("iban") or "")
-    except Exception:  # noqa: BLE001
-        iban = ""
-    return profil, iban
+def retenir_avancement(dossier_id: str) -> Callable[[str], None]:
+    """La phrase affichée sous le bouton, remplacée au fil de la lecture."""
+
+    def noter(phrase: str) -> None:
+        _avancement[dossier_id] = phrase
+
+    return noter
 
 
-async def lire_user(client: RolleeHttpClient, brut: Mapping[str, Any], cle: bytes) -> UserRollee:
+def avancement_dossier(dossier_id: str) -> str | None:
+    return _avancement.get(dossier_id)
+
+
+def phrase_lecture(nom: str, faits: int, total: int, secondes: float) -> str:
+    """Où en est la lecture d'un compte Rollee, avec le temps qui reste."""
+    if total == 0:
+        return f"{nom} : aucun compte Rollee à lire."
+    if faits <= 0:
+        return f"{nom} : {total} comptes Rollee à lire."
+    if faits >= total:
+        return f"{nom} : {total} comptes Rollee lus."
+    rythme = faits / secondes if secondes > 0 else 0.0
+    reste = int((total - faits) / rythme) if rythme else 0
+    return f"{nom} : {faits}/{total} comptes Rollee lus, environ {_duree_restante(reste)}."
+
+
+def _duree_restante(secondes: int) -> str:
+    if secondes < 60:
+        return f"{max(secondes, 1)} s"
+    return f"{(secondes + 30) // 60} min"
+
+
+async def _avec(limite: asyncio.Semaphore | None, appel: Awaitable[Any]) -> Any:
+    if limite is None:
+        return await appel
+    async with limite:
+        return await appel
+
+
+async def _infos_compte(
+    client: RolleeHttpClient, compte_id: str, limite: asyncio.Semaphore | None
+) -> tuple[dict[str, Any], str]:
+    """Profil et IBAN d'un compte de plateforme. Un compte illisible ne bloque pas.
+    Les deux appels partent ensemble : un 400 Uber n'attend pas la fin du profil."""
+
+    async def profil() -> dict[str, Any]:
+        try:
+            lu = await _avec(limite, client.profil(compte_id))
+        except Exception:  # noqa: BLE001 — Uber ou Bolt sans profil : on compare le reste
+            return {}
+        return lu if isinstance(lu, dict) else {}
+
+    async def iban() -> str:
+        try:
+            lu = await _avec(limite, client.coordonnees_bancaires(compte_id))
+        except Exception:  # noqa: BLE001
+            return ""
+        return str(lu.get("iban") or "") if isinstance(lu, dict) else ""
+
+    lu_profil, lu_iban = await asyncio.gather(profil(), iban())
+    return lu_profil, lu_iban
+
+
+async def lire_user(
+    client: RolleeHttpClient,
+    brut: Mapping[str, Any],
+    cle: bytes,
+    limite: asyncio.Semaphore | None = None,
+) -> UserRollee:
     """Un user Rollee, ses comptes de plateformes, réduits en empreintes."""
     user_id = str(brut["id"])
     metadata = brut.get("metadata") or {}
     dossier = metadata.get("dossier_id") if isinstance(metadata, Mapping) else None
     ibans, noms, emails, telephones, plateformes = [], [], [], [], []
     premier: tuple[str | None, str | None] = (None, None)
-    for compte in await client.comptes(user_id):
+    for compte in await _avec(limite, client.comptes(user_id)):
         plateformes.append(str(compte.get("name") or compte.get("type") or "plateforme"))
-        profil, iban = await _infos_compte(client, str(compte["id"]))
+        profil, iban = await _infos_compte(client, str(compte["id"]), limite)
         prenom, nom = profil.get("first_name"), profil.get("last_name")
         if prenom or nom:
             noms.append(normaliser_nom(prenom, nom))
@@ -107,15 +168,58 @@ async def lire_user(client: RolleeHttpClient, brut: Mapping[str, Any], cle: byte
     )
 
 
+# AXE-917 : un passage lit ~2 200 users (comptes, profil, IBAN). À 8 appels
+# simultanés, Rollee répond 429 en 20 s (mesuré le 14/11). 5 à la fois :
+# un 429 est journalisé et réessayé par le client.
+APPELS_SIMULTANES = 5
+
+
 async def lire_users(
-    client: RolleeHttpClient, cle: bytes, seulement: str | None = None
+    client: RolleeHttpClient,
+    cle: bytes,
+    seulement: str | None = None,
+    *,
+    nom: str = "Rollee",
+    noter: Callable[[str], None] | None = None,
+    sauf: Collection[str] = (),
 ) -> list[UserRollee]:
-    bruts = await client.utilisateurs()
-    return [
-        await lire_user(client, brut, cle)
-        for brut in bruts
-        if "id" in brut and (seulement is None or str(brut["id"]) == seulement)
+    """Lit les users d'un compte Rollee. `sauf` : déjà reliés, rien à relire.
+    `noter` reçoit la phrase d'avancement, aussi écrite dans le journal."""
+    _publier(noter, f"{nom} : lecture de la liste…")
+    deja = set(sauf)
+    bruts = [
+        brut
+        for brut in await client.utilisateurs()
+        if "id" in brut
+        and (seulement is None or str(brut["id"]) == seulement)
+        and str(brut["id"]) not in deja
     ]
+    total = len(bruts)
+    _publier(noter, phrase_lecture(nom, 0, total, 0))
+    if total == 0:
+        return []
+    limite = asyncio.Semaphore(APPELS_SIMULTANES)
+    faits = 0
+    dernier = 0.0
+    debut = time.monotonic()
+
+    async def un(brut: Mapping[str, Any]) -> UserRollee:
+        nonlocal faits, dernier
+        user = await lire_user(client, brut, cle, limite)
+        faits += 1
+        maintenant = time.monotonic()
+        if faits == 1 or faits == total or maintenant - dernier >= 5:
+            dernier = maintenant
+            _publier(noter, phrase_lecture(nom, faits, total, maintenant - debut))
+        return user
+
+    return list(await asyncio.gather(*(un(brut) for brut in bruts)))
+
+
+def _publier(noter: Callable[[str], None] | None, phrase: str) -> None:
+    _journal.info("%s", phrase)
+    if noter is not None:
+        noter(phrase)
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,6 +318,31 @@ def appliquer(
     return [a for a in attente if a.rollee_user_id not in deja]
 
 
+def _du_dossier(issues: Sequence[Issue], dossier_id: str) -> list[Issue]:
+    """Ce qui concerne cette entreprise. Les users sans rapport restent
+    dehors : un bouton sur une fiche ne réécrit pas toute la file."""
+    return [issue for issue in issues if _concerne(issue, dossier_id)]
+
+
+def _concerne(issue: Issue, dossier_id: str) -> bool:
+    if issue.etat == "relie_auto":
+        return issue.dossier_id == dossier_id
+    if issue.etat == "a_choisir":
+        return any(candidat.dossier_id == dossier_id for candidat in issue.candidats)
+    return False
+
+
+def phrase_rapprochement(issues: Sequence[Issue]) -> str:
+    if any(issue.etat == "relie_auto" for issue in issues):
+        return "Un seul compte Rollee correspond : le lien est posé."
+    choix = sum(1 for issue in issues if issue.etat == "a_choisir")
+    if choix == 1:
+        return "Un compte Rollee correspond. Reliez-le sur cette fiche."
+    if choix > 1:
+        return f"{choix} comptes Rollee correspondent. Reliez le bon sur cette fiche."
+    return "Aucun compte Rollee ne correspond à cette entreprise."
+
+
 def resume(issues: Sequence[Issue]) -> str:
     compte = bilan(issues)
     return (
@@ -244,6 +373,49 @@ class DepotsRapprochement:
     prevenir: Callable[[TenantId, list[AChoisir]], str] | None = None
 
 
+async def rapprocher_dossier(
+    depots: DepotsRapprochement,
+    dossier: Dossier,
+    maintenant: datetime,
+    noter: Callable[[str], None] | None = None,
+) -> str:
+    """Cherche le user Rollee de cette entreprise. Sans compte choisi sur la
+    fiche, tous les comptes Rollee du portefeuille sont lus (« on interroge
+    tous »). Un seul correspond : le lien est posé. Plusieurs : la file."""
+    cle = cle_empreintes()
+    dossiers = depots.dossiers.lister_par_tenant(dossier.tenant_id)
+    sources = await depots.sources(dossier.tenant_id, dossiers)
+    indices = [indices_dossier(d, sources, cle) for d in dossiers]
+    liste = depots.services.branchements.lister(dossier.tenant_id)
+    choix = depots.services.branchements.choix_du_dossier(dossier.tenant_id, dossier.id)
+    comptes = a_interroger(liste, TYPE_ROLLEE, choix.get(TYPE_ROLLEE))
+    if not comptes:
+        return "Rollee n'est pas branché : ajoutez-le dans Intégrations."
+    liens = depots.liens.liens(dossier.tenant_id)
+    retires = depots.liens.paires_retirees(dossier.tenant_id)
+    deja = frozenset(lien.rollee_user_id for lien in liens)
+    trouves: list[Issue] = []
+    for indice, branchement in enumerate(comptes, start=1):
+        client = client_du_branchement(depots.services, branchement)
+        try:
+            users = await lire_users(
+                client,
+                cle,
+                nom=f"{branchement.nom} ({indice}/{len(comptes)})",
+                noter=noter,
+                sauf=deja,
+            )
+        finally:
+            await client.aclose()
+        du_dossier = _du_dossier(trancher_tous(users, indices, liens, retires), str(dossier.id))
+        passage = Passage(dossier.tenant_id, branchement.id, maintenant, partiel=True)
+        nouveaux = appliquer(depots.liens, du_dossier, users, passage)
+        if nouveaux and depots.prevenir is not None:
+            depots.prevenir(dossier.tenant_id, nouveaux)
+        trouves += du_dossier
+    return phrase_rapprochement(trouves)
+
+
 async def passer_tenant(
     depots: DepotsRapprochement,
     tenant_id: TenantId,
@@ -263,15 +435,20 @@ async def passer_tenant(
         if b.type == TYPE_ROLLEE and b.actif
     ]
     lignes = []
+    liens_poses = depots.liens.liens(tenant_id)
     for branchement in rollee:
         client = client_du_branchement(depots.services, branchement)
         try:
-            users = await lire_users(client, cle, seulement)
+            users = await lire_users(
+                client,
+                cle,
+                seulement,
+                nom=branchement.nom,
+                sauf=frozenset(lien.rollee_user_id for lien in liens_poses),
+            )
         finally:
             await client.aclose()
-        issues = trancher_tous(
-            users, indices, depots.liens.liens(tenant_id), depots.liens.paires_retirees(tenant_id)
-        )
+        issues = trancher_tous(users, indices, liens_poses, depots.liens.paires_retirees(tenant_id))
         mode = "" if ecrire else " (simulation : rien n'est écrit)"
         lignes.append(f"{tenant_id} / {branchement.nom} : {resume(issues)}{mode}")
         if not ecrire:

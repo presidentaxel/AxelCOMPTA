@@ -172,6 +172,26 @@ async def relire_comptes(services: ServicesRollee, dossier: Dossier) -> list[Com
     return comptes
 
 
+async def synchroniser_dossier(services: ServicesRollee, dossier: Dossier) -> str:
+    """Relit chez Rollee les comptes de plateforme d'une entreprise déjà
+    reliée. Sans user Rollee, le bouton lance le rapprochement à la place."""
+    if services.comptes.utilisateur(dossier.id) is None:
+        return "Aucun compte Rollee relié : rien à synchroniser."
+    return _phrase_synchro(await relire_comptes(services, dossier))
+
+
+def _phrase_synchro(comptes: list[CompteRelie]) -> str:
+    if not comptes:
+        return "Rollee synchronisé : aucun compte de plateforme."
+    phrase = f"Rollee synchronisé : {', '.join(c.nom for c in comptes)}."
+    perdus = [c.nom for c in comptes if c.etat == "a_reconnecter"]
+    if len(perdus) == 1:
+        return f"{phrase} {perdus[0]} est à reconnecter."
+    if perdus:
+        return f"{phrase} {len(perdus)} à reconnecter."
+    return phrase
+
+
 # --- AXE-820 : webhooks et rattrapage quotidien -----------------------------
 
 Notifier = Callable[[DossierId], None]

@@ -78,6 +78,20 @@ class Synthese:
     non_declarees: tuple[str, ...] = field(default=())  # reliées, pas déclarées
 
 
+def noms_plateformes(*groupes: Sequence[str]) -> tuple[str, ...]:
+    """Noms tels que Rollee les écrit (Uber, Bolt, Heetch), sans doublon."""
+    vus: dict[str, str] = {}
+    for groupe in groupes:
+        for nom in groupe:
+            propre = nom.strip()
+            cle = propre.casefold()
+            if not propre:
+                continue
+            if cle not in vus or (vus[cle].islower() and propre != propre.lower()):
+                vus[cle] = propre
+    return tuple(vus[cle] for cle in sorted(vus))
+
+
 def synthese(
     comptes: Sequence[CompteRelie], declarees: Sequence[str], plateformes: tuple[Plateforme, ...]
 ) -> Synthese:

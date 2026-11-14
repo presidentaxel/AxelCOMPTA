@@ -8,7 +8,7 @@ import { Aide, pourquoiEnvoi } from "@/components/Aide";
 import { useCanauxEnvoi } from "@/lib/use-canaux-envoi";
 import { IntegrationsDossier } from "@/components/IntegrationsDossier";
 import { SuiviEnvois } from "@/components/SuiviEnvois";
-import { ComptesRolleeAChoisir } from "@/components/ComptesRolleeAChoisir";
+import { ChoixRolleeFiche } from "@/components/ChoixRolleeFiche";
 import { LienRollee } from "@/components/LienRollee";
 import { SynthesePlateformes } from "@/components/SynthesePlateformes";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ import {
   phraseComptesAChoisir,
 } from "@/lib/comptes-a-choisir";
 import { phraseAConfirmer } from "@/lib/configuration-dossier";
-import { LIBELLES_ETAT_ROLLEE, type RolleePortefeuille } from "@/lib/liens-rollee";
+import { comptesPourLaFiche, LIBELLES_ETAT_ROLLEE, type RolleePortefeuille } from "@/lib/liens-rollee";
 import { phraseTvaADeclarer } from "@/lib/tva";
 import {
   libelleBanque,
@@ -102,6 +102,7 @@ export function EcranEntreprises() {
   const selection = params.get("ouvert");
   const [regles, setRegles] = useState<RegleRappel[]>([]);
   const [infoRappel, setInfoRappel] = useState<string | null>(null);
+  const [relectureRollee, setRelectureRollee] = useState(0);
   const [confirmerRetrait, setConfirmerRetrait] = useState(false);
   const [erreurRetrait, setErreurRetrait] = useState<string | null>(null);
   const [retires, setRetires] = useState<{ dossier_id: string; nom: string }[]>([]);
@@ -321,10 +322,6 @@ export function EcranEntreprises() {
             Voir ces entreprises
           </Button>
         </div>
-      )}
-
-      {rollee && (
-        <ComptesRolleeAChoisir vue={rollee} ecriture={droit.ecriture} onChoisi={chargerRollee} />
       )}
 
       <div className="mt-8 flex items-center gap-2">
@@ -573,155 +570,209 @@ export function EcranEntreprises() {
       </div>
       {choisi ? (
         <aside className="sticky top-6 flex max-h-[calc(100vh-3rem)] w-96 shrink-0 flex-col overflow-hidden rounded-md border border-border bg-canvas">
-          <div className="flex shrink-0 items-start justify-between gap-4 p-6 pb-4">
-            <h2 className="min-w-0 truncate text-lg font-semibold text-ink">{choisi.nom}</h2>
-            <span className="flex shrink-0 flex-nowrap gap-1">
-              {droit.admin && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="text-danger"
-                  onClick={() => setConfirmerRetrait(true)}
-                >
-                  Retirer
-                </Button>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => ecrire({ ouvert: null }, true)}
+          <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
+            <div className="min-w-0">
+              <h2 className="truncate text-base font-semibold text-ink">{choisi.nom}</h2>
+              <p className="mt-0.5 text-sm text-subtle">{libelleCompte(choisi.statut_invitation)}</p>
+              <Link
+                href={`/anomalies/${choisi.dossier_id}`}
+                className="mt-1 inline-block text-sm font-medium text-signal hover:underline"
               >
-                Fermer
-              </Button>
-            </span>
+                Anomalies
+              </Link>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="shrink-0"
+              onClick={() => ecrire({ ouvert: null }, true)}
+            >
+              Fermer
+            </Button>
           </div>
-          <p className="mt-1 px-6 text-sm text-subtle">{libelleCompte(choisi.statut_invitation)}</p>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
-          <Link
-            href={`/anomalies/${choisi.dossier_id}`}
-            className="mt-3 inline-block text-sm font-medium text-signal hover:underline"
-          >
-            Anomalies
-          </Link>
-          <TagsDuDossier
-            dossierId={choisi.dossier_id}
-            tags={choisi.tags ?? []}
-            reglage={reglageTags}
-            ecriture={droit.ecriture}
-            onModifie={charger}
-          />
-          <dl className="mt-6 space-y-4 text-sm">
-            <Ligne libelle="Résultat" valeur={formatMontant(choisi.resultat_cts)} />
-            <Ligne libelle="CA HT" valeur={formatMontant(choisi.ca_ht_cts)} />
-            <Ligne libelle="Charges" valeur={formatMontant(choisi.charges_cts)} />
-            <Ligne libelle="Forme" valeur={choisi.forme_juridique} />
-            <Ligne libelle="Imposition" valeur={libelleImposition(choisi.regime_imposition)} />
-            <Ligne libelle="Régime de TVA" valeur={libelleRegimeTva(choisi.regime_tva)} />
-            <Ligne libelle="TVA sur les recettes" valeur={libelleTvaRecettes(choisi.tva_recettes_regime)} />
-            <Ligne libelle="Banque" valeur={libelleBanque(choisi.mode_acces_bancaire)} />
-            {choisi.plateformes.length > 0 && (
-              <Ligne libelle="Plateformes" valeur={choisi.plateformes.join(", ")} />
-            )}
-            {choisi.exercice_debut && (
-              <Ligne
-                libelle="Exercice"
-                valeur={
-                  choisi.exercice_fin
-                    ? `${formatDate(choisi.exercice_debut)} au ${formatDate(choisi.exercice_fin)}`
-                    : formatDate(choisi.exercice_debut)
-                }
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <dl className="grid grid-cols-3 gap-3">
+              <Chiffre
+                libelle="Résultat"
+                valeur={formatMontant(choisi.resultat_cts)}
+                montant={choisi.resultat_cts}
               />
+              <Chiffre libelle="CA HT" valeur={formatMontant(choisi.ca_ht_cts)} />
+              <Chiffre libelle="Charges" valeur={formatMontant(choisi.charges_cts)} />
+            </dl>
+
+            <section className="mt-5" aria-labelledby="titre-plateformes-fiche">
+              <h3 id="titre-plateformes-fiche" className="text-sm font-medium text-ink">
+                Plateformes
+              </h3>
+              {rollee && (
+                <ChoixRolleeFiche
+                  dossierId={choisi.dossier_id}
+                  comptes={comptesPourLaFiche(rollee, choisi.dossier_id)}
+                  ecriture={droit.ecriture}
+                  onChoisi={() => {
+                    setRelectureRollee((n) => n + 1);
+                    chargerRollee();
+                  }}
+                />
+              )}
+              <SynthesePlateformes dossierId={choisi.dossier_id} relecture={relectureRollee} />
+              <LienRollee
+                dossierId={choisi.dossier_id}
+                ecriture={droit.ecriture}
+                relecture={relectureRollee}
+                onChange={chargerRollee}
+              />
+              <IntegrationsDossier
+                dossierId={choisi.dossier_id}
+                admin={droit.admin}
+                ecriture={droit.ecriture}
+                onSynchronise={() => {
+                  setRelectureRollee((n) => n + 1);
+                  chargerRollee();
+                }}
+              />
+            </section>
+
+            <section className="mt-5 border-t border-border pt-4" aria-labelledby="titre-dossier-fiche">
+              <h3 id="titre-dossier-fiche" className="text-sm font-medium text-ink">
+                Dossier
+              </h3>
+              <dl className="mt-2 space-y-2 text-sm">
+                <Ligne libelle="Forme" valeur={choisi.forme_juridique} />
+                <Ligne libelle="Imposition" valeur={libelleImposition(choisi.regime_imposition)} />
+                <Ligne libelle="Régime de TVA" valeur={libelleRegimeTva(choisi.regime_tva)} />
+                <Ligne libelle="TVA sur les recettes" valeur={libelleTvaRecettes(choisi.tva_recettes_regime)} />
+                <Ligne libelle="Banque" valeur={libelleBanque(choisi.mode_acces_bancaire)} />
+                {choisi.plateformes.length > 0 && (
+                  <Ligne libelle="Plateformes déclarées" valeur={choisi.plateformes.join(", ")} />
+                )}
+                {choisi.exercice_debut && (
+                  <Ligne
+                    libelle="Exercice"
+                    valeur={
+                      choisi.exercice_fin
+                        ? `${formatDate(choisi.exercice_debut)} au ${formatDate(choisi.exercice_fin)}`
+                        : formatDate(choisi.exercice_debut)
+                    }
+                  />
+                )}
+              </dl>
+            </section>
+
+            {reglageTags && (
+              <div className="mt-5 border-t border-border pt-4">
+                <TagsDuDossier
+                  dossierId={choisi.dossier_id}
+                  tags={choisi.tags ?? []}
+                  reglage={reglageTags}
+                  ecriture={droit.ecriture}
+                  onModifie={charger}
+                />
+              </div>
             )}
-          </dl>
-          <SynthesePlateformes dossierId={choisi.dossier_id} />
-          <LienRollee dossierId={choisi.dossier_id} ecriture={droit.ecriture} onChange={chargerRollee} />
-          <IntegrationsDossier dossierId={choisi.dossier_id} admin={droit.admin} />
-          <div className="mt-8">
-            <p className="text-sm font-medium text-ink">
-              Rappels
-              <Aide texte={pourquoiEnvoi(canauxEnvoi)} />
-            </p>
-            {regles.length === 0 && (
-              <p className="mt-2 text-sm text-subtle">
-                Aucune règle. Elles se préparent dans Rappels.
+
+            <div className="mt-5 border-t border-border pt-4">
+              <p className="text-sm font-medium text-ink">
+                Rappels
+                <Aide texte={pourquoiEnvoi(canauxEnvoi)} />
               </p>
-            )}
-            <div className="mt-2 flex flex-col gap-2">
-              {regles
-                .filter((regle) => regle.declencheur === "manuel")
-                .filter(
-                  (regle) =>
-                    regle.portee !== "selection" || regle.dossier_ids.includes(choisi.dossier_id),
-                )
-                .map((regle) => (
-                <div key={regle.id}>
+              {regles.length === 0 && (
+                <p className="mt-2 text-sm text-subtle">
+                  Aucune règle. Elles se préparent dans Rappels.
+                </p>
+              )}
+              <div className="mt-2 flex flex-col gap-2">
+                {regles
+                  .filter((regle) => regle.declencheur === "manuel")
+                  .filter(
+                    (regle) =>
+                      regle.portee !== "selection" || regle.dossier_ids.includes(choisi.dossier_id),
+                  )
+                  .map((regle) => (
+                  <div key={regle.id}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={!droit.ecriture}
+                      onClick={async () => {
+                        setInfoRappel(null);
+                        try {
+                          await declencherRappel(regle.id, choisi.dossier_id);
+                          setInfoRappel(
+                            `${regle.libelle} enregistré. Envoi prévu quand le canal sera branché.`,
+                          );
+                        } catch (exception) {
+                          setInfoRappel(
+                            exception instanceof Error ? exception.message : "Échec du rappel.",
+                          );
+                        }
+                      }}
+                    >
+                      {regle.libelle}
+                    </Button>
+                    <p className="mt-1 text-xs text-subtle">
+                      {libelleCanaux(regle.canaux)} — {regle.message}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              {infoRappel && <p className="mt-2 text-sm text-subtle">{infoRappel}</p>}
+              <SuiviEnvois dossierId={choisi.dossier_id} />
+            </div>
+
+            {droit.admin && (
+              <div className="mt-5 border-t border-border pt-4">
+                {!confirmerRetrait && (
                   <Button
                     type="button"
-                    variant="secondary"
+                    variant="ghost"
                     size="sm"
-                    disabled={!droit.ecriture}
-                    onClick={async () => {
-                      setInfoRappel(null);
-                      try {
-                        await declencherRappel(regle.id, choisi.dossier_id);
-                        setInfoRappel(
-                          `${regle.libelle} enregistré. Envoi prévu quand le canal sera branché.`,
-                        );
-                      } catch (exception) {
-                        setInfoRappel(
-                          exception instanceof Error ? exception.message : "Échec du rappel.",
-                        );
-                      }
-                    }}
+                    className="text-danger"
+                    onClick={() => setConfirmerRetrait(true)}
                   >
-                    {regle.libelle}
+                    Retirer l&apos;entreprise
                   </Button>
-                  <p className="mt-1 text-xs text-subtle">
-                    {libelleCanaux(regle.canaux)} — {regle.message}
-                  </p>
-                </div>
-              ))}
-            </div>
-            {infoRappel && <p className="mt-2 text-sm text-subtle">{infoRappel}</p>}
-            <SuiviEnvois dossierId={choisi.dossier_id} />
-          </div>
-          {confirmerRetrait && (
-            <div className="mt-6 rounded-md border border-border bg-canvas-app p-4">
-              <p className="text-sm text-ink">
-                Retirer {choisi.nom} de la liste ? Les écritures restent. Vous pourrez remettre
-                l&apos;entreprise dans la liste.
-              </p>
-              {erreurRetrait && <p className="mt-2 text-sm text-danger">{erreurRetrait}</p>}
-              <div className="mt-3 flex justify-end gap-2">
-                <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmerRetrait(false)}>
-                  Annuler
-                </Button>
-                <Button
-                  type="button"
-                  variant="danger"
-                  size="sm"
-                  onClick={async () => {
-                    setErreurRetrait(null);
-                    try {
-                      await retirerDossier(choisi.dossier_id);
-                      setConfirmerRetrait(false);
-                      ecrire({ ouvert: null }, true);
-                      charger();
-                      setRetires(await listerDossiersRetires());
-                    } catch (exception) {
-                      setErreurRetrait(
-                        exception instanceof Error ? exception.message : "Échec du retrait.",
-                      );
-                    }
-                  }}
-                >
-                  Retirer
-                </Button>
+                )}
+                {confirmerRetrait && (
+                  <div className="rounded-md border border-border bg-canvas-app p-4">
+                    <p className="text-sm text-ink">
+                      Retirer {choisi.nom} de la liste ? Les écritures restent. Vous pourrez remettre
+                      l&apos;entreprise dans la liste.
+                    </p>
+                    {erreurRetrait && <p className="mt-2 text-sm text-danger">{erreurRetrait}</p>}
+                    <div className="mt-3 flex justify-end gap-2">
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmerRetrait(false)}>
+                        Annuler
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="danger"
+                        size="sm"
+                        onClick={async () => {
+                          setErreurRetrait(null);
+                          try {
+                            await retirerDossier(choisi.dossier_id);
+                            setConfirmerRetrait(false);
+                            ecrire({ ouvert: null }, true);
+                            charger();
+                            setRetires(await listerDossiersRetires());
+                          } catch (exception) {
+                            setErreurRetrait(
+                              exception instanceof Error ? exception.message : "Échec du retrait.",
+                            );
+                          }
+                        }}
+                      >
+                        Retirer
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            )}
           </div>
         </aside>
       ) : null}
@@ -850,6 +901,17 @@ function Ligne({ libelle, valeur }: { libelle: string; valeur: string }) {
     <div className="flex items-baseline justify-between gap-4">
       <dt className="text-subtle">{libelle}</dt>
       <dd className="text-right text-ink">{valeur}</dd>
+    </div>
+  );
+}
+
+function Chiffre({ libelle, valeur, montant }: { libelle: string; valeur: string; montant?: number }) {
+  const couleur =
+    montant === undefined ? "text-ink" : montant < 0 ? "text-amount-negative" : "text-amount-positive";
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs text-subtle">{libelle}</dt>
+      <dd className={`mt-0.5 truncate text-sm font-semibold tabular-nums ${couleur}`}>{valeur}</dd>
     </div>
   );
 }

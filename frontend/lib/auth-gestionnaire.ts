@@ -396,12 +396,23 @@ export async function choisirBranchementDossier(
   return ((await reponse.json()) as { choix: Record<string, string> }).choix;
 }
 
-/** AXE-819 : plateformes reliées par le chauffeur, en nombres (doc 19). */
+/** Un compte de plateforme tel que le gestionnaire le lit : le nom et l'état,
+ * jamais un montant. */
+export type ComptePlateformeSynthese = {
+  nom: string;
+  etat: "connecte" | "en_cours" | "a_reconnecter";
+  relie_le: string | null;
+};
+
+/** AXE-819 : plateformes reliées par le chauffeur (doc 19). */
 export type SynthesePlateformes = {
   reliees: number;
   attendues: number;
   a_reconnecter: number;
   manquantes: string[];
+  versements_a_verifier?: number;
+  noms?: string[];
+  comptes?: ComptePlateformeSynthese[];
 };
 
 export async function lireSynthesePlateformes(dossierId: string): Promise<SynthesePlateformes> {
@@ -1221,6 +1232,25 @@ export async function lireLienRollee(dossierId: string): Promise<FicheRollee> {
   const reponse = await requeteGestionnaire(`/dossiers/${encodeURIComponent(dossierId)}/rollee`);
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
   return (await reponse.json()) as FicheRollee;
+}
+
+/** Phrase d'avancement pendant que la synchronisation lit encore Rollee. */
+export async function lireAvancementRollee(dossierId: string): Promise<string> {
+  const reponse = await requeteGestionnaire(
+    `/dossiers/${encodeURIComponent(dossierId)}/rollee/synchroniser`,
+  );
+  if (!reponse.ok) return "";
+  return ((await reponse.json()) as { phrase: string }).phrase;
+}
+
+/** Relit chez Rollee les comptes Uber, Bolt… de cette entreprise. */
+export async function synchroniserRollee(dossierId: string): Promise<string> {
+  const reponse = await requeteGestionnaire(
+    `/dossiers/${encodeURIComponent(dossierId)}/rollee/synchroniser`,
+    { method: "POST" },
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return ((await reponse.json()) as { phrase: string }).phrase;
 }
 
 export async function delierRollee(dossierId: string, motif: string): Promise<number> {
