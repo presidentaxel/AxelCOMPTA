@@ -37,6 +37,7 @@ class CompteRelie:
     reconnexion: bool
     relie_le: datetime | None  # première fois vu connecté
     maj_le: datetime
+    rollee_user_id: str | None = None  # le compte Rollee qui a fourni cette plateforme
 
     @property
     def etat(self) -> Etat:
@@ -53,6 +54,7 @@ def depuis_rollee(
     brut: dict[str, Any],
     connu: CompteRelie | None,
     maintenant: datetime,
+    rollee_user_id: str | None = None,
 ) -> CompteRelie:
     connecte = bool(brut.get("connected"))
     relie_le = connu.relie_le if connu and connu.relie_le else (maintenant if connecte else None)
@@ -64,6 +66,7 @@ def depuis_rollee(
         reconnexion=bool(brut.get("reconnecting")),
         relie_le=relie_le,
         maj_le=maintenant,
+        rollee_user_id=rollee_user_id or (connu.rollee_user_id if connu else None),
     )
 
 
@@ -76,6 +79,20 @@ class Synthese:
     a_reconnecter: int
     manquantes: tuple[str, ...] = field(default=())  # déclarées, pas encore reliées
     non_declarees: tuple[str, ...] = field(default=())  # reliées, pas déclarées
+
+
+def noms_plateformes(*groupes: Sequence[str]) -> tuple[str, ...]:
+    """Noms tels que Rollee les écrit (Uber, Bolt, Heetch), sans doublon."""
+    vus: dict[str, str] = {}
+    for groupe in groupes:
+        for nom in groupe:
+            propre = nom.strip()
+            cle = propre.casefold()
+            if not propre:
+                continue
+            if cle not in vus or (vus[cle].islower() and propre != propre.lower()):
+                vus[cle] = propre
+    return tuple(vus[cle] for cle in sorted(vus))
 
 
 def synthese(
@@ -100,6 +117,10 @@ def synthese(
 class ComptesRolleeRepository(Protocol):
     def utilisateur(self, dossier_id: DossierId) -> UtilisateurRollee | None: ...
 
+    def utilisateurs(self, dossier_id: DossierId) -> list[UtilisateurRollee]:
+        """Tous les comptes Rollee de cette entreprise."""
+        ...
+
     def dossier_du_user(self, rollee_user_id: str) -> DossierId | None:
         """AXE-820 : un webhook ne connaît que le user Rollee."""
         ...
@@ -112,37 +133,64 @@ class ComptesRolleeRepository(Protocol):
 
     def comptes(self, dossier_id: DossierId) -> list[CompteRelie]: ...
 
-    def remplacer_comptes(self, dossier_id: DossierId, comptes: Sequence[CompteRelie]) -> None:
-        """La liste relue chez Rollee remplace celle du dossier."""
+    def remplacer_comptes(
+        self,
+        dossier_id: DossierId,
+        comptes: Sequence[CompteRelie],
+        rollee_user_id: str | None = None,
+    ) -> None:
+        """La liste relue chez Rollee remplace celle du dossier. Avec un user,
+        seuls les comptes de ce user sont remplacés."""
+        ...
+
+    def retirer_comptes_sans_user(self, dossier_id: DossierId) -> None:
+        """Après une relecture complète : les comptes non rattachés à un user sont périmés."""
         ...
 
 
 @dataclass
 class ComptesRolleeMemoire:
-    utilisateurs: dict[str, UtilisateurRollee] = field(default_factory=dict)
+    par_user: dict[str, UtilisateurRollee] = field(default_factory=dict)
     lus: dict[str, list[CompteRelie]] = field(default_factory=dict)
 
+    def utilisateurs(self, dossier_id: DossierId) -> list[UtilisateurRollee]:
+        return [u for u in self.par_user.values() if u.dossier_id == dossier_id]
+
     def utilisateur(self, dossier_id: DossierId) -> UtilisateurRollee | None:
-        return self.utilisateurs.get(dossier_id)
+        trouves = self.utilisateurs(dossier_id)
+        return trouves[0] if trouves else None
 
     def dossier_du_user(self, rollee_user_id: str) -> DossierId | None:
         return next(
-            (
-                u.dossier_id
-                for u in self.utilisateurs.values()
-                if u.rollee_user_id == rollee_user_id
-            ),
+            (u.dossier_id for u in self.par_user.values() if u.rollee_user_id == rollee_user_id),
             None,
         )
 
     def dossiers_relies(self) -> list[DossierId]:
-        return sorted(DossierId(d) for d in self.utilisateurs)
+        return sorted({u.dossier_id for u in self.par_user.values()})
 
     def enregistrer_utilisateur(self, utilisateur: UtilisateurRollee, le: datetime) -> None:
-        self.utilisateurs[utilisateur.dossier_id] = utilisateur
+        self.par_user[utilisateur.rollee_user_id] = utilisateur
 
     def comptes(self, dossier_id: DossierId) -> list[CompteRelie]:
         return list(self.lus.get(dossier_id, []))
 
-    def remplacer_comptes(self, dossier_id: DossierId, comptes: Sequence[CompteRelie]) -> None:
-        self.lus[dossier_id] = list(comptes)
+    def remplacer_comptes(
+        self,
+        dossier_id: DossierId,
+        comptes: Sequence[CompteRelie],
+        rollee_user_id: str | None = None,
+    ) -> None:
+        if rollee_user_id is None:
+            self.lus[dossier_id] = list(comptes)
+            return
+        ids = {c.account_id for c in comptes}
+        gardes = [
+            c
+            for c in self.lus.get(dossier_id, [])
+            if c.rollee_user_id != rollee_user_id and c.account_id not in ids
+        ]
+        self.lus[dossier_id] = gardes + list(comptes)
+
+    def retirer_comptes_sans_user(self, dossier_id: DossierId) -> None:
+        self.lus[dossier_id] = [c for c in self.lus.get(dossier_id, []) if c.rollee_user_id]

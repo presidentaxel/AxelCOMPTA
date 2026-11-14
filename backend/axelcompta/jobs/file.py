@@ -18,7 +18,19 @@ TYPE_IMPORT_DOSSIERS = "import_dossiers"
 TYPE_RAPPELS = "rappels"
 # Webhooks Rollee reçus, à traiter (AXE-820).
 TYPE_ROLLEE = "rollee"
-TYPES = frozenset({TYPE_SYNCHRO, TYPE_IMPORT_DOSSIERS, TYPE_RAPPELS, TYPE_ROLLEE, "notifier", "ml"})
+# Remplir la carte Rollee et relier les users, hors de la requête HTTP.
+TYPE_RAPPROCHEMENT_ROLLEE = "rapprochement_rollee"
+TYPES = frozenset(
+    {
+        TYPE_SYNCHRO,
+        TYPE_IMPORT_DOSSIERS,
+        TYPE_RAPPELS,
+        TYPE_ROLLEE,
+        TYPE_RAPPROCHEMENT_ROLLEE,
+        "notifier",
+        "ml",
+    }
+)
 TENTATIVES_MAX = 3
 
 

@@ -35,13 +35,25 @@ def test_le_comment_dit_comment_le_lien_a_ete_pose() -> None:
     assert _lien(origine="cree").comment == "relié depuis l'espace du chauffeur"
 
 
-def test_un_dossier_ou_un_user_ne_se_relie_qu_une_fois() -> None:
+def test_un_chauffeur_a_plusieurs_comptes_un_compte_une_seule_entreprise() -> None:
     liens = _memoire()
     liens.lier(_lien())
-    with pytest.raises(LienDejaPris):
-        liens.lier(_lien(user="u2"))
+    liens.lier(_lien(user="u2"))
+    assert [lien.rollee_user_id for lien in liens.liens_du(DossierId("d1"))] == ["u1", "u2"]
     with pytest.raises(LienDejaPris):
         liens.lier(_lien(dossier="d2"))
+
+
+def test_retirer_un_compte_laisse_les_autres() -> None:
+    liens = _memoire()
+    liens.lier(_lien())
+    liens.lier(_lien(user="u2"))
+    with pytest.raises(LienDejaPris):
+        liens.delier(DossierId("d1"), "marie@cabinet.fr", "lequel", LE)
+    retire = liens.delier(DossierId("d1"), "marie@cabinet.fr", "homonyme", LE, "u1")
+    assert retire is not None and retire.rollee_user_id == "u1"
+    restant = liens.lien(DossierId("d1"))
+    assert restant is not None and restant.rollee_user_id == "u2"
 
 
 def test_un_lien_retire_va_a_l_historique_avec_qui_et_pourquoi() -> None:

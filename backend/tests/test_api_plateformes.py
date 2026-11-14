@@ -6,8 +6,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 import axelcompta.api.routes as routes
-from axelcompta.api.routes import get_services_rollee, get_settlements
+from axelcompta.api.routes import get_liens_rollee, get_services_rollee, get_settlements
 from axelcompta.ingestion.comptes_rollee import ComptesRolleeMemoire
+from axelcompta.ingestion.liens_rollee import LiensRolleeMemoire
 from axelcompta.ingestion.settlements_plateforme import SettlementsMemoire
 from axelcompta.plateformes_rollee import Session
 from axelcompta.tenants.branchements import BranchementsMemoire
@@ -35,6 +36,7 @@ def _client() -> TestClient:
     services.comptes = ComptesRolleeMemoire()
     client.app.dependency_overrides[get_services_rollee] = lambda: services  # type: ignore[attr-defined]
     client.app.dependency_overrides[get_settlements] = lambda: SettlementsMemoire()  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_liens_rollee] = lambda: LiensRolleeMemoire()  # type: ignore[attr-defined]
     return client
 
 
@@ -65,6 +67,41 @@ def test_un_autre_chauffeur_n_ouvre_pas_le_lien_d_un_dossier() -> None:
     assert reponse.status_code == 403
 
 
+def test_le_gestionnaire_rapproche_une_entreprise_sans_lien(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def phrase(_services: object, _dossier: object, _demandes: object) -> str:
+        return "Un seul compte Rollee correspond : le lien est posé."
+
+    monkeypatch.setattr(routes, "_phrase_synchro_rollee", phrase)
+    reponse = _client().post(
+        "/dossiers/DEMO_karim/rollee/synchroniser", headers=_en_tete_gestionnaire()
+    )
+    assert reponse.status_code == 200
+    assert reponse.json() == {"phrase": "Un seul compte Rollee correspond : le lien est posé."}
+
+
+def test_l_avancement_de_la_synchro_se_lit() -> None:
+    from axelcompta.rapprochement_rollee_service import retenir_avancement
+
+    retenir_avancement("DEMO_karim")("Flotte : 10/100 comptes Rollee lus, environ 2 min.")
+    reponse = _client().get(
+        "/dossiers/DEMO_karim/rollee/synchroniser", headers=_en_tete_gestionnaire()
+    )
+    assert reponse.status_code == 200
+    assert reponse.json()["phrase"] == "Flotte : 10/100 comptes Rollee lus, environ 2 min."
+
+
+def test_la_lecture_seule_ne_synchronise_pas_rollee() -> None:
+    client = _client_et_stubs(role="lecture")[0]
+    services, _journal, _ = _services()
+    client.app.dependency_overrides[get_services_rollee] = lambda: services  # type: ignore[attr-defined]
+    reponse = client.post(
+        "/dossiers/DEMO_karim/rollee/synchroniser", headers=_en_tete_gestionnaire()
+    )
+    assert reponse.status_code == 403
+
+
 def test_le_gestionnaire_ne_voit_qu_une_synthese_sans_montant() -> None:
     reponse = _client().get(
         "/dossiers/DEMO_karim/plateformes/synthese", headers=_en_tete_gestionnaire()
@@ -76,4 +113,53 @@ def test_le_gestionnaire_ne_voit_qu_une_synthese_sans_montant() -> None:
         "a_reconnecter",
         "manquantes",
         "versements_a_verifier",
+        "noms",
+        "comptes",
     }
+    assert reponse.json()["noms"] == []
+    assert reponse.json()["comptes"] == []
+
+
+def test_la_synthese_nomme_la_plateforme_a_reconnecter() -> None:
+    from datetime import UTC, datetime
+
+    from axelcompta.core.ids import DossierId
+    from axelcompta.ingestion.comptes_rollee import CompteRelie
+
+    client = _client_et_stubs()[0]
+    services, _journal, _ = _services()
+    services.branchements = BranchementsMemoire()
+    comptes = ComptesRolleeMemoire()
+    le = datetime(2026, 11, 14, tzinfo=UTC)
+    karim = DossierId("DEMO_karim")
+    comptes.remplacer_comptes(
+        karim,
+        [
+            CompteRelie("uber", karim, "uber.com-rev", True, False, le, le),
+            CompteRelie("bolt", karim, "bolt.eu-rev", False, False, None, le),
+        ],
+    )
+    services.comptes = comptes
+    client.app.dependency_overrides[get_services_rollee] = lambda: services  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_settlements] = lambda: SettlementsMemoire()  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_liens_rollee] = lambda: LiensRolleeMemoire()  # type: ignore[attr-defined]
+    corps = client.get(
+        "/dossiers/DEMO_karim/plateformes/synthese", headers=_en_tete_gestionnaire()
+    ).json()
+    assert corps["a_reconnecter"] == 1
+    assert corps["comptes"] == [
+        {
+            "nom": "uber.com-rev",
+            "etat": "connecte",
+            "relie_le": "2026-11-14T00:00:00+00:00",
+            "compte_rollee": "",
+            "rollee_user_id": "",
+        },
+        {
+            "nom": "bolt.eu-rev",
+            "etat": "a_reconnecter",
+            "relie_le": None,
+            "compte_rollee": "",
+            "rollee_user_id": "",
+        },
+    ]

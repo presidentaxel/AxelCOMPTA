@@ -6,8 +6,7 @@ from axelcompta.ingestion.rapprochement_rollee import (
     INDICE_IBAN,
     INDICE_METADATA,
     INDICE_NOM_EMAIL,
-    RAISON_DEJA_RELIE,
-    RAISON_NOM,
+    INDICE_NOM_UNIQUE,
     RAISON_RETIRE,
     DossierIndices,
     Empreintes,
@@ -57,14 +56,46 @@ def test_le_meme_iban_relie_seul() -> None:
     assert (issue.etat, issue.dossier_id, issue.indice) == ("relie_auto", "d1", INDICE_IBAN)
 
 
+def test_le_telephone_relie_meme_si_l_email_differe_et_inversement() -> None:
+    premier = _user("u1", noms=[MARTIN], emails=["a@x.fr"], telephones=["0612345678"])
+    autre_mail = _user("u2", noms=[MARTIN], emails=["b@y.fr"], telephones=["06 12 34 56 78"])
+    dossier = _dossier("d1", noms=[MARTIN], emails=["a@x.fr"])
+    issues = rapprocher([premier, autre_mail], [dossier], {})
+    assert [(i.user_id, i.etat, i.indice) for i in issues] == [
+        ("u1", "relie_auto", INDICE_NOM_EMAIL),
+        ("u2", "relie_auto", "nom_telephone"),
+    ]
+    autre_numero = _user("u3", noms=[MARTIN], emails=["a@x.fr"], telephones=["0699999999"])
+    par_mail = rapprocher(
+        [
+            _user("u1", noms=[MARTIN], emails=["a@x.fr"], telephones=["0612345678"]),
+            autre_numero,
+        ],
+        [_dossier("d1", noms=[MARTIN], telephones=["0612345678"])],
+        {},
+    )
+    assert [(i.user_id, i.etat) for i in par_mail] == [("u1", "relie_auto"), ("u3", "relie_auto")]
+    homonyme = rapprocher(
+        [_user("u9", noms=[normaliser_nom("Paul", "Durand")], telephones=["0612345678"])],
+        [_dossier("d1", noms=[MARTIN], telephones=["0612345678"])],
+        {"u1": "d1"},
+    )
+    assert (homonyme[0].etat, homonyme[0].indice) == ("relie_auto", "nom_telephone")
+    (mail_seul,) = rapprocher(
+        [_user("u8", emails=["a@x.fr"], noms=[normaliser_nom("Paul", "Durand")])],
+        [_dossier("d1", emails=["a@x.fr"], noms=[MARTIN])],
+        {},
+    )
+    assert (mail_seul.etat, mail_seul.indice) == ("relie_auto", INDICE_NOM_EMAIL)
+
+
 def test_le_nom_avec_l_email_relie_seul_mais_le_nom_seul_va_au_gestionnaire() -> None:
     avec_email = _user("u1", noms=[MARTIN], emails=["E.Martin@exemple.fr "])
     dossier = _dossier("d1", noms=[MARTIN], emails=["e.martin@exemple.fr"])
     (sur,) = rapprocher([avec_email], [dossier], {})
     assert (sur.etat, sur.indice) == ("relie_auto", INDICE_NOM_EMAIL)
-    (faible,) = rapprocher([_user("u2", noms=[MARTIN])], [dossier], {})
-    assert faible.etat == "a_choisir" and faible.dossier_id is None
-    assert faible.candidats[0].raisons == (RAISON_NOM,)
+    (seul,) = rapprocher([_user("u2", noms=[MARTIN])], [dossier], {})
+    assert (seul.etat, seul.indice) == ("relie_auto", INDICE_NOM_UNIQUE)
 
 
 def test_deux_dossiers_au_meme_iban_vont_au_gestionnaire() -> None:
@@ -85,10 +116,9 @@ def test_un_user_deja_relie_n_est_jamais_touche() -> None:
     assert rapprocher([_user("u1", metadata="d1")], [_dossier("d1")], {"u1": "d9"}) == []
 
 
-def test_un_dossier_deja_relie_n_est_pas_relie_une_seconde_fois_seul() -> None:
+def test_un_second_compte_sur_du_meme_chauffeur_se_relie_aussi() -> None:
     (issue,) = rapprocher([_user("u2", ibans=[IBAN])], [_dossier("d1", ibans=[IBAN])], {"u1": "d1"})
-    assert issue.etat == "a_choisir"
-    assert RAISON_DEJA_RELIE in issue.candidats[0].raisons
+    assert (issue.etat, issue.dossier_id) == ("relie_auto", "d1")
 
 
 def test_un_lien_retire_par_le_gestionnaire_n_est_pas_repose_seul() -> None:
@@ -98,18 +128,47 @@ def test_un_lien_retire_par_le_gestionnaire_n_est_pas_repose_seul() -> None:
     assert issue.etat == "a_choisir" and RAISON_RETIRE in issue.candidats[0].raisons
 
 
-def test_deux_users_qui_visent_le_meme_dossier_vont_tous_deux_au_gestionnaire() -> None:
+def test_deux_users_surs_du_meme_chauffeur_se_relient_tous_les_deux() -> None:
     issues = rapprocher(
         [_user("u1", ibans=[IBAN]), _user("u2", ibans=[IBAN])], [_dossier("d1", ibans=[IBAN])], {}
     )
-    assert [i.etat for i in issues] == ["a_choisir", "a_choisir"]
-    assert bilan(issues) == {"relie_auto": 0, "a_choisir": 2, "non_trouve": 0}
+    assert [i.etat for i in issues] == ["relie_auto", "relie_auto"]
+    assert bilan(issues) == {"relie_auto": 2, "a_choisir": 0, "non_trouve": 0}
 
 
 def test_l_apercu_ne_montre_que_des_initiales_et_la_fin_de_l_iban() -> None:
     vu = apercu("Élodie", "Martin", ["Uber", "Bolt", "Uber"], IBAN)
     assert (vu.initiales, vu.plateformes, vu.iban_fin) == ("É.M.", ("Bolt", "Uber"), "0189")
     assert apercu(None, None, [], None).iban_fin is None
+
+
+def test_un_nom_que_personne_d_autre_ne_porte_relie_seul() -> None:
+    issues = rapprocher(
+        [
+            _user("u1", noms=[MARTIN]),
+            _user("u2", noms=[normaliser_nom("Karim", "Benali")]),
+        ],
+        [_dossier("d1", noms=[MARTIN])],
+        {},
+    )
+    assert (issues[0].etat, issues[0].indice) == ("relie_auto", INDICE_NOM_UNIQUE)
+    assert issues[1].etat == "non_trouve"
+
+
+def test_deux_users_au_meme_nom_restent_a_choisir() -> None:
+    issues = rapprocher(
+        [_user("u1", noms=[MARTIN]), _user("u2", noms=[MARTIN])],
+        [_dossier("d1", noms=[MARTIN])],
+        {},
+    )
+    assert [issue.etat for issue in issues] == ["a_choisir", "a_choisir"]
+
+
+def test_une_liste_incomplete_ne_relie_pas_par_le_nom_seul() -> None:
+    (issue,) = rapprocher(
+        [_user("u1", noms=[MARTIN])], [_dossier("d1", noms=[MARTIN])], {}, complet=False
+    )
+    assert issue.etat == "a_choisir"
 
 
 def test_les_empreintes_ne_contiennent_rien_en_clair() -> None:

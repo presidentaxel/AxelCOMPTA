@@ -1,27 +1,38 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import {
   choisirBranchementDossier,
+  lireAvancementRollee,
   lireBranchementsDossier,
   listerBranchements,
+  synchroniserRollee,
   type Branchement,
 } from "@/lib/auth-gestionnaire";
 import { ORDRE_TYPES, TYPES_BRANCHEMENT } from "@/lib/branchements";
 
 /** AXE-872 : l'accès qu'une entreprise utilise, pour chaque intégration qui
- * en a plusieurs. Rien à choisir quand il n'y en a qu'un : ce bloc n'apparaît pas. */
+ * en a plusieurs. Rollee n'a pas de menu : le bouton lit tous les comptes
+ * et relit Uber, Bolt… La phrase sous le bouton dit où en est la lecture. */
 export function IntegrationsDossier({
   dossierId,
   admin,
+  ecriture,
+  onSynchronise,
 }: {
   dossierId: string;
   admin: boolean;
+  ecriture: boolean;
+  onSynchronise: () => void;
 }) {
   const [branchements, setBranchements] = useState<Branchement[]>([]);
   const [choix, setChoix] = useState<Record<string, string>>({});
   const [erreur, setErreur] = useState<string | null>(null);
+  const [synchro, setSynchro] = useState<string | null>(null);
+  const [enCours, setEnCours] = useState(false);
+  const enCoursRef = useRef(false);
 
   useEffect(() => {
     let actif = true;
@@ -39,13 +50,62 @@ export function IntegrationsDossier({
     };
   }, [dossierId]);
 
+  const ficheRelue = useRef(false);
+  const surSynchro = useRef(onSynchronise);
+  useEffect(() => {
+    surSynchro.current = onSynchronise;
+  }, [onSynchronise]);
+  useEffect(() => {
+    if (!enCours) return;
+    ficheRelue.current = false;
+    let actif = true;
+    const lire = () => {
+      void lireAvancementRollee(dossierId).then((phrase) => {
+        if (!actif || !enCoursRef.current || !phrase) return;
+        setSynchro(phrase);
+        if (
+          !ficheRelue.current &&
+          (phrase.includes("Reliez") || phrase.includes("lien est posé"))
+        ) {
+          ficheRelue.current = true;
+          surSynchro.current();
+        }
+      });
+    };
+    const id = setInterval(lire, 2000);
+    return () => {
+      actif = false;
+      clearInterval(id);
+    };
+  }, [enCours, dossierId]);
+
   const types = ORDRE_TYPES.filter(
-    (type) => branchements.filter((b) => b.type === type && b.actif).length > 1,
+    (type) =>
+      type !== "rollee" && branchements.filter((b) => b.type === type && b.actif).length > 1,
   );
-  if (types.length === 0) return null;
+  if (types.length === 0 && !ecriture) return null;
+
+  async function synchroniser() {
+    setErreur(null);
+    setSynchro(null);
+    setEnCours(true);
+    enCoursRef.current = true;
+    try {
+      const phrase = await synchroniserRollee(dossierId);
+      enCoursRef.current = false;
+      setSynchro(phrase);
+      onSynchronise();
+    } catch (exception) {
+      setErreur(exception instanceof Error ? exception.message : "Rollee n'a pas répondu.");
+    } finally {
+      setEnCours(false);
+    }
+  }
 
   return (
-    <div className="mt-8">
+    <div className="mt-4">
+      {types.length > 0 && (
+      <>
       <p className="text-sm font-medium text-ink">Intégrations utilisées</p>
       <dl className="mt-2 space-y-2">
         {types.map((type) => {
@@ -53,7 +113,7 @@ export function IntegrationsDossier({
           const sansDefaut = type === "rollee";
           const defaut = actifs.find((b) => b.par_defaut);
           return (
-            <div key={type} className="flex items-center justify-between gap-4">
+            <div key={type} className="space-y-1">
               <dt className="text-sm text-subtle">
                 {TYPES_BRANCHEMENT[type].nom}
               </dt>
@@ -80,7 +140,7 @@ export function IntegrationsDossier({
                       );
                     }
                   }}
-                  className="rounded-md border border-border bg-canvas px-2 py-1 text-sm text-ink"
+                  className="w-full rounded-md border border-border bg-canvas px-2 py-1 text-sm text-ink"
                 >
                   <option value="">
                     {sansDefaut
@@ -100,6 +160,21 @@ export function IntegrationsDossier({
           );
         })}
       </dl>
+      </>
+      )}
+      {ecriture && (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="mt-3"
+          disabled={enCours}
+          onClick={() => void synchroniser()}
+        >
+          {enCours ? "Synchronisation…" : "Synchroniser Rollee"}
+        </Button>
+      )}
+      {synchro && <p className="mt-2 text-sm text-subtle">{synchro}</p>}
       {erreur && <p className="mt-2 text-sm text-danger">{erreur}</p>}
     </div>
   );

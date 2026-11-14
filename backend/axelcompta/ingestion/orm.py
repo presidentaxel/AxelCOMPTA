@@ -13,6 +13,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Integer,
     PrimaryKeyConstraint,
     String,
     Table,
@@ -104,8 +105,8 @@ comptes_bancaires = Table(
 utilisateurs_rollee = Table(
     "utilisateurs_rollee",
     metadata,
-    Column("dossier_id", String, ForeignKey("dossiers.id"), primary_key=True),
-    Column("rollee_user_id", String, nullable=False, unique=True),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), nullable=False, index=True),
+    Column("rollee_user_id", String, primary_key=True),
     Column("branchement_id", String, nullable=False),
     Column("cree_le", DateTime(timezone=True), nullable=False),  # date du lien
     # AXE-911 : cree (espace chauffeur), auto (rapprochement), manuel (gestionnaire).
@@ -149,6 +150,23 @@ rapprochements_rollee = Table(
     ),
 )
 
+# Carte des users Rollee déjà lus : empreintes et aperçu masqué, rien en clair.
+# Un passage suivant les compare sans rappeler le profil ni l'IBAN.
+cartes_rollee = Table(
+    "cartes_rollee",
+    metadata,
+    Column("rollee_user_id", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False, index=True),
+    Column("branchement_id", String, nullable=False),
+    Column("dossier_metadata", String, nullable=True),
+    Column("empreintes", JSON, nullable=False),
+    Column("apercu", JSON, nullable=False),
+    Column("lu_le", DateTime(timezone=True), nullable=False),
+    Column("accounts_number", Integer, nullable=True),
+    Column("nom", String, nullable=True),
+    Column("email_masque", String, nullable=True),
+)
+
 # Les comptes de plateformes que le chauffeur a reliés dans Rollee Connect,
 # relus chez Rollee (jamais saisis ici). Aucun montant.
 comptes_rollee = Table(
@@ -161,6 +179,7 @@ comptes_rollee = Table(
     Column("reconnexion", Boolean, nullable=False),
     Column("relie_le", DateTime(timezone=True), nullable=True),
     Column("maj_le", DateTime(timezone=True), nullable=False),
+    Column("rollee_user_id", String, nullable=True),
 )
 
 # AXE-820 : webhooks Rollee reçus, gardés tels quels, traités par la file.

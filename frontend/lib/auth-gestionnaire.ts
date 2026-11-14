@@ -43,7 +43,7 @@ import type {
   Synchronisation,
 } from "./types";
 
-import type { FicheRollee, RolleePortefeuille } from "./liens-rollee";
+import type { FicheAnnuaireRollee, FicheRollee, RolleePortefeuille } from "./liens-rollee";
 import type { AnalyseFec, OuvertureVue } from "./ouverture";
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
@@ -396,12 +396,25 @@ export async function choisirBranchementDossier(
   return ((await reponse.json()) as { choix: Record<string, string> }).choix;
 }
 
-/** AXE-819 : plateformes reliées par le chauffeur, en nombres (doc 19). */
+/** Un compte de plateforme tel que le gestionnaire le lit : le nom et l'état,
+ * jamais un montant. */
+export type ComptePlateformeSynthese = {
+  nom: string;
+  etat: "connecte" | "en_cours" | "a_reconnecter";
+  relie_le: string | null;
+  compte_rollee?: string;
+  rollee_user_id?: string;
+};
+
+/** AXE-819 : plateformes reliées par le chauffeur (doc 19). */
 export type SynthesePlateformes = {
   reliees: number;
   attendues: number;
   a_reconnecter: number;
   manquantes: string[];
+  versements_a_verifier?: number;
+  noms?: string[];
+  comptes?: ComptePlateformeSynthese[];
 };
 
 export async function lireSynthesePlateformes(dossierId: string): Promise<SynthesePlateformes> {
@@ -1223,13 +1236,54 @@ export async function lireLienRollee(dossierId: string): Promise<FicheRollee> {
   return (await reponse.json()) as FicheRollee;
 }
 
-export async function delierRollee(dossierId: string, motif: string): Promise<number> {
+/** Phrase d'avancement pendant que la synchronisation lit encore Rollee. */
+export async function lireAvancementRollee(dossierId: string): Promise<string> {
+  const reponse = await requeteGestionnaire(
+    `/dossiers/${encodeURIComponent(dossierId)}/rollee/synchroniser`,
+  );
+  if (!reponse.ok) return "";
+  return ((await reponse.json()) as { phrase: string }).phrase;
+}
+
+/** Relit chez Rollee les comptes Uber, Bolt… de cette entreprise. */
+export async function synchroniserRollee(dossierId: string): Promise<string> {
+  const reponse = await requeteGestionnaire(
+    `/dossiers/${encodeURIComponent(dossierId)}/rollee/synchroniser`,
+    { method: "POST" },
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return ((await reponse.json()) as { phrase: string }).phrase;
+}
+
+/** Chercher un user Rollee par son nom, tous comptes Rollee confondus. */
+export async function chercherCompteRollee(requete: string): Promise<FicheAnnuaireRollee[]> {
+  const reponse = await requeteGestionnaire(
+    `/portefeuille/rollee/annuaire?q=${encodeURIComponent(requete)}`,
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as FicheAnnuaireRollee[];
+}
+
+export async function lierCompteRollee(dossierId: string, rolleeUserId: string): Promise<void> {
+  const reponse = await requeteGestionnaire(`/dossiers/${encodeURIComponent(dossierId)}/rollee/lier`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rollee_user_id: rolleeUserId }),
+  });
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+}
+
+export async function delierRollee(
+  dossierId: string,
+  motif: string,
+  rolleeUserId?: string,
+): Promise<number> {
   const reponse = await requeteGestionnaire(
     `/dossiers/${encodeURIComponent(dossierId)}/rollee/delier`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ motif }),
+      body: JSON.stringify({ motif, rollee_user_id: rolleeUserId ?? null }),
     },
   );
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);

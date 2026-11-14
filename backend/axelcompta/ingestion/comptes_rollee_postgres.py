@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 
@@ -20,17 +20,24 @@ class PostgresComptesRollee:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
 
-    def utilisateur(self, dossier_id: DossierId) -> UtilisateurRollee | None:
+    def utilisateurs(self, dossier_id: DossierId) -> list[UtilisateurRollee]:
         with self._engine.connect() as connexion:
             appliquer_rls(connexion)
-            ligne = connexion.execute(
-                select(utilisateurs_rollee).where(utilisateurs_rollee.c.dossier_id == dossier_id)
-            ).first()
-        if ligne is None:
-            return None
-        return UtilisateurRollee(
-            DossierId(ligne.dossier_id), ligne.rollee_user_id, ligne.branchement_id
-        )
+            lignes = connexion.execute(
+                select(utilisateurs_rollee)
+                .where(utilisateurs_rollee.c.dossier_id == dossier_id)
+                .order_by(utilisateurs_rollee.c.cree_le, utilisateurs_rollee.c.rollee_user_id)
+            ).all()
+        return [
+            UtilisateurRollee(
+                DossierId(ligne.dossier_id), ligne.rollee_user_id, ligne.branchement_id
+            )
+            for ligne in lignes
+        ]
+
+    def utilisateur(self, dossier_id: DossierId) -> UtilisateurRollee | None:
+        trouves = self.utilisateurs(dossier_id)
+        return trouves[0] if trouves else None
 
     def dossier_du_user(self, rollee_user_id: str) -> DossierId | None:
         with self._engine.connect() as connexion:
@@ -46,7 +53,9 @@ class PostgresComptesRollee:
         with self._engine.connect() as connexion:
             appliquer_rls(connexion)
             lignes = connexion.execute(
-                select(utilisateurs_rollee.c.dossier_id).order_by(utilisateurs_rollee.c.dossier_id)
+                select(utilisateurs_rollee.c.dossier_id)
+                .distinct()
+                .order_by(utilisateurs_rollee.c.dossier_id)
             ).scalars()
             return [DossierId(d) for d in lignes]
 
@@ -81,16 +90,27 @@ class PostgresComptesRollee:
                 reconnexion=ligne.reconnexion,
                 relie_le=ligne.relie_le,
                 maj_le=ligne.maj_le,
+                rollee_user_id=ligne.rollee_user_id,
             )
             for ligne in lignes
         ]
 
-    def remplacer_comptes(self, dossier_id: DossierId, comptes: Sequence[CompteRelie]) -> None:
+    def remplacer_comptes(
+        self,
+        dossier_id: DossierId,
+        comptes: Sequence[CompteRelie],
+        rollee_user_id: str | None = None,
+    ) -> None:
         with self._engine.begin() as connexion:
             appliquer_rls(connexion)
-            connexion.execute(
-                delete(comptes_rollee).where(comptes_rollee.c.dossier_id == dossier_id)
-            )
+            requete = delete(comptes_rollee).where(comptes_rollee.c.dossier_id == dossier_id)
+            if rollee_user_id is not None:
+                ids = [c.account_id for c in comptes]
+                bornes = [comptes_rollee.c.rollee_user_id == rollee_user_id]
+                if ids:
+                    bornes.append(comptes_rollee.c.account_id.in_(ids))
+                requete = requete.where(or_(*bornes))
+            connexion.execute(requete)
             if comptes:
                 connexion.execute(
                     comptes_rollee.insert(),
@@ -103,7 +123,18 @@ class PostgresComptesRollee:
                             "reconnexion": c.reconnexion,
                             "relie_le": c.relie_le,
                             "maj_le": c.maj_le,
+                            "rollee_user_id": c.rollee_user_id,
                         }
                         for c in comptes
                     ],
                 )
+
+    def retirer_comptes_sans_user(self, dossier_id: DossierId) -> None:
+        with self._engine.begin() as connexion:
+            appliquer_rls(connexion)
+            connexion.execute(
+                delete(comptes_rollee).where(
+                    comptes_rollee.c.dossier_id == dossier_id,
+                    comptes_rollee.c.rollee_user_id.is_(None),
+                )
+            )

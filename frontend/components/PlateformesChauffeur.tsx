@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Etat } from "@/components/Etat";
+import { LogoPlateforme } from "@/components/LogoPlateforme";
 import { Squelette } from "@/components/Squelette";
 import { Button } from "@/components/ui/button";
 import {
@@ -74,11 +75,16 @@ export function PlateformesChauffeur({ dossierId }: { dossierId: string }) {
       {etat.statut === "pret" && (
         <>
           {etat.donnees.comptes.length > 0 && (
-            <ul className="mt-3 space-y-1">
+            <ul className="mt-3 space-y-2">
               {etat.donnees.comptes.map((compte) => (
-                <li key={compte.nom} className="text-sm text-ink">
-                  {compte.nom} :{" "}
-                  <span className={compte.etat === "a_reconnecter" ? "text-danger" : "text-subtle"}>
+                <li key={compte.nom} className="flex min-w-0 items-center gap-2 text-sm leading-none text-ink">
+                  <span className="min-w-0">
+                    <LogoPlateforme nom={compte.nom} />
+                  </span>
+                  <span
+                    className={`shrink-0 ${compte.etat === "a_reconnecter" ? "text-danger" : "text-subtle"}`}
+                  >
+                    <span className="text-subtle">: </span>
                     {etatPlateforme(compte, formatDate)}
                   </span>
                 </li>

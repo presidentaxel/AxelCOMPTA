@@ -148,15 +148,24 @@ async def ouvrir_session(services: ServicesRollee, dossier: Dossier) -> Session:
     return Session(lien=str(reponse["link"]), expire_le=str(expire) if expire else None)
 
 
-async def relire_comptes(services: ServicesRollee, dossier: Dossier) -> list[CompteRelie]:
-    """La liste relue chez Rollee remplace celle du dossier. Sans user
-    Rollee, rien n'a jamais été relié : liste vide, sans appel (mais
-    `RolleeNonBranche` si le chauffeur ne pourrait même pas commencer)."""
-    branchement = branchement_du_dossier(services, dossier)
-    utilisateur = services.comptes.utilisateur(dossier.id)
-    if utilisateur is None:
-        return []
-    client = client_du_branchement(services, branchement)
+def _branchement_du_user(
+    services: ServicesRollee, dossier: Dossier, utilisateur: UtilisateurRollee
+) -> Branchement:
+    actifs = services.branchements.lister(dossier.tenant_id)
+    lie = next((b for b in actifs if b.id == utilisateur.branchement_id and b.actif), None)
+    if lie is None:
+        raise RolleeNonBranche(
+            "Le branchement Rollee de cette entreprise est désactivé : réactivez-le "
+            "dans Intégrations."
+        )
+    return lie
+
+
+async def _relire_un(
+    services: ServicesRollee, dossier: Dossier, utilisateur: UtilisateurRollee
+) -> None:
+    """Remplace les plateformes de ce compte Rollee, sans toucher aux autres."""
+    client = client_du_branchement(services, _branchement_du_user(services, dossier, utilisateur))
     try:
         bruts = await client.comptes(utilisateur.rollee_user_id)
     finally:
@@ -164,12 +173,51 @@ async def relire_comptes(services: ServicesRollee, dossier: Dossier) -> list[Com
     connus = {c.account_id: c for c in services.comptes.comptes(dossier.id)}
     maintenant = services.maintenant()
     comptes = [
-        depuis_rollee(dossier.id, brut, connus.get(str(brut.get("id"))), maintenant)
+        depuis_rollee(
+            dossier.id,
+            brut,
+            connus.get(str(brut.get("id"))),
+            maintenant,
+            utilisateur.rollee_user_id,
+        )
         for brut in bruts
         if brut.get("id")
     ]
-    services.comptes.remplacer_comptes(dossier.id, comptes)
-    return comptes
+    services.comptes.remplacer_comptes(dossier.id, comptes, utilisateur.rollee_user_id)
+
+
+async def relire_comptes(services: ServicesRollee, dossier: Dossier) -> list[CompteRelie]:
+    """Chaque compte Rollee du chauffeur est relu. Leurs plateformes
+    s'additionnent : en retirer un ne vide pas les autres. Sans user,
+    liste vide, sans appel."""
+    utilisateurs = services.comptes.utilisateurs(dossier.id)
+    if not utilisateurs:
+        branchement_du_dossier(services, dossier)  # RolleeNonBranche si rien n'est branché
+        return []
+    for utilisateur in utilisateurs:
+        await _relire_un(services, dossier, utilisateur)
+    services.comptes.retirer_comptes_sans_user(dossier.id)
+    return services.comptes.comptes(dossier.id)
+
+
+async def synchroniser_dossier(services: ServicesRollee, dossier: Dossier) -> str:
+    """Relit chez Rollee les comptes de plateforme d'une entreprise déjà
+    reliée. Sans user Rollee, le bouton lance le rapprochement à la place."""
+    if not services.comptes.utilisateurs(dossier.id):
+        return "Aucun compte Rollee relié : rien à synchroniser."
+    return _phrase_synchro(await relire_comptes(services, dossier))
+
+
+def _phrase_synchro(comptes: list[CompteRelie]) -> str:
+    if not comptes:
+        return "Rollee synchronisé : aucun compte de plateforme."
+    phrase = f"Rollee synchronisé : {', '.join(c.nom for c in comptes)}."
+    perdus = [c.nom for c in comptes if c.etat == "a_reconnecter"]
+    if len(perdus) == 1:
+        return f"{phrase} {perdus[0]} est à reconnecter."
+    if perdus:
+        return f"{phrase} {len(perdus)} à reconnecter."
+    return phrase
 
 
 # --- AXE-820 : webhooks et rattrapage quotidien -----------------------------
