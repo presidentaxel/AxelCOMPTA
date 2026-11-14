@@ -27,6 +27,7 @@ LIBELLES_INDICE = {
     "iban": "par l'IBAN",
     "nom_email": "par l'e-mail",
     "nom_telephone": "par le téléphone",
+    "nom_unique": "par le nom",
 }
 
 

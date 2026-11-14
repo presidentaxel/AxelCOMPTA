@@ -162,11 +162,7 @@ class ComptesRolleeMemoire:
 
     def dossier_du_user(self, rollee_user_id: str) -> DossierId | None:
         return next(
-            (
-                u.dossier_id
-                for u in self.par_user.values()
-                if u.rollee_user_id == rollee_user_id
-            ),
+            (u.dossier_id for u in self.par_user.values() if u.rollee_user_id == rollee_user_id),
             None,
         )
 

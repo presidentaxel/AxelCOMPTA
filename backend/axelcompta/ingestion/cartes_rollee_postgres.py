@@ -23,6 +23,9 @@ def _user(ligne: Row[Any]) -> UserRollee:
         ligne.dossier_metadata,
         ligne.empreintes or {},
         ligne.apercu or {},
+        ligne.accounts_number,
+        ligne.nom,
+        ligne.email_masque,
     )
 
 
@@ -41,6 +44,14 @@ class PostgresCartesRollee:
             ).all()
         return {ligne.rollee_user_id: _user(ligne) for ligne in lignes}
 
+    def du_portefeuille(self, tenant_id: TenantId) -> list[tuple[str, UserRollee]]:
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            lignes = connexion.execute(
+                select(cartes_rollee).where(cartes_rollee.c.tenant_id == str(tenant_id))
+            ).all()
+        return [(ligne.branchement_id, _user(ligne)) for ligne in lignes]
+
     def garder(
         self, tenant_id: TenantId, branchement_id: str, user: UserRollee, le: datetime
     ) -> None:
@@ -52,6 +63,9 @@ class PostgresCartesRollee:
             "empreintes": empreintes_json(user.empreintes),
             "apercu": apercu_json(user.apercu),
             "lu_le": le,
+            "accounts_number": user.accounts_number,
+            "nom": user.apercu.nom or None,
+            "email_masque": user.apercu.email_masque,
         }
         with self._engine.begin() as connexion:
             appliquer_rls(connexion)

@@ -9,12 +9,11 @@ ne garde ni le profil Rollee, ni l'IBAN, ni le nom en clair.
 
 Un user est relié seul seulement si un seul dossier correspond et que
 l'indice est sûr : `metadata`, l'IBAN, le même e-mail ou le même
-téléphone. Le nom n'est pas exigé : le même e-mail ou le même numéro,
-c'est la même personne, même si l'autre contact diffère. Sinon il va au
-gestionnaire (« à choisir »), ou il n'est pas trouvé. Un user déjà
-relié n'est jamais touché. Un chauffeur peut être sur plusieurs comptes
-Rollee : un second indice sûr se relie aussi, y compris par le téléphone
-ou l'e-mail d'un compte déjà relié.
+téléphone, ou un nom que seul ce user porte. Le même e-mail ou le même
+numéro, c'est la même personne, même si l'autre contact diffère. Sinon
+il va au gestionnaire (« à choisir »), ou il n'est pas trouvé. Un user
+déjà relié n'est jamais touché. Un chauffeur peut être sur plusieurs
+comptes Rollee : un second indice sûr se relie aussi.
 """
 
 from __future__ import annotations
@@ -32,11 +31,13 @@ INDICE_METADATA = "metadata"
 INDICE_IBAN = "iban"
 INDICE_NOM_EMAIL = "nom_email"
 INDICE_NOM_TELEPHONE = "nom_telephone"
+INDICE_NOM_UNIQUE = "nom_unique"
 
 RAISON_IBAN = "même IBAN"
 RAISON_NOM = "même nom"
 RAISON_EMAIL = "même e-mail"
 RAISON_TELEPHONE = "même téléphone"
+RAISON_NOM_UNIQUE = "seul compte Rollee à ce nom"
 RAISON_METADATA = "créé depuis ce dossier"
 RAISON_RETIRE = "lien déjà retiré par le gestionnaire"
 
@@ -104,19 +105,27 @@ def empreintes(
 
 @dataclass(frozen=True, slots=True)
 class Apercu:
-    """Ce que le gestionnaire voit d'un user Rollee : rien qui identifie en clair."""
+    """Ce que le gestionnaire voit. Le nom en clair (décision du 14/11) sert
+    à chercher le chauffeur ; l'e-mail reste masqué. Jamais un montant."""
 
     initiales: str = ""
     plateformes: tuple[str, ...] = ()
     iban_fin: str | None = None  # 4 derniers chiffres
+    nom: str = ""
+    email_masque: str | None = None
 
 
 def apercu(
-    prenom: str | None, nom: str | None, plateformes: Iterable[str], iban: str | None
+    prenom: str | None,
+    nom: str | None,
+    plateformes: Iterable[str],
+    iban: str | None,
+    email_masque: str | None = None,
 ) -> Apercu:
     initiales = "".join(f"{p.strip()[0].upper()}." for p in (prenom, nom) if p and p.strip())
     fin = normaliser_iban(iban)[-4:] or None
-    return Apercu(initiales, tuple(sorted(set(plateformes))), fin)
+    complet = " ".join(p.strip() for p in (prenom, nom) if p and p.strip())
+    return Apercu(initiales, tuple(sorted(set(plateformes))), fin, complet, email_masque)
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +134,7 @@ class UserRollee:
     dossier_metadata: str | None
     empreintes: Empreintes
     apercu: Apercu = field(default_factory=Apercu)
+    accounts_number: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,7 +155,11 @@ class Candidat:
             return INDICE_METADATA
         if RAISON_IBAN in self.raisons:
             return INDICE_IBAN
-        return INDICE_NOM_EMAIL if RAISON_EMAIL in self.raisons else INDICE_NOM_TELEPHONE
+        if RAISON_EMAIL in self.raisons:
+            return INDICE_NOM_EMAIL
+        if RAISON_TELEPHONE in self.raisons:
+            return INDICE_NOM_TELEPHONE
+        return INDICE_NOM_UNIQUE
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,12 +171,23 @@ class Issue:
     candidats: tuple[Candidat, ...] = ()
 
 
-def _raisons(user: Empreintes, dossier: Empreintes) -> tuple[str, ...]:
+def noms_uniques(users: Iterable[UserRollee]) -> frozenset[str]:
+    """Les empreintes de nom qu'un seul user porte. Uber et Bolt du même
+    user ne comptent qu'une fois."""
+    compte = Counter(nom for user in users for nom in user.empreintes.noms)
+    return frozenset(nom for nom, n in compte.items() if n == 1)
+
+
+def _raisons(
+    user: Empreintes, dossier: Empreintes, uniques: frozenset[str] = frozenset()
+) -> tuple[str, ...]:
     raisons = []
     if user.ibans & dossier.ibans:
         raisons.append(RAISON_IBAN)
     if user.noms & dossier.noms:
         raisons.append(RAISON_NOM)
+        if user.noms & dossier.noms & uniques:
+            raisons.append(RAISON_NOM_UNIQUE)
     if user.emails & dossier.emails:
         raisons.append(RAISON_EMAIL)
     if user.telephones & dossier.telephones:
@@ -171,16 +196,20 @@ def _raisons(user: Empreintes, dossier: Empreintes) -> tuple[str, ...]:
 
 
 def _sur(raisons: Sequence[str]) -> bool:
-    if RAISON_IBAN in raisons or RAISON_METADATA in raisons:
+    if RAISON_IBAN in raisons or RAISON_METADATA in raisons or RAISON_NOM_UNIQUE in raisons:
         return True
     return RAISON_EMAIL in raisons or RAISON_TELEPHONE in raisons
 
 
-def candidats(user: UserRollee, dossiers: Sequence[DossierIndices]) -> list[Candidat]:
+def candidats(
+    user: UserRollee,
+    dossiers: Sequence[DossierIndices],
+    uniques: frozenset[str] = frozenset(),
+) -> list[Candidat]:
     """Classés par force : sûrs d'abord, puis par nombre d'indices."""
     trouves = []
     for dossier in dossiers:
-        raisons = _raisons(user.empreintes, dossier.empreintes)
+        raisons = _raisons(user.empreintes, dossier.empreintes, uniques)
         if user.dossier_metadata == dossier.dossier_id:
             raisons = (RAISON_METADATA, *raisons)
         if raisons:
@@ -224,12 +253,13 @@ def trancher(
     user: UserRollee,
     dossiers: Sequence[DossierIndices],
     retires: frozenset[tuple[str, str]] = frozenset(),
+    uniques: frozenset[str] = frozenset(),
 ) -> Issue:
     """`retires` : paires (user, dossier) déjà déliées par le gestionnaire,
     jamais reposées seules. Un dossier qui a déjà un compte Rollee peut
     en recevoir un second si l'indice est sûr."""
     trouves = []
-    for c in candidats(user, dossiers):
+    for c in candidats(user, dossiers, uniques):
         if (user.user_id, c.dossier_id) in retires:
             c = _affaibli(c, RAISON_RETIRE)
         trouves.append(c)
@@ -246,13 +276,15 @@ def rapprocher(
     dossiers: Sequence[DossierIndices],
     liens: Mapping[str, str],
     retires: frozenset[tuple[str, str]] = frozenset(),
+    complet: bool = True,
 ) -> list[Issue]:
     """`liens` : user Rollee → dossier, déjà posés (créés, auto ou à la main).
     Les users déjà reliés sont ignorés. Deux users sûrs du même chauffeur
-    se relient tous les deux. Le second peut s'appuyer sur le téléphone ou
-    l'e-mail du premier quand le dossier n'a que l'un des deux."""
+    se relient tous les deux. `complet` faux (liste partielle, user illisible) :
+    le nom seul ne relie pas, il pourrait être porté par quelqu'un d'absent."""
     poses = dict(liens)
     restants = [user for user in users if user.user_id not in poses]
+    uniques = noms_uniques(users) if complet else frozenset()
     decides: dict[str, Issue] = {}
     progres = True
     while restants and progres:
@@ -260,7 +292,7 @@ def rapprocher(
         enrichis = _enrichir(dossiers, users, poses)
         encore: list[UserRollee] = []
         for user in restants:
-            issue = trancher(user, enrichis, retires)
+            issue = trancher(user, enrichis, retires, uniques)
             if issue.etat == "relie_auto" and issue.dossier_id:
                 poses[user.user_id] = issue.dossier_id
                 decides[user.user_id] = issue
@@ -270,7 +302,7 @@ def rapprocher(
         restants = encore
     enrichis = _enrichir(dossiers, users, poses)
     for user in restants:
-        decides[user.user_id] = trancher(user, enrichis, retires)
+        decides[user.user_id] = trancher(user, enrichis, retires, uniques)
     return [decides[user.user_id] for user in users if user.user_id in decides]
 
 

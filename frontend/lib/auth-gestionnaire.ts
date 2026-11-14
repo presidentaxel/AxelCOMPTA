@@ -43,7 +43,7 @@ import type {
   Synchronisation,
 } from "./types";
 
-import type { FicheRollee, RolleePortefeuille } from "./liens-rollee";
+import type { FicheAnnuaireRollee, FicheRollee, RolleePortefeuille } from "./liens-rollee";
 import type { AnalyseFec, OuvertureVue } from "./ouverture";
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
@@ -1253,6 +1253,24 @@ export async function synchroniserRollee(dossierId: string): Promise<string> {
   );
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
   return ((await reponse.json()) as { phrase: string }).phrase;
+}
+
+/** Chercher un user Rollee par son nom, tous comptes Rollee confondus. */
+export async function chercherCompteRollee(requete: string): Promise<FicheAnnuaireRollee[]> {
+  const reponse = await requeteGestionnaire(
+    `/portefeuille/rollee/annuaire?q=${encodeURIComponent(requete)}`,
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as FicheAnnuaireRollee[];
+}
+
+export async function lierCompteRollee(dossierId: string, rolleeUserId: string): Promise<void> {
+  const reponse = await requeteGestionnaire(`/dossiers/${encodeURIComponent(dossierId)}/rollee/lier`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rollee_user_id: rolleeUserId }),
+  });
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
 }
 
 export async function delierRollee(

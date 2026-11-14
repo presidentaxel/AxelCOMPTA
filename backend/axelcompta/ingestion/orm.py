@@ -13,6 +13,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Integer,
     PrimaryKeyConstraint,
     String,
     Table,
@@ -161,6 +162,9 @@ cartes_rollee = Table(
     Column("empreintes", JSON, nullable=False),
     Column("apercu", JSON, nullable=False),
     Column("lu_le", DateTime(timezone=True), nullable=False),
+    Column("accounts_number", Integer, nullable=True),
+    Column("nom", String, nullable=True),
+    Column("email_masque", String, nullable=True),
 )
 
 # Les comptes de plateformes que le chauffeur a reliés dans Rollee Connect,

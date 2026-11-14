@@ -84,6 +84,28 @@ export function bandeauRollee(vue: RolleePortefeuille): string | null {
   return `${parties.join(", ")}. Sans ce lien, les revenus Uber et Bolt n'arrivent pas.`;
 }
 
+/** Un user Rollee trouvé dans la carte du portefeuille. */
+export type FicheAnnuaireRollee = {
+  rollee_user_id: string;
+  nom: string;
+  plateformes: string[];
+  compte: string;
+  email_masque: string | null;
+  relie_a: string | null;
+};
+
+/** « Uber, Bolt · Serenity Mobilité · e•••n@exemple.fr ». */
+export function detailFiche(fiche: FicheAnnuaireRollee): string {
+  return [fiche.plateformes.join(", ") || "aucune plateforme", fiche.compte, fiche.email_masque]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** On ne cherche qu'à partir de 2 lettres (comme l'API). */
+export function rechercheAssezLongue(requete: string): boolean {
+  return requete.replace(/[^\p{L}]/gu, "").length >= 2;
+}
+
 /** Ce que retirer le lien change, dit avant de confirmer. */
 export function effetDelier(versements: number): string {
   if (versements === 0) return "Aucun versement n'a encore été importé par ce lien.";

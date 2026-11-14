@@ -181,6 +181,9 @@ from axelcompta.filings.inpi_depot import GuideGreffe, PdfDepotInpiRenderer, gui
 from axelcompta.filings.liasse_fiscale import PdfLiasseFiscaleRenderer
 from axelcompta.filings.liasse_simplifiee import PdfLiasseSimplifieeRenderer
 from axelcompta.filings.pdf_export_comptable import rendre_balance_pdf, rendre_grand_livre_pdf
+from axelcompta.ingestion.annuaire_rollee import FicheAnnuaire, chercher
+from axelcompta.ingestion.cartes_rollee import CartesRollee
+from axelcompta.ingestion.cartes_rollee_postgres import PostgresCartesRollee
 from axelcompta.ingestion.comptes_bancaires import (
     CompteBancaire,
     CompteBancaireRepository,
@@ -216,6 +219,7 @@ from axelcompta.ingestion.settlements_plateforme_postgres import PostgresSettlem
 from axelcompta.jobs.file import (
     TYPE_IMPORT_DOSSIERS,
     TYPE_RAPPELS,
+    TYPE_RAPPROCHEMENT_ROLLEE,
     TYPE_SYNCHRO,
     DemandesDeJobs,
     Job,
@@ -248,7 +252,6 @@ from axelcompta.plateformes_rollee import (
     ouvrir_session,
     recevoir,
     relire_comptes,
-    synchroniser_dossier,
 )
 from axelcompta.rapprochement_rollee_service import (
     avancement_dossier,
@@ -6988,12 +6991,7 @@ def _enregistrer_routes_plateformes(app: FastAPI) -> None:
             return _vue_plateformes(services.comptes.comptes(dossier.id), dossier, message)
         return _vue_plateformes(comptes, dossier, None)
 
-    @app.post("/dossiers/{dossier_id}/plateformes/session", response_model=SessionRolleeVue)
-    def ouvrir_session_rollee(dossier: DossierDep, services: ServicesRolleeDep) -> SessionRolleeVue:
-        """Un lien Rollee Connect de 30 minutes. Le user Rollee est créé à la
-        première demande, avec le seul identifiant du dossier."""
-        session = asyncio.run(ouvrir_session(services, dossier))
-        return SessionRolleeVue(lien=session.lien, expire_le=session.expire_le)
+    _enregistrer_routes_synchro_rollee(app)
 
     @app.get("/dossiers/{dossier_id}/plateformes/synthese", response_model=SyntheseRolleeVue)
     def synthese_plateformes(
@@ -7032,6 +7030,17 @@ def _enregistrer_routes_plateformes(app: FastAPI) -> None:
             ],
         )
 
+
+def _enregistrer_routes_synchro_rollee(app: FastAPI) -> None:
+    """Session Rollee Connect et synchronisation depuis la fiche."""
+
+    @app.post("/dossiers/{dossier_id}/plateformes/session", response_model=SessionRolleeVue)
+    def ouvrir_session_rollee(dossier: DossierDep, services: ServicesRolleeDep) -> SessionRolleeVue:
+        """Un lien Rollee Connect de 30 minutes. Le user Rollee est créé à la
+        première demande, avec le seul identifiant du dossier."""
+        session = asyncio.run(ouvrir_session(services, dossier))
+        return SessionRolleeVue(lien=session.lien, expire_le=session.expire_le)
+
     @app.get("/dossiers/{dossier_id}/rollee/synchroniser", response_model=SynchroRolleeVue)
     def avancement_rollee(
         dossier: DossierPortefeuilleDep, identite: IdentiteDep
@@ -7046,12 +7055,13 @@ def _enregistrer_routes_plateformes(app: FastAPI) -> None:
         identite: IdentiteDep,
         role: RoleMembreDep,
         services: ServicesRolleeDep,
+        demandes: DemandesJobsDep,
     ) -> SynchroRolleeVue:
-        """Sans lien : cherche le user Rollee. Déjà reliée : relit Uber et Bolt."""
+        """Compare la carte. Les comptes encore à lire partent au worker."""
         _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, "La lecture seule ne synchronise pas Rollee.")
         try:
-            phrase = _phrase_synchro_rollee(services, dossier)
+            phrase = _phrase_synchro_rollee(services, dossier, demandes)
         except (RolleeIndisponible, RolleeAuthError, httpx.HTTPError) as exc:
             raise HTTPException(
                 status_code=503, detail="Rollee ne répond pas pour le moment."
@@ -7059,19 +7069,28 @@ def _enregistrer_routes_plateformes(app: FastAPI) -> None:
         return SynchroRolleeVue(phrase=phrase)
 
 
-def _phrase_synchro_rollee(services: ServicesRollee, dossier: Dossier) -> str:
-    """Cherche tous les comptes Rollee de cette personne, puis relit leurs
-    plateformes. Un compte déjà relié n'empêche pas d'en trouver un autre."""
+def _phrase_synchro_rollee(
+    services: ServicesRollee, dossier: Dossier, demandes: DemandesDeJobs
+) -> str:
+    """Lit la liste Rollee et la carte. Les profils manquants, les plateformes
+    et les revenus partent dans un job, pas dans cette requête."""
     noter = retenir_avancement(str(dossier.id))
     noter("Recherche du compte Rollee…")
-    phrase = asyncio.run(
-        rapprocher_dossier(depots_postgres(_engine()), dossier, datetime.now(UTC), noter)
+    bilan = asyncio.run(
+        rapprocher_dossier(
+            depots_postgres(_engine()), dossier, datetime.now(UTC), noter, lire_absents=False
+        )
     )
-    if not services.comptes.utilisateurs(dossier.id):
-        return phrase
-    noter("Relecture des comptes Uber et Bolt…")
-    suite = asyncio.run(synchroniser_dossier(services, dossier))
-    return f"{phrase} {suite}".strip()
+    relie = bool(services.comptes.utilisateurs(dossier.id)) or bilan.lien_pose
+    if bilan.a_lire or relie:
+        demandes.demander(
+            str(dossier.tenant_id),
+            TYPE_RAPPROCHEMENT_ROLLEE,
+            json.dumps({"dossier_id": str(dossier.id)}),
+        )
+    if bilan.a_lire:
+        return f"{bilan.phrase} {bilan.a_lire} comptes à lire en arrière-plan.".strip()
+    return bilan.phrase
 
 
 def get_reception_rollee() -> DepotReception:
@@ -7455,6 +7474,156 @@ def _depots_delier(
     return liens, services, settlements, ledger
 
 
+class FicheAnnuaireVue(BaseModel):
+    rollee_user_id: str
+    nom: str
+    plateformes: list[str]
+    compte: str
+    email_masque: str | None
+    relie_a: str | None
+
+
+class LierRolleeEntree(BaseModel):
+    rollee_user_id: str
+
+
+def get_cartes_rollee() -> CartesRollee:
+    return PostgresCartesRollee(_engine())
+
+
+CartesRolleeDep = Annotated[CartesRollee, Depends(get_cartes_rollee)]
+
+
+def _fiches_de_la_carte(tenant_id: TenantId, cartes: CartesRollee) -> list[FicheAnnuaire]:
+    return [
+        FicheAnnuaire(
+            user.user_id,
+            tenant_id,
+            branchement_id,
+            user.apercu.nom,
+            user.apercu.plateformes,
+            user.apercu.email_masque,
+            datetime.now(UTC),
+        )
+        for branchement_id, user in cartes.du_portefeuille(tenant_id)
+        if user.apercu.nom
+    ]
+
+
+def _annuaire_rollee(
+    tenant_id: TenantId,
+    requete: str,
+    cartes: CartesRollee,
+    liens: LiensRollee,
+    dossiers: DossierRepository,
+    branchements: BranchementsRepository,
+) -> list[FicheAnnuaireVue]:
+    noms = {str(dossier.id): dossier.nom for dossier in dossiers.lister_par_tenant(tenant_id)}
+    relies = {
+        lien.rollee_user_id: noms.get(str(lien.dossier_id)) for lien in liens.liens(tenant_id)
+    }
+    comptes = {branchement.id: branchement.nom for branchement in branchements.lister(tenant_id)}
+    return [
+        FicheAnnuaireVue(
+            rollee_user_id=fiche.rollee_user_id,
+            nom=fiche.nom,
+            plateformes=list(fiche.plateformes),
+            compte=comptes.get(fiche.branchement_id, "Rollee"),
+            email_masque=fiche.email_masque,
+            relie_a=relies.get(fiche.rollee_user_id),
+        )
+        for fiche in chercher(_fiches_de_la_carte(tenant_id, cartes), requete)
+    ]
+
+
+def _lier_depuis_carte(
+    dossier: Dossier,
+    rollee_user_id: str,
+    identite: IdentiteAuthentifiee,
+    cartes: CartesRollee,
+    liens: LiensRollee,
+    journal: JournalAcces,
+) -> None:
+    trouve = next(
+        (
+            (branchement_id, user)
+            for branchement_id, user in cartes.du_portefeuille(dossier.tenant_id)
+            if user.user_id == rollee_user_id
+        ),
+        None,
+    )
+    if trouve is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Ce compte Rollee n'est pas dans la carte : lancez une synchronisation.",
+        )
+    branchement_id, user = trouve
+    maintenant = datetime.now(UTC)
+    try:
+        liens.lier(
+            Lien(
+                dossier.id,
+                user.user_id,
+                branchement_id,
+                "manuel",
+                maintenant,
+                None,
+                identite.email,
+            )
+        )
+    except LienDejaPris as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    liens.retirer_a_choisir(user.user_id)
+    journal.noter(
+        dossier.id, ACTE_LIEN_ROLLEE, f"choisi:{user.user_id}", identite.user_id, maintenant
+    )
+
+
+def _enregistrer_routes_rollee_carte(app: FastAPI) -> None:
+    """Le bouton portefeuille, la recherche par nom et le lien manuel."""
+
+    @app.post("/portefeuille/rollee/rapprocher", response_model=SynchronisationVue)
+    def rapprocher_rollee(
+        demandes: DemandesJobsDep, role: RoleMembreDep, identite: IdentiteDep
+    ) -> SynchronisationVue | None:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, "La lecture seule ne lance pas de rapprochement.")
+        return _synchronisation_vue(demandes.demander(tenant_id, TYPE_RAPPROCHEMENT_ROLLEE))
+
+    @app.get("/portefeuille/rollee/rapprochement", response_model=SynchronisationVue | None)
+    def lire_rapprochement_rollee(
+        demandes: DemandesJobsDep, identite: IdentiteDep
+    ) -> SynchronisationVue | None:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _synchronisation_vue(demandes.dernier(tenant_id, TYPE_RAPPROCHEMENT_ROLLEE))
+
+    @app.get("/portefeuille/rollee/annuaire", response_model=list[FicheAnnuaireVue])
+    def chercher_rollee(
+        q: str,
+        identite: IdentiteDep,
+        cartes: CartesRolleeDep,
+        liens: LiensRolleeDep,
+        dossiers: DossiersDep,
+        branchements: BranchementsDep,
+    ) -> list[FicheAnnuaireVue]:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _annuaire_rollee(tenant_id, q, cartes, liens, dossiers, branchements)
+
+    @app.post("/dossiers/{dossier_id}/rollee/lier", status_code=204)
+    def lier_rollee(
+        entree: LierRolleeEntree,
+        dossier: DossierPortefeuilleDep,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        cartes: CartesRolleeDep,
+        liens: LiensRolleeDep,
+        journal: JournalAccesDep,
+    ) -> None:
+        _tenant_id, identite_ok = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, "La lecture seule ne relie pas de compte Rollee.")
+        _lier_depuis_carte(dossier, entree.rollee_user_id, identite_ok, cartes, liens, journal)
+
+
 def _enregistrer_routes_integrations(app: FastAPI) -> None:
     """Branchements, envois et plateformes Rollee (AXE-872, AXE-808, AXE-819)."""
     _enregistrer_routes_branchements(app)
@@ -7466,6 +7635,7 @@ def _enregistrer_routes_integrations(app: FastAPI) -> None:
     _enregistrer_route_webhook_rollee(app)
     _enregistrer_route_versements(app)
     _enregistrer_routes_liens_rollee(app)
+    _enregistrer_routes_rollee_carte(app)
 
 
 def _enregistrer_routes_envoi(app: FastAPI) -> None:

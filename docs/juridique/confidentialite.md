@@ -32,10 +32,11 @@ Contact : contact@axelproject.fr.
   Rollee : par période, montant brut, commission et montant versé, et l'état
   de chaque compte relié.
 - Pour relier un compte Rollee au bon dossier : nom, e-mail, téléphone et
-  IBAN de versement connus de Rollee, comparés à ceux du dossier. Ils sont
-  réduits à une empreinte dès la lecture et ne sont jamais gardés en clair ;
-  le gestionnaire ne voit que des initiales et les 4 derniers chiffres de
-  l'IBAN.
+  IBAN de versement connus de Rollee, comparés à ceux du dossier. Le téléphone
+  et l'IBAN sont réduits à une empreinte dès la lecture. Le nom des users
+  Rollee est gardé en clair pour que le gestionnaire cherche le compte de
+  son chauffeur ; l'e-mail est gardé masqué (« e•••n@x.fr »). Aucun montant
+  n'est gardé dans cette carte.
 - Ce que disent les registres publics de l'entreprise (INSEE, RNE) :
   dénomination, forme, siège, capital, dirigeants, état.
 

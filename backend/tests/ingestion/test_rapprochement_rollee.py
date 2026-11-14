@@ -6,7 +6,7 @@ from axelcompta.ingestion.rapprochement_rollee import (
     INDICE_IBAN,
     INDICE_METADATA,
     INDICE_NOM_EMAIL,
-    RAISON_NOM,
+    INDICE_NOM_UNIQUE,
     RAISON_RETIRE,
     DossierIndices,
     Empreintes,
@@ -94,9 +94,8 @@ def test_le_nom_avec_l_email_relie_seul_mais_le_nom_seul_va_au_gestionnaire() ->
     dossier = _dossier("d1", noms=[MARTIN], emails=["e.martin@exemple.fr"])
     (sur,) = rapprocher([avec_email], [dossier], {})
     assert (sur.etat, sur.indice) == ("relie_auto", INDICE_NOM_EMAIL)
-    (faible,) = rapprocher([_user("u2", noms=[MARTIN])], [dossier], {})
-    assert faible.etat == "a_choisir" and faible.dossier_id is None
-    assert faible.candidats[0].raisons == (RAISON_NOM,)
+    (seul,) = rapprocher([_user("u2", noms=[MARTIN])], [dossier], {})
+    assert (seul.etat, seul.indice) == ("relie_auto", INDICE_NOM_UNIQUE)
 
 
 def test_deux_dossiers_au_meme_iban_vont_au_gestionnaire() -> None:
@@ -141,6 +140,35 @@ def test_l_apercu_ne_montre_que_des_initiales_et_la_fin_de_l_iban() -> None:
     vu = apercu("Élodie", "Martin", ["Uber", "Bolt", "Uber"], IBAN)
     assert (vu.initiales, vu.plateformes, vu.iban_fin) == ("É.M.", ("Bolt", "Uber"), "0189")
     assert apercu(None, None, [], None).iban_fin is None
+
+
+def test_un_nom_que_personne_d_autre_ne_porte_relie_seul() -> None:
+    issues = rapprocher(
+        [
+            _user("u1", noms=[MARTIN]),
+            _user("u2", noms=[normaliser_nom("Karim", "Benali")]),
+        ],
+        [_dossier("d1", noms=[MARTIN])],
+        {},
+    )
+    assert (issues[0].etat, issues[0].indice) == ("relie_auto", INDICE_NOM_UNIQUE)
+    assert issues[1].etat == "non_trouve"
+
+
+def test_deux_users_au_meme_nom_restent_a_choisir() -> None:
+    issues = rapprocher(
+        [_user("u1", noms=[MARTIN]), _user("u2", noms=[MARTIN])],
+        [_dossier("d1", noms=[MARTIN])],
+        {},
+    )
+    assert [issue.etat for issue in issues] == ["a_choisir", "a_choisir"]
+
+
+def test_une_liste_incomplete_ne_relie_pas_par_le_nom_seul() -> None:
+    (issue,) = rapprocher(
+        [_user("u1", noms=[MARTIN])], [_dossier("d1", noms=[MARTIN])], {}, complet=False
+    )
+    assert issue.etat == "a_choisir"
 
 
 def test_les_empreintes_ne_contiennent_rien_en_clair() -> None:

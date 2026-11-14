@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { apercuCompte, bandeauRollee, comptesPourLaFiche, effetDelier, type AChoisirRollee } from "./liens-rollee";
+import {
+  apercuCompte,
+  bandeauRollee,
+  comptesPourLaFiche,
+  detailFiche,
+  effetDelier,
+  rechercheAssezLongue,
+  type AChoisirRollee,
+  type FicheAnnuaireRollee,
+} from "./liens-rollee";
 
 const COMPTE: AChoisirRollee = {
   rollee_user_id: "u1",
@@ -48,4 +57,18 @@ test("le bandeau compte les comptes à choisir et les non trouvés", () => {
 test("retirer un lien dit ce qui sera contre-passé", () => {
   assert.match(effetDelier(0), /Aucun versement/);
   assert.match(effetDelier(3), /Les 3 versements déjà importés seront contre-passés, jamais supprimé/);
+});
+
+test("une fiche d'annuaire dit la plateforme, le compte et l'e-mail masqué", () => {
+  const fiche: FicheAnnuaireRollee = {
+    rollee_user_id: "u1",
+    nom: "Karim Benali",
+    plateformes: ["uber.com-rev"],
+    compte: "Serenity Mobilité",
+    email_masque: "k•••i@exemple.fr",
+    relie_a: null,
+  };
+  assert.equal(detailFiche(fiche), "uber.com-rev · Serenity Mobilité · k•••i@exemple.fr");
+  assert.equal(rechercheAssezLongue("k"), false);
+  assert.equal(rechercheAssezLongue("ka"), true);
 });

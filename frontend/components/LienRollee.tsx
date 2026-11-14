@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
+import { ChercherCompteRollee } from "@/components/ChercherCompteRollee";
 import { delierRollee, lireLienRollee } from "@/lib/auth-gestionnaire";
 import { formatDate } from "@/lib/format";
 import { effetDelier, type FicheRollee } from "@/lib/liens-rollee";
@@ -60,10 +61,20 @@ export function LienRollee({
 
   if (!fiche) return null;
   const liens = fiche.liens ?? (fiche.lien ? [fiche.lien] : []);
-  if (liens.length === 0 && fiche.historique.length === 0) return null;
+  if (liens.length === 0 && fiche.historique.length === 0 && !ecriture) return null;
   return (
     <section className="mt-5 border-t border-border pt-4 text-sm text-subtle">
       <h3 className="text-sm font-medium text-ink">Journal</h3>
+      {ecriture && (
+        <ChercherCompteRollee
+          dossierId={dossierId}
+          onRelie={() => {
+            setMessage("Compte Rollee relié.");
+            relire();
+            onChange();
+          }}
+        />
+      )}
       {liens.length > 0 && (
         <ul className="mt-2 space-y-2">
           {liens.map((lien) => (

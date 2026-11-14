@@ -70,7 +70,7 @@ def test_un_autre_chauffeur_n_ouvre_pas_le_lien_d_un_dossier() -> None:
 def test_le_gestionnaire_rapproche_une_entreprise_sans_lien(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def phrase(_services: object, _dossier: object) -> str:
+    def phrase(_services: object, _dossier: object, _demandes: object) -> str:
         return "Un seul compte Rollee correspond : le lien est posé."
 
     monkeypatch.setattr(routes, "_phrase_synchro_rollee", phrase)
