@@ -32,6 +32,8 @@ from sqlalchemy.engine import Engine
 
 from axelcompta.comptes import SupabaseCompteRepository, SupabaseConfig
 from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.ingestion.annuaire_rollee import AnnuaireRollee, FicheAnnuaire
+from axelcompta.ingestion.annuaire_rollee_postgres import PostgresAnnuaireRollee
 from axelcompta.ingestion.comptes_rollee_postgres import PostgresComptesRollee
 from axelcompta.ingestion.liens_rollee import AChoisir, Lien, LienDejaPris, LiensRollee
 from axelcompta.ingestion.liens_rollee_postgres import PostgresLiensRollee
@@ -125,6 +127,7 @@ async def lire_user(
     dossier = metadata.get("dossier_id") if isinstance(metadata, Mapping) else None
     ibans, noms, emails, telephones, plateformes = [], [], [], [], []
     premier: tuple[str | None, str | None] = (None, None)
+    email_affiche: str | None = None
     for compte in await client.comptes(user_id):
         plateformes.append(str(compte.get("name") or compte.get("type") or "plateforme"))
         profil, iban = await _infos_compte(
@@ -134,6 +137,7 @@ async def lire_user(
         if prenom or nom:
             noms.append(normaliser_nom(prenom, nom))
             premier = premier if premier != (None, None) else (prenom, nom)
+        email_affiche = email_affiche or profil.get("email")
         emails.append(profil.get("email"))
         telephones.append(profil.get("phone"))
         ibans.append(iban)
@@ -141,7 +145,13 @@ async def lire_user(
         user_id,
         str(dossier) if dossier else None,
         empreintes(cle, ibans, noms, emails, telephones),
-        apercu(premier[0], premier[1], plateformes, next((i for i in ibans if i), None)),
+        apercu(
+            premier[0],
+            premier[1],
+            plateformes,
+            next((i for i in ibans if i), None),
+            email_affiche,
+        ),
     )
 
 
@@ -344,6 +354,28 @@ class DepotsRapprochement:
     dossiers: DossierRepository
     sources: Callable[[TenantId, tuple[Dossier, ...]], Awaitable[SourcesDossiers]]
     prevenir: Callable[[TenantId, list[AChoisir]], str] | None = None
+    # AXE-919 : l'annuaire où le gestionnaire cherche un user par son nom.
+    annuaire: AnnuaireRollee | None = None
+
+
+def fiches_annuaire(
+    tenant_id: TenantId, branchement_id: str, users: Sequence[UserRollee], le: datetime
+) -> list[FicheAnnuaire]:
+    """Les users qui ont un nom : un user sans plateforme reliée ne se
+    cherche pas par son nom."""
+    return [
+        FicheAnnuaire(
+            u.user_id,
+            tenant_id,
+            branchement_id,
+            u.apercu.nom,
+            u.apercu.plateformes,
+            u.apercu.email_masque,
+            le,
+        )
+        for u in users
+        if u.apercu.nom
+    ]
 
 
 async def passer_tenant(
@@ -402,6 +434,13 @@ async def passer_tenant(
             partiel = seulement is not None or lecture.illisibles > 0
             passage = Passage(tenant_id, branchement.id, maintenant, partiel)
             nouveaux += appliquer(depots.liens, issues_du_compte, users, passage)
+            if depots.annuaire is not None:
+                depots.annuaire.remplacer(
+                    tenant_id,
+                    branchement.id,
+                    fiches_annuaire(tenant_id, branchement.id, users, maintenant),
+                    partiel,
+                )
     if nouveaux and depots.prevenir is not None:
         lignes.append(f"{tenant_id} : {depots.prevenir(tenant_id, nouveaux)}")
     return lignes
@@ -475,6 +514,7 @@ def depots_postgres(engine: Engine) -> DepotsRapprochement:
         dossiers=PostgresDossierRepository(engine),
         sources=lambda tenant_id, dossiers: sources_reelles(engine, tenant_id, dossiers),
         prevenir=prevenir,
+        annuaire=PostgresAnnuaireRollee(engine),
     )
 
 

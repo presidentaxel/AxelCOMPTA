@@ -1,6 +1,7 @@
 /** AXE-911 : le lien entre un chauffeur et son compte Rollee, côté
- * gestionnaire. Des initiales, des plateformes, une fin d'IBAN : jamais un
- * montant ni un nom en clair (doc 19). Compilé seul pour les tests. */
+ * gestionnaire. Le nom en clair depuis AXE-919 (décision du 14/11 : ce sont
+ * ses chauffeurs), l'e-mail masqué ; jamais un montant (doc 19). Compilé
+ * seul pour les tests. */
 
 export type EtatRollee =
   | "relie_auto"
@@ -14,6 +15,7 @@ export type CandidatRollee = { dossier_id: string; nom: string; raisons: string[
 export type AChoisirRollee = {
   rollee_user_id: string;
   etat: "a_choisir" | "non_trouve";
+  nom: string;
   initiales: string;
   plateformes: string[];
   iban_fin: string | null;
@@ -47,10 +49,10 @@ export const LIBELLES_ETAT_ROLLEE: Record<EtatRollee, string> = {
   non_relie: "non trouvé",
 };
 
-/** « K.B. · Uber, Bolt · IBAN …0189 » : de quoi reconnaître sans identifier. */
+/** « Karim Benali · Uber, Bolt · IBAN …0189 ». */
 export function apercuCompte(compte: AChoisirRollee): string {
   const morceaux = [
-    compte.initiales || "Sans nom",
+    compte.nom || compte.initiales || "Sans nom",
     compte.plateformes.join(", ") || "aucune plateforme",
   ];
   if (compte.iban_fin) morceaux.push(`IBAN …${compte.iban_fin}`);
@@ -93,6 +95,28 @@ export function phraseRapprochement(
   if (passage.statut === "echec") return `Le rapprochement a échoué : ${passage.erreur ?? "erreur inconnue"}.`;
   const quand = passage.terminee_le ? ` le ${date(passage.terminee_le)}` : "";
   return `Dernier rapprochement${quand} : ${passage.resultat ?? "terminé"}.`;
+}
+
+/** AXE-919 : un user Rollee trouvé dans l'annuaire du portefeuille. */
+export type FicheAnnuaireRollee = {
+  rollee_user_id: string;
+  nom: string;
+  plateformes: string[];
+  compte: string;
+  email_masque: string | null;
+  relie_a: string | null;
+};
+
+/** « Uber, Bolt · Serenity Mobilité · e•••n@exemple.fr ». */
+export function detailFiche(fiche: FicheAnnuaireRollee): string {
+  return [fiche.plateformes.join(", ") || "aucune plateforme", fiche.compte, fiche.email_masque]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** On ne cherche qu'à partir de 2 lettres (comme l'API). */
+export function rechercheAssezLongue(requete: string): boolean {
+  return requete.replace(/[^\p{L}]/gu, "").length >= 2;
 }
 
 /** Ce que retirer le lien change, dit avant de confirmer. */

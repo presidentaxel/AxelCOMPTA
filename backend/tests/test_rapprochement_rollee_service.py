@@ -11,6 +11,7 @@ from cryptography.fernet import Fernet
 
 from axelcompta.core.identite import Adresse, Associe, IdentiteEntreprise
 from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.ingestion.annuaire_rollee import AnnuaireRolleeMemoire
 from axelcompta.ingestion.comptes_rollee import ComptesRolleeMemoire
 from axelcompta.ingestion.liens_rollee import AChoisir, Lien, LiensRolleeMemoire
 from axelcompta.ingestion.providers.rollee import RolleeIndisponible
@@ -132,12 +133,14 @@ def _cle(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AXELCOMPTA_CLE_INTEGRATIONS", Fernet.generate_key().decode())
 
 
-def test_un_user_est_lu_en_empreintes_et_en_apercu_masque() -> None:
+def test_un_user_est_lu_en_empreintes_et_en_apercu() -> None:
     brut = {"id": "u-iban", "metadata": {"dossier_id": "d1"}}
     user = asyncio.run(lire_user(FauxRollee(), brut, CLE))  # type: ignore[arg-type]
     assert user.dossier_metadata == "d1"
-    assert user.apercu == Apercu("É.M.", ("Bolt",), "0189")
-    assert "Martin" not in repr(user) and IBAN not in repr(user)
+    # AXE-919 : le nom en clair et l'e-mail masqué pour le gestionnaire ;
+    # les indices comparés restent des empreintes.
+    assert user.apercu == Apercu("É.M.", ("Bolt",), "0189", "Élodie Martin", "e•••@m.fr")
+    assert "Martin" not in repr(user.empreintes) and IBAN not in repr(user)
 
 
 def test_les_indices_d_un_dossier_viennent_de_digifactory_et_de_l_identite() -> None:
@@ -303,3 +306,16 @@ def test_un_profil_toujours_en_500_ne_bloque_pas_le_lien_par_le_nom() -> None:
     assert ("u-nom", "nom_unique") in {(x.rollee_user_id, x.indice) for x in depots.liens.liens(T)}
     assert "1 profil(s) toujours en erreur chez Rollee" in " ".join(lignes)
     assert "illisible" not in " ".join(lignes)
+
+
+def test_le_passage_remplit_l_annuaire_des_users_qui_ont_un_nom() -> None:
+    """AXE-919 : nom en clair, e-mail masqué ; la simulation n'écrit rien."""
+    depots = _depots(FauxRollee())
+    depots.annuaire = AnnuaireRolleeMemoire()
+    asyncio.run(passer_tenant(depots, T, False, LE))
+    assert depots.annuaire.fiches(T) == []
+    asyncio.run(passer_tenant(depots, T, True, LE))
+    fiches = {f.rollee_user_id: f for f in depots.annuaire.fiches(T)}
+    assert set(fiches) == {"u-iban", "u-nom"}  # u-rien : profil illisible, pas de nom
+    assert (fiches["u-nom"].nom, fiches["u-nom"].email_masque) == ("Karim Benali", None)
+    assert (fiches["u-iban"].nom, fiches["u-iban"].email_masque) == ("Élodie Martin", "e•••@m.fr")
