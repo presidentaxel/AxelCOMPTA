@@ -158,3 +158,14 @@ def test_les_semaines_d_avant_l_historique_bancaire_restent_en_attente() -> None
     )
     assert [s.id for s in passage.stockes] == [_jour().id]  # le vieux jour n'est pas touché
     assert rapprocher_semaines([_jour()], [], _contexte(), AUJOURD_HUI).stockes == []
+
+
+def test_les_pourboires_du_jour_sortent_de_la_tva() -> None:
+    """AXE-926 : 848 € gagnés dont 48 € de pourboires."""
+    jour = _jour()
+    jour = replace(jour, settlement=replace(jour.settlement, raw_payload={"tips": 48.0}))
+    virement = _virement(848_00)
+    passage = rapprocher_semaines([jour], [OUVERTURE, virement], _contexte(), AUJOURD_HUI)
+    soldes = _soldes([virement, *passage.ecritures])
+    assert (soldes["7068"], soldes["44571"]) == (-48_00, -72_73)
+    assert "467" not in soldes
