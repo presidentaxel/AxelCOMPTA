@@ -16,7 +16,7 @@ from sqlalchemy.exc import DBAPIError
 
 from axelcompta.core.ids import TenantId
 from axelcompta.core.rls import contexte_identite
-from axelcompta.jobs.file import TYPE_SYNCHRO
+from axelcompta.jobs.file import TYPE_RAPPROCHEMENT_ROLLEE, TYPE_SYNCHRO
 from axelcompta.jobs.postgres import FilePostgres
 from axelcompta.tenants.contacts_proposes import PropositionStockee
 from axelcompta.tenants.contacts_proposes_postgres import PostgresContactsProposes
@@ -58,6 +58,30 @@ def test_une_seule_demande_active_et_le_worker_l_execute(engine: Engine, id_uniq
     web.dispose()
 
 
+def test_une_demande_pendant_un_job_en_cours_n_est_pas_perdue(
+    engine: Engine, id_unique: str
+) -> None:
+    """AXE-921, contre la vraie base et son index unique partiel."""
+    web = _migrer_et_web(engine, id_unique)
+    worker = FilePostgres(engine)
+    with contexte_identite(dossier_id=None, tenant_id=id_unique):
+        premiere = FilePostgres(web).demander(id_unique, TYPE_SYNCHRO)
+    pris = worker.prendre("w1")
+    assert pris is not None and pris.id == premiere.id
+    with contexte_identite(dossier_id=None, tenant_id=id_unique):
+        demandes = FilePostgres(web)
+        seconde = demandes.demander(id_unique, TYPE_SYNCHRO)
+        assert seconde.id != premiere.id and seconde.statut == "en_attente"
+        assert demandes.demander(id_unique, TYPE_SYNCHRO).id == seconde.id
+        a = demandes.demander(id_unique, TYPE_RAPPROCHEMENT_ROLLEE, '{"dossier_id": "A"}')
+        b = demandes.demander(id_unique, TYPE_RAPPROCHEMENT_ROLLEE, '{"dossier_id": "B"}')
+        assert a.id != b.id and a.payload == '{"dossier_id": "A"}'
+    worker.terminer(pris.id, "fini")
+    suivant = worker.prendre("w1")
+    assert suivant is not None and suivant.id == seconde.id
+    web.dispose()
+
+
 def test_propositions_et_decisions_de_contacts(engine: Engine, id_unique: str) -> None:
     web = _migrer_et_web(engine, id_unique)
     tenant = TenantId(id_unique)
@@ -86,3 +110,26 @@ def test_propositions_et_decisions_de_contacts(engine: Engine, id_unique: str) -
     web.dispose()
     with engine.begin() as connexion, pytest.raises(DBAPIError):
         connexion.execute(text("UPDATE decisions_contacts SET decision = 'ignorer'"))
+
+
+def test_un_job_en_echec_ne_double_pas_une_demande_qui_attend(
+    engine: Engine, id_unique: str
+) -> None:
+    """Un job qui échoue repasse en attente, sauf si la même demande attend
+    déjà : elle refera le travail (sinon l'index unique ferait planter le worker)."""
+    web = _migrer_et_web(engine, id_unique)
+    worker = FilePostgres(engine)
+    with contexte_identite(dossier_id=None, tenant_id=id_unique):
+        FilePostgres(web).demander(id_unique, TYPE_SYNCHRO)
+    pris = worker.prendre("w1")
+    assert pris is not None
+    with contexte_identite(dossier_id=None, tenant_id=id_unique):
+        attend = FilePostgres(web).demander(id_unique, TYPE_SYNCHRO)
+    worker.echouer(pris.id, "Digifactory indisponible")
+    with engine.connect() as connexion:
+        lignes = connexion.execute(
+            text("SELECT id, statut FROM jobs WHERE tenant_id = :t"), {"t": id_unique}
+        ).all()
+    statuts = {str(ligne.id): str(ligne.statut) for ligne in lignes}
+    assert statuts == {pris.id: "echec", attend.id: "en_attente"}
+    web.dispose()

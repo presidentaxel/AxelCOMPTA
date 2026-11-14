@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from axelcompta.jobs.executer import executer
-from axelcompta.jobs.file import FileMemoire, TypeInconnu
+from axelcompta.jobs.file import TYPE_RAPPROCHEMENT_ROLLEE, TYPE_SYNCHRO, FileMemoire, TypeInconnu
 from axelcompta.jobs.postgres import REQUETE_PRENDRE
 from axelcompta.tenants.roles import peut
 from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_CONSULTATION, ACTE_EXPORT
@@ -71,3 +71,39 @@ def test_les_actes_dacces_ont_un_nom() -> None:
         "export",
         "consultation",
     }
+
+
+def test_deux_demandes_identiques_en_attente_n_en_font_qu_une() -> None:
+    file = FileMemoire()
+    assert file.demander("t", TYPE_SYNCHRO).id == file.demander("t", TYPE_SYNCHRO).id
+
+
+def test_une_demande_pendant_un_job_en_cours_attend_son_tour() -> None:
+    """AXE-921 : SEVEN CAR PRESTIGE ajouté pendant une synchro en cours.
+    Le job en cours a déjà lu les décisions : une seconde synchro doit suivre."""
+    file = FileMemoire()
+    premiere = file.demander("t", TYPE_SYNCHRO)
+    en_cours = file.prendre("w")
+    assert en_cours is not None and en_cours.id == premiere.id
+    seconde = file.demander("t", TYPE_SYNCHRO)
+    assert seconde.id != premiere.id and seconde.statut == "en_attente"
+    file.terminer(premiere.id)
+    suivant = file.prendre("w")
+    assert suivant is not None and suivant.id == seconde.id
+
+
+def test_deux_dossiers_differents_ont_chacun_leur_job() -> None:
+    """Le payload porte le dossier : la demande de l'un n'absorbe pas l'autre."""
+    file = FileMemoire()
+    a = file.demander("t", TYPE_RAPPROCHEMENT_ROLLEE, '{"dossier_id": "A"}')
+    b = file.demander("t", TYPE_RAPPROCHEMENT_ROLLEE, '{"dossier_id": "B"}')
+    assert a.id != b.id
+
+
+def test_un_job_en_echec_ne_double_pas_une_demande_qui_attend() -> None:
+    file = FileMemoire()
+    premiere = file.demander("t", TYPE_SYNCHRO)
+    file.prendre("w")
+    seconde = file.demander("t", TYPE_SYNCHRO)
+    file.echouer(premiere.id)
+    assert (file.lire(premiere.id).statut, file.lire(seconde.id).statut) == ("echec", "en_attente")
