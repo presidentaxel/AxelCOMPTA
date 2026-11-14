@@ -34,6 +34,9 @@ test("l'URL ne garde que ce qui diffère du défaut", () => {
 test("paramètres de l'API", () => {
   assert.equal(versApi(lireEtat("?vue=auto&origine=regle")).toString(), "statut=auto&origine=regle&tri=recentes&page=1");
   assert.equal(versApi(lireEtat("?vue=toutes")).get("statut"), null);
+  const parChauffeur = versApi(lireEtat("?vue=auto&tri=chauffeur&chauffeur=DEMO_sophie"));
+  assert.equal(parChauffeur.get("dossier"), "DEMO_sophie");
+  assert.equal(parChauffeur.get("tri"), "chauffeur");
 });
 
 test("affichages", () => {

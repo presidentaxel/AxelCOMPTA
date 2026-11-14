@@ -160,6 +160,20 @@ def test_filtres_tri_et_compteurs() -> None:
     )
 
 
+def test_le_tri_chauffeur_suit_le_nom_de_l_entreprise() -> None:
+    autre = DossierId("autre")
+    ops = [
+        OperationClassee(
+            autre, EcritureId("z"), date(2026, 1, 1), "Z", -1, "606", None, "regle", None, "auto"
+        ),
+        OperationClassee(
+            D, EcritureId("a"), date(2026, 1, 2), "A", -1, "606", None, "regle", None, "auto"
+        ),
+    ]
+    noms = {D: "Zoé", autre: "Anna"}
+    assert [o.ecriture_id for o in trier(ops, "chauffeur", noms)] == ["z", "a"]
+
+
 @pytest.mark.parametrize(
     ("confiance", "tranche"),
     [(None, None), (0.5, "basse"), (0.6, "moyenne"), (0.949, "moyenne"), (0.95, "haute")],

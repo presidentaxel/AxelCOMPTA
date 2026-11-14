@@ -28,10 +28,11 @@ export const SENS: Record<string, string> = { entree: "Entrée", sortie: "Sortie
 export const TRIS: Record<string, string> = {
   recentes: "Plus récentes",
   confiance: "Confiance croissante",
+  chauffeur: "Par entreprise",
 };
 
 /** Clés lues dans l'URL ; `vue` choisit entre la file et les classées. */
-export const CLES = ["vue", "origine", "categorie", "tranche", "sens", "tri", "page"] as const;
+export const CLES = ["vue", "origine", "categorie", "tranche", "sens", "tri", "page", "chauffeur"] as const;
 export type Cle = (typeof CLES)[number];
 export type EtatClassees = Record<Cle, string>;
 
@@ -43,6 +44,7 @@ const DEFAUTS: EtatClassees = {
   sens: "",
   tri: "recentes",
   page: "1",
+  chauffeur: "",
 };
 
 export function lireEtat(recherche: string): EtatClassees {
@@ -80,6 +82,7 @@ export function versApi(etat: EtatClassees): URLSearchParams {
   for (const cle of ["origine", "categorie", "tranche", "sens", "tri", "page"] as const) {
     if (etat[cle]) params.set(cle, etat[cle]);
   }
+  if (etat.chauffeur) params.set("dossier", etat.chauffeur);
   return params;
 }
 

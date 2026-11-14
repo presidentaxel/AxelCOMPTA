@@ -32,10 +32,15 @@ class JustificatifRepository(Protocol):
 
     def presents(self, tenant_id: TenantId, dossier_id: DossierId) -> frozenset[EcritureId]: ...
 
+    def lire(
+        self, tenant_id: TenantId, dossier_id: DossierId, ecriture_id: EcritureId
+    ) -> tuple[bytes, str] | None: ...
+
 
 class InMemoryJustificatifRepository:
     def __init__(self) -> None:
         self._stockage = StockageMemoire()
+        self._extensions: dict[tuple[str, str, str], str] = {}
 
     def enregistrer(
         self,
@@ -48,6 +53,7 @@ class InMemoryJustificatifRepository:
         self._stockage.poser(
             preparer(tenant_id, dossier_id, ecriture_id, contenu, extension), contenu
         )
+        self._extensions[(tenant_id, dossier_id, ecriture_id)] = extension
 
     def a_un_justificatif(
         self, tenant_id: TenantId, dossier_id: DossierId, ecriture_id: EcritureId
@@ -56,6 +62,14 @@ class InMemoryJustificatifRepository:
 
     def presents(self, tenant_id: TenantId, dossier_id: DossierId) -> frozenset[EcritureId]:
         return self._stockage.presents(tenant_id, dossier_id)
+
+    def lire(
+        self, tenant_id: TenantId, dossier_id: DossierId, ecriture_id: EcritureId
+    ) -> tuple[bytes, str] | None:
+        contenu = self._stockage.lire(tenant_id, dossier_id, ecriture_id)
+        if contenu is None:
+            return None
+        return contenu, self._extensions.get((tenant_id, dossier_id, ecriture_id), ".jpg")
 
 
 class FichierJustificatifRepository:
@@ -81,3 +95,8 @@ class FichierJustificatifRepository:
 
     def presents(self, tenant_id: TenantId, dossier_id: DossierId) -> frozenset[EcritureId]:
         return self._stockage.presents(tenant_id, dossier_id)
+
+    def lire(
+        self, tenant_id: TenantId, dossier_id: DossierId, ecriture_id: EcritureId
+    ) -> tuple[bytes, str] | None:
+        return self._stockage.lire_piece(tenant_id, dossier_id, ecriture_id)

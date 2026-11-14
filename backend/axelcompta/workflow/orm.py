@@ -186,6 +186,17 @@ journal_audit = Table(
 
 # Verdicts « juste » / « faux » sur un classement (AXE-823), sans écriture.
 # Append-only : le dernier par écriture fait foi.
+# Taux de TVA retenu par l'expert (AXE-925). `cle` vaut `e:<écriture>` pour
+# une ligne, `l:<libellé normalisé>` pour l'apprentissage. Le taux se remplace.
+taux_tva_expert = Table(
+    "taux_tva_expert",
+    metadata,
+    Column("tenant_id", String, primary_key=True),
+    Column("dossier_id", String, ForeignKey("dossiers.id"), primary_key=True),
+    Column("cle", String, primary_key=True),
+    Column("taux", String, nullable=False),
+)
+
 verdicts_classement = Table(
     "verdicts_classement",
     metadata,

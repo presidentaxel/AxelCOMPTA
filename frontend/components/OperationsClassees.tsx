@@ -5,10 +5,13 @@ import { Fragment, useEffect, useId, useState } from "react";
 import { Montant } from "@/components/Montant";
 import { PanneauEtat } from "@/components/PanneauEtat";
 import { SqueletteLignes } from "@/components/Squelette";
+import { TicketExpert } from "@/components/TicketExpert";
+import { TauxExpert } from "@/components/TauxExpert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, type SelectOption } from "@/components/ui/select";
+import { SelectRecherche } from "@/components/ui/select-recherche";
 import {
   Table,
   TableBody,
@@ -47,11 +50,13 @@ const TOUS = "__tous__";
 export function OperationsClassees({
   etat,
   comptes,
+  chauffeurs,
   ecriture,
   onChanger,
 }: {
   etat: EtatClassees;
   comptes: { compte: string; libelle: string }[];
+  chauffeurs: { id: string; nom: string }[];
   ecriture: boolean;
   onChanger: (suivant: EtatClassees) => void;
 }) {
@@ -96,6 +101,19 @@ export function OperationsClassees({
         <Choix libelle="Confiance" valeur={etat.tranche} options={TRANCHES} onChoisir={(v) => choisir("tranche", v)} />
         <Choix libelle="Sens" valeur={etat.sens} options={SENS} onChoisir={(v) => choisir("sens", v)} />
         <Choix libelle="Tri" valeur={etat.tri} options={TRIS} onChoisir={(v) => choisir("tri", v)} sansTous />
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-subtle">Entreprise</span>
+          <SelectRecherche
+            aria-label="Entreprise"
+            className="w-56"
+            value={etat.chauffeur || TOUS}
+            onValueChange={(valeur) => choisir("chauffeur", valeur === TOUS ? "" : valeur)}
+            options={[
+              { value: TOUS, label: "Toutes" },
+              ...chauffeurs.map((chauffeur) => ({ value: chauffeur.id, label: chauffeur.nom })),
+            ]}
+          />
+        </div>
       </div>
       {erreur && (
         <div className="mt-6">
@@ -241,6 +259,7 @@ function Ligne({
 }) {
   const [corriger, setCorriger] = useState(false);
   const [compte, setCompte] = useState("");
+  const [tauxChoisi, setTauxChoisi] = useState<string | undefined>();
   const [motif, setMotif] = useState(""); // AXE-800 : obligatoire
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -261,7 +280,7 @@ function Ligne({
 
   function imputer() {
     setErreur(null);
-    imputerExpert(operation.dossier_id, operation.ecriture_id, compte, motif.trim())
+    imputerExpert(operation.dossier_id, operation.ecriture_id, compte, motif.trim(), tauxChoisi)
       .then(() => {
         setCorriger(false);
         onFait();
@@ -286,7 +305,32 @@ function Ligne({
           {operation.categorie ? ` · ${operation.categorie}` : ""} · {ORIGINES[operation.origine] ?? operation.origine} ·
           confiance {formatConfiance(operation.confiance)}
           {operation.verdict ? ` · noté ${operation.verdict}` : ""}
+          {operation.taux_tva ? (
+            <span className="mt-1 block text-sm text-ink">
+              TVA {operation.taux_tva.replace(".", ",")} %
+            </span>
+          ) : null}
           {phraseTvaOperation(operation)}
+          <TicketExpert
+            dossierId={operation.dossier_id}
+            ecritureId={operation.ecriture_id}
+            present={operation.a_justificatif === true}
+            onAjoute={onFait}
+          />
+          {ecriture && (
+            <TauxExpert
+              dossierId={operation.dossier_id}
+              ecritureId={operation.ecriture_id}
+              libelle={operation.libelle}
+              taux={operation.taux_tva ?? null}
+              tvaCts={operation.tva_relevee_cts ?? operation.tva_estimee_cts ?? null}
+              origine={null}
+              onRetenu={(retenu) => {
+                setTauxChoisi(retenu);
+                onFait();
+              }}
+            />
+          )}
           {erreur && (
             <span role="alert" className="mt-1 block text-sm text-danger">
               {erreur}
@@ -313,7 +357,7 @@ function Ligne({
         <TableRow className="hover:bg-transparent">
           <TableCell colSpan={5} className="bg-canvas-app py-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Select
+              <SelectRecherche
                 aria-label="Compte correct"
                 className="w-80"
                 placeholder="Compte correct…"

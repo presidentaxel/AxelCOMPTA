@@ -8,14 +8,16 @@ justificatif pourra la remplacer.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from typing import Literal
 
 from axelcompta.core.money import Money
-from axelcompta.core.pcg import est_compte_tva_deductible
-from axelcompta.ledger.models import LigneEcriture, Sens
+from axelcompta.core.pcg import est_compte_banque, est_compte_tva_deductible
+from axelcompta.ledger.models import Ecriture, LigneEcriture, Sens
 from axelcompta.packs.tva_deductible import (
     PREFIXE_ESTIMEE,
     PREFIXE_RELEVEE,
@@ -42,6 +44,32 @@ def lignes_imputees(
         LigneEcriture(compte=compte, sens=sens, montant=charge, code_tva=regle.code),
         LigneEcriture(compte=regle.compte, sens=sens, montant=tva, code_tva=regle.code),
     )
+
+
+def ventiler_taux(ecriture: Ecriture, taux: str) -> Ecriture:
+    """HT + TVA sur la contrepartie. La banque et une TVA déjà écrite restent.
+    À 0 %, rien ne se sépare."""
+    if taux == "0":
+        return ecriture
+    regle = RegleTva(taux=Decimal(taux), recuperable=100)
+    lignes: list[LigneEcriture] = []
+    for ligne in ecriture.lignes:
+        if est_compte_banque(ligne.compte) or ligne.compte.startswith("445"):
+            lignes.append(ligne)
+        else:
+            lignes.extend(lignes_imputees(ligne.compte, ligne.sens, ligne.montant, regle))
+    return dataclasses.replace(ecriture, lignes=tuple(lignes))
+
+
+def taux_porte(lignes: Sequence[LigneEcriture]) -> str | None:
+    """Le taux déjà posé sur une ligne (`deductible_estimee_20` → `20`)."""
+    for ligne in lignes:
+        code = ligne.code_tva or ""
+        if code.startswith(PREFIXE_RELEVEE):
+            return code.removeprefix(PREFIXE_RELEVEE)
+        if code.startswith(PREFIXE_ESTIMEE):
+            return code.removeprefix(PREFIXE_ESTIMEE)
+    return None
 
 
 @dataclass(frozen=True, slots=True)

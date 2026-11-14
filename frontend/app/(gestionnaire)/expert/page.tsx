@@ -7,9 +7,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { EngagementExpert } from "@/components/EngagementExpert";
 import { OperationsClassees } from "@/components/OperationsClassees";
 import { Squelette } from "@/components/Squelette";
+import { TicketExpert } from "@/components/TicketExpert";
+import { TauxExpert } from "@/components/TauxExpert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { SelectRecherche } from "@/components/ui/select-recherche";
 import {
   annulerImputation,
   ErreurAuthGestionnaire,
@@ -26,6 +29,7 @@ import {
 } from "@/lib/classees";
 import { remplacerSujetsDuDossier } from "@/lib/file-expert";
 import { formatMontant } from "@/lib/format";
+import { chercheExpert } from "@/lib/recherche-expert";
 import { libelleMoyenPaiement } from "@/lib/moyens-paiement";
 import {
   ecrireFiltreTag,
@@ -74,6 +78,9 @@ export default function ModeExpertPage() {
     imputation: ImputationFaite;
   } | null>(null);
   const [entreprise, setEntreprise] = useState("toutes");
+  const [recherche, setRecherche] = useState("");
+  const [triFile, setTriFile] = useState("file");
+  const [tauxRetenu, setTauxRetenu] = useState<Record<string, string>>({});
   const [nature, setNature] = useState("toutes");
   const [tag, setTag] = useState(TOUS_LES_TAGS);
   const [visible, setVisible] = useState(PAGE);
@@ -131,19 +138,35 @@ export default function ModeExpertPage() {
   useEffect(charger, [charger]);
 
   const entreprises = useMemo(() => {
+    if (file?.chauffeurs?.length) {
+      return [...file.chauffeurs].sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
+    }
     const noms = new Map<string, string>();
     for (const sujet of file?.sujets ?? []) noms.set(sujet.dossier_id, sujet.dossier_nom);
-    return [...noms.entries()].sort((a, b) => a[1].localeCompare(b[1], "fr"));
+    return [...noms.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1], "fr"))
+      .map(([id, nom]) => ({ id, nom }));
   }, [file]);
 
+  function tauxAEcrire(sujet: SujetExpert): string | undefined {
+    if (tauxRetenu[sujet.id]) return tauxRetenu[sujet.id];
+    if (sujet.origine_taux && sujet.origine_taux !== "table" && sujet.taux_tva) return sujet.taux_tva;
+    return undefined;
+  }
+
   const filtres = useMemo(() => {
-    return (file?.sujets ?? []).filter((sujet) => {
+    const gardes = (file?.sujets ?? []).filter((sujet) => {
       if (entreprise !== "toutes" && sujet.dossier_id !== entreprise) return false;
       if (nature !== "toutes" && sujet.nature !== nature) return false;
       const tags = file?.tags_par_dossier?.[sujet.dossier_id] ?? [];
       return gardeTag({ tags }, tag);
     });
-  }, [entreprise, file, nature, tag]);
+    const trouves = chercheExpert(gardes, recherche);
+    if (triFile !== "chauffeur") return trouves;
+    return [...trouves].sort(
+      (a, b) => a.dossier_nom.localeCompare(b.dossier_nom, "fr") || a.libelle.localeCompare(b.libelle, "fr"),
+    );
+  }, [entreprise, file, nature, recherche, tag, triFile]);
   const tagsDeLaFile = useMemo(() => tagsPresents(file?.tags_par_dossier ?? {}), [file]);
 
   const page = filtres.slice(0, visible);
@@ -164,7 +187,13 @@ export default function ModeExpertPage() {
       return suite;
     });
     try {
-      const imputation = await imputerExpert(sujet.dossier_id, sujet.ecriture_id, choisi, motif);
+      const imputation = await imputerExpert(
+        sujet.dossier_id,
+        sujet.ecriture_id,
+        choisi,
+        motif,
+        tauxAEcrire(sujet),
+      );
       setSucces({ dossierId: sujet.dossier_id, libelle: sujet.libelle, imputation });
       setFile((actuelle) =>
         actuelle && {
@@ -307,6 +336,7 @@ export default function ModeExpertPage() {
         <OperationsClassees
           etat={vue}
           comptes={file?.comptes ?? []}
+          chauffeurs={file?.chauffeurs ?? []}
           ecriture={droit.ecriture}
           onChanger={changerVue}
         />
@@ -314,15 +344,41 @@ export default function ModeExpertPage() {
       {vue.vue === VUE_A_TRAITER && file && (
         <>
           <div className="mt-6 flex flex-wrap items-center gap-2">
+            <Input
+              value={recherche}
+              onChange={(evenement) => {
+                setRecherche(evenement.target.value);
+                setVisible(PAGE);
+              }}
+              placeholder="Rechercher un libellé, un montant, une entreprise"
+              aria-label="Recherche"
+              className="max-w-md"
+            />
+            <div className="flex items-center gap-2 text-sm text-subtle">
+              Tri
+              <Select
+                aria-label="Tri de la file"
+                value={triFile}
+                onValueChange={(valeur) => {
+                  setTriFile(valeur);
+                  setVisible(PAGE);
+                }}
+                options={[
+                  { value: "file", label: "Ordre de la file" },
+                  { value: "chauffeur", label: "Par entreprise" },
+                ]}
+                className="w-48"
+              />
+            </div>
             <div className="flex items-center gap-2 text-sm text-subtle">
               Entreprise
-              <Select
+              <SelectRecherche
                 aria-label="Entreprise"
                 value={entreprise}
                 onValueChange={(valeur) => changerFiltre("entreprise", valeur)}
                 options={[
                   { value: "toutes", label: "Toutes" },
-                  ...entreprises.map(([id, nom]) => ({ value: id, label: nom })),
+                  ...entreprises.map((chauffeur) => ({ value: chauffeur.id, label: chauffeur.nom })),
                 ]}
                 className="w-56"
               />
@@ -418,7 +474,7 @@ export default function ModeExpertPage() {
                 )}
                 {sujet.nature !== "anomalie" && sujet.imputable && sujet.ecriture_id && (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Select
+                    <SelectRecherche
                       aria-label={`Compte pour ${sujet.libelle}`}
                       value={compte[sujet.id] ?? ""}
                       onValueChange={(valeur) => setCompte((actuel) => ({ ...actuel, [sujet.id]: valeur }))}
@@ -450,12 +506,34 @@ export default function ModeExpertPage() {
                     >
                       Imputer
                     </Button>
-                    {sujet.nature === "ticket" && (
+                    {sujet.nature === "ticket" && !sujet.a_justificatif && (
                       <span className="text-xs text-subtle">
                         Écrit en comptabilité sans le ticket.
                       </span>
                     )}
                   </div>
+                )}
+                {sujet.ecriture_id && sujet.nature !== "anomalie" && (
+                  <>
+                    <TicketExpert
+                      dossierId={sujet.dossier_id}
+                      ecritureId={sujet.ecriture_id}
+                      present={sujet.a_justificatif === true}
+                      onAjoute={charger}
+                    />
+                    <TauxExpert
+                      dossierId={sujet.dossier_id}
+                      ecritureId={sujet.ecriture_id}
+                      libelle={sujet.libelle}
+                      taux={sujet.taux_tva ?? null}
+                      tvaCts={sujet.tva_cts ?? null}
+                      origine={sujet.origine_taux ?? null}
+                      onRetenu={(retenu) => {
+                        setTauxRetenu((actuel) => ({ ...actuel, [sujet.id]: retenu }));
+                        charger();
+                      }}
+                    />
+                  </>
                 )}
                 {erreurs[sujet.id] && (
                   <p className="mt-2 text-sm text-danger">{erreurs[sujet.id]}</p>

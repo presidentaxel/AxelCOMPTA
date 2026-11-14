@@ -79,3 +79,19 @@ class PostgresJustificatifRepository:
                 )
             )
         return frozenset(EcritureId(ligne.ecriture_id) for ligne in lignes)
+
+    def lire(
+        self, tenant_id: TenantId, dossier_id: DossierId, ecriture_id: EcritureId
+    ) -> tuple[bytes, str] | None:
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            ligne = connexion.execute(
+                select(table.c.contenu, table.c.extension).where(
+                    table.c.tenant_id == tenant_id,
+                    table.c.dossier_id == dossier_id,
+                    table.c.ecriture_id == ecriture_id,
+                )
+            ).first()
+        if ligne is None:
+            return None
+        return bytes(ligne.contenu), str(ligne.extension)
