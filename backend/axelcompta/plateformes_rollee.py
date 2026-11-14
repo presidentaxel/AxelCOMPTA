@@ -189,7 +189,7 @@ async def _compte_relu(
     services: ServicesRollee,
 ) -> CompteRelie:
     connus = {c.account_id: c for c in services.comptes.comptes(dossier.id)}
-    retenu, autre = await _titulaire_du_compte(client, str(brut["id"]), utilisateur)
+    retenu, autre = await titulaire_du_compte(client, str(brut["id"]), utilisateur)
     return depuis_rollee(
         dossier.id,
         brut,
@@ -201,7 +201,7 @@ async def _compte_relu(
     )
 
 
-async def _titulaire_du_compte(
+async def titulaire_du_compte(
     client: RolleeHttpClient, account_id: str, utilisateur: UtilisateurRollee
 ) -> tuple[bool, bool]:
     attendus = utilisateur.noms_attendus

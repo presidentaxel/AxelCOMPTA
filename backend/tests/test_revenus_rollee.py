@@ -206,6 +206,50 @@ def test_de_bout_en_bout_le_ca_et_la_tva_sont_justes_et_rejouer_ne_cree_rien() -
     assert "custom" in quarantaine.motif
 
 
+class _ClientQuiNote(_Client):
+    def __init__(self) -> None:
+        self.lus: list[str] = []
+
+    async def revenus(self, account_id: str, depuis: date, jusqua: date) -> dict[str, Any]:
+        self.lus.append(account_id)
+        return await super().revenus(account_id, depuis, jusqua)
+
+
+def test_les_revenus_d_un_compte_au_nom_d_un_autre_chauffeur_ne_sont_jamais_lus() -> None:
+    """AXE-922 : un user Rollee « flotte » porte les comptes de plusieurs
+    chauffeurs. Seul le compte retenu (au nom du dossier) est relevé ; celui
+    d'un autre chauffeur n'est ni lu, ni stocké, ni mis en quarantaine."""
+    branchements = BranchementsMemoire()
+    branchements.enregistrer(
+        [nouveau([], T, "rollee", "rollee", "Rollee", {"jeton": "j", "environnement": "sandbox"})],
+        "admin",
+        LE,
+    )
+    comptes = ComptesRolleeMemoire()
+    comptes.enregistrer_utilisateur(
+        UtilisateurRollee(D, "user-1", branchements.lister(T)[0].id), LE
+    )
+    a_lui = {"id": "acc-a-lui", "name": "uber.com-fleet-rev", "connected": True}
+    autre = {"id": "acc-autre", "name": "uber.com-fleet-rev", "connected": True}
+    comptes.remplacer_comptes(
+        D,
+        [
+            depuis_rollee(D, a_lui, None, LE),
+            depuis_rollee(D, autre, None, LE, None, retenu=False, titulaire_autre=True),
+        ],
+    )
+    client = _ClientQuiNote()
+    services = ServicesRollee(branchements, comptes, fabrique=lambda _b, _g: client)  # type: ignore[arg-type,return-value]
+    ledger, journal = InMemoryLedgerService(), InMemoryJournalIngestion()
+    depots = DepotsRevenus(SettlementsMemoire(), ledger, journal)
+
+    asyncio.run(relever_revenus(services, depots, DOSSIER, AUJOURD_HUI))
+
+    assert client.lus == ["acc-a-lui"]
+    assert {s.account_id for s in depots.settlements.lister(D)} == {"acc-a-lui"}
+    assert all("acc-autre" not in str(q.payload) for q in journal.lister_quarantaine(D))
+
+
 def _soldes_de(ecritures: list[Ecriture]) -> dict[str, int]:
     soldes: dict[str, int] = {}
     for e in ecritures:

@@ -6,9 +6,11 @@ from dataclasses import replace
 from datetime import UTC, date, datetime
 from typing import cast
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from axelcompta.api import routes
 from axelcompta.api.routes import (
     get_branchements,
     get_journal_acces,
@@ -75,6 +77,50 @@ def test_le_portefeuille_montre_les_comptes_a_choisir_sans_rien_en_clair() -> No
     assert [c["dossier_id"] for c in attente["candidats"]] == ["DEMO_karim", "DEMO_sophie"]
     assert corps["etats"]["DEMO_karim"] == "a_choisir"
     assert corps["etats"]["DEMO_yanis"] == "non_relie"
+
+
+@pytest.fixture(autouse=True)
+def _noms_connus(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Le contact Digifactory ou les associés donnent un nom au dossier."""
+    monkeypatch.setattr(routes, "noms_pour_lien", lambda _d, _b: ("empreinte-karim",))
+
+
+def test_un_lien_manuel_sans_aucun_nom_connu_est_refuse(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AXE-922 : sans nom attendu, le lien ne retiendrait aucun compte, sans le dire."""
+    monkeypatch.setattr(routes, "noms_pour_lien", lambda _d, _b: ())
+    client, liens, _s = _monter()
+    reponse = client.post(
+        "/portefeuille/rollee/choix",
+        json={"rollee_user_id": "u-9", "dossier_id": "DEMO_karim"},
+        headers=_en_tete_gestionnaire(),
+    )
+    assert reponse.status_code == 409
+    assert "Aucun nom connu" in reponse.json()["detail"]
+    assert liens.lien(KARIM) is None
+    recherche = client.post(
+        "/dossiers/DEMO_karim/rollee/lier",
+        json={"rollee_user_id": "u-9"},
+        headers=_en_tete_gestionnaire(),
+    )
+    assert recherche.status_code == 409
+    # « Aucun de ces comptes » n'a pas besoin de nom.
+    ecarter = client.post(
+        "/portefeuille/rollee/choix",
+        json={"rollee_user_id": "u-9", "dossier_id": None},
+        headers=_en_tete_gestionnaire(),
+    )
+    assert ecarter.status_code == 204
+
+
+def test_le_lien_manuel_garde_les_noms_attendus() -> None:
+    client, liens, _s = _monter()
+    client.post(
+        "/portefeuille/rollee/choix",
+        json={"rollee_user_id": "u-9", "dossier_id": "DEMO_karim"},
+        headers=_en_tete_gestionnaire(),
+    )
+    lien = liens.lien(KARIM)
+    assert lien is not None and lien.noms_attendus == ("empreinte-karim",)
 
 
 def test_choisir_pose_un_lien_manuel_et_le_note_au_journal() -> None:
