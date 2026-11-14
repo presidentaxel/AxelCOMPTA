@@ -11,10 +11,6 @@ test("l'état d'une plateforme se lit en clair", () => {
     "relié le 06/11/2026",
   );
   assert.equal(etatPlateforme({ nom: "Bolt", etat: "a_reconnecter", relie_le: null }, date), "à reconnecter");
-  assert.equal(
-    etatPlateforme({ nom: "Allocab", etat: "connecte", relie_le: null, titulaire_autre: true }, date),
-    "au nom d'un autre chauffeur, ignoré",
-  );
 });
 
 test("le gestionnaire ne voit que des nombres", () => {

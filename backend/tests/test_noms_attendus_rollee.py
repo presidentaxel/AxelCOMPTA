@@ -82,8 +82,8 @@ def test_appliquer_pose_les_noms_et_ne_retient_que_le_compte_du_chauffeur() -> N
 
     (dossier,) = [d for d in depots.dossiers.lister_par_tenant(T) if d.id == D]
     comptes = {c.account_id: c for c in asyncio.run(relire_comptes(depots.services, dossier))}
-    assert (comptes["acc-elodie"].retenu, comptes["acc-autre"].retenu) == (True, False)
-    assert comptes["acc-autre"].titulaire_autre
+    assert comptes["acc-elodie"].retenu
+    assert "acc-autre" not in comptes  # AXE-923 : ni relié, ni montré
 
 
 def test_un_lien_cree_par_le_chauffeur_n_est_pas_touche() -> None:

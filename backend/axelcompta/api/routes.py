@@ -6904,7 +6904,6 @@ class PlateformeVue(BaseModel):
     relie_le: str | None
     compte_rollee: str = ""  # le compte Rollee (flotte) d'où vient cette plateforme
     rollee_user_id: str = ""
-    titulaire_autre: bool = False
 
 
 class PlateformesVue(BaseModel):
@@ -6968,7 +6967,6 @@ def _vue_plateformes(
                 nom=c.nom,
                 etat=c.etat,
                 relie_le=c.relie_le.isoformat() if c.relie_le else None,
-                titulaire_autre=c.titulaire_autre,
             )
             for c in comptes
         ],
@@ -7028,7 +7026,6 @@ def _enregistrer_routes_plateformes(app: FastAPI) -> None:
                     relie_le=c.relie_le.isoformat() if c.relie_le else None,
                     compte_rollee=libelles.get(c.rollee_user_id or "", ""),
                     rollee_user_id=c.rollee_user_id or "",
-                    titulaire_autre=c.titulaire_autre,
                 )
                 for c in comptes
             ],
