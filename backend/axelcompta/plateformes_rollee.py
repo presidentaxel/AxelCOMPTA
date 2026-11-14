@@ -167,7 +167,9 @@ async def _relire_un(
     services: ServicesRollee, dossier: Dossier, utilisateur: UtilisateurRollee
 ) -> None:
     """Remplace les plateformes de ce compte Rollee, sans toucher aux autres.
-    Avec des noms attendus, seul le compte à ce nom est retenu."""
+    Avec des noms attendus, seul le compte à ce nom est retenu. Un compte au
+    nom d'un autre chauffeur n'est pas relié du tout : il n'est pas enregistré,
+    personne ne le voit (AXE-923)."""
     client = client_du_branchement(services, _branchement_du_user(services, dossier, utilisateur))
     try:
         bruts = await client.comptes(utilisateur.rollee_user_id)
@@ -178,7 +180,8 @@ async def _relire_un(
         ]
     finally:
         await client.aclose()
-    services.comptes.remplacer_comptes(dossier.id, comptes, utilisateur.rollee_user_id)
+    siens = [compte for compte in comptes if not compte.titulaire_autre]
+    services.comptes.remplacer_comptes(dossier.id, siens, utilisateur.rollee_user_id)
 
 
 async def _compte_relu(
@@ -254,10 +257,9 @@ def _phrase_synchro(comptes: list[CompteRelie]) -> str:
 
 
 def _preciser_titulaires(phrase: str, comptes: list[CompteRelie]) -> str:
-    autres = sum(1 for c in comptes if c.titulaire_autre)
+    """Un compte au nom d'un autre chauffeur n'est jamais dans `comptes`
+    (AXE-923) : la phrase n'en parle pas."""
     inconnus = sum(1 for c in comptes if not c.retenu and not c.titulaire_autre)
-    if autres:
-        phrase = f"{phrase} {autres} compte(s) au nom d'un autre chauffeur, ignoré(s)."
     if inconnus:
         phrase = f"{phrase} {inconnus} profil(s) illisible(s), compte non retenu."
     return phrase

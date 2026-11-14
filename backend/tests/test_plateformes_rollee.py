@@ -12,7 +12,11 @@ from typing import Any
 import pytest
 
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.ingestion.comptes_rollee import ComptesRolleeMemoire, UtilisateurRollee
+from axelcompta.ingestion.comptes_rollee import (
+    ComptesRolleeMemoire,
+    UtilisateurRollee,
+    depuis_rollee,
+)
 from axelcompta.ingestion.providers.rollee import RolleeIndisponible
 from axelcompta.ingestion.rapprochement_rollee import empreinte, nom_du_profil
 from axelcompta.ingestion.webhooks_rollee import EvenementRollee, EvenementsRolleeMemoire
@@ -202,11 +206,43 @@ def test_deux_comptes_allocab_ne_retiennent_que_le_nom_du_dossier() -> None:
         UtilisateurRollee(DOSSIER.id, "927b77da", branchement.id, (barry,)), LE
     )
     comptes = asyncio.run(relire_comptes(services, DOSSIER))
-    par_id = {c.account_id: c for c in comptes}
-    assert (par_id["acc-barry"].retenu, par_id["acc-barry"].titulaire_autre) == (True, False)
-    assert (par_id["acc-autre"].retenu, par_id["acc-autre"].titulaire_autre) == (False, True)
+    # AXE-923 : le compte de l'autre chauffeur n'est pas relié du tout, ni
+    # enregistré, ni montré, ni cité dans la phrase de synchro.
+    assert [(c.account_id, c.retenu) for c in comptes] == [("acc-barry", True)]
+    assert services.comptes.comptes(DOSSIER.id) == comptes
+    phrase = asyncio.run(synchroniser_dossier(services, DOSSIER))
+    assert "autre chauffeur" not in phrase and phrase.count("allocab") == 1
     asyncio.run(_lire(services, DOSSIER, date(2026, 1, 1), date(2026, 11, 14)))
     assert client.lus == ["acc-barry"]
+
+
+def test_un_compte_d_un_autre_chauffeur_deja_enregistre_disparait_a_la_relecture() -> None:
+    """AXE-923 : le compte enregistré avant ce correctif (B'CARS en prod)."""
+    services, _, branchement = _services()
+    assert branchement is not None
+    client = _deux_allocab(
+        {
+            "acc-barry": {"full_name": "BARRY Boubacar"},
+            "acc-autre": {"full_name": "GABI GALESSAN LEVAH"},
+        }
+    )
+    services.fabrique = lambda _b, _g: client
+    barry = empreinte(cle_empreintes(), nom_du_profil({"full_name": "BARRY Boubacar"}))
+    services.comptes.enregistrer_utilisateur(
+        UtilisateurRollee(DOSSIER.id, "927b77da", branchement.id, (barry,)), LE
+    )
+    ancien = depuis_rollee(
+        DOSSIER.id,
+        {"id": "acc-autre", "name": "allocab-fleet-rev", "connected": True},
+        None,
+        LE,
+        "927b77da",
+        retenu=False,
+        titulaire_autre=True,
+    )
+    services.comptes.remplacer_comptes(DOSSIER.id, [ancien], "927b77da")
+    asyncio.run(relire_comptes(services, DOSSIER))
+    assert [c.account_id for c in services.comptes.comptes(DOSSIER.id)] == ["acc-barry"]
 
 
 def test_un_profil_en_500_n_est_pas_retenu() -> None:

@@ -513,7 +513,6 @@ export type PlateformeReliee = {
   nom: string;
   etat: "connecte" | "en_cours" | "a_reconnecter";
   relie_le: string | null;
-  titulaire_autre?: boolean;
 };
 
 export type PlateformesChauffeur = {
