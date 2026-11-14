@@ -81,16 +81,27 @@ def _sans_iban(compte: Mapping[str, Any]) -> bool:
     return "uber" in str(compte.get("name") or compte.get("type") or "").lower()
 
 
+def _erreur_du_compte(exc: RolleeIndisponible) -> bool:
+    """Une 5xx répétée sur un compte précis (mesuré le 14/11 : 3 profils
+    toujours en 500), pas Rollee débordé (429)."""
+    return exc.statut is not None and exc.statut >= 500
+
+
 async def _infos_compte(
-    client: RolleeHttpClient, compte_id: str, avec_iban: bool = True
+    client: RolleeHttpClient, compte_id: str, avec_iban: bool = True, tolerer: bool = False
 ) -> tuple[dict[str, Any], str]:
     """Profil et IBAN d'un compte de plateforme. Un refus de Rollee (Uber
     répond 400 sur l'IBAN) laisse l'indice vide. Rollee débordé ou jeton
     refusé, non : le user est illisible (AXE-918), jamais pris pour un user
-    sans nom, sinon un homonyme passerait pour unique."""
+    sans nom, sinon un homonyme passerait pour unique. `tolerer` : à la
+    relecture finale, un profil toujours en 5xx est compté sans nom."""
     try:
         profil = await client.profil(compte_id)
-    except (RolleeIndisponible, RolleeAuthError):
+    except RolleeIndisponible as exc:
+        if not (tolerer and _erreur_du_compte(exc)):
+            raise
+        profil = {}
+    except RolleeAuthError:
         raise
     except Exception:  # noqa: BLE001 — Uber ou Bolt sans profil : on compare le reste
         profil = {}
@@ -105,7 +116,9 @@ async def _infos_compte(
     return profil, iban
 
 
-async def lire_user(client: RolleeHttpClient, brut: Mapping[str, Any], cle: bytes) -> UserRollee:
+async def lire_user(
+    client: RolleeHttpClient, brut: Mapping[str, Any], cle: bytes, tolerer: bool = False
+) -> UserRollee:
     """Un user Rollee, ses comptes de plateformes, réduits en empreintes."""
     user_id = str(brut["id"])
     metadata = brut.get("metadata") or {}
@@ -114,7 +127,9 @@ async def lire_user(client: RolleeHttpClient, brut: Mapping[str, Any], cle: byte
     premier: tuple[str | None, str | None] = (None, None)
     for compte in await client.comptes(user_id):
         plateformes.append(str(compte.get("name") or compte.get("type") or "plateforme"))
-        profil, iban = await _infos_compte(client, str(compte["id"]), not _sans_iban(compte))
+        profil, iban = await _infos_compte(
+            client, str(compte["id"]), not _sans_iban(compte), tolerer
+        )
         prenom, nom = profil.get("first_name"), profil.get("last_name")
         if prenom or nom:
             noms.append(normaliser_nom(prenom, nom))
@@ -140,7 +155,10 @@ class Lecture:
     """Les users lus d'un compte Rollee, et ceux que Rollee n'a pas rendus."""
 
     users: list[UserRollee]
-    erreurs: tuple[str, ...] = ()  # « GET /users/<id>/accounts : 500 après 5 essais »
+    erreurs: tuple[str, ...] = ()  # « GET /users/<id>/accounts : 429 après 5 essais »
+    # Users lus, mais dont un profil reste en 5xx chez Rollee : comptés sans
+    # nom, signalés dans le bilan, sans bloquer le lien par le nom.
+    profils_en_erreur: tuple[str, ...] = ()
 
     @property
     def illisibles(self) -> int:
@@ -178,15 +196,23 @@ async def lire_users(client: RolleeHttpClient, cle: bytes, seulement: str | None
     lus = await asyncio.gather(*(un(brut) for brut in bruts))
     users = [u for u in lus if u is not None]
     # Rollee débordé sur quelques users : on les relit un par un, à la fin.
-    erreurs = []
+    erreurs: list[str] = []
+    profils: list[str] = []
     for brut, lu in zip(bruts, lus, strict=True):
         if lu is not None:
             continue
         try:
             users.append(await lire_user(client, brut, cle))
         except RolleeIndisponible as exc:
-            erreurs.append(str(exc))
-    return Lecture(users, tuple(erreurs))
+            if not _erreur_du_compte(exc):
+                erreurs.append(str(exc))
+                continue
+            try:
+                users.append(await lire_user(client, brut, cle, tolerer=True))
+                profils.append(str(exc))
+            except RolleeIndisponible as encore:
+                erreurs.append(str(encore))
+    return Lecture(users, tuple(erreurs), tuple(profils))
 
 
 @dataclass(frozen=True, slots=True)
@@ -359,6 +385,12 @@ async def passer_tenant(
             "aucun lien par le nom seul à ce passage, relancez plus tard"
         )
         lignes += [f"    {erreur}" for erreur in erreurs[:5]]
+    profils = [p for _b, lecture in par_branchement for p in lecture.profils_en_erreur]
+    if profils:
+        lignes.append(
+            f"  {len(profils)} profil(s) toujours en erreur chez Rollee, comptés sans nom :"
+        )
+        lignes += [f"    {profil}" for profil in profils[:5]]
     nouveaux: list[AChoisir] = []
     for branchement, lecture in par_branchement:
         users = lecture.users

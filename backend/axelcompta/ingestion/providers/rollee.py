@@ -63,7 +63,11 @@ class RolleeAuthError(RuntimeError):
 
 
 class RolleeIndisponible(RuntimeError):
-    """429 ou 5xx après tous les essais."""
+    """429 ou 5xx après tous les essais. `statut` : le dernier code reçu."""
+
+    def __init__(self, message: str, statut: int | None = None) -> None:
+        super().__init__(message)
+        self.statut = statut
 
 
 class RevenuIllisible(ValueError):
@@ -138,7 +142,8 @@ class RolleeHttpClient:
             if essai < ESSAIS - 1:
                 await self._attendre(_attente(reponse, essai))
         raise RolleeIndisponible(
-            f"{methode} {chemin} : {reponse.status_code} après {ESSAIS} essais"
+            f"{methode} {chemin} : {reponse.status_code} après {ESSAIS} essais",
+            reponse.status_code,
         )
 
     async def _requete(self, methode: str, chemin: str, **options: Any) -> Any:

@@ -283,3 +283,23 @@ def test_un_user_sans_plateforme_n_est_pas_interroge() -> None:
     depots = _depots(AvecVides())
     lignes = asyncio.run(passer_tenant(depots, T, False, LE))
     assert "2 non trouvé(s)" in lignes[0] and "illisible" not in " ".join(lignes)
+
+
+def test_un_profil_toujours_en_500_ne_bloque_pas_le_lien_par_le_nom() -> None:
+    """AXE-918 : 3 profils toujours en 500 chez Rollee (14/11). Comptés sans
+    nom et signalés ; un 429, lui, reste bloquant (test plus haut)."""
+
+    class ProfilCasse(FauxRollee):
+        async def utilisateurs(self) -> list[dict[str, Any]]:
+            return [*await super().utilisateurs(), {"id": "u-500"}]
+
+        async def profil(self, compte_id: str) -> dict[str, Any]:
+            if compte_id == "u-500-uber":
+                raise RolleeIndisponible("GET /accounts/u-500-uber/profile : 500", 500)
+            return await super().profil(compte_id)
+
+    depots = _depots(ProfilCasse())
+    lignes = asyncio.run(passer_tenant(depots, T, True, LE))
+    assert ("u-nom", "nom_unique") in {(x.rollee_user_id, x.indice) for x in depots.liens.liens(T)}
+    assert "1 profil(s) toujours en erreur chez Rollee" in " ".join(lignes)
+    assert "illisible" not in " ".join(lignes)
