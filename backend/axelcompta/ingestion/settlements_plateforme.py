@@ -157,9 +157,19 @@ def marquer_doublons(
     ]
 
 
+def d_un_jour(stocke: SettlementStocke) -> bool:
+    """AXE-924 : seuls les jours Rollee comptent. Les semaines et les mois
+    gardés avant (pilote du 14/11) ne sont plus montrés ni rapprochés."""
+    return stocke.settlement.period_start == stocke.settlement.period_end
+
+
+def jours(stockes: Sequence[SettlementStocke]) -> list[SettlementStocke]:
+    return [s for s in stockes if d_un_jour(s)]
+
+
 def a_verifier(stockes: Sequence[SettlementStocke]) -> list[SettlementStocke]:
     """AXE-891 : les relevés qu'un humain doit regarder, dans l'ordre reçu."""
-    return [s for s in stockes if s.etat == "a_verifier"]
+    return [s for s in jours(stockes) if s.etat == "a_verifier"]
 
 
 class SettlementsRepository(Protocol):

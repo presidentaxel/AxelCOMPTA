@@ -21,13 +21,13 @@ from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _ledger_calcule_une_seule_fois,
 )
 from tests.test_plateformes_rollee import _services
-from tests.test_revenus_rollee import SEMAINE, _stocke
+from tests.test_revenus_rollee import JOUR, _stocke
 
 
 def _client() -> TestClient:
     client = _client_et_stubs()[0]
     depot = SettlementsMemoire()
-    stocke = _stocke(replace(SEMAINE, dossier_id=DossierId("DEMO_karim")))
+    stocke = _stocke(replace(JOUR, dossier_id=DossierId("DEMO_karim")))
     depot.enregistrer([replace(stocke, etat="reconcilie", ecriture_id="S1")])
     client.app.dependency_overrides[get_settlements] = lambda: depot  # type: ignore[attr-defined]
     return client
@@ -57,7 +57,7 @@ def test_le_gestionnaire_n_a_pas_acces_aux_montants() -> None:
 def _client_avec_a_verifier() -> TestClient:
     client = _client_et_stubs()[0]
     depot = SettlementsMemoire()
-    semaine = replace(SEMAINE, dossier_id=DossierId("DEMO_karim"))
+    semaine = replace(JOUR, dossier_id=DossierId("DEMO_karim"))
     depot.enregistrer(
         [
             replace(_stocke(semaine), etat="reconcilie", ecriture_id="S1"),

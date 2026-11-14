@@ -33,6 +33,12 @@ from axelcompta.core.errors import DomaineError
 from axelcompta.core.ids import EcritureId, TransactionId
 from axelcompta.core.pcg import est_compte_banque
 from axelcompta.ingestion.comptes_rollee import CompteRelie
+from axelcompta.ingestion.ecritures_semaines import (
+    SUFFIXE_FRAIS,
+    SUFFIXE_RECETTE,
+    SUFFIXE_SOLDE,
+    piece_semaine,
+)
 from axelcompta.ingestion.ecritures_settlement import (
     SUFFIXE_VENTILATION,
     ecriture_de_ventilation,
@@ -47,6 +53,7 @@ from axelcompta.ingestion.settlements_plateforme import (
     A_RAPPROCHER,
     SettlementsRepository,
     SettlementStocke,
+    d_un_jour,
     fusionner,
     marquer_doublons,
 )
@@ -63,15 +70,15 @@ from axelcompta.plateformes_rollee import (
     branchement_du_dossier,
     client_du_branchement,
 )
+from axelcompta.revenus_semaines import Contexte, compte_especes_de, rapprocher_semaines
 from axelcompta.tenants.branchements import Branchement
 from axelcompta.tenants.models import Dossier
 from axelcompta.workflow.reclassement import projeter
 
+SUFFIXES_SEMAINE = (SUFFIXE_RECETTE, SUFFIXE_SOLDE, SUFFIXE_FRAIS)
 COMPTE_RECETTE = "706"
 COMPTE_ATTENTE = "471"
 SOURCE = "rollee"
-# Les jours déjà gardés sont relus : Rollee complète une période au fil des jours.
-RECOUVREMENT = timedelta(days=14)
 
 
 @dataclass
@@ -236,21 +243,47 @@ def delier_revenus(
     maintenant: datetime,
 ) -> tuple[list[Ecriture], list[SettlementStocke]]:
     """AXE-911 : le lien avec un user Rollee est retiré. Ses relevés passent
-    « délié » ; ceux déjà ventilés voient leur ventilation contre-passée,
-    jamais supprimée. Dans un exercice clos, la contre-passation est datée
-    du premier jour de l'exercice ouvert. Pur : l'appelant enregistre."""
+    « délié ». Ce qui a été écrit est contre-passé, jamais supprimé : la
+    ventilation d'avant AXE-924, et, depuis AXE-924, toutes les écritures des
+    semaines où ce compte a compté (recettes, soldes, frais). Les jours d'un
+    autre compte pris dans ces semaines passent « à vérifier ». Dans un
+    exercice clos, la contre-passation est datée du premier jour de
+    l'exercice ouvert. Pur : l'appelant enregistre."""
     connues = {e.id: e for e in grand_livre}
-    inverses: list[Ecriture] = []
-    delies: list[SettlementStocke] = []
+    semaines = {
+        _piece_du_jour(s)
+        for s in stockes
+        if s.account_id in account_ids and s.etat == "reconcilie" and d_un_jour(s)
+    }
+    a_annuler = [
+        connues.get(id_ventilation_plateforme(EcritureId(s.ecriture_id)))
+        for s in stockes
+        if s.account_id in account_ids and s.etat == "reconcilie" and s.ecriture_id
+    ]
+    a_annuler += [
+        e for e in grand_livre if e.reference_piece in semaines and e.id.endswith(SUFFIXES_SEMAINE)
+    ]
+    inverses = [
+        contrepasser(e, periodes_closes, debut_ouvert)
+        for e in {x.id: x for x in a_annuler if x is not None}.values()
+        if id_contrepassation(e.id) not in connues
+    ]
+    suites: list[SettlementStocke] = []
     for stocke in stockes:
-        if stocke.account_id not in account_ids or stocke.etat == "delie":
-            continue
-        if stocke.etat == "reconcilie" and stocke.ecriture_id:
-            ventilation = connues.get(id_ventilation_plateforme(EcritureId(stocke.ecriture_id)))
-            if ventilation is not None and id_contrepassation(ventilation.id) not in connues:
-                inverses.append(contrepasser(ventilation, periodes_closes, debut_ouvert))
-        delies.append(replace(stocke, etat="delie", motif=MOTIF_DELIE, maj_le=maintenant))
-    return inverses, delies
+        if stocke.account_id in account_ids and stocke.etat != "delie":
+            suites.append(replace(stocke, etat="delie", motif=MOTIF_DELIE, maj_le=maintenant))
+        elif (
+            stocke.etat == "reconcilie" and d_un_jour(stocke) and _piece_du_jour(stocke) in semaines
+        ):
+            suites.append(
+                replace(
+                    stocke,
+                    etat="a_verifier",
+                    motif="semaine annulée : un lien Rollee a été retiré",
+                    maj_le=maintenant,
+                )
+            )
+    return inverses, suites
 
 
 def _groupes(
@@ -296,9 +329,11 @@ async def _lire(
 
 
 def _depuis(dossier: Dossier, stockes: Sequence[SettlementStocke]) -> date:
-    if not stockes:
-        return dossier.exercice_debut
-    return max(s.settlement.period_end for s in stockes) - RECOUVREMENT
+    """AXE-924 : tout l'exercice est relu à chaque passage (un appel par
+    compte) : un jour écarté par une ancienne règle, ou complété tard par
+    Rollee, revient ainsi dans sa semaine."""
+    del stockes
+    return dossier.exercice_debut
 
 
 async def relever_revenus(
@@ -329,7 +364,56 @@ async def relever_revenus(
         nouveaux = [s for s in nouveaux if s.id != doublon.id]
         nouveaux.append(doublon)
     depots.settlements.enregistrer(nouveaux)
-    return _ventiler(depots, dossier, list(connus.values()), aujourd_hui, maintenant, len(rejets))
+    return _rapprocher_par_semaine(
+        depots, dossier, list(connus.values()), aujourd_hui, maintenant, len(rejets)
+    )
+
+
+def _rapprocher_par_semaine(
+    depots: DepotsRevenus,
+    dossier: Dossier,
+    stockes: list[SettlementStocke],
+    aujourd_hui: date,
+    maintenant: datetime,
+    nb_rejets: int,
+) -> str:
+    """AXE-924 : semaine par semaine (jours gagnés, POP SVCS, virements
+    instantanés, frais). Une OD refusée par le grand livre laisse sa semaine
+    à vérifier ; les autres semaines s'écrivent quand même."""
+    contexte = Contexte(
+        dossier,
+        tuple(depots.ledger.periodes_closes(dossier.id)),
+        compte_especes_de(dossier),
+        maintenant,
+    )
+    passage = rapprocher_semaines(
+        stockes, depots.ledger.grand_livre(dossier.id), contexte, aujourd_hui
+    )
+    refusees: set[str] = set()
+    for od in passage.ecritures:
+        try:
+            depots.ledger.enregistrer(od)
+        except DomaineError as exc:
+            refusees.add(str(od.reference_piece))
+            print(f"{dossier.id} : écriture de semaine refusée ({exc})")
+    finals = [
+        replace(s, etat="a_verifier", motif="écriture refusée par le grand livre", ecriture_id=None)
+        if s.ecriture_id and _piece_du_jour(s) in refusees
+        else s
+        for s in passage.stockes
+    ]
+    depots.settlements.enregistrer(finals)
+    soldees = sum(1 for s in passage.semaines if s.etat == "solde")
+    a_voir = sum(1 for s in passage.semaines if s.etat == "a_verifier")
+    return (
+        f"{dossier.id} : {soldees} semaine(s) rapprochée(s), {a_voir} à vérifier, "
+        f"{nb_rejets} jour(s) en quarantaine"
+    )
+
+
+def _piece_du_jour(stocke: SettlementStocke) -> str:
+    jour = stocke.settlement.period_start
+    return piece_semaine(stocke.settlement.platform, jour - timedelta(days=jour.weekday()))
 
 
 def _ventiler(

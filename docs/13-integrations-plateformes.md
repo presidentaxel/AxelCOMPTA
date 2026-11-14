@@ -24,6 +24,27 @@
 >   Uber et Bolt pour un chauffeur sans Rollee (AXE-801) ; périodes
 >   quotidiennes de Rollee, si elles existent, à additionner par semaine.
 
+> **Mise à jour 2026-11-14 (AXE-924), le modèle « une période = un virement » est
+> remplacé.** Sur les vraies données (pilote MK DRIVING et B'CARS SERVICES) :
+> - Rollee renvoie des jours, des semaines et des mois qui se chevauchent :
+>   **seuls les jours comptent**. Le gagné d'un jour est `net_amount`
+>   (brut − commission) ; `payouts` est un retrait, pas le gagné.
+> - Les **espèces** (`cash_earnings`, toutes plateformes) ne passent pas par la
+>   banque : dû par la plateforme = net − espèces ; les espèces vont au compte
+>   de l'associé (455, 108 en EI).
+> - **Uber verse chaque lundi via POP SVCS** la semaine précédente (période
+>   dans le libellé) ; en cours de semaine, des **virements instantanés**
+>   (« Stichting Custodian Uber Payments ») à 0,99 € de frais, pas toujours.
+>   Bolt verse le lundi (« BOLT FR »).
+> - Écritures : chaque jour, recette contre une **créance sur la plateforme
+>   (467)** ; chaque virement solde la créance (sa contrepartie 471 ou 706 est
+>   vidée, le 512 ne bouge pas) ; les frais vont en 627.
+> - Contrôle **par semaine** (`ingestion/semaines_plateforme.py`) : soldée si
+>   l'écart est nul ou vaut k × 0,99 € (k ≤ nombre de virements instantanés),
+>   éventuellement cumulée avec la semaine d'avant ; en attente du POP SVCS
+>   pendant 8 jours ; sinon à vérifier avec l'écart chiffré. Rien n'est écrit
+>   pour une semaine qui ne retombe pas juste.
+
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-16
 
 ## 1. Le problème : deux types de données d'entrée distincts
