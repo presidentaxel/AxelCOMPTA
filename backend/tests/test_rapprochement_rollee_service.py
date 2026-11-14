@@ -239,6 +239,7 @@ def test_un_user_illisible_empeche_tout_lien_par_le_nom_seul() -> None:
     assert {(x.rollee_user_id, x.indice) for x in depots.liens.liens(T)} == {("u-iban", "iban")}
     assert [a.rollee_user_id for a in depots.liens.a_choisir(T)] == ["u-nom"]
     assert "1 user(s) Rollee illisible(s)" in lignes[1]
+    assert lignes[2] == "    429 après 5 essais"
 
 
 def test_un_user_deborde_est_relu_a_la_fin_et_uber_n_est_pas_interroge_sur_l_iban() -> None:
@@ -266,3 +267,19 @@ def test_un_user_deborde_est_relu_a_la_fin_et_uber_n_est_pas_interroge_sur_l_iba
     assert ("u-nom", "nom_unique") in {(x.rollee_user_id, x.indice) for x in depots.liens.liens(T)}
     assert rollee.essais["u-nom"] == 2
     assert rollee.ibans == []  # Uber répond toujours 400 : jamais demandé
+
+
+def test_un_user_sans_plateforme_n_est_pas_interroge() -> None:
+    """AXE-918 : `accounts_number` à 0, aucun nom à lire chez Rollee."""
+
+    class AvecVides(FauxRollee):
+        async def utilisateurs(self) -> list[dict[str, Any]]:
+            return [*await super().utilisateurs(), {"id": "u-vide", "accounts_number": 0}]
+
+        async def comptes(self, user_id: str) -> list[dict[str, Any]]:
+            assert user_id != "u-vide", "un user sans plateforme ne doit pas être interrogé"
+            return await super().comptes(user_id)
+
+    depots = _depots(AvecVides())
+    lignes = asyncio.run(passer_tenant(depots, T, False, LE))
+    assert "2 non trouvé(s)" in lignes[0] and "illisible" not in " ".join(lignes)

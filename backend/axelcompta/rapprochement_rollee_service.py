@@ -42,6 +42,7 @@ from axelcompta.ingestion.providers.rollee import (
 )
 from axelcompta.ingestion.rapprochement_rollee import (
     DossierIndices,
+    Empreintes,
     Issue,
     UserRollee,
     apercu,
@@ -139,7 +140,22 @@ class Lecture:
     """Les users lus d'un compte Rollee, et ceux que Rollee n'a pas rendus."""
 
     users: list[UserRollee]
-    illisibles: int = 0
+    erreurs: tuple[str, ...] = ()  # « GET /users/<id>/accounts : 500 après 5 essais »
+
+    @property
+    def illisibles(self) -> int:
+        return len(self.erreurs)
+
+
+def _sans_plateforme(brut: Mapping[str, Any]) -> UserRollee | None:
+    """`accounts_number` à 0 dans la liste des users : aucune plateforme, donc
+    aucun nom à lire. On ne l'interroge pas (plus de la moitié des users,
+    autant d'appels épargnés à la limite de débit de Rollee)."""
+    if brut.get("accounts_number") != 0:
+        return None
+    metadata = brut.get("metadata") or {}
+    dossier = metadata.get("dossier_id") if isinstance(metadata, Mapping) else None
+    return UserRollee(str(brut["id"]), str(dossier) if dossier else None, Empreintes())
 
 
 async def lire_users(client: RolleeHttpClient, cle: bytes, seulement: str | None = None) -> Lecture:
@@ -151,6 +167,8 @@ async def lire_users(client: RolleeHttpClient, cle: bytes, seulement: str | None
     limite = asyncio.Semaphore(APPELS_SIMULTANES)
 
     async def un(brut: Mapping[str, Any]) -> UserRollee | None:
+        if (vide := _sans_plateforme(brut)) is not None:
+            return vide
         async with limite:
             try:
                 return await lire_user(client, brut, cle)
@@ -160,15 +178,15 @@ async def lire_users(client: RolleeHttpClient, cle: bytes, seulement: str | None
     lus = await asyncio.gather(*(un(brut) for brut in bruts))
     users = [u for u in lus if u is not None]
     # Rollee débordé sur quelques users : on les relit un par un, à la fin.
-    illisibles = 0
+    erreurs = []
     for brut, lu in zip(bruts, lus, strict=True):
         if lu is not None:
             continue
         try:
             users.append(await lire_user(client, brut, cle))
-        except RolleeIndisponible:
-            illisibles += 1
-    return Lecture(users, illisibles)
+        except RolleeIndisponible as exc:
+            erreurs.append(str(exc))
+    return Lecture(users, tuple(erreurs))
 
 
 @dataclass(frozen=True, slots=True)
@@ -322,7 +340,8 @@ async def passer_tenant(
     indices = [indices_dossier(d, sources, cle) for d in dossiers]
     par_branchement = await _users_par_branchement(depots, tenant_id, cle, seulement)
     tous = [u for _b, lecture in par_branchement for u in lecture.users]
-    illisibles = sum(lecture.illisibles for _b, lecture in par_branchement)
+    erreurs = [e for _b, lecture in par_branchement for e in lecture.erreurs]
+    illisibles = len(erreurs)
     issues = trancher_tous(
         tous,
         indices,
@@ -339,6 +358,7 @@ async def passer_tenant(
             f"  {illisibles} user(s) Rollee illisible(s) (Rollee débordé) : "
             "aucun lien par le nom seul à ce passage, relancez plus tard"
         )
+        lignes += [f"    {erreur}" for erreur in erreurs[:5]]
     nouveaux: list[AChoisir] = []
     for branchement, lecture in par_branchement:
         users = lecture.users
