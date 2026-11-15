@@ -186,3 +186,19 @@ def test_le_job_rollee_traite_les_webhooks_du_portefeuille() -> None:
     deps = replace(deps, traiter_rollee=lambda t: vus.append(t) or "1 événement Rollee traité")  # type: ignore[func-returns-value]
     resultat = executer_job(FileMemoire().demander(T, TYPE_ROLLEE), deps, AUJOURD_HUI)
     assert (resultat, vus) == ("1 événement Rollee traité", [T])
+
+
+def test_le_bouton_synchroniser_relit_aussi_rollee_apres_digifactory() -> None:
+    """Pilote du 15/11 : un seul bouton pour Digifactory et Rollee. Rollee
+    passe après, pour rapprocher les revenus des virements qui arrivent."""
+    deps, _dossiers, _contacts, synchros = _deps()
+    ordre: list[str] = []
+
+    def relever(_tenant: TenantId) -> str:
+        ordre.append(f"rollee après {len(synchros)} synchro(s)")
+        return "Rollee relu pour 2 dossier(s)"
+
+    deps = replace(deps, relever_rollee=relever)
+    resultat = executer_job(FileMemoire().demander(T, TYPE_SYNCHRO), deps, AUJOURD_HUI)
+    assert ordre == ["rollee après 1 synchro(s)"]
+    assert resultat.endswith("5 opérations reçues · Rollee relu pour 2 dossier(s)")

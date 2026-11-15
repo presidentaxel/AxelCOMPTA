@@ -30,6 +30,7 @@ from axelcompta.rapprochement_rollee_service import (
     phrase_lecture,
     phrase_rapprochement,
     rapprocher_dossier,
+    relever_portefeuille,
 )
 from axelcompta.tenants.branchements import BranchementsMemoire, nouveau
 from axelcompta.tenants.memory import InMemoryDossierRepository
@@ -367,3 +368,21 @@ def test_un_lien_pose_entre_temps_renvoie_le_user_au_gestionnaire() -> None:
     users = [UserRollee("u1", None, Empreintes())]
     appliquer(liens, [Issue("u1", "relie_auto", "d1", "iban")], users, Passage(T, "b1", LE))
     assert [(a.rollee_user_id, a.etat) for a in liens.a_choisir(T)] == [("u1", "a_choisir")]
+
+
+def test_le_portefeuille_relit_chaque_dossier_relie_une_fois_meme_en_erreur() -> None:
+    liens = [
+        Lien(DossierId("d2"), "u-a", "b", "auto", LE),
+        Lien(DossierId("d1"), "u-b", "b", "auto", LE),
+        Lien(DossierId("d1"), "u-c", "b", "manuel", LE),
+    ]
+    relus: list[str] = []
+
+    def relever(ident: str) -> str:
+        relus.append(ident)
+        if ident == "d2":
+            raise RuntimeError("Rollee indisponible")
+        return f"{ident} : ok"
+
+    assert relever_portefeuille(liens, relever) == "Rollee relu pour 1 dossier(s), 1 en erreur"
+    assert relus == ["d1", "d2"]
