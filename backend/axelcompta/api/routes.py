@@ -250,6 +250,7 @@ from axelcompta.ledger.memory import InMemoryLedgerService
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
+from axelcompta.manques_rollee import manques as manques_rollee
 from axelcompta.nouveaux_contacts import fiche_sirene, recherche_entreprises
 from axelcompta.packs.vtc_demo import (
     charger_categories_banque,
@@ -6502,8 +6503,36 @@ def lire_rapprochements_expert(
     return [_semaine_rapprochement(vue) for vue in vues]
 
 
+class ManquesRapprochementVue(BaseModel):
+    manques: list[str]
+
+
+def lire_manques_rapprochement_expert(
+    dossier: DossierExpertDep,
+    base: LedgerBaseDep,
+    settlements: SettlementsDep,
+    services: ServicesRolleeDep,
+) -> ManquesRapprochementVue:
+    """AXE-934 : ce qui empêche de rapprocher Rollee et la banque, même sans
+    aucune écriture bancaire."""
+    grand_livre = base.grand_livre(dossier.id)
+    vues = expliquer_semaines(settlements.lister(dossier.id), grand_livre, date.today())
+    return ManquesRapprochementVue(
+        manques=manques_rollee(
+            vues,
+            services.comptes.comptes(dossier.id),
+            charger_plateformes(),
+            debut_banque(grand_livre),
+        )
+    )
+
+
 def _enregistrer_routes_expert_lignes(app: FastAPI) -> None:
     app.post("/expert/taux", status_code=204)(poser_taux_expert)
+    app.get(
+        "/expert/dossiers/{dossier_id}/rapprochements/manques",
+        response_model=ManquesRapprochementVue,
+    )(lire_manques_rapprochement_expert)
     app.get(
         "/expert/dossiers/{dossier_id}/rapprochements",
         response_model=list[SemaineRapprochementVue],

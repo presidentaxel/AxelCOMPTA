@@ -520,6 +520,22 @@ export async function lireRapprochementsExpert(dossierId: string): Promise<Semai
   return (await reponse.json()) as SemaineRapprochement[];
 }
 
+/** AXE-934 : ce qui empêche de rapprocher Rollee et la banque de cette
+ * entreprise (compte à reconnecter, banque absente, plateforme non reliée…). */
+export async function lireManquesRapprochementExpert(dossierId: string): Promise<string[]> {
+  const reponse = await requeteGestionnaire(`/expert/dossiers/${dossierId}/rapprochements/manques`);
+  if (reponse.status === 401) {
+    throw new ErreurAuthGestionnaire();
+  }
+  if (reponse.status === 403) {
+    await refusExpert(reponse);
+  }
+  if (!reponse.ok) {
+    throw new ApiError(`HTTP ${reponse.status}`, reponse.status);
+  }
+  return ((await reponse.json()) as { manques: string[] }).manques;
+}
+
 /** Impute l'écriture et retourne les sujets à jour de ce dossier seul. */
 export async function imputerExpert(
   dossierId: string,

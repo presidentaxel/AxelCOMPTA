@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import cast
+from typing import Any, cast
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from axelcompta.api.routes import get_experts, get_settlements
+from axelcompta.api.routes import get_experts, get_services_rollee, get_settlements
 from axelcompta.core.ids import DossierId
+from axelcompta.ingestion.comptes_rollee import ComptesRolleeMemoire
 from axelcompta.ingestion.settlements_plateforme import SettlementsMemoire
+from axelcompta.plateformes_rollee import ServicesRollee
 from axelcompta.workflow.expert_comptable import (
     ROLE_EXPERT,
     TEXTE_ENGAGEMENT,
@@ -262,3 +264,18 @@ def test_sans_role_expert_les_rapprochements_sont_refuses() -> None:
     cast(FastAPI, admin.app).dependency_overrides[get_settlements] = lambda: SettlementsMemoire()
     refus = admin.get("/expert/dossiers/DEMO_sophie/rapprochements", headers=EN_TETE)
     assert refus.status_code == 403
+
+
+def test_l_expert_lit_ce_qui_manque_meme_sans_rollee_ni_banque() -> None:
+    """AXE-934 : sans compte Rollee relié, l'écran le dit ; les virements de
+    plateforme déjà en banque sont signalés."""
+    client = _client_expert()
+    app = cast(FastAPI, client.app)
+    app.dependency_overrides[get_settlements] = lambda: SettlementsMemoire()
+    services = ServicesRollee(cast(Any, None), ComptesRolleeMemoire())
+    app.dependency_overrides[get_services_rollee] = lambda: services
+    reponse = client.get("/expert/dossiers/DEMO_sophie/rapprochements/manques", headers=EN_TETE)
+    assert reponse.status_code == 200, reponse.text
+    premier, *suite = reponse.json()["manques"]
+    assert premier == "Aucun compte Rollee n'est relié à cette entreprise : rien à rapprocher."
+    assert all("aucun jour Rollee" in phrase for phrase in suite)  # virements de la démo

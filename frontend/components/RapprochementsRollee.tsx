@@ -4,7 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Select } from "@/components/ui/select";
 import { SelectRecherche } from "@/components/ui/select-recherche";
-import { ErreurAuthGestionnaire, lireRapprochementsExpert } from "@/lib/auth-gestionnaire";
+import {
+  ErreurAuthGestionnaire,
+  lireManquesRapprochementExpert,
+  lireRapprochementsExpert,
+  ModeExpertRefuse,
+} from "@/lib/auth-gestionnaire";
 import { changer, type EtatClassees } from "@/lib/classees";
 import { formatDate, formatMontant } from "@/lib/format";
 import { messageEchecChargement } from "@/lib/session";
@@ -31,21 +36,24 @@ export function RapprochementsRollee({
   chauffeurs: { id: string; nom: string }[];
   onChanger: (suivant: EtatClassees) => void;
 }) {
-  const [charge, setCharge] = useState<{ dossier: string; semaines: SemaineRapprochement[] } | null>(
-    null,
-  );
+  const [charge, setCharge] = useState<{
+    dossier: string;
+    semaines: SemaineRapprochement[];
+    manques: string[];
+  } | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [filtre, setFiltre] = useState("toutes");
   const dossier = etat.chauffeur;
   const semaines = charge?.dossier === dossier ? charge.semaines : null;
+  const manques = charge?.dossier === dossier ? charge.manques : [];
 
   useEffect(() => {
     if (!dossier) return;
     let actif = true;
-    lireRapprochementsExpert(dossier)
-      .then((lues) => {
+    Promise.all([lireRapprochementsExpert(dossier), lireManquesRapprochementExpert(dossier)])
+      .then(([lues, manquants]) => {
         if (actif) {
-          setCharge({ dossier, semaines: lues });
+          setCharge({ dossier, semaines: lues, manques: manquants });
           setErreur(null);
         }
       })
@@ -53,6 +61,11 @@ export function RapprochementsRollee({
         if (!actif) return;
         if (exception instanceof ErreurAuthGestionnaire) {
           setErreur("Session expirée.");
+          return;
+        }
+        if (exception instanceof ModeExpertRefuse) {
+          // AXE-934 : une entreprise hors de la lettre de mission ne s'affiche pas.
+          setErreur(`${exception.message} Ajoutez-la à votre lettre de mission dans Équipe.`);
           return;
         }
         setErreur(messageEchecChargement(exception, "Les rapprochements n'ont pas pu être lus."));
@@ -102,6 +115,16 @@ export function RapprochementsRollee({
         <p className="mt-6 text-sm text-subtle" aria-busy="true">
           Chargement des rapprochements…
         </p>
+      )}
+      {manques.length > 0 && (
+        <div className="mt-4 rounded-md border border-warning-border bg-warning-subtle p-3 text-sm text-ink">
+          <p className="font-medium">Ce qui manque pour tout rapprocher</p>
+          <ul className="mt-1 list-disc space-y-1 pl-5">
+            {manques.map((phrase) => (
+              <li key={phrase}>{phrase}</li>
+            ))}
+          </ul>
+        </div>
       )}
       {semaines && affichees.length === 0 && (
         <p className="mt-6 text-sm text-subtle">Aucune semaine pour ce filtre.</p>
