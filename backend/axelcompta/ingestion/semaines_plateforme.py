@@ -79,7 +79,7 @@ class Semaine:
     du_cts: int
     paye_cts: int
     frais_cts: int = 0
-    ecart_cts: int = 0  # reste dû après frais (avec le report) ; 0 si soldée
+    ecart_cts: int = 0  # reste dû après frais ; 0 si soldée
     jours: tuple[str, ...] = ()
     virements: tuple[str, ...] = ()
 
@@ -167,14 +167,17 @@ def _soldee(part: _Part, plateforme: str, frais: int) -> Semaine:
 
 
 def _ouverte(part: _Part, plateforme: str, etat: EtatSemaine) -> Semaine:
+    """AXE-932 : chaque virement instantané coûte 0,99 € même quand la
+    semaine ne tombe pas juste ; l'écart ne garde que l'inexpliqué."""
+    frais = FRAIS_INSTANTANE_CTS * part.instantanes
     return Semaine(
         plateforme,
         part.lundi,
         etat,
         part.du,
         part.paye,
-        0,
-        part.du - part.paye,
+        frais,
+        part.du - part.paye - frais,
         part.jours,
         part.virements,
     )
