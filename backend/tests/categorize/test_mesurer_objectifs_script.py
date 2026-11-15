@@ -34,6 +34,7 @@ def test_une_enveloppe_entre_deux_comptes_est_un_virement_interne() -> None:
     assert [o.proposee for o in observations] == ["virement_interne"] * 2
 
 
-def test_sans_compte_l_enveloppe_passe_pour_du_carburant() -> None:
-    sortie, _entree = mesurer_objectifs.observer(_paire("", ""), _pipeline())
-    assert sortie.proposee == "carburant"
+def test_sans_compte_l_enveloppe_de_meme_libelle_est_aussi_un_virement_interne() -> None:
+    """AXE-930 : avant, sans compte connu, elle passait pour du carburant."""
+    observations = mesurer_objectifs.observer(_paire("", ""), _pipeline())
+    assert [o.proposee for o in observations] == ["virement_interne"] * 2

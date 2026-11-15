@@ -39,6 +39,7 @@ import {
 } from "@/lib/classees";
 import { filtresActifs, sansFiltres, versFileATraiter } from "@/lib/classees-filtres";
 import { formatDate } from "@/lib/format";
+import { estVirementInterne } from "@/lib/virements-internes";
 import { phraseTva } from "@/lib/tva-estimee";
 import { messageEchecChargement } from "@/lib/session";
 import type { OperationClassee, OperationsClassees as Donnees } from "@/lib/types";
@@ -346,6 +347,11 @@ function Ligne({
         </TableCell>
         <TableCell className="py-2 text-xs text-subtle">
           Compte {operation.compte}
+          {estVirementInterne(operation) && (
+            <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">
+              Virement interne rapproché · hors recettes et charges
+            </span>
+          )}
           {operation.categorie ? ` · ${operation.categorie}` : ""} · {ORIGINES[operation.origine] ?? operation.origine} ·
           confiance {formatConfiance(operation.confiance)}
           {operation.verdict ? ` · noté ${operation.verdict}` : ""}

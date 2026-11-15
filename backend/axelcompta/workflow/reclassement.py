@@ -37,6 +37,11 @@ from axelcompta.packs.tva_deductible import RegleTva, regle_tva
 from .decisions import CATEGORIE_ANNULATION, DecisionHumaine
 from .revue import COMPTE_ATTENTE, appliquer_decisions, compte_cible
 from .tva_imputation import lignes_imputees
+from .virement_interne import (
+    en_virement_interne,
+    source_du_virement_interne,
+    sources_en_virement_interne,
+)
 
 MARQUE = ":decision-"
 # AXE-831 : OD qui sépare la TVA déductible d'une opération imputée TTC
@@ -75,7 +80,11 @@ def est_od_repliee(ecriture_id: EcritureId) -> bool:
     """Reclassement ou complément de TVA, et leurs contre-passations : des OD
     que les écrans replient dans l'opération bancaire."""
     base = origine(ecriture_id) or ecriture_id
-    return source_du_reclassement(base) is not None or source_du_complement(base) is not None
+    return (
+        source_du_reclassement(base) is not None
+        or source_du_complement(base) is not None
+        or source_du_virement_interne(base) is not None
+    )
 
 
 def complements_tva_actifs(source_id: EcritureId, ecritures: Sequence[Ecriture]) -> list[Ecriture]:
@@ -340,6 +349,7 @@ def projeter(ecritures: Sequence[Ecriture]) -> tuple[Ecriture, ...]:
         source_id = source_du_complement(e.id)
         if source_id is not None and source_id not in complements:
             complements[source_id] = complements_tva_actifs(source_id, ecritures)
+    internes = sources_en_virement_interne(ecritures)
     resultat = []
     for ecriture in ecritures:
         if est_od_repliee(ecriture.id):
@@ -349,6 +359,8 @@ def projeter(ecritures: Sequence[Ecriture]) -> tuple[Ecriture, ...]:
             ecriture = _remplacer_attente(ecriture, final)
         for complement in complements.get(ecriture.id, ()):
             ecriture = _ajouter_complement(ecriture, complement)
+        if (origine(ecriture.id) or ecriture.id) in internes:
+            ecriture = en_virement_interne(ecriture)  # AXE-930
         resultat.append(ecriture)
     return tuple(resultat)
 

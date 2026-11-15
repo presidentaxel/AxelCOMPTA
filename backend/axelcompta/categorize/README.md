@@ -98,6 +98,12 @@ haute confiance, il reste à trancher, parce que son compte dépend du statut.
    opposés, à un jour près, sur deux comptes bancaires du dossier → 580,
    imputées sans question. Avant les règles : un virement « carburant » entre
    deux enveloppes n'est pas un plein.
+   AXE-930 : aussi deux jambes **du même compte** (ou de compte inconnu) de
+   même libellé — certaines banques à enveloppes (MK DRIVING) les montrent
+   sur un seul compte. Les opérations écrites avant sont reprises par
+   `scripts/reprendre_virements_internes.py` (OD `{S}:virement-interne`,
+   repliée à l'écran, `workflow/virement_interne.py`). Le chauffeur ne les
+   compte ni en entrées ni en sorties ; l'expert les voit marquées.
 1. **Règles** du pack ; celles qui décrivent un paiement à un commerçant
    (`CATEGORIES_DE_PAIEMENT`) ne s'appliquent pas à un virement
    (`type_operation == "transfer"`).
