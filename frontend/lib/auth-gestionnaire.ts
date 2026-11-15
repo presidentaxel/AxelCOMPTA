@@ -37,6 +37,7 @@ import type {
   EvenementAnomalie,
   FileExpert,
   ImputationFaite,
+  SemaineRapprochement,
   NouveauChauffeur,
   OperationsClassees,
   ReglageTags,
@@ -501,6 +502,22 @@ export async function lireFileExpert(): Promise<FileExpert> {
     throw new ApiError(`API démo (/expert/file) : HTTP ${reponse.status}`, reponse.status);
   }
   return (await reponse.json()) as FileExpert;
+}
+
+/** Semaines Rollee d'une entreprise : jours (brut, commission, espèces, dû)
+ * et virements bancaires, y compris les semaines déjà soldées. */
+export async function lireRapprochementsExpert(dossierId: string): Promise<SemaineRapprochement[]> {
+  const reponse = await requeteGestionnaire(`/expert/dossiers/${dossierId}/rapprochements`);
+  if (reponse.status === 401) {
+    throw new ErreurAuthGestionnaire();
+  }
+  if (reponse.status === 403) {
+    await refusExpert(reponse);
+  }
+  if (!reponse.ok) {
+    throw new ApiError(`HTTP ${reponse.status}`, reponse.status);
+  }
+  return (await reponse.json()) as SemaineRapprochement[];
 }
 
 /** Impute l'écriture et retourne les sujets à jour de ce dossier seul. */

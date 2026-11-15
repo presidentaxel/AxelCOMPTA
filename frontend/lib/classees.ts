@@ -1,6 +1,10 @@
+import { chercheExpert } from "./recherche-expert";
+import type { OperationClassee, OperationsClassees } from "./types";
+
 /** Vue « déjà classées » du mode expert (AXE-823) : filtres gardés dans l'URL. */
 
 export const VUE_A_TRAITER = "a_traiter";
+export const VUE_RAPPROCHEMENTS = "rapprochements";
 
 export const STATUTS: Record<string, string> = {
   [VUE_A_TRAITER]: "À traiter",
@@ -8,6 +12,7 @@ export const STATUTS: Record<string, string> = {
   chauffeur: "Décidées par le chauffeur",
   expert: "Imputées par l'expert",
   toutes: "Toutes les classées",
+  [VUE_RAPPROCHEMENTS]: "Rapprochements Rollee",
 };
 
 export const ORIGINES: Record<string, string> = {
@@ -32,7 +37,7 @@ export const TRIS: Record<string, string> = {
 };
 
 /** Clés lues dans l'URL ; `vue` choisit entre la file et les classées. */
-export const CLES = ["vue", "origine", "categorie", "tranche", "sens", "tri", "page", "chauffeur"] as const;
+export const CLES = ["vue", "origine", "categorie", "tranche", "sens", "tri", "page", "chauffeur", "q"] as const;
 export type Cle = (typeof CLES)[number];
 export type EtatClassees = Record<Cle, string>;
 
@@ -45,6 +50,7 @@ const DEFAUTS: EtatClassees = {
   tri: "recentes",
   page: "1",
   chauffeur: "",
+  q: "",
 };
 
 export function lireEtat(recherche: string): EtatClassees {
@@ -78,12 +84,65 @@ export function versRecherche(etat: EtatClassees): string {
 /** Paramètres de `GET /expert/classees` (« toutes » : pas de filtre de statut). */
 export function versApi(etat: EtatClassees): URLSearchParams {
   const params = new URLSearchParams();
-  if (etat.vue !== "toutes" && etat.vue !== VUE_A_TRAITER) params.set("statut", etat.vue);
+  if (etat.vue !== "toutes" && etat.vue !== VUE_A_TRAITER && etat.vue !== VUE_RAPPROCHEMENTS) {
+    params.set("statut", etat.vue);
+  }
   for (const cle of ["origine", "categorie", "tranche", "sens", "tri", "page"] as const) {
     if (etat[cle]) params.set(cle, etat[cle]);
   }
   if (etat.chauffeur) params.set("dossier", etat.chauffeur);
+  if (etat.q.trim()) params.set("q", etat.q.trim());
   return params;
+}
+
+/** Toutes les pages du filtre courant, sans la recherche : elle se fait ensuite
+ * en mémoire, à chaque frappe. */
+export async function operationsDesPages(
+  params: URLSearchParams,
+  lire: (params: URLSearchParams) => Promise<OperationsClassees>,
+): Promise<OperationClassee[]> {
+  const premiere = await lire(params);
+  if (premiere.pages <= 1) return premiere.operations;
+  const suivantes = await Promise.all(
+    Array.from({ length: premiere.pages - 1 }, (_, index) => {
+      const suite = new URLSearchParams(params);
+      suite.set("page", String(index + 2));
+      return lire(suite);
+    }),
+  );
+  return [premiere, ...suivantes].flatMap((page) => page.operations);
+}
+
+export async function lireToutesLesPages(
+  etat: EtatClassees,
+  lire: (params: URLSearchParams) => Promise<OperationsClassees>,
+): Promise<OperationClassee[]> {
+  return operationsDesPages(versApi({ ...etat, q: "", page: "1" }), lire);
+}
+
+export function filtrerOperations(operations: OperationClassee[], saisie: string): OperationClassee[] {
+  const texte = saisie.trim();
+  if (!texte) return operations;
+  return chercheExpert(operations.map(ligneCherchable), texte);
+}
+
+/** La page demandée, ou toutes les pages quand une recherche est saisie. */
+export async function avecRecherche(
+  etat: EtatClassees,
+  lire: (params: URLSearchParams) => Promise<OperationsClassees>,
+): Promise<OperationsClassees> {
+  const premiere = await lire(versApi({ ...etat, q: "", page: "1" }));
+  const operations = await lireToutesLesPages(etat, lire);
+  const gardees = filtrerOperations(operations, etat.q);
+  if (!etat.q.trim()) return { ...premiere, operations };
+  return { ...premiere, operations: gardees, total: gardees.length, page: 1, pages: 1 };
+}
+
+function ligneCherchable(operation: OperationClassee): OperationClassee {
+  const ticket = operation.a_justificatif ? "ticket" : "aucun ticket";
+  return { ...operation, detail: [operation.categorie, ticket].filter(Boolean).join(" ") } as OperationClassee & {
+    detail: string;
+  };
 }
 
 export function formatConfiance(confiance: number | null): string {

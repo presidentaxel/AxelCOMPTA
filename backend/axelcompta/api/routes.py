@@ -172,6 +172,12 @@ from axelcompta.exercices import (
     executer_passage,
     preparer_passage,
 )
+from axelcompta.explication_semaines import (
+    JourVu,
+    SemaineVue,
+    VirementVu,
+    expliquer_semaines,
+)
 from axelcompta.filings.cerfa_2031 import PdfCerfa2031Renderer
 from axelcompta.filings.cerfa_2033 import extraire_page_2033
 from axelcompta.filings.cerfa_2065 import PdfCerfa2065Renderer
@@ -355,6 +361,7 @@ from axelcompta.workflow.classees import (
     OperationClassee,
     Statut,
     compter,
+    correspond_recherche,
     trier,
 )
 from axelcompta.workflow.classees import classer as classer_operations
@@ -6407,8 +6414,92 @@ def joindre_justificatif_expert(  # noqa: PLR0913 — une dépendance par dépô
     _joindre_justificatif(dossier, ecriture_id, fichier, base, justificatifs)
 
 
+class JourRapprochementVue(BaseModel):
+    date: str
+    brut_cts: int
+    commission_cts: int
+    net_cts: int
+    especes_cts: int
+    du_cts: int
+
+
+class VirementRapprochementVue(BaseModel):
+    date: str
+    libelle: str
+    montant_cts: int
+    nature: str
+    compte: str
+
+
+class SemaineRapprochementVue(BaseModel):
+    plateforme: str
+    du: str
+    au: str
+    etat: str
+    du_cts: int
+    paye_cts: int
+    frais_cts: int
+    ecart_cts: int
+    motif: str | None
+    jours: list[JourRapprochementVue]
+    virements: list[VirementRapprochementVue]
+
+
+def _semaine_rapprochement(vue: SemaineVue) -> SemaineRapprochementVue:
+    return SemaineRapprochementVue(
+        plateforme=vue.plateforme,
+        du=vue.lundi.isoformat(),
+        au=vue.dimanche.isoformat(),
+        etat=vue.etat,
+        du_cts=vue.du_cts,
+        paye_cts=vue.paye_cts,
+        frais_cts=vue.frais_cts,
+        ecart_cts=vue.ecart_cts,
+        motif=vue.motif,
+        jours=[_jour_rapprochement(jour) for jour in vue.jours],
+        virements=[_virement_rapprochement(virement) for virement in vue.virements],
+    )
+
+
+def _jour_rapprochement(jour: JourVu) -> JourRapprochementVue:
+    return JourRapprochementVue(
+        date=jour.date.isoformat(),
+        brut_cts=jour.brut_cts,
+        commission_cts=jour.commission_cts,
+        net_cts=jour.net_cts,
+        especes_cts=jour.especes_cts,
+        du_cts=jour.du_cts,
+    )
+
+
+def _virement_rapprochement(virement: VirementVu) -> VirementRapprochementVue:
+    return VirementRapprochementVue(
+        date=virement.date.isoformat(),
+        libelle=virement.libelle,
+        montant_cts=virement.montant_cts,
+        nature=virement.nature,
+        compte=virement.compte,
+    )
+
+
+def lire_rapprochements_expert(
+    dossier: DossierExpertDep,
+    base: LedgerBaseDep,
+    settlements: SettlementsDep,
+) -> list[SemaineRapprochementVue]:
+    """Semaines Rollee et virements bancaires du dossier, déjà soldées comprises."""
+    vues = expliquer_semaines(
+        settlements.lister(dossier.id), base.grand_livre(dossier.id), date.today()
+    )
+    return [_semaine_rapprochement(vue) for vue in vues]
+
+
 def _enregistrer_routes_expert_lignes(app: FastAPI) -> None:
     app.post("/expert/taux", status_code=204)(poser_taux_expert)
+    app.get(
+        "/expert/dossiers/{dossier_id}/rapprochements",
+        response_model=list[SemaineRapprochementVue],
+    )(lire_rapprochements_expert)
     app.get("/expert/dossiers/{dossier_id}/ecritures/{ecriture_id}/justificatif")(
         lire_justificatif_expert
     )
@@ -6597,9 +6688,19 @@ def _page_classees(
     tri: str,
     page: int,
     noms: dict[DossierId, str] | None = None,
+    q: str = "",
 ) -> tuple[list[OperationClassee], int, int]:
     """(tranche de la page, total filtré, nombre de pages)."""
-    gardees = trier((o for o in operations if filtres.garde(o)), tri, noms)
+    libelles = noms or {}
+    gardees = trier(
+        (
+            o
+            for o in operations
+            if filtres.garde(o) and correspond_recherche(o, q, libelles.get(o.dossier_id, ""))
+        ),
+        tri,
+        noms,
+    )
     pages = max(1, -(-len(gardees) // PAR_PAGE_CLASSEES))
     courante = min(max(1, page), pages)
     debut = (courante - 1) * PAR_PAGE_CLASSEES
@@ -6714,6 +6815,7 @@ def _enregistrer_routes_classees(app: FastAPI) -> None:
         dossier: str | None = None,
         tri: str = "recentes",
         page: int = 1,
+        q: str = "",
     ) -> OperationsClasseesVue:
         """Opérations déjà classées du portefeuille (AXE-823), filtrées et
         paginées côté serveur. Seuls les dossiers dont la version a bougé
@@ -6732,7 +6834,7 @@ def _enregistrer_routes_classees(app: FastAPI) -> None:
             [d.id for d in portefeuille],
         )
         filtres = Filtres(statut, origine, categorie, tranche, sens)
-        tranche_page, total, pages = _page_classees(operations, filtres, tri, page, noms)
+        tranche_page, total, pages = _page_classees(operations, filtres, tri, page, noms, q)
         tickets = _tickets_de(tranche_page, portefeuille, justificatifs)
         compteurs = compter(operations)
         return OperationsClasseesVue(

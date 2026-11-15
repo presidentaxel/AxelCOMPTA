@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useId, useState } from "react";
+import { Fragment, useEffect, useId, useMemo, useState } from "react";
 
 import { Montant } from "@/components/Montant";
 import { PanneauEtat } from "@/components/PanneauEtat";
@@ -26,7 +26,9 @@ import {
   changer,
   type Cle,
   type EtatClassees,
+  filtrerOperations,
   formatConfiance,
+  operationsDesPages,
   ORIGINES,
   phraseCompteurs,
   SENS,
@@ -63,7 +65,16 @@ export function OperationsClassees({
   const [donnees, setDonnees] = useState<Donnees | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
-  const requete = versApi(etat).toString();
+  const [saisie, setSaisie] = useState(etat.q);
+  const [stock, setStock] = useState<{ cle: string; operations: OperationClassee[] } | null>(null);
+  const requete = versApi({ ...etat, q: "" }).toString();
+  const cleListe = versApi({ ...etat, q: "", page: "1" }).toString();
+  const corpus = stock?.cle === cleListe ? stock.operations : null;
+  const trouvees = useMemo(() => {
+    if (!saisie.trim()) return donnees?.operations ?? [];
+    return filtrerOperations(corpus ?? donnees?.operations ?? [], saisie);
+  }, [corpus, donnees, saisie]);
+  const affichees = saisie.trim() ? trouvees.slice(0, 50) : trouvees;
 
   useEffect(() => {
     let actif = true;
@@ -83,13 +94,40 @@ export function OperationsClassees({
     };
   }, [requete, version]);
 
+  useEffect(() => {
+    let actif = true;
+    operationsDesPages(new URLSearchParams(cleListe), lireClassees)
+      .then((operations) => {
+        if (actif) setStock({ cle: cleListe, operations });
+      })
+      .catch(() => {
+        // La page affichée reste celle déjà lue. La recherche porte alors sur elle.
+      });
+    return () => {
+      actif = false;
+    };
+  }, [cleListe, version]);
+
   function choisir(cle: Cle, valeur: string) {
     onChanger(changer(etat, cle, valeur));
   }
 
   return (
     <div className="mt-6">
-      {donnees && <p className="text-sm text-ink">{phraseCompteurs(donnees.compteurs)}.</p>}
+      <Input
+        value={saisie}
+        onChange={(evenement) => setSaisie(evenement.target.value)}
+        placeholder="Rechercher un libellé, un montant, une entreprise"
+        aria-label="Recherche"
+        className="max-w-md"
+      />
+      {donnees && <p className="mt-3 text-sm text-ink">{phraseCompteurs(donnees.compteurs)}.</p>}
+      {saisie.trim() && (
+        <p className="mt-1 text-sm text-subtle">
+          {trouvees.length} opérations
+          {trouvees.length > affichees.length ? ` · ${affichees.length} affichées` : ""}
+        </p>
+      )}
       <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-3">
         <Choix libelle="Origine" valeur={etat.origine} options={ORIGINES} onChoisir={(v) => choisir("origine", v)} />
         <Choix
@@ -135,24 +173,30 @@ export function OperationsClassees({
           <SqueletteLignes nombre={5} className="h-10 w-full" />
         </div>
       )}
-      {donnees && donnees.operations.length === 0 && (
+      {donnees && affichees.length === 0 && (
         <div className="mt-6">
           <PanneauEtat
             type="vide"
             message={
-              filtresActifs(etat)
+              saisie.trim() || filtresActifs(etat)
                 ? "Aucune opération pour ces filtres."
                 : "Aucune opération classée dans cette vue."
             }
             action={
-              filtresActifs(etat)
-                ? { libelle: "Réinitialiser les filtres", onClick: () => onChanger(sansFiltres(etat)) }
+              saisie.trim() || filtresActifs(etat)
+                ? {
+                    libelle: "Réinitialiser les filtres",
+                    onClick: () => {
+                      setSaisie("");
+                      onChanger(sansFiltres(etat));
+                    },
+                  }
                 : { libelle: "Voir la file à traiter", onClick: () => onChanger(versFileATraiter(etat)) }
             }
           />
         </div>
       )}
-      {donnees && donnees.operations.length > 0 && (
+      {donnees && affichees.length > 0 && (
         <Card variant="section" className="mt-4 overflow-hidden">
           <Table>
             <TableHeader>
@@ -165,7 +209,7 @@ export function OperationsClassees({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {donnees.operations.map((operation) => (
+              {affichees.map((operation) => (
                 <Ligne
                   key={`${operation.dossier_id}-${operation.ecriture_id}`}
                   operation={operation}
@@ -178,7 +222,7 @@ export function OperationsClassees({
           </Table>
         </Card>
       )}
-      {donnees && donnees.pages > 1 && (
+      {donnees && !saisie.trim() && donnees.pages > 1 && (
         <div className="mt-4 flex items-center gap-3 text-sm text-subtle">
           <Button
             type="button"

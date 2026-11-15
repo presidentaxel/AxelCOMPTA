@@ -167,6 +167,38 @@ export type ImputationFaite = {
   sujets: SujetExpert[];
 };
 
+export type JourRapprochement = {
+  date: string;
+  brut_cts: number;
+  commission_cts: number;
+  net_cts: number;
+  especes_cts: number;
+  du_cts: number;
+};
+
+export type VirementRapprochement = {
+  date: string;
+  libelle: string;
+  montant_cts: number;
+  nature: string;
+  compte: string;
+};
+
+/** Une semaine Rollee et les virements bancaires qui la paient. */
+export type SemaineRapprochement = {
+  plateforme: string;
+  du: string;
+  au: string;
+  etat: string;
+  du_cts: number;
+  paye_cts: number;
+  frais_cts: number;
+  ecart_cts: number;
+  motif: string | null;
+  jours: JourRapprochement[];
+  virements: VirementRapprochement[];
+};
+
 export type FileExpert = {
   sujets: SujetExpert[];
   comptes: { compte: string; libelle: string }[];

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { EngagementExpert } from "@/components/EngagementExpert";
 import { OperationsClassees } from "@/components/OperationsClassees";
+import { RapprochementsRollee } from "@/components/RapprochementsRollee";
 import { Squelette } from "@/components/Squelette";
 import { TicketExpert } from "@/components/TicketExpert";
 import { TauxExpert } from "@/components/TauxExpert";
@@ -26,6 +27,7 @@ import {
   STATUTS,
   versRecherche,
   VUE_A_TRAITER,
+  VUE_RAPPROCHEMENTS,
 } from "@/lib/classees";
 import { remplacerSujetsDuDossier } from "@/lib/file-expert";
 import { formatMontant } from "@/lib/format";
@@ -329,10 +331,17 @@ export default function ModeExpertPage() {
           value={vue.vue}
           onValueChange={(valeur) => changerVue({ ...vue, vue: valeur, page: "1" })}
           options={Object.entries(STATUTS).map(([id, libelle]) => ({ value: id, label: libelle }))}
-          className="w-56"
+          className="w-64"
         />
       </div>
-      {vue.vue !== VUE_A_TRAITER && (
+      {vue.vue === VUE_RAPPROCHEMENTS && (
+        <RapprochementsRollee
+          etat={vue}
+          chauffeurs={file?.chauffeurs ?? []}
+          onChanger={changerVue}
+        />
+      )}
+      {vue.vue !== VUE_A_TRAITER && vue.vue !== VUE_RAPPROCHEMENTS && (
         <OperationsClassees
           etat={vue}
           comptes={file?.comptes ?? []}

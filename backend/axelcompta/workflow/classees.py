@@ -11,6 +11,7 @@ décisions et les verdicts sont lus ailleurs.
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -206,6 +207,32 @@ def _tva(
     if tva.origine == "relevee":
         return None, tva.centimes
     return tva.centimes, None
+
+
+def _sans_accent(texte: str) -> str:
+    decompose = unicodedata.normalize("NFD", texte)
+    return "".join(c for c in decompose if unicodedata.category(c) != "Mn").casefold()
+
+
+def correspond_recherche(operation: OperationClassee, saisie: str, nom: str = "") -> bool:
+    """Chaque mot doit se retrouver dans le libellé, l'entreprise, le compte ou le montant."""
+    jetons = _sans_accent(saisie).split()
+    if not jetons:
+        return True
+    euros = f"{abs(operation.montant_cts) / 100:.2f}".replace(".", ",")
+    texte = _sans_accent(
+        " ".join(
+            (
+                operation.libelle,
+                nom,
+                operation.compte,
+                operation.categorie or "",
+                operation.taux_tva or "",
+                euros,
+            )
+        )
+    )
+    return all(jeton in texte for jeton in jetons)
 
 
 def trier(

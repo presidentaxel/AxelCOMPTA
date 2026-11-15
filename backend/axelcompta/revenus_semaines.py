@@ -21,6 +21,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 
 from axelcompta.core.errors import DomaineError
+from axelcompta.core.ids import EcritureId
 from axelcompta.core.pcg import est_compte_banque
 from axelcompta.ingestion.ecritures_semaines import (
     SUFFIXE_SOLDE,
@@ -100,19 +101,38 @@ def _contrepartie(ecriture: Ecriture) -> str | None:
     return comptes.pop() if len(comptes) == 1 else None
 
 
+def virements_plateforme(grand_livre: Sequence[Ecriture]) -> dict[str, tuple[Virement, Ecriture]]:
+    """Tous les encaissements reconnus comme venant d'une plateforme, y compris
+    ceux déjà soldés. Vus après reclassement."""
+    exclus = annulees(grand_livre)
+    trouves: dict[str, tuple[Virement, Ecriture]] = {}
+    for ecriture in projeter(grand_livre):
+        reconnu = _virement_reconnu(ecriture, exclus)
+        if reconnu is not None:
+            trouves[str(ecriture.id)] = reconnu
+    return trouves
+
+
+def _virement_reconnu(
+    ecriture: Ecriture, exclus: frozenset[EcritureId]
+) -> tuple[Virement, Ecriture] | None:
+    if ecriture.journal is not Journal.BQ or ecriture.id in exclus:
+        return None
+    montant = _encaisse(ecriture)
+    if montant <= 0:
+        return None
+    lu = virement(str(ecriture.id), ecriture.date, montant, ecriture.libelle)
+    return (lu, ecriture) if lu is not None else None
+
+
 def virements_libres(grand_livre: Sequence[Ecriture]) -> dict[str, tuple[Virement, Ecriture]]:
     """Les virements de plateforme pas encore soldés, vus après reclassement."""
     soldes = {e.id for e in grand_livre if e.id.endswith(SUFFIXE_SOLDE)}
-    exclus = annulees(grand_livre)
-    libres: dict[str, tuple[Virement, Ecriture]] = {}
-    for e in projeter(grand_livre):
-        if e.journal is not Journal.BQ or e.id in exclus or f"{e.id}{SUFFIXE_SOLDE}" in soldes:
-            continue
-        montant = _encaisse(e)
-        lu = virement(str(e.id), e.date, montant, e.libelle) if montant > 0 else None
-        if lu is not None:
-            libres[str(e.id)] = (lu, e)
-    return libres
+    return {
+        identifiant: couple
+        for identifiant, couple in virements_plateforme(grand_livre).items()
+        if f"{identifiant}{SUFFIXE_SOLDE}" not in soldes
+    }
 
 
 def _dans(jour: date, periodes: Sequence[Periode]) -> bool:

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import cast
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from axelcompta.api.routes import get_experts
+from axelcompta.api.routes import get_experts, get_settlements
 from axelcompta.core.ids import DossierId
+from axelcompta.ingestion.settlements_plateforme import SettlementsMemoire
 from axelcompta.workflow.expert_comptable import (
     ROLE_EXPERT,
     TEXTE_ENGAGEMENT,
@@ -244,3 +247,18 @@ def test_l_expert_ajoute_et_relit_un_ticket() -> None:
         if s["ecriture_id"] == sujet["ecriture_id"]
     )
     assert ligne["a_justificatif"] is True
+
+
+def test_l_expert_lit_les_rapprochements_rollee_de_son_dossier() -> None:
+    client = _client_expert()
+    cast(FastAPI, client.app).dependency_overrides[get_settlements] = lambda: SettlementsMemoire()
+    reponse = client.get("/expert/dossiers/DEMO_sophie/rapprochements", headers=EN_TETE)
+    assert reponse.status_code == 200
+    assert isinstance(reponse.json(), list)
+
+
+def test_sans_role_expert_les_rapprochements_sont_refuses() -> None:
+    admin = _client_et_stubs(role="admin")[0]
+    cast(FastAPI, admin.app).dependency_overrides[get_settlements] = lambda: SettlementsMemoire()
+    refus = admin.get("/expert/dossiers/DEMO_sophie/rapprochements", headers=EN_TETE)
+    assert refus.status_code == 403

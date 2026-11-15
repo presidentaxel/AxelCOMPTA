@@ -16,6 +16,7 @@ from axelcompta.workflow.classees import (
     OperationClassee,
     classer,
     compter,
+    correspond_recherche,
     tranche_de,
     trier,
 )
@@ -172,6 +173,25 @@ def test_le_tri_chauffeur_suit_le_nom_de_l_entreprise() -> None:
     ]
     noms = {D: "Zoé", autre: "Anna"}
     assert [o.ecriture_id for o in trier(ops, "chauffeur", noms)] == ["z", "a"]
+
+
+def test_la_recherche_retrouve_le_libelle_et_le_montant() -> None:
+    operation = OperationClassee(
+        D,
+        EcritureId("a"),
+        date(2026, 3, 1),
+        "TOTAL 23/11",
+        -2300,
+        "6061",
+        "carburant",
+        "regle",
+        None,
+        "auto",
+    )
+    assert correspond_recherche(operation, "total 23", "Sophie")
+    assert not correspond_recherche(operation, "total karim", "Sophie")
+    assert correspond_recherche(operation, "sophie", "Sophie")
+    assert correspond_recherche(operation, "6061")
 
 
 @pytest.mark.parametrize(
