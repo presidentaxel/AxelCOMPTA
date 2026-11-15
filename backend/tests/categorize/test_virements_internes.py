@@ -34,9 +34,25 @@ def test_un_jour_d_ecart_est_toléré_deux_non() -> None:
     assert not apparier_virements_internes([_tx("a", -100, 3, "pro"), _tx("b", 100, 5, "fiscal")])
 
 
-def test_meme_compte_ou_compte_inconnu_jamais_apparie() -> None:
-    assert not apparier_virements_internes([_tx("a", -100, 3, "pro"), _tx("b", 100, 3, "pro")])
-    assert not apparier_virements_internes([_tx("a", -100, 3, None), _tx("b", 100, 3, "pro")])
+def test_meme_compte_ou_compte_inconnu_jamais_apparie_sous_deux_libelles() -> None:
+    sortie = _tx("a", -100, 3, "pro", "carburant")
+    assert not apparier_virements_internes([sortie, _tx("b", 100, 3, "pro", "remboursement")])
+    assert not apparier_virements_internes([sortie, _tx("b", 100, 3, None, "remboursement")])
+
+
+def test_meme_compte_et_meme_libelle_sont_apparies() -> None:
+    """AXE-930, pilote du 15/11 : la banque de MK DRIVING montre ses
+    enveloppes sur un seul compte, « cotisation URSSAF » −50 € puis +50 €."""
+    paires = apparier_virements_internes(
+        [
+            _tx("sortie", -5_000, 7, "pro", "cotisation URSSAF"),
+            _tx("entree", 5_000, 7, "pro", "Cotisation  urssaf"),
+        ]
+    )
+    assert paires == {"sortie": "entree", "entree": "sortie"}
+    assert apparier_virements_internes(
+        [_tx("a", -100, 3, None, "trésorerie"), _tx("b", 100, 4, None, "trésorerie")]
+    )
 
 
 def test_montants_differents_ou_meme_sens_jamais_apparies() -> None:

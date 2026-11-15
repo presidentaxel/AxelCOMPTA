@@ -51,6 +51,7 @@ import { ticketPrioritaire } from "@/lib/tickets";
 import { phraseTva } from "@/lib/tva-estimee";
 import type { DossierResume, TransactionVue } from "@/lib/types";
 
+import { horsVirementsInternes, phraseVirementsInternes } from "@/lib/virements-internes";
 const MOIS = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
 const JOUR = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
 const ANNEAU =
@@ -633,9 +634,12 @@ function Mouvements({
   onSens: (sens: SensActivite) => void;
   onActualiser: () => void;
 }) {
-  const retenues = transactions.filter((transaction) =>
+  // AXE-930 : un virement entre ses comptes n'est ni une entrée ni une sortie.
+  const { gardees, internes } = horsVirementsInternes(transactions);
+  const retenues = gardees.filter((transaction) =>
     sens === "sorties" ? transaction.montant_cts < 0 : transaction.montant_cts > 0,
   );
+  const phraseInternes = phraseVirementsInternes(internes);
   const total = retenues.reduce((somme, transaction) => somme + transaction.montant_cts, 0);
   const jours = grouperParJour(retenues);
   return (
@@ -678,6 +682,7 @@ function Mouvements({
           {formatMontant(total)}
         </p>
       )}
+      {phraseInternes && <p className="mt-1 text-xs text-subtle">{phraseInternes}</p>}
       {jours.length === 0 ? (
         <Etat
           type="vide"
