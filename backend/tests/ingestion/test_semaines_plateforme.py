@@ -144,8 +144,23 @@ def test_une_semaine_pas_finie_n_est_pas_tranchee() -> None:
 
 
 def test_des_frais_au_dela_du_nombre_de_retraits_ne_sont_pas_inventes() -> None:
-    """Un seul retrait instantané : 2 × 0,99 € d'écart n'est pas expliqué."""
+    """Un seul retrait instantané : 2 × 0,99 € d'écart n'est pas expliqué.
+    AXE-932 : ses 0,99 € de frais sont montrés, l'écart garde le reste."""
     jours = _jours(date(2026, 10, 26), [10000])
     virements = [_v("i1", date(2026, 10, 27), 9802, INSTANT)]
     (semaine,) = rapprocher_plateforme("uber", jours, virements, AUJOURD_HUI)
-    assert (semaine.etat, semaine.ecart_cts) == ("a_verifier", 198)
+    assert (semaine.etat, semaine.frais_cts, semaine.ecart_cts) == ("a_verifier", 99, 99)
+
+
+def test_une_semaine_qui_ne_tombe_pas_juste_montre_quand_meme_ses_frais() -> None:
+    """AXE-932, MK DRIVING semaine du 19/10 : 962,42 € dus, 7 retraits pour
+    957,49 €. Avec 6,93 € de frais, Uber a versé 2,00 € de trop (et non
+    « 4,93 € encore dus »)."""
+    jours = _jours(date(2026, 10, 19), [96242])
+    virements = [
+        _v(f"i{k}", date(2026, 10, 20), m, INSTANT)
+        for k, m in enumerate([4386, 27952, 22203, 6725, 9191, 2947, 22345])
+    ]
+    (semaine,) = rapprocher_plateforme("uber", jours, virements, AUJOURD_HUI)
+    assert (semaine.etat, semaine.frais_cts, semaine.ecart_cts) == ("a_verifier", 693, -200)
+    assert libelle_ecart(semaine) == "2,00 € versés en trop par Uber"
