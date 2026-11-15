@@ -184,6 +184,13 @@ from axelcompta.filings.pdf_export_comptable import rendre_balance_pdf, rendre_g
 from axelcompta.ingestion.annuaire_rollee import FicheAnnuaire, chercher
 from axelcompta.ingestion.cartes_rollee import CartesRollee
 from axelcompta.ingestion.cartes_rollee_postgres import PostgresCartesRollee
+from axelcompta.ingestion.comparaison_rollee import (
+    MoisCompare,
+    SemaineComparee,
+    Totaux,
+    annees,
+    par_mois,
+)
 from axelcompta.ingestion.comptes_bancaires import (
     CompteBancaire,
     CompteBancaireRepository,
@@ -262,6 +269,7 @@ from axelcompta.rapprochement_rollee_service import (
     retenir_avancement,
 )
 from axelcompta.revenus_rollee import delier_revenus
+from axelcompta.revenus_semaines import comparaison, debut_banque
 from axelcompta.tenants.affectations import AffectationRepository
 from axelcompta.tenants.affectations_postgres import PostgresAffectationRepository
 from axelcompta.tenants.agregats import AgregatsRepository, AgregatStocke, LigneAgregat
@@ -7155,6 +7163,23 @@ def _enregistrer_route_versements(app: FastAPI) -> None:
         return [_vue_versement(s) for s in reversed(jours(settlements.lister(dossier.id))[-20:])]
 
     @app.get(
+        "/dossiers/{dossier_id}/plateformes/comparaison",
+        response_model=ComparaisonRolleeVue,
+    )
+    def lire_comparaison_rollee(
+        dossier: DossierDep,
+        settlements: SettlementsDep,
+        ledger: LedgerDossierDep,
+        annee: int | None = None,
+    ) -> ComparaisonRolleeVue:
+        """AXE-928 : par mois et par semaine, ce que Rollee dit gagné et ce
+        que la banque a reçu. La banque fait foi pour la compta ; Rollee
+        montre ce qui manque. Une année sans banque sert de rapport."""
+        grand_livre = ledger.grand_livre(dossier.id)
+        semaines = comparaison(settlements.lister(dossier.id), grand_livre, dossier, date.today())
+        return _vue_comparaison(semaines, annee, debut_banque(grand_livre))
+
+    @app.get(
         "/dossiers/{dossier_id}/versements-plateformes/a-verifier",
         response_model=list[VersementPlateformeVue],
     )
@@ -7164,6 +7189,98 @@ def _enregistrer_route_versements(app: FastAPI) -> None:
         """AXE-891 : tous les relevés « à vérifier », même anciens, pour
         « À traiter ». Ils y restent tant qu'ils sont dans cet état."""
         return [_vue_versement(s) for s in reversed(a_verifier(settlements.lister(dossier.id)))]
+
+
+class TotauxComparesVue(BaseModel):
+    gagne_cts: int
+    commission_cts: int
+    especes_cts: int
+    du_cts: int
+    verse_cts: int
+    frais_cts: int
+    ecart_cts: int
+    courses_ht_cts: int
+    tva_cts: int
+    hors_course_cts: int
+
+
+class SemaineCompareeVue(BaseModel):
+    plateforme: str
+    lundi: str
+    etat: str  # voir `EtatComparaison`
+    jours: int
+    virements: int
+    instantanes: int
+    totaux: TotauxComparesVue
+
+
+class MoisCompareVue(BaseModel):
+    mois: str
+    totaux: TotauxComparesVue
+    semaines: list[SemaineCompareeVue]
+
+
+class ComparaisonRolleeVue(BaseModel):
+    """AXE-928 : Rollee et la banque côte à côte, pour une année."""
+
+    annees: list[int]
+    annee: int | None
+    debut_banque: str | None
+    totaux: TotauxComparesVue
+    mois: list[MoisCompareVue]
+
+
+def _vue_totaux(t: Totaux) -> TotauxComparesVue:
+    return TotauxComparesVue(
+        gagne_cts=t.gagne_cts,
+        commission_cts=t.commission_cts,
+        especes_cts=t.especes_cts,
+        du_cts=t.du_cts,
+        verse_cts=t.verse_cts,
+        frais_cts=t.frais_cts,
+        ecart_cts=t.ecart_cts,
+        courses_ht_cts=t.courses_ht_cts,
+        tva_cts=t.tva_cts,
+        hors_course_cts=t.hors_course_cts,
+    )
+
+
+def _vue_semaine(s: SemaineComparee) -> SemaineCompareeVue:
+    return SemaineCompareeVue(
+        plateforme=s.plateforme,
+        lundi=s.lundi.isoformat(),
+        etat=s.etat,
+        jours=s.jours,
+        virements=s.virements,
+        instantanes=s.instantanes,
+        totaux=_vue_totaux(s.totaux),
+    )
+
+
+def _vue_mois(m: MoisCompare) -> MoisCompareVue:
+    return MoisCompareVue(
+        mois=m.mois.isoformat(),
+        totaux=_vue_totaux(m.totaux),
+        semaines=[_vue_semaine(s) for s in m.semaines],
+    )
+
+
+def _vue_comparaison(
+    semaines: list[SemaineComparee], annee: int | None, debut: date | None
+) -> ComparaisonRolleeVue:
+    disponibles = annees(semaines)
+    retenue = annee if annee in disponibles else (disponibles[0] if disponibles else None)
+    mois = par_mois(semaines, retenue) if retenue is not None else []
+    total = Totaux()
+    for m in mois:
+        total.ajouter(m.totaux)
+    return ComparaisonRolleeVue(
+        annees=disponibles,
+        annee=retenue,
+        debut_banque=debut.isoformat() if debut else None,
+        totaux=_vue_totaux(total),
+        mois=[_vue_mois(m) for m in mois],
+    )
 
 
 def _vue_versement(s: SettlementStocke) -> VersementPlateformeVue:

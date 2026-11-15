@@ -102,3 +102,24 @@ def test_le_gestionnaire_voit_le_nombre_a_verifier_sans_montant(
     assert synthese.status_code == 200
     assert synthese.json()["versements_a_verifier"] == 1
     assert not any("cts" in cle for cle in synthese.json())
+
+
+def test_la_comparaison_rollee_banque_par_annee() -> None:
+    """AXE-928 : le jour est rangé dans son année, avec son mois."""
+    reponse = _client().get(
+        "/dossiers/DEMO_karim/plateformes/comparaison?annee=2026",
+        headers=_en_tete("DEMO_karim"),
+    )
+    assert reponse.status_code == 200
+    corps = reponse.json()
+    assert corps["annees"][0] == 2026 and corps["annee"] == 2026
+    (mois,) = [m for m in corps["mois"] if m["mois"] == "2026-10-01"]
+    assert mois["totaux"]["gagne_cts"] == 848_00
+    assert mois["semaines"][0]["etat"] == "rapprochee"
+
+
+def test_le_gestionnaire_n_a_pas_acces_a_la_comparaison() -> None:
+    reponse = _client().get(
+        "/dossiers/DEMO_karim/plateformes/comparaison", headers=_en_tete_gestionnaire()
+    )
+    assert reponse.status_code in (401, 403)

@@ -14,6 +14,7 @@ import {
 import { formatDate } from "@/lib/format";
 import { etatPlateforme } from "@/lib/plateformes";
 
+import { ComparaisonRollee } from "./ComparaisonRollee";
 import { VersementsPlateformes } from "./VersementsPlateformes";
 
 type EtatBloc =
@@ -104,6 +105,7 @@ export function PlateformesChauffeur({ dossierId }: { dossierId: string }) {
           </Button>
           {ouverture && <p className="mt-2 text-sm text-danger">{ouverture}</p>}
           <VersementsPlateformes dossierId={dossierId} />
+          <ComparaisonRollee dossierId={dossierId} />
         </>
       )}
     </section>

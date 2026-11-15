@@ -16,12 +16,13 @@ configuration du dossier, rend les relevés mis à jour et les OD à écrire.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 
 from axelcompta.core.errors import DomaineError
 from axelcompta.core.pcg import est_compte_banque
+from axelcompta.ingestion.comparaison_rollee import SemaineComparee, comparer, jour_rollee
 from axelcompta.ingestion.ecritures_semaines import (
     SUFFIXE_SOLDE,
     ecriture_frais,
@@ -29,6 +30,8 @@ from axelcompta.ingestion.ecritures_semaines import (
     ecriture_solde,
     id_recette,
 )
+from axelcompta.ingestion.ecritures_settlement import TAUX_TVA_RECETTES_PAR_REGIME
+from axelcompta.ingestion.providers.base import PlatformSettlement
 from axelcompta.ingestion.providers.rollee import especes_cts, hors_course_cts
 from axelcompta.ingestion.semaines_plateforme import (
     Jour,
@@ -100,19 +103,63 @@ def _contrepartie(ecriture: Ecriture) -> str | None:
     return comptes.pop() if len(comptes) == 1 else None
 
 
-def virements_libres(grand_livre: Sequence[Ecriture]) -> dict[str, tuple[Virement, Ecriture]]:
-    """Les virements de plateforme pas encore soldés, vus après reclassement."""
-    soldes = {e.id for e in grand_livre if e.id.endswith(SUFFIXE_SOLDE)}
+def virements_de_plateforme(
+    grand_livre: Sequence[Ecriture],
+) -> dict[str, tuple[Virement, Ecriture]]:
+    """Tous les virements de plateforme en banque, soldés ou non, vus après
+    reclassement ; les virements annulés n'en sont pas."""
     exclus = annulees(grand_livre)
-    libres: dict[str, tuple[Virement, Ecriture]] = {}
+    trouves: dict[str, tuple[Virement, Ecriture]] = {}
     for e in projeter(grand_livre):
-        if e.journal is not Journal.BQ or e.id in exclus or f"{e.id}{SUFFIXE_SOLDE}" in soldes:
+        if e.journal is not Journal.BQ or e.id in exclus:
             continue
         montant = _encaisse(e)
         lu = virement(str(e.id), e.date, montant, e.libelle) if montant > 0 else None
         if lu is not None:
-            libres[str(e.id)] = (lu, e)
-    return libres
+            trouves[str(e.id)] = (lu, e)
+    return trouves
+
+
+def virements_libres(grand_livre: Sequence[Ecriture]) -> dict[str, tuple[Virement, Ecriture]]:
+    """Les virements de plateforme pas encore soldés."""
+    soldes = {e.id for e in grand_livre if e.id.endswith(SUFFIXE_SOLDE)}
+    return {
+        i: lu
+        for i, lu in virements_de_plateforme(grand_livre).items()
+        if f"{i}{SUFFIXE_SOLDE}" not in soldes
+    }
+
+
+def comparaison(
+    stockes: Sequence[SettlementStocke],
+    grand_livre: Sequence[Ecriture],
+    dossier: Dossier,
+    aujourd_hui: date,
+) -> list[SemaineComparee]:
+    """AXE-928 : Rollee et la banque côte à côte, sur tout l'historique Rollee
+    gardé. Les jours déliés n'en sont pas."""
+    jours = [
+        jour_rollee(
+            s.settlement,
+            _lisible(especes_cts, s),
+            _lisible(hors_course_cts, s),
+            s.etat == "reconcilie",
+        )
+        for s in stockes
+        if s.etat != "delie" and s.settlement.period_start == s.settlement.period_end
+    ]
+    virements = [v for v, _e in virements_de_plateforme(grand_livre).values()]
+    taux = TAUX_TVA_RECETTES_PAR_REGIME.get(dossier.tva_recettes_regime)
+    return comparer(jours, virements, debut_banque(grand_livre), aujourd_hui, taux)
+
+
+def _lisible(lire: Callable[[PlatformSettlement], int], stocke: SettlementStocke) -> int:
+    """Un champ illisible compte pour 0 dans la comparaison (le jour reste
+    à vérifier côté rapprochement)."""
+    try:
+        return lire(stocke.settlement)
+    except (DomaineError, ValueError):
+        return 0
 
 
 def _dans(jour: date, periodes: Sequence[Periode]) -> bool:
