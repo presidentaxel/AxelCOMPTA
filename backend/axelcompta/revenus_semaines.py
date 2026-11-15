@@ -10,8 +10,8 @@ configuration du dossier, rend les relevés mis à jour et les OD à écrire.
   soldés, tels que les écrans les voient (reclassements repliés).
 * Semaine soldée : recette de chaque jour, solde par chaque virement, frais.
   Elle n'écrit rien si un jour ou un virement tombe dans un exercice clos, si
-  un virement a été classé ailleurs qu'en 471 ou 706 par un humain, ou si des
-  espèces n'ont pas de compte de l'associé : elle passe « à vérifier ».
+  un virement a été classé ailleurs qu'en 471 ou 706 par un humain : elle
+  passe « à vérifier ».
 """
 
 from __future__ import annotations
@@ -47,7 +47,6 @@ from axelcompta.ledger.contrepassation import annulees
 from axelcompta.ledger.models import Ecriture, Journal, Sens
 from axelcompta.ledger.periodes import Periode
 from axelcompta.tenants.models import Dossier
-from axelcompta.tenants.statuts import configuration_de
 from axelcompta.workflow.reclassement import projeter
 
 A_RAPPROCHER = frozenset({"en_attente_banque", "a_classer", "a_verifier"})
@@ -65,17 +64,7 @@ class Passage:
 class Contexte:
     dossier: Dossier
     periodes_closes: tuple[Periode, ...]
-    compte_especes: str | None
     maintenant: datetime
-
-
-def compte_especes_de(dossier: Dossier) -> str | None:
-    """Le compte de l'associé (455, 108 en EI) ; None si la configuration du
-    dossier n'est pas lisible."""
-    try:
-        return configuration_de(dossier).colonne.compte_usage_personnel
-    except (DomaineError, ValueError):
-        return None
 
 
 def _jours(stockes: Sequence[SettlementStocke]) -> dict[str, SettlementStocke]:
@@ -186,7 +175,6 @@ def _ecritures_semaine(
                 stocke.id,
                 stocke.settlement,
                 especes_cts(stocke.settlement),
-                contexte.compte_especes,
                 semaine.lundi,
                 contexte.dossier.tva_recettes_regime,
                 hors_course_cts(stocke.settlement),

@@ -19,8 +19,8 @@ AUJOURD_HUI = date(2026, 11, 20)
 POP = "POP SVCS, DOB , 20261005 - 20261011"
 
 
-def _contexte(compte_especes: str | None = "455", closes: tuple = ()) -> Contexte:  # type: ignore[type-arg]
-    return Contexte(DOSSIER, closes, compte_especes, LE)
+def _contexte(closes: tuple = ()) -> Contexte:  # type: ignore[type-arg]
+    return Contexte(DOSSIER, closes, LE)
 
 
 def _jour(net: int = 848_00, especes: float = 0, compte: str = "acc-uber") -> SettlementStocke:
@@ -75,30 +75,21 @@ def test_une_semaine_soldee_vide_le_471_et_la_creance() -> None:
     virement = _virement(848_00)
     passage = rapprocher_semaines([_jour()], [OUVERTURE, virement], _contexte(), AUJOURD_HUI)
     soldes = _soldes([virement, *passage.ecritures])
-    assert "467" not in soldes and "471" not in soldes
+    assert "4671" not in soldes and "471" not in soldes
     assert soldes["512"] == 848_00 and -(soldes["706"] + soldes["44571"]) == 848_00
     ((suite,),) = (passage.stockes,)
     assert (suite.etat, suite.ecriture_id) == ("reconcilie", f"{suite.id}:recette-plateforme")
 
 
-def test_les_especes_vont_au_compte_de_l_associe_et_ne_sont_pas_attendues_en_banque() -> None:
+def test_les_especes_vont_en_caisse_et_ne_sont_pas_attendues_en_banque() -> None:
     """100 € gagnés dont 30 € en espèces : la plateforme verse 70 €."""
     virement = _virement(70_00)
     passage = rapprocher_semaines(
         [_jour(100_00, 30.0)], [OUVERTURE, virement], _contexte(), AUJOURD_HUI
     )
     soldes = _soldes([virement, *passage.ecritures])
-    assert soldes["455"] == 30_00 and "467" not in soldes
+    assert soldes["530"] == 30_00 and "4671" not in soldes
     assert passage.semaines[0].etat == "solde"
-
-
-def test_des_especes_sans_compte_de_l_associe_laissent_la_semaine_a_verifier() -> None:
-    passage = rapprocher_semaines(
-        [_jour(100_00, 30.0)], [OUVERTURE, _virement(70_00)], _contexte(None), AUJOURD_HUI
-    )
-    assert passage.ecritures == []
-    assert passage.stockes[0].etat == "a_verifier"
-    assert "espèces sans compte" in (passage.stockes[0].motif or "")
 
 
 def test_un_virement_classe_ailleurs_par_un_humain_n_est_pas_touche() -> None:
@@ -170,5 +161,5 @@ def test_seules_les_courses_portent_la_tva() -> None:
     virement = _virement(848_00)
     passage = rapprocher_semaines([jour], [OUVERTURE, virement], _contexte(), AUJOURD_HUI)
     soldes = _soldes([virement, *passage.ecritures])
-    assert (soldes["7068"], soldes["44571"]) == (-48_00, -72_73)
-    assert "467" not in soldes
+    assert (soldes["708"], soldes["44571"]) == (-48_00, -72_73)
+    assert "4671" not in soldes

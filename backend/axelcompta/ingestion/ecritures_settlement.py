@@ -38,6 +38,10 @@ TAUX_TVA_RECETTES_PAR_REGIME: dict[str, Decimal | None] = {
 }
 
 
+# AXE-931 : commission de la plateforme, « commissions et courtages sur ventes ».
+COMPTE_COMMISSION = "6222"
+
+
 @dataclass(frozen=True, slots=True)
 class TemplateCommissionTVA:
     """doc 13 §5.2 : la TVA sur commission dépend de l'entité facturante."""
@@ -88,7 +92,7 @@ def _lignes_commission(
             (Decimal(commission_ht) * template.taux).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
         )
         return [
-            LigneEcriture("622", Sens.DEBIT, Money(commission_ht)),
+            LigneEcriture(COMPTE_COMMISSION, Sens.DEBIT, Money(commission_ht)),
             LigneEcriture("44566", Sens.DEBIT, Money(tva_autoliq), code_tva="autoliquidation"),
             LigneEcriture("706", Sens.CREDIT, Money(recettes_ht)),
             LigneEcriture("44571", Sens.CREDIT, Money(tva_collectee)),
@@ -96,7 +100,7 @@ def _lignes_commission(
         ]
     commission_ht, tva_commission = _ventiler(settlement.commission_cts, template.taux)
     return [
-        LigneEcriture("622", Sens.DEBIT, Money(commission_ht)),
+        LigneEcriture(COMPTE_COMMISSION, Sens.DEBIT, Money(commission_ht)),
         LigneEcriture("44566", Sens.DEBIT, Money(tva_commission)),
         LigneEcriture("706", Sens.CREDIT, Money(recettes_ht)),
         LigneEcriture("44571", Sens.CREDIT, Money(tva_collectee)),
@@ -120,7 +124,9 @@ def _lignes_franchise(settlement: PlatformSettlement, compte_banque: str) -> lis
         )
     return [
         LigneEcriture(compte_banque, Sens.DEBIT, Money(settlement.net_payout_cts)),
-        LigneEcriture("622", Sens.DEBIT, Money(settlement.commission_cts)),  # TTC, non récupérable
+        LigneEcriture(
+            COMPTE_COMMISSION, Sens.DEBIT, Money(settlement.commission_cts)
+        ),  # TTC, non récupérable
         LigneEcriture("706", Sens.CREDIT, Money(settlement.gross_earnings_cts)),  # pas de TVA
     ]
 
