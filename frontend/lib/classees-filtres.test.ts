@@ -7,6 +7,7 @@ import { filtresActifs, sansFiltres, versFileATraiter } from "./classees-filtres
 test("la vue, le tri et la page ne sont pas des filtres", () => {
   assert.equal(filtresActifs(lireEtat("?vue=auto&tri=confiance&page=2")), false);
   assert.equal(filtresActifs(lireEtat("?vue=auto&sens=entree")), true);
+  assert.equal(filtresActifs(lireEtat("?vue=auto&q=total")), true);
 });
 
 test("réinitialiser garde la vue et le tri, retire les filtres", () => {
@@ -16,6 +17,7 @@ test("réinitialiser garde la vue et le tri, retire les filtres", () => {
   assert.equal(etat.origine, "");
   assert.equal(etat.categorie, "");
   assert.equal(etat.page, "1");
+  assert.equal(sansFiltres(lireEtat("?vue=auto&q=total")).q, "");
 });
 
 test("revenir à la file à traiter", () => {

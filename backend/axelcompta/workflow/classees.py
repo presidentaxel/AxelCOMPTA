@@ -11,6 +11,7 @@ décisions et les verdicts sont lus ailleurs.
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -23,7 +24,8 @@ from axelcompta.ledger.contrepassation import annulees, origine
 from axelcompta.ledger.models import Ecriture, Sens
 
 from .synchro import COMPTE_ATTENTE
-from .tva_imputation import tva_affichee
+from .taux_expert import taux_de_la_table
+from .tva_imputation import taux_porte, tva_affichee
 
 Statut = Literal["auto", "chauffeur", "expert"]
 Verdict = Literal["juste", "faux"]
@@ -52,6 +54,7 @@ class OperationClassee:
     verdict: Verdict | None = None
     tva_estimee_cts: int | None = None
     tva_relevee_cts: int | None = None
+    taux_tva: str | None = None
 
     @property
     def sens(self) -> str:
@@ -179,7 +182,13 @@ def _operation(
         verdict=verdicts.get(ecriture.id),
         tva_estimee_cts=estimee,
         tva_relevee_cts=relevee,
+        taux_tva=_taux(ecriture, categorie, regime_tva),
     )
+
+
+def _taux(ecriture: Ecriture, categorie: str | None, regime_tva: str) -> str | None:
+    """Le taux déjà écrit, sinon celui de la table pour cette catégorie."""
+    return taux_porte(ecriture.lignes) or taux_de_la_table(categorie, ecriture.date, regime_tva)
 
 
 def _tva(
@@ -200,13 +209,53 @@ def _tva(
     return tva.centimes, None
 
 
-def trier(operations: Iterable[OperationClassee], tri: str) -> list[OperationClassee]:
-    """`confiance` : les plus fragiles d'abord (sans confiance en dernier) ;
-    sinon les plus récentes d'abord."""
+def _sans_accent(texte: str) -> str:
+    decompose = unicodedata.normalize("NFD", texte)
+    return "".join(c for c in decompose if unicodedata.category(c) != "Mn").casefold()
+
+
+def correspond_recherche(operation: OperationClassee, saisie: str, nom: str = "") -> bool:
+    """Chaque mot doit se retrouver dans le libellé, l'entreprise, le compte ou le montant."""
+    jetons = _sans_accent(saisie).split()
+    if not jetons:
+        return True
+    euros = f"{abs(operation.montant_cts) / 100:.2f}".replace(".", ",")
+    texte = _sans_accent(
+        " ".join(
+            (
+                operation.libelle,
+                nom,
+                operation.compte,
+                operation.categorie or "",
+                operation.taux_tva or "",
+                euros,
+            )
+        )
+    )
+    return all(jeton in texte for jeton in jetons)
+
+
+def trier(
+    operations: Iterable[OperationClassee],
+    tri: str,
+    noms: Mapping[DossierId, str] | None = None,
+) -> list[OperationClassee]:
+    """`confiance` : les plus fragiles d'abord. `chauffeur` : par nom
+    d'entreprise. Sinon les plus récentes d'abord."""
     if tri == "confiance":
         return sorted(
             operations,
             key=lambda o: (o.confiance is None, o.confiance or 0.0, o.date, o.ecriture_id),
+        )
+    if tri == "chauffeur":
+        libelles = noms or {}
+        return sorted(
+            operations,
+            key=lambda o: (
+                libelles.get(o.dossier_id, str(o.dossier_id)).casefold(),
+                o.libelle.casefold(),
+                o.ecriture_id,
+            ),
         )
     return sorted(operations, key=lambda o: (o.date, o.ecriture_id), reverse=True)
 

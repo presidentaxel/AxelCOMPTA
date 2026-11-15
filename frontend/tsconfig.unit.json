@@ -58,6 +58,8 @@
     "lib/filtres-portefeuille.test.ts",
     "lib/classees.ts",
     "lib/classees.test.ts",
+    "lib/recherche-expert.ts",
+    "lib/recherche-expert.test.ts",
     "lib/types.ts",
     "lib/quarantaine.ts",
     "lib/quarantaine.test.ts",

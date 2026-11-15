@@ -172,6 +172,12 @@ from axelcompta.exercices import (
     executer_passage,
     preparer_passage,
 )
+from axelcompta.explication_semaines import (
+    JourVu,
+    SemaineVue,
+    VirementVu,
+    expliquer_semaines,
+)
 from axelcompta.filings.cerfa_2031 import PdfCerfa2031Renderer
 from axelcompta.filings.cerfa_2033 import extraire_page_2033
 from axelcompta.filings.cerfa_2065 import PdfCerfa2065Renderer
@@ -363,6 +369,7 @@ from axelcompta.workflow.classees import (
     OperationClassee,
     Statut,
     compter,
+    correspond_recherche,
     trier,
 )
 from axelcompta.workflow.classees import classer as classer_operations
@@ -450,7 +457,18 @@ from axelcompta.workflow.signature import DocumentSigne, SignatureRepository
 from axelcompta.workflow.signature_demo import SignatureDemoProvider
 from axelcompta.workflow.signature_postgres import PostgresSignatureRepository
 from axelcompta.workflow.synchro import id_ecriture
-from axelcompta.workflow.tva_imputation import tva_affichee
+from axelcompta.workflow.taux_expert import (
+    TauxExpertRepository,
+    TauxInconnu,
+    cle_globale,
+    cle_ligne,
+    montant_tva,
+    resoudre_taux,
+    taux_de_la_table,
+    verifier_taux,
+)
+from axelcompta.workflow.taux_expert_postgres import PostgresTauxExpert
+from axelcompta.workflow.tva_imputation import tva_affichee, ventiler_taux
 from axelcompta.workflow.verdicts import VerdictsRepository
 from axelcompta.workflow.verdicts_postgres import PostgresVerdicts
 
@@ -721,6 +739,18 @@ class SujetExpertVue(BaseModel):
     # Comment l'argent est sorti (carte, virement…), lu à l'affichage pour
     # tous les sujets d'une opération bancaire (AXE-855).
     moyen_paiement: str | None = None
+    # AXE-925 : le taux proposé par la table, puis celui retenu à la lecture.
+    taux_table: str | None = None
+    tva_table_cts: int | None = None
+    a_justificatif: bool = False
+    taux_tva: str | None = None
+    tva_cts: int | None = None
+    origine_taux: Literal["table", "appris", "specifique"] | None = None
+
+
+class ChauffeurVue(BaseModel):
+    id: str
+    nom: str
 
 
 class LigneImputationVue(BaseModel):
@@ -748,6 +778,7 @@ class FileExpertVue(BaseModel):
     comptes: list[CompteChoix]
     # AXE-829 : tags des dossiers présents dans la file, pour le filtre.
     tags_par_dossier: dict[str, list[str]] = {}
+    chauffeurs: list[ChauffeurVue] = []
 
 
 class ImputationEntree(BaseModel):
@@ -755,6 +786,15 @@ class ImputationEntree(BaseModel):
     ecriture_id: str
     compte: str
     motif: str = ""  # obligatoire (AXE-800) : vérifié par `motif_valide`
+    taux: str | None = None  # AXE-925 : ventile la contrepartie si l'expert a choisi
+
+
+class TauxExpertEntree(BaseModel):
+    dossier_id: str
+    ecriture_id: str
+    libelle: str
+    taux: str
+    portee: Literal["specifique", "global"]
 
 
 MAX_DECISIONS_GROUPEES = 1000
@@ -1615,6 +1655,14 @@ def get_verdicts() -> VerdictsRepository:
 
 
 VerdictsDep = Annotated[VerdictsRepository, Depends(get_verdicts)]
+
+
+def get_taux_expert() -> TauxExpertRepository:
+    """Taux de TVA retenus par l'expert (AXE-925)."""
+    return PostgresTauxExpert(_engine())
+
+
+TauxExpertDep = Annotated[TauxExpertRepository, Depends(get_taux_expert)]
 PipelineDep = Annotated[RulesAndMlPipeline, Depends(get_pipeline)]
 
 
@@ -2297,7 +2345,7 @@ def _joindre_justificatif(
     dossier: Dossier,
     ecriture_id: str,
     fichier: UploadFile,
-    ledger: InMemoryLedgerService,
+    ledger: LedgerService,
     justificatifs: JustificatifRepository,
 ) -> Ecriture:
     """doc 17 §9 Semaine 3, doc 19 §5.7 : « photo de justificatif au fil de
@@ -5802,9 +5850,18 @@ def _comptes_expert() -> list[CompteChoix]:
     return [CompteChoix(compte=compte, libelle=libelle_compte(compte)) for compte in comptes]
 
 
+def _taux_propose(dossier: Dossier, vue: TransactionVue) -> tuple[str | None, int | None]:
+    taux = taux_de_la_table(
+        vue.categorie or vue.proposition, date.fromisoformat(vue.date), dossier.regime_tva
+    )
+    tva = vue.tva_relevee_cts if vue.tva_relevee_cts is not None else vue.tva_estimee_cts
+    return taux, tva
+
+
 def _sujet_depuis_vue(
     dossier: Dossier, vue: TransactionVue, categorie_origine: str | None = None
 ) -> SujetExpertVue | None:
+    taux, tva = _taux_propose(dossier, vue)
     if vue.statut == "à trancher" and vue.categorie == CATEGORIE_A_PRECISER:
         return _sujet(
             dossier,
@@ -5817,6 +5874,8 @@ def _sujet_depuis_vue(
             vue.ecriture_id,
             _compte_chiffre(vue.compte),
             None,
+            taux,
+            tva,
         )
     if vue.statut == "à trancher":
         return _sujet(
@@ -5830,6 +5889,8 @@ def _sujet_depuis_vue(
             vue.ecriture_id,
             _compte_chiffre(vue.compte),
             _compte_suggere(vue.proposition),
+            taux,
+            tva,
         )
     if not _ticket_necessaire(vue, categorie_origine):
         return None
@@ -5844,6 +5905,8 @@ def _sujet_depuis_vue(
         vue.ecriture_id,
         _compte_chiffre(vue.compte),
         _compte_suggere(vue.proposition),
+        taux,
+        tva,
     )
 
 
@@ -6019,6 +6082,8 @@ def _sujet(
     ecriture_id: str,
     compte_actuel: str | None = None,
     compte_suggere: str | None = None,
+    taux_table: str | None = None,
+    tva_table_cts: int | None = None,
 ) -> SujetExpertVue:
     return SujetExpertVue(
         id=sujet_id,
@@ -6033,6 +6098,8 @@ def _sujet(
         imputable=True,
         compte_actuel=compte_actuel,
         compte_suggere=compte_suggere,
+        taux_table=taux_table,
+        tva_table_cts=tva_table_cts,
     )
 
 
@@ -6045,6 +6112,7 @@ def imputer_ecriture(
     registre: RegistreAnomaliesDep,
     propositions: PropositionsDep,
     experts: ExpertsDep,
+    taux_expert: TauxExpertDep,
     role: RoleMembreDep,
     identite: IdentiteDep,
 ) -> ImputationVue:
@@ -6063,6 +6131,9 @@ def imputer_ecriture(
     inverse, nouvelle = preparer_imputation(
         ecriture, entree.compte, set(connus), periodes, dossier.exercice_debut
     )
+    choisi = _taux_demande(entree.taux)
+    if choisi is not None:
+        nouvelle = ventiler_taux(nouvelle, choisi)
     # AXE-420 : la décision du chauffeur ne doit pas rester chargée en plus.
     annulations = annuler_reclassements(
         ecriture.id, list(connus.values()), periodes, dossier.exercice_debut
@@ -6077,7 +6148,9 @@ def imputer_ecriture(
         ),
         propositions,
     )
-    sujets = [*sujets, *_sujets_ecarts(dossier)]
+    sujets = _habiller_file(
+        [*sujets, *_sujets_ecarts(dossier)], (dossier,), justificatifs, taux_expert
+    )
     return ImputationVue(
         ecriture_id=nouvelle.id,
         contrepassation_id=inverse.id,
@@ -6220,6 +6293,229 @@ def _anomalies_fraiches(
     return _sujets_anomalies(dossier, ledger, decisions, justificatifs, registre, exclues)
 
 
+_TYPES_JUSTIFICATIF = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
+}
+
+
+def _taux_demande(taux: str | None) -> str | None:
+    if not taux:
+        return None
+    try:
+        return verifier_taux(taux)
+    except TauxInconnu as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _chauffeurs(portefeuille: Sequence[Dossier]) -> list[ChauffeurVue]:
+    tries = sorted(portefeuille, key=lambda dossier: dossier.nom.casefold())
+    return [ChauffeurVue(id=str(dossier.id), nom=dossier.nom) for dossier in tries]
+
+
+def _habiller_file(
+    sujets: Sequence[SujetExpertVue],
+    portefeuille: Sequence[Dossier],
+    justificatifs: JustificatifRepository,
+    taux: TauxExpertRepository,
+) -> list[SujetExpertVue]:
+    """Photo et taux appris, relus à l'affichage : le cache des sujets n'en sait rien."""
+    par_id = {dossier.id: dossier for dossier in portefeuille}
+    if not par_id:
+        return list(sujets)
+    tenant_id = next(iter(par_id.values())).tenant_id
+    retenus = taux.pour_dossiers(tenant_id, tuple(par_id))
+    photos: dict[DossierId, frozenset[EcritureId]] = {}
+    return [_habiller_sujet(sujet, par_id, justificatifs, retenus, photos) for sujet in sujets]
+
+
+def _habiller_sujet(
+    sujet: SujetExpertVue,
+    par_id: dict[DossierId, Dossier],
+    justificatifs: JustificatifRepository,
+    retenus: dict[DossierId, dict[str, str]],
+    photos: dict[DossierId, frozenset[EcritureId]],
+) -> SujetExpertVue:
+    dossier = par_id.get(DossierId(sujet.dossier_id))
+    if dossier is None:
+        return sujet
+    if dossier.id not in photos:
+        photos[dossier.id] = justificatifs.presents(dossier.tenant_id, dossier.id)
+    a_ticket = sujet.ecriture_id is not None and EcritureId(sujet.ecriture_id) in photos[dossier.id]
+    choisi = retenus.get(dossier.id, {})
+    specifique = choisi.get(cle_ligne(sujet.ecriture_id or ""))
+    appris = choisi.get(cle_globale(sujet.libelle))
+    taux_choisi, origine = resoudre_taux(specifique, appris, sujet.taux_table)
+    if taux_choisi is None:
+        return sujet.model_copy(update={"a_justificatif": a_ticket})
+    tva = sujet.tva_table_cts
+    if origine != "table" or tva is None:
+        tva = montant_tva(sujet.montant_cts or 0, taux_choisi)
+    return sujet.model_copy(
+        update={
+            "a_justificatif": a_ticket,
+            "taux_tva": taux_choisi,
+            "tva_cts": tva,
+            "origine_taux": origine,
+        }
+    )
+
+
+def poser_taux_expert(  # noqa: PLR0913 — une dépendance par dépôt
+    entree: TauxExpertEntree,
+    dossiers: DossiersDep,
+    taux: TauxExpertDep,
+    experts: ExpertsDep,
+    role: RoleMembreDep,
+    identite: IdentiteDep,
+) -> None:
+    """Mémorise le taux d'une ligne, ou de toutes les lignes du même libellé."""
+    tenant_id, _identite, actif = _expert(identite, role, experts)
+    dossier = _dossier_de_l_expert(dossiers, tenant_id, actif, entree.dossier_id)
+    choisi = _taux_demande(entree.taux)
+    if choisi is None:
+        raise HTTPException(status_code=422, detail="Taux manquant.")
+    if entree.portee == "specifique":
+        cle = cle_ligne(entree.ecriture_id)
+    else:
+        cle = cle_globale(entree.libelle)
+    taux.poser(tenant_id, dossier.id, cle, choisi)
+
+
+def lire_justificatif_expert(  # noqa: PLR0913 — une dépendance par dépôt
+    dossier_id: str,
+    ecriture_id: str,
+    dossiers: DossiersDep,
+    justificatifs: JustificatifsDep,
+    experts: ExpertsDep,
+    role: RoleMembreDep,
+    identite: IdentiteDep,
+) -> Response:
+    tenant_id, _identite, actif = _expert(identite, role, experts)
+    dossier = _dossier_de_l_expert(dossiers, tenant_id, actif, dossier_id)
+    piece = justificatifs.lire(tenant_id, dossier.id, EcritureId(ecriture_id))
+    if piece is None:
+        raise HTTPException(status_code=404, detail="Aucun ticket.")
+    contenu, extension = piece
+    media = _TYPES_JUSTIFICATIF.get(extension.lower(), "application/octet-stream")
+    return Response(content=contenu, media_type=media)
+
+
+def joindre_justificatif_expert(  # noqa: PLR0913 — une dépendance par dépôt
+    dossier_id: str,
+    ecriture_id: str,
+    fichier: UploadFile,
+    dossiers: DossiersDep,
+    base: LedgerBaseDep,
+    justificatifs: JustificatifsDep,
+    experts: ExpertsDep,
+    role: RoleMembreDep,
+    identite: IdentiteDep,
+) -> None:
+    """Le ticket d'une ligne, posé par l'expert sur un dossier de sa mission."""
+    tenant_id, _identite, actif = _expert(identite, role, experts)
+    dossier = _dossier_de_l_expert(dossiers, tenant_id, actif, dossier_id)
+    _joindre_justificatif(dossier, ecriture_id, fichier, base, justificatifs)
+
+
+class JourRapprochementVue(BaseModel):
+    date: str
+    brut_cts: int
+    commission_cts: int
+    net_cts: int
+    especes_cts: int
+    du_cts: int
+
+
+class VirementRapprochementVue(BaseModel):
+    date: str
+    libelle: str
+    montant_cts: int
+    nature: str
+    compte: str
+
+
+class SemaineRapprochementVue(BaseModel):
+    plateforme: str
+    du: str
+    au: str
+    etat: str
+    du_cts: int
+    paye_cts: int
+    frais_cts: int
+    ecart_cts: int
+    motif: str | None
+    jours: list[JourRapprochementVue]
+    virements: list[VirementRapprochementVue]
+
+
+def _semaine_rapprochement(vue: SemaineVue) -> SemaineRapprochementVue:
+    return SemaineRapprochementVue(
+        plateforme=vue.plateforme,
+        du=vue.lundi.isoformat(),
+        au=vue.dimanche.isoformat(),
+        etat=vue.etat,
+        du_cts=vue.du_cts,
+        paye_cts=vue.paye_cts,
+        frais_cts=vue.frais_cts,
+        ecart_cts=vue.ecart_cts,
+        motif=vue.motif,
+        jours=[_jour_rapprochement(jour) for jour in vue.jours],
+        virements=[_virement_rapprochement(virement) for virement in vue.virements],
+    )
+
+
+def _jour_rapprochement(jour: JourVu) -> JourRapprochementVue:
+    return JourRapprochementVue(
+        date=jour.date.isoformat(),
+        brut_cts=jour.brut_cts,
+        commission_cts=jour.commission_cts,
+        net_cts=jour.net_cts,
+        especes_cts=jour.especes_cts,
+        du_cts=jour.du_cts,
+    )
+
+
+def _virement_rapprochement(virement: VirementVu) -> VirementRapprochementVue:
+    return VirementRapprochementVue(
+        date=virement.date.isoformat(),
+        libelle=virement.libelle,
+        montant_cts=virement.montant_cts,
+        nature=virement.nature,
+        compte=virement.compte,
+    )
+
+
+def lire_rapprochements_expert(
+    dossier: DossierExpertDep,
+    base: LedgerBaseDep,
+    settlements: SettlementsDep,
+) -> list[SemaineRapprochementVue]:
+    """Semaines Rollee et virements bancaires du dossier, déjà soldées comprises."""
+    vues = expliquer_semaines(
+        settlements.lister(dossier.id), base.grand_livre(dossier.id), date.today()
+    )
+    return [_semaine_rapprochement(vue) for vue in vues]
+
+
+def _enregistrer_routes_expert_lignes(app: FastAPI) -> None:
+    app.post("/expert/taux", status_code=204)(poser_taux_expert)
+    app.get(
+        "/expert/dossiers/{dossier_id}/rapprochements",
+        response_model=list[SemaineRapprochementVue],
+    )(lire_rapprochements_expert)
+    app.get("/expert/dossiers/{dossier_id}/ecritures/{ecriture_id}/justificatif")(
+        lire_justificatif_expert
+    )
+    app.post("/expert/dossiers/{dossier_id}/ecritures/{ecriture_id}/justificatif", status_code=204)(
+        joindre_justificatif_expert
+    )
+
+
 def _enregistrer_routes_expert(app: FastAPI) -> None:
     @app.get("/expert/file", response_model=FileExpertVue)
     def lire_file_expert(
@@ -6233,6 +6529,7 @@ def _enregistrer_routes_expert(app: FastAPI) -> None:
         cache: CacheFileExpertDep,
         propositions: PropositionsDep,
         experts: ExpertsDep,
+        taux: TauxExpertDep,
         role: RoleMembreDep,
         identite: IdentiteDep,
     ) -> FileExpertVue:
@@ -6260,17 +6557,19 @@ def _enregistrer_routes_expert(app: FastAPI) -> None:
         )
         presents = {sujet.dossier_id for sujet in sujets}
         return FileExpertVue(
-            sujets=sujets,
+            sujets=_habiller_file(sujets, portefeuille, justificatifs, taux),
             comptes=_comptes_expert(),
             tags_par_dossier={
                 str(d): sorted(t) for d, t in etat.par_dossier.items() if str(d) in presents and t
             },
+            chauffeurs=_chauffeurs(portefeuille),
         )
 
     app.post("/expert/imputations", response_model=ImputationVue)(imputer_ecriture)
     app.post("/expert/imputations/annuler", status_code=204)(annuler_imputation)
     _enregistrer_routes_classees(app)
     _enregistrer_route_verdict(app)
+    _enregistrer_routes_expert_lignes(app)
 
 
 PAR_PAGE_CLASSEES = 50
@@ -6292,6 +6591,8 @@ class OperationClasseeVue(BaseModel):
     verdict: str | None
     tva_estimee_cts: int | None = None
     tva_relevee_cts: int | None = None
+    taux_tva: str | None = None
+    a_justificatif: bool = False
 
 
 class CompteursClasseesVue(BaseModel):
@@ -6342,7 +6643,32 @@ def _operations_du_dossier(
     )
 
 
-def _vue_classee(operation: OperationClassee, noms: dict[DossierId, str]) -> OperationClasseeVue:
+def _tickets_de(
+    operations: Sequence[OperationClassee],
+    portefeuille: Sequence[Dossier],
+    justificatifs: JustificatifRepository,
+) -> dict[tuple[str, str], bool]:
+    """Le ticket se lit à l'affichage : le cache des classées ne le contient pas."""
+    par_id = {dossier.id: dossier for dossier in portefeuille}
+    presents: dict[DossierId, frozenset[EcritureId]] = {}
+    resultat: dict[tuple[str, str], bool] = {}
+    for operation in operations:
+        dossier = par_id.get(operation.dossier_id)
+        if dossier is None:
+            continue
+        if dossier.id not in presents:
+            presents[dossier.id] = justificatifs.presents(dossier.tenant_id, dossier.id)
+        cle = (str(operation.dossier_id), str(operation.ecriture_id))
+        resultat[cle] = operation.ecriture_id in presents[dossier.id]
+    return resultat
+
+
+def _vue_classee(
+    operation: OperationClassee,
+    noms: dict[DossierId, str],
+    tickets: dict[tuple[str, str], bool] | None = None,
+) -> OperationClasseeVue:
+    cle = (str(operation.dossier_id), str(operation.ecriture_id))
     return OperationClasseeVue(
         dossier_id=str(operation.dossier_id),
         dossier_nom=noms.get(operation.dossier_id, str(operation.dossier_id)),
@@ -6359,14 +6685,30 @@ def _vue_classee(operation: OperationClassee, noms: dict[DossierId, str]) -> Ope
         verdict=operation.verdict,
         tva_estimee_cts=operation.tva_estimee_cts,
         tva_relevee_cts=operation.tva_relevee_cts,
+        taux_tva=operation.taux_tva,
+        a_justificatif=bool(tickets and tickets.get(cle)),
     )
 
 
 def _page_classees(
-    operations: list[OperationClassee], filtres: Filtres, tri: str, page: int
+    operations: list[OperationClassee],
+    filtres: Filtres,
+    tri: str,
+    page: int,
+    noms: dict[DossierId, str] | None = None,
+    q: str = "",
 ) -> tuple[list[OperationClassee], int, int]:
     """(tranche de la page, total filtré, nombre de pages)."""
-    gardees = trier((o for o in operations if filtres.garde(o)), tri)
+    libelles = noms or {}
+    gardees = trier(
+        (
+            o
+            for o in operations
+            if filtres.garde(o) and correspond_recherche(o, q, libelles.get(o.dossier_id, ""))
+        ),
+        tri,
+        noms,
+    )
     pages = max(1, -(-len(gardees) // PAR_PAGE_CLASSEES))
     courante = min(max(1, page), pages)
     debut = (courante - 1) * PAR_PAGE_CLASSEES
@@ -6432,6 +6774,7 @@ def _operation_json(operation: OperationClassee) -> dict[str, Any]:
         "statut": operation.statut,
         "tva_estimee_cts": operation.tva_estimee_cts,
         "tva_relevee_cts": operation.tva_relevee_cts,
+        "taux_tva": operation.taux_tva,
     }
 
 
@@ -6454,6 +6797,7 @@ def _operation_depuis_json(ligne: dict[str, Any]) -> OperationClassee:
         tva_relevee_cts=None
         if ligne.get("tva_relevee_cts") is None
         else int(ligne["tva_relevee_cts"]),
+        taux_tva=None if ligne.get("taux_tva") is None else str(ligne["taux_tva"]),
     )
 
 
@@ -6464,6 +6808,7 @@ def _enregistrer_routes_classees(app: FastAPI) -> None:
         base: LedgerBaseDep,
         decisions: DecisionsDep,
         propositions: PropositionsDep,
+        justificatifs: JustificatifsDep,
         verdicts: VerdictsDep,
         agregats: AgregatsDep,
         cache: CacheClasseesDep,
@@ -6478,6 +6823,7 @@ def _enregistrer_routes_classees(app: FastAPI) -> None:
         dossier: str | None = None,
         tri: str = "recentes",
         page: int = 1,
+        q: str = "",
     ) -> OperationsClasseesVue:
         """Opérations déjà classées du portefeuille (AXE-823), filtrées et
         paginées côté serveur. Seuls les dossiers dont la version a bougé
@@ -6496,10 +6842,11 @@ def _enregistrer_routes_classees(app: FastAPI) -> None:
             [d.id for d in portefeuille],
         )
         filtres = Filtres(statut, origine, categorie, tranche, sens)
-        tranche_page, total, pages = _page_classees(operations, filtres, tri, page)
+        tranche_page, total, pages = _page_classees(operations, filtres, tri, page, noms, q)
+        tickets = _tickets_de(tranche_page, portefeuille, justificatifs)
         compteurs = compter(operations)
         return OperationsClasseesVue(
-            operations=[_vue_classee(o, noms) for o in tranche_page],
+            operations=[_vue_classee(o, noms, tickets) for o in tranche_page],
             total=total,
             page=min(max(1, page), pages),
             pages=pages,
