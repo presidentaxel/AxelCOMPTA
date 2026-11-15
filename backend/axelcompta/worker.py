@@ -45,7 +45,10 @@ from axelcompta.nouveaux_contacts import (
 )
 from axelcompta.plateformes_rollee import suivi_postgres, traiter_evenements
 from axelcompta.rappels import envoyer
-from axelcompta.rapprochement_rollee_service import rapprocher_maintenant
+from axelcompta.rapprochement_rollee_service import (
+    rapprocher_maintenant,
+    relever_portefeuille_postgres,
+)
 from axelcompta.synchro_digifactory import (
     TYPE_DIGIFACTORY,
     ResultatDossier,
@@ -95,6 +98,8 @@ class Dependances:
     traiter_rollee: Callable[[TenantId], str] | None = None
     # Remplit la carte Rollee, pose les liens, lit les revenus du dossier demandé.
     rapprocher_rollee: Callable[[TenantId, str | None], str] | None = None
+    # Bouton « Synchroniser » : relit Rollee pour chaque dossier relié.
+    relever_rollee: Callable[[TenantId], str] | None = None
 
 
 def _stockee(proposition: Proposition, maintenant: datetime) -> PropositionStockee:
@@ -172,7 +177,9 @@ def detecter_portefeuilles(deps: Dependances, aujourd_hui: date) -> list[str]:
 def synchroniser_portefeuille_suivi(
     tenant_id: TenantId, deps: Dependances, aujourd_hui: date
 ) -> str:
-    """Les trois étapes, et le résumé affiché sous le bouton."""
+    """Digifactory (contacts, dossiers, opérations), puis Rollee pour chaque
+    dossier relié : les revenus se rapprochent des virements qui viennent
+    d'arriver. Le résumé s'affiche sous le bouton."""
     contacts = deps.lire_contacts(tenant_id)
     crees = creer_les_acceptes(tenant_id, contacts, deps, aujourd_hui)
     propositions = detecter(tenant_id, contacts, deps, aujourd_hui)
@@ -181,8 +188,10 @@ def synchroniser_portefeuille_suivi(
     resultats = deps.synchroniser(
         retenus(tous, etat, "synchro"), exclus(tous, etat, "categorisation")
     )
+    rollee = deps.relever_rollee(tenant_id) if deps.relever_rollee is not None else None
     deps.prechauffer(tous)
-    return resume(len(crees), propositions, resultats)
+    texte = resume(len(crees), propositions, resultats)
+    return f"{texte} · {rollee}" if rollee else texte
 
 
 def _quantite(nombre: int, singulier: str, pluriel: str) -> str:
@@ -305,6 +314,7 @@ def dependances_reelles() -> Dependances:
         ),
         traiter_rollee=lambda t: traiter_evenements(suivi_postgres(engine), t),
         rapprocher_rollee=lambda t, d: rapprocher_maintenant(engine, t, d),
+        relever_rollee=lambda t: relever_portefeuille_postgres(engine, t),
     )
 
 
