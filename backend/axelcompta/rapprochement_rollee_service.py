@@ -625,10 +625,15 @@ def _concerne(issue: Issue, dossier_id: str) -> bool:
     return False
 
 
-def phrase_rapprochement(issues: Sequence[Issue]) -> str:
+def phrase_rapprochement(issues: Sequence[Issue], deja_relies: int = 0) -> str:
+    """Ce que le bouton a trouvé. Les comptes déjà reliés à l'entreprise
+    comptent : « aucun » ne se dit que s'il n'y en a vraiment aucun."""
+    choix = sum(1 for issue in issues if issue.etat == "a_choisir")
+    a_relier = f" {choix} autre(s) compte(s) Rollee à vérifier sur cette fiche." if choix else ""
+    if deja_relies:
+        return f"{deja_relies} compte(s) Rollee relié(s) à cette entreprise.{a_relier}"
     if any(issue.etat == "relie_auto" for issue in issues):
         return "Un seul compte Rollee correspond : le lien est posé."
-    choix = sum(1 for issue in issues if issue.etat == "a_choisir")
     if choix == 1:
         return "Un compte Rollee correspond. Reliez-le sur cette fiche."
     if choix > 1:
@@ -746,8 +751,11 @@ def _conclure_dossier(
         trouves.extend(du_dossier)
     if a_signaler and depots.prevenir is not None:
         depots.prevenir(dossier.tenant_id, a_signaler)
+    # Les liens posés avant ce passage : un lien posé à l'instant se dit
+    # « le lien est posé ».
+    relies = {lien.rollee_user_id for lien in liens if lien.dossier_id == dossier.id}
     return BilanDossier(
-        phrase_rapprochement(trouves),
+        phrase_rapprochement(trouves, len(relies)),
         a_lire,
         any(issue.etat == "relie_auto" for issue in trouves),
     )
