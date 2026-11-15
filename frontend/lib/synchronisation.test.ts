@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { aValider, chauffeursEvidents, ignores, phraseSynchro, synchroEnCours } from "./synchronisation";
+import {
+  PHRASE_EN_COURS,
+  aValider,
+  chauffeursEvidents,
+  ignores,
+  phraseSynchro,
+  synchroEnCours,
+} from "./synchronisation";
 import type { NouveauChauffeur, Synchronisation } from "./types";
 
 const fini: Synchronisation = {
@@ -14,7 +21,9 @@ const fini: Synchronisation = {
 
 test("phrase et état de la synchro", () => {
   assert.equal(phraseSynchro(null, (d) => d), null);
-  assert.equal(phraseSynchro({ ...fini, statut: "en_cours" }, (d) => d), "Synchronisation en cours…");
+  assert.equal(phraseSynchro({ ...fini, statut: "en_cours" }, (d) => d), PHRASE_EN_COURS);
+  assert.equal(phraseSynchro({ ...fini, statut: "en_attente" }, (d) => d), PHRASE_EN_COURS);
+  assert.match(PHRASE_EN_COURS, /Rollee/);
   assert.equal(
     phraseSynchro(fini, () => "6 nov."),
     "Synchronisé (6 nov.) : 2 nouveaux chauffeurs à valider, 148 opérations reçues.",

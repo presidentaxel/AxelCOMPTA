@@ -1058,6 +1058,30 @@ def rapprocher_maintenant(
     return " · ".join(ligne.strip() for ligne in lignes) or "aucun compte Rollee actif"
 
 
+def relever_portefeuille_postgres(engine: Engine, tenant_id: TenantId) -> str:
+    liens = PostgresLiensRollee(engine).liens(tenant_id)
+    return relever_portefeuille(liens, lambda ident: _relever_un_dossier(engine, ident))
+
+
+def relever_portefeuille(liens: Sequence[Lien], relever: Callable[[str], str]) -> str:
+    """Bouton « Synchroniser » du portefeuille : relit les plateformes et les
+    revenus Rollee de chaque dossier relié, l'un après l'autre (jamais deux
+    lectures Rollee en même temps). Un dossier en erreur n'arrête pas les
+    autres."""
+    relus, erreurs = 0, 0
+    for ident in sorted({str(lien.dossier_id) for lien in liens}):
+        try:
+            print(relever(ident), flush=True)
+            relus += 1
+        except Exception as exc:  # noqa: BLE001 — gardé et compté, la suite continue
+            print(f"{ident} : Rollee en erreur ({type(exc).__name__})", flush=True)
+            erreurs += 1
+    morceaux = [f"Rollee relu pour {relus} dossier(s)"]
+    if erreurs:
+        morceaux.append(f"{erreurs} en erreur")
+    return ", ".join(morceaux)
+
+
 def _relever_un_dossier(engine: Engine, dossier_id: str) -> str:
     from axelcompta.plateformes_rollee import synchroniser_dossier
     from axelcompta.revenus_rollee import depots_postgres as depots_revenus

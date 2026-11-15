@@ -4,11 +4,15 @@ export function synchroEnCours(synchro: Synchronisation | null): boolean {
   return synchro !== null && (synchro.statut === "en_attente" || synchro.statut === "en_cours");
 }
 
+/** Digifactory puis Rollee, pour tous les dossiers : plusieurs minutes. */
+export const PHRASE_EN_COURS =
+  "Synchronisation lancée : banques (Digifactory) et plateformes (Rollee), pour tous les dossiers. " +
+  "Cela peut prendre plusieurs minutes ; vous pouvez continuer à utiliser l'application.";
+
 /** La phrase sous le bouton « Synchroniser ». */
 export function phraseSynchro(synchro: Synchronisation | null, date: (iso: string) => string): string | null {
   if (synchro === null) return null;
-  if (synchro.statut === "en_attente") return "Synchronisation demandée…";
-  if (synchro.statut === "en_cours") return "Synchronisation en cours…";
+  if (synchro.statut === "en_attente" || synchro.statut === "en_cours") return PHRASE_EN_COURS;
   if (synchro.statut === "echec") return `La synchronisation a échoué : ${synchro.erreur ?? "erreur inconnue"}.`;
   const quand = synchro.terminee_le ? ` (${date(synchro.terminee_le)})` : "";
   return `Synchronisé${quand} : ${synchro.resultat ?? "terminé"}.`;
