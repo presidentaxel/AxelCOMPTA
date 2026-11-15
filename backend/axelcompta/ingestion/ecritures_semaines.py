@@ -3,15 +3,17 @@
 Une semaine soldée (`semaines_plateforme`) s'écrit en trois sortes d'OD,
 toutes rattachées à la semaine par leur pièce (« uber:2026-11-02 ») :
 
-* **recette du jour** : la créance sur la plateforme (467) pour ce qu'elle
-  doit, le compte de l'associé (455, 108 en EI) pour les espèces gardées,
-  contre 706 HT, 44571, et la commission (622, 44566) quand Rollee la donne.
-  Pourboires, bonus et autres montants hors course vont en 7068, sans TVA
-  (AXE-926) ;
+* **recette du jour** : la créance sur la plateforme (un 467 par plateforme)
+  pour ce qu'elle doit, la caisse (530) pour les espèces encaissées par le
+  chauffeur, contre 706 HT, 44571, et la commission (6222, 44566) quand
+  Rollee la donne. Pourboires, bonus et autres montants hors course vont en
+  708, sans TVA (AXE-926) ;
 * **solde par un virement** : la contrepartie du virement (471 ou 706, telle
   que les écrans la voient) contre la créance ; le virement lui-même et le
   512 ne bougent pas ;
 * **frais de virement instantané** : 627 contre la créance.
+
+Comptes du schéma de l'expert-comptable (AXE-931).
 
 Une semaine soldée laisse donc la créance à zéro. Rejouer ne crée rien : les
 identifiants dérivent du jour, du virement ou de la semaine.
@@ -28,14 +30,24 @@ from axelcompta.ingestion.ecritures_settlement import construire_ecriture_settle
 from axelcompta.ingestion.providers.base import NormalizedTransaction, PlatformSettlement
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 
+# AXE-931 : un compte de liaison par plateforme ; 467 pour une plateforme
+# sans compte propre.
 COMPTE_CREANCE = "467"
+COMPTES_CREANCE = {"uber": "4671", "bolt": "4672"}
 COMPTE_FRAIS = "627"
 # AXE-926 : revenus de plateforme hors course (pourboires, bonus, autres) :
-# dans le chiffre d'affaires (la liasse lit tout le 70), sans TVA.
-COMPTE_HORS_COURSE = "7068"
+# dans le chiffre d'affaires (la liasse lit tout le 70), sans TVA. AXE-931 :
+# 708, produits des activités annexes.
+COMPTE_HORS_COURSE = "708"
+# AXE-931 : les espèces encaissées par le chauffeur pour la société.
+COMPTE_ESPECES = "530"
 SUFFIXE_RECETTE = ":recette-plateforme"
 SUFFIXE_SOLDE = ":solde-plateforme"
 SUFFIXE_FRAIS = ":frais-plateforme"
+
+
+def compte_creance(plateforme: str) -> str:
+    return COMPTES_CREANCE.get(plateforme, COMPTE_CREANCE)
 
 
 def piece_semaine(plateforme: str, lundi: date) -> str:
@@ -58,15 +70,14 @@ def ecriture_recette(
     settlement_id: str,
     jour: PlatformSettlement,
     especes_cts: int,
-    compte_especes: str | None,
     lundi: date,
     tva_recettes_regime: str,
     hors_course_cts: int = 0,
 ) -> Ecriture:
     """La recette d'un jour : `construire_ecriture_settlement` (mêmes lignes
     706, TVA, commission) sur le brut sans ce qui n'est pas une course, la
-    banque remplacée par la créance, le hors course en 7068 sans TVA, et la
-    part en espèces portée au compte de l'associé."""
+    banque remplacée par la créance, le hors course en 708 sans TVA, et la
+    part en espèces portée en caisse."""
     plafond = min(jour.net_payout_cts, jour.gross_earnings_cts)
     if hors_course_cts < 0 or (hors_course_cts and hors_course_cts > plafond):
         raise ValueError("pourboires, bonus ou autres montants illisibles")
@@ -92,8 +103,9 @@ def ecriture_recette(
         compte_banque=COMPTE_CREANCE,
     )
     # La créance porte tout le gagné, hors course compris.
+    creance = compte_creance(jour.platform)
     lignes = [
-        LigneEcriture(COMPTE_CREANCE, Sens.DEBIT, Money(jour.net_payout_cts))
+        LigneEcriture(creance, Sens.DEBIT, Money(jour.net_payout_cts))
         if x.compte == COMPTE_CREANCE
         else x
         for x in base.lignes
@@ -101,7 +113,7 @@ def ecriture_recette(
     if hors_course_cts:
         lignes.append(LigneEcriture(COMPTE_HORS_COURSE, Sens.CREDIT, Money(hors_course_cts)))
     if especes_cts:
-        lignes = _avec_especes(lignes, jour.net_payout_cts, especes_cts, compte_especes)
+        lignes = _avec_especes(lignes, creance, jour.net_payout_cts, especes_cts)
     return replace(
         base,
         id=id_recette(settlement_id),
@@ -113,17 +125,15 @@ def ecriture_recette(
 
 
 def _avec_especes(
-    lignes: list[LigneEcriture], gagne_cts: int, especes_cts: int, compte_especes: str | None
+    lignes: list[LigneEcriture], creance: str, gagne_cts: int, especes_cts: int
 ) -> list[LigneEcriture]:
-    """La part payée en espèces quitte la créance pour le compte de l'associé."""
-    if compte_especes is None:
-        raise ValueError("espèces sans compte de l'associé")
-    rang = next(i for i, x in enumerate(lignes) if x.compte == COMPTE_CREANCE)
+    """La part payée en espèces quitte la créance pour la caisse."""
+    rang = next(i for i, x in enumerate(lignes) if x.compte == creance)
     due = gagne_cts - especes_cts
     return [
         *lignes[:rang],
-        *([LigneEcriture(COMPTE_CREANCE, Sens.DEBIT, Money(due))] if due else []),
-        LigneEcriture(compte_especes, Sens.DEBIT, Money(especes_cts)),
+        *([LigneEcriture(creance, Sens.DEBIT, Money(due))] if due else []),
+        LigneEcriture(COMPTE_ESPECES, Sens.DEBIT, Money(especes_cts)),
         *lignes[rang + 1 :],
     ]
 
@@ -141,7 +151,7 @@ def ecriture_solde(
         reference_piece=piece_semaine(plateforme, lundi),
         lignes=(
             LigneEcriture(contrepartie, Sens.DEBIT, Money(montant_cts)),
-            LigneEcriture(COMPTE_CREANCE, Sens.CREDIT, Money(montant_cts)),
+            LigneEcriture(compte_creance(plateforme), Sens.CREDIT, Money(montant_cts)),
         ),
     )
 
@@ -158,6 +168,6 @@ def ecriture_frais(
         reference_piece=piece_semaine(plateforme, lundi),
         lignes=(
             LigneEcriture(COMPTE_FRAIS, Sens.DEBIT, Money(frais_cts)),
-            LigneEcriture(COMPTE_CREANCE, Sens.CREDIT, Money(frais_cts)),
+            LigneEcriture(compte_creance(plateforme), Sens.CREDIT, Money(frais_cts)),
         ),
     )

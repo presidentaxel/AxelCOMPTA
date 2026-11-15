@@ -62,14 +62,15 @@ def soldes(ecritures: tuple[Ecriture, ...]) -> Balance:
 
 
 def chiffre_affaires_ht(ecritures: tuple[Ecriture, ...], annee: int) -> int:
-    """Recettes hors taxe (706) de l'année civile, en centimes : l'assiette
-    des seuils de la franchise en base de TVA (plafonds civils)."""
+    """Recettes hors taxe (706, et 708 des revenus de plateforme hors course :
+    AXE-931) de l'année civile, en centimes : l'assiette des seuils de la
+    franchise en base de TVA (plafonds civils)."""
     return sum(
         ligne.montant.centimes if ligne.sens is Sens.CREDIT else -ligne.montant.centimes
         for ecriture in ecritures
         if ecriture.date.year == annee
         for ligne in ecriture.lignes
-        if ligne.compte.startswith("706")
+        if ligne.compte.startswith(("706", "708"))
     )
 
 

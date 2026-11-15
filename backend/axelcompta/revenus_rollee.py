@@ -49,6 +49,7 @@ from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ingestion.providers.base import NormalizedTransaction, PlatformSettlement
 from axelcompta.ingestion.providers.rollee import Rejet, lire_revenus
 from axelcompta.ingestion.reconciliation import EtatReconciliation, reconcilier
+from axelcompta.ingestion.reprise_comptes_plateforme import SUFFIXE_REPRISE
 from axelcompta.ingestion.settlements_plateforme import (
     A_RAPPROCHER,
     SettlementsRepository,
@@ -70,12 +71,12 @@ from axelcompta.plateformes_rollee import (
     branchement_du_dossier,
     client_du_branchement,
 )
-from axelcompta.revenus_semaines import Contexte, compte_especes_de, rapprocher_semaines
+from axelcompta.revenus_semaines import Contexte, rapprocher_semaines
 from axelcompta.tenants.branchements import Branchement
 from axelcompta.tenants.models import Dossier
 from axelcompta.workflow.reclassement import projeter
 
-SUFFIXES_SEMAINE = (SUFFIXE_RECETTE, SUFFIXE_SOLDE, SUFFIXE_FRAIS)
+SUFFIXES_SEMAINE = (SUFFIXE_RECETTE, SUFFIXE_SOLDE, SUFFIXE_FRAIS, SUFFIXE_REPRISE)
 COMPTE_RECETTE = "706"
 COMPTE_ATTENTE = "471"
 SOURCE = "rollee"
@@ -389,7 +390,6 @@ def _rapprocher_par_semaine(
     contexte = Contexte(
         dossier,
         tuple(depots.ledger.periodes_closes(dossier.id)),
-        compte_especes_de(dossier),
         maintenant,
     )
     passage = rapprocher_semaines(
