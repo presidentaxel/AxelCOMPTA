@@ -328,12 +328,18 @@ async def _lire(
     return lus, rejets
 
 
+# AXE-928 : tout l'historique Rollee est lu, pour le comparer à la banque
+# (et servir de rapport sur les années passées) ; seules les semaines
+# couvertes par la banque sont écrites.
+DEBUT_HISTORIQUE = date(2020, 1, 1)
+
+
 def _depuis(dossier: Dossier, stockes: Sequence[SettlementStocke]) -> date:
-    """AXE-924 : tout l'exercice est relu à chaque passage (un appel par
-    compte) : un jour écarté par une ancienne règle, ou complété tard par
-    Rollee, revient ainsi dans sa semaine."""
-    del stockes
-    return dossier.exercice_debut
+    """Tout l'historique est relu à chaque passage (un appel par compte) :
+    un jour écarté par une ancienne règle, ou complété tard par Rollee,
+    revient ainsi dans sa semaine (AXE-924)."""
+    del dossier, stockes
+    return DEBUT_HISTORIQUE
 
 
 async def relever_revenus(
