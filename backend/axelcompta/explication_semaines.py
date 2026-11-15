@@ -13,6 +13,7 @@ from datetime import date, timedelta
 from axelcompta.core.pcg import est_compte_banque
 from axelcompta.ingestion.providers.rollee import especes_cts
 from axelcompta.ingestion.semaines_plateforme import (
+    FRAIS_INSTANTANE_CTS,
     Jour,
     Semaine,
     Virement,
@@ -172,14 +173,15 @@ def _semaine_ouverte(
     verses = [virement for virement in payes if virement.semaine == lundi_]
     du = sum(jour.du_cts for jour in du_jour)
     paye = sum(virement.montant_cts for virement in verses)
+    frais = FRAIS_INSTANTANE_CTS * sum(1 for v in verses if v.nature == "instantane")
     semaine = Semaine(
         plateforme,
         lundi_,
         "en_attente",
         du,
         paye,
-        0,
-        du - paye,
+        frais,
+        du - paye - frais,
         tuple(jour.id for jour in du_jour),
         tuple(virement.id for virement in verses),
     )

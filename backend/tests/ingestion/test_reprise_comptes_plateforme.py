@@ -78,13 +78,13 @@ def test_rejouer_ne_cree_rien_et_une_semaine_annulee_n_est_pas_reprise() -> None
 
 
 def test_une_plateforme_sans_compte_propre_garde_le_467() -> None:
-    heetch = _od(
+    lecab = _od(
         "V2:solde-plateforme",
         ("471", Sens.DEBIT, 10_00),
         ("467", Sens.CREDIT, 10_00),
-        piece="heetch:2026-10-05",
+        piece="lecab:2026-10-05",
     )
-    assert reprises([heetch]) == []
+    assert reprises([lecab]) == []
 
 
 def test_retirer_le_lien_contre_passe_aussi_la_reprise() -> None:

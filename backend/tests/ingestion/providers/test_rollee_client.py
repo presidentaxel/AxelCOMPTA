@@ -177,7 +177,7 @@ def test_un_bonus_au_dela_du_brut_devient_le_brut_sans_commission() -> None:
 
 def test_les_semaines_et_les_mois_sont_ignores_sans_quarantaine() -> None:
     semaines = [{**JOUR_UBER, "time_period_type": t} for t in ("weekly", "monthly", "custom")]
-    for compte in (CompteRollee("acc-1", "Uber"), CompteRollee("acc-9", "Heetch")):
+    for compte in (CompteRollee("acc-1", "Uber"), CompteRollee("acc-9", "LeCab")):
         releve = lire_revenus(D, compte, {"data": semaines}, PLATEFORMES)
         assert releve.settlements == [] and releve.rejets == []
 
@@ -201,8 +201,8 @@ def test_une_periode_incoherente_part_en_quarantaine_avec_la_raison(
 
 
 def test_une_plateforme_inconnue_du_pack_est_mise_de_cote() -> None:
-    releve = lire_revenus(D, CompteRollee("acc-9", "Heetch"), {"data": [JOUR_UBER]}, PLATEFORMES)
-    assert releve.settlements == [] and "Heetch" in releve.rejets[0].motif
+    releve = lire_revenus(D, CompteRollee("acc-9", "LeCab"), {"data": [JOUR_UBER]}, PLATEFORMES)
+    assert releve.settlements == [] and "LeCab" in releve.rejets[0].motif
 
 
 def test_le_provider_lit_chaque_compte_connecte_du_dossier() -> None:

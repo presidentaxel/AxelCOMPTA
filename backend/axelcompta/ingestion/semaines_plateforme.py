@@ -10,6 +10,9 @@ Ce que disent les vraies données (pilote du 14/11, vérifié au centime) :
   instantané** (« Stichting Custodian Uber Payments ») : 0,99 € de frais
   chacun, mais pas toujours.
 * Bolt verse chaque lundi la semaine précédente (« … BOLT FR »).
+* Free Now verse la période qu'il écrit dans le libellé (« Freenow Credit
+  … 20.07.-26.07.2026 ») ; Heetch et Allocab, la semaine précédente
+  (AXE-933).
 * Les courses payées en **espèces** (`cash_earnings`) ne passent pas par la
   banque : elles ne sont pas dues par la plateforme.
 
@@ -79,7 +82,7 @@ class Semaine:
     du_cts: int
     paye_cts: int
     frais_cts: int = 0
-    ecart_cts: int = 0  # reste dû après frais (avec le report) ; 0 si soldée
+    ecart_cts: int = 0  # reste dû après frais ; 0 si soldée
     jours: tuple[str, ...] = ()
     virements: tuple[str, ...] = ()
 
@@ -92,15 +95,25 @@ def lundi(jour: date) -> date:
     return jour - timedelta(days=jour.weekday())
 
 
+# AXE-933 : les autres plateformes, reconnues à leur nom dans le libellé.
+_AUTRES_PLATEFORMES = (
+    ("bolt", re.compile(r"\bBOLT\b")),
+    ("freenow", re.compile(r"\bFREE ?NOW\b")),
+    ("heetch", re.compile(r"\bHEETCH\b")),
+    ("allocab", re.compile(r"\bALLOCAB\b")),
+)
+# « Freenow Credit 700-… 20.07.-26.07.2026 » : la période payée.
+_PERIODE_FREENOW = re.compile(r"(\d{2})\.(\d{2})\.\s*-\s*\d{2}\.(\d{2})\.(\d{4})")
+
+
 def plateforme_du_libelle(libelle: str) -> str | None:
     """« POP SVCS » et « Stichting Custodian Uber Payments » : Uber ;
-    « … BOLT FR » : Bolt. Le reste n'est pas un versement de plateforme."""
+    « … BOLT FR » : Bolt ; « Freenow Credit » : Free Now ; Heetch,
+    Allocab. Le reste n'est pas un versement de plateforme."""
     texte = libelle.upper()
     if "POP SVCS" in texte or re.search(r"\bUBER\b", texte):
         return "uber"
-    if re.search(r"\bBOLT\b", texte):
-        return "bolt"
-    return None
+    return next((nom for nom, motif in _AUTRES_PLATEFORMES if motif.search(texte)), None)
 
 
 def _periode_pop(libelle: str) -> date | None:
@@ -109,6 +122,20 @@ def _periode_pop(libelle: str) -> date | None:
         return None
     try:
         debut = date(int(trouve[1][:4]), int(trouve[1][4:6]), int(trouve[1][6:]))
+    except ValueError:
+        return None
+    return lundi(debut)
+
+
+def _periode_freenow(libelle: str) -> date | None:
+    """Le lundi du premier jour de « 28.09.-04.10.2026 » ; l'année est celle
+    de la fin, moins un si la période passe le 1er janvier."""
+    trouve = _PERIODE_FREENOW.search(libelle)
+    if trouve is None:
+        return None
+    jour, mois, mois_fin, annee = (int(x) for x in trouve.groups())
+    try:
+        debut = date(annee - 1 if mois > mois_fin else annee, mois, jour)
     except ValueError:
         return None
     return lundi(debut)
@@ -123,7 +150,7 @@ def virement(identifiant: str, jour: date, montant_cts: int, libelle: str) -> Vi
     if plateforme == "uber" and "POP SVCS" not in texte:
         # Retrait instantané : il paie la semaine en cours.
         return Virement(identifiant, plateforme, jour, montant_cts, "instantane", lundi(jour))
-    semaine = _periode_pop(libelle) if "POP SVCS" in texte else None
+    semaine = _periode_pop(libelle) if "POP SVCS" in texte else _periode_freenow(libelle)
     payee = semaine or lundi(jour - timedelta(days=7))
     return Virement(identifiant, plateforme, jour, montant_cts, "hebdomadaire", payee)
 
@@ -167,14 +194,17 @@ def _soldee(part: _Part, plateforme: str, frais: int) -> Semaine:
 
 
 def _ouverte(part: _Part, plateforme: str, etat: EtatSemaine) -> Semaine:
+    """AXE-932 : chaque virement instantané coûte 0,99 € même quand la
+    semaine ne tombe pas juste ; l'écart ne garde que l'inexpliqué."""
+    frais = FRAIS_INSTANTANE_CTS * part.instantanes
     return Semaine(
         plateforme,
         part.lundi,
         etat,
         part.du,
         part.paye,
-        0,
-        part.du - part.paye,
+        frais,
+        part.du - part.paye - frais,
         part.jours,
         part.virements,
     )
