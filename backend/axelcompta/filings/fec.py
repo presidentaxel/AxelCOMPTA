@@ -102,6 +102,7 @@ LIBELLE_COMPTE = {
     "681": "Dotations aux amortissements et provisions",
     "695": "Impôts sur les bénéfices",
     "706": "Prestations de services",
+    "7068": "Revenus de plateforme hors course (sans TVA)",
     "741": "Subventions d'exploitation",
     "758": "Produits divers de gestion courante",
     "44551": "TVA à décaisser",

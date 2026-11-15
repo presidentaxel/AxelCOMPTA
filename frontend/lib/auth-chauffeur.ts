@@ -541,6 +541,46 @@ export function lireVersementsPlateformesChauffeur(dossierId: string): Promise<V
   return fetchAvecAuthChauffeur<VersementPlateforme[]>(`/dossiers/${dossierId}/versements-plateformes`);
 }
 
+/** AXE-928 : Rollee et la banque côte à côte. */
+export type TotauxCompares = {
+  gagne_cts: number;
+  commission_cts: number;
+  especes_cts: number;
+  du_cts: number;
+  verse_cts: number;
+  frais_cts: number;
+  ecart_cts: number;
+  courses_ht_cts: number;
+  tva_cts: number;
+  hors_course_cts: number;
+};
+
+export type SemaineComparee = {
+  plateforme: string;
+  lundi: string;
+  etat: string;
+  jours: number;
+  virements: number;
+  instantanes: number;
+  totaux: TotauxCompares;
+};
+
+export type ComparaisonRollee = {
+  annees: number[];
+  annee: number | null;
+  debut_banque: string | null;
+  totaux: TotauxCompares;
+  mois: { mois: string; totaux: TotauxCompares; semaines: SemaineComparee[] }[];
+};
+
+export function lireComparaisonRolleeChauffeur(
+  dossierId: string,
+  annee: number | null,
+): Promise<ComparaisonRollee> {
+  const filtre = annee === null ? "" : `?annee=${annee}`;
+  return fetchAvecAuthChauffeur<ComparaisonRollee>(`/dossiers/${dossierId}/plateformes/comparaison${filtre}`);
+}
+
 /** AXE-891 : tous les relevés « à vérifier », même anciens, pour « À traiter ». */
 export function lireVersementsAVerifierChauffeur(dossierId: string): Promise<VersementPlateforme[]> {
   return fetchAvecAuthChauffeur<VersementPlateforme[]>(

@@ -5,7 +5,9 @@ toutes rattachées à la semaine par leur pièce (« uber:2026-11-02 ») :
 
 * **recette du jour** : la créance sur la plateforme (467) pour ce qu'elle
   doit, le compte de l'associé (455, 108 en EI) pour les espèces gardées,
-  contre 706 HT, 44571, et la commission (622, 44566) quand Rollee la donne ;
+  contre 706 HT, 44571, et la commission (622, 44566) quand Rollee la donne.
+  Pourboires, bonus et autres montants hors course vont en 7068, sans TVA
+  (AXE-926) ;
 * **solde par un virement** : la contrepartie du virement (471 ou 706, telle
   que les écrans la voient) contre la créance ; le virement lui-même et le
   512 ne bougent pas ;
@@ -28,6 +30,9 @@ from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 
 COMPTE_CREANCE = "467"
 COMPTE_FRAIS = "627"
+# AXE-926 : revenus de plateforme hors course (pourboires, bonus, autres) :
+# dans le chiffre d'affaires (la liasse lit tout le 70), sans TVA.
+COMPTE_HORS_COURSE = "7068"
 SUFFIXE_RECETTE = ":recette-plateforme"
 SUFFIXE_SOLDE = ":solde-plateforme"
 SUFFIXE_FRAIS = ":frais-plateforme"
@@ -56,36 +61,47 @@ def ecriture_recette(
     compte_especes: str | None,
     lundi: date,
     tva_recettes_regime: str,
+    hors_course_cts: int = 0,
 ) -> Ecriture:
     """La recette d'un jour : `construire_ecriture_settlement` (mêmes lignes
-    706, TVA, commission), la banque remplacée par la créance, et la part en
-    espèces portée au compte de l'associé."""
+    706, TVA, commission) sur le brut sans ce qui n'est pas une course, la
+    banque remplacée par la créance, le hors course en 7068 sans TVA, et la
+    part en espèces portée au compte de l'associé."""
+    plafond = min(jour.net_payout_cts, jour.gross_earnings_cts)
+    if hors_course_cts < 0 or (hors_course_cts and hors_course_cts > plafond):
+        raise ValueError("pourboires, bonus ou autres montants illisibles")
+    taxable = replace(
+        jour,
+        gross_earnings_cts=jour.gross_earnings_cts - hors_course_cts,
+        net_payout_cts=jour.net_payout_cts - hors_course_cts,
+    )
     transaction = NormalizedTransaction(
         id=TransactionId(settlement_id),
         dossier_id=jour.dossier_id,
         date=jour.period_start,
-        montant_cts=jour.net_payout_cts,
+        montant_cts=taxable.net_payout_cts,
         libelle=f"{jour.platform} {jour.period_start.isoformat()}",
         source_provider="rollee",
         raw_payload={},
     )
     base = construire_ecriture_settlement(
         transaction,
-        jour,
+        taxable,
         0,
         tva_recettes_regime=tva_recettes_regime,
         compte_banque=COMPTE_CREANCE,
     )
-    lignes = list(base.lignes)
+    # La créance porte tout le gagné, hors course compris.
+    lignes = [
+        LigneEcriture(COMPTE_CREANCE, Sens.DEBIT, Money(jour.net_payout_cts))
+        if x.compte == COMPTE_CREANCE
+        else x
+        for x in base.lignes
+    ]
+    if hors_course_cts:
+        lignes.append(LigneEcriture(COMPTE_HORS_COURSE, Sens.CREDIT, Money(hors_course_cts)))
     if especes_cts:
-        if compte_especes is None:
-            raise ValueError("espèces sans compte de l'associé")
-        rang = next(i for i, x in enumerate(lignes) if x.compte == COMPTE_CREANCE)
-        due = jour.net_payout_cts - especes_cts
-        lignes[rang : rang + 1] = [
-            *([LigneEcriture(COMPTE_CREANCE, Sens.DEBIT, Money(due))] if due else []),
-            LigneEcriture(compte_especes, Sens.DEBIT, Money(especes_cts)),
-        ]
+        lignes = _avec_especes(lignes, jour.net_payout_cts, especes_cts, compte_especes)
     return replace(
         base,
         id=id_recette(settlement_id),
@@ -94,6 +110,22 @@ def ecriture_recette(
         reference_piece=piece_semaine(jour.platform, lundi),
         lignes=tuple(lignes),
     )
+
+
+def _avec_especes(
+    lignes: list[LigneEcriture], gagne_cts: int, especes_cts: int, compte_especes: str | None
+) -> list[LigneEcriture]:
+    """La part payée en espèces quitte la créance pour le compte de l'associé."""
+    if compte_especes is None:
+        raise ValueError("espèces sans compte de l'associé")
+    rang = next(i for i, x in enumerate(lignes) if x.compte == COMPTE_CREANCE)
+    due = gagne_cts - especes_cts
+    return [
+        *lignes[:rang],
+        *([LigneEcriture(COMPTE_CREANCE, Sens.DEBIT, Money(due))] if due else []),
+        LigneEcriture(compte_especes, Sens.DEBIT, Money(especes_cts)),
+        *lignes[rang + 1 :],
+    ]
 
 
 def ecriture_solde(

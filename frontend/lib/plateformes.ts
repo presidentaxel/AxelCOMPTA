@@ -63,3 +63,23 @@ export function motifEnClair(motif: string | null): string {
   const trouve = MOTIFS_EN_CLAIR.find(([debut]) => (motif ?? "").startsWith(debut));
   return trouve ? trouve[1] : "Le relevé et le virement reçu ne concordent pas.";
 }
+
+/** AXE-928 : l'état d'une semaine comparée entre Rollee et la banque. */
+const ETATS_COMPARAISON: Record<string, string> = {
+  rapprochee: "rapprochée",
+  concorde: "la banque concorde",
+  sans_banque: "pas de relevé bancaire",
+  absente_de_rollee: "payée, mais absente de Rollee",
+  en_cours: "en cours",
+  virement_manquant: "virement manquant en banque",
+  verse_en_trop: "versé en trop",
+};
+
+export function etatComparaison(etat: string): string {
+  return ETATS_COMPARAISON[etat] ?? etat;
+}
+
+/** Une semaine qu'il faut regarder : il manque quelque chose d'un côté. */
+export function comparaisonARegarder(etat: string): boolean {
+  return etat === "virement_manquant" || etat === "verse_en_trop" || etat === "absente_de_rollee";
+}

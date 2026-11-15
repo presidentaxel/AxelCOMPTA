@@ -26,7 +26,7 @@ from axelcompta.ingestion.settlements_plateforme import (
     d_un_jour,
 )
 from axelcompta.ledger.models import Ecriture, Sens
-from axelcompta.revenus_semaines import debut_banque, virements_plateforme
+from axelcompta.revenus_semaines import debut_banque, virements_de_plateforme
 
 COPIES = frozenset({MOTIF_DOUBLON, MOTIF_ECART})
 MOTIF_SANS_BANQUE = "Aucun relevé bancaire sur cette période."
@@ -75,7 +75,7 @@ def expliquer_semaines(
     """Toutes les semaines : jours Rollee et virements bancaires, y compris
     celles déjà soldées."""
     jours = _jours_retenus(stockes)
-    virements = virements_plateforme(grand_livre)
+    virements = virements_de_plateforme(grand_livre)
     retenus, avant = _separer(jours, _seuil(grand_livre))
     vues = _semaines(retenus, virements, aujourd_hui)
     vues += _avant_la_banque(avant)

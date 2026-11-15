@@ -28,6 +28,7 @@ from axelcompta.rapprochement_rollee_service import (
     passer_tenant,
     phrase_carte,
     phrase_lecture,
+    phrase_rapprochement,
     rapprocher_dossier,
 )
 from axelcompta.tenants.branchements import BranchementsMemoire, nouveau
@@ -252,7 +253,8 @@ def test_le_second_passage_compare_la_carte_sans_relire_les_profils() -> None:
     asyncio.run(rapprocher_dossier(depots, dossier, LE))
     rollee.appels.clear()
     bilan = asyncio.run(rapprocher_dossier(depots, dossier, LE))
-    assert "correspond" in bilan.phrase
+    # Pilote du 15/11 : « aucun compte ne correspond » serait faux.
+    assert bilan.phrase == "1 compte(s) Rollee relié(s) à cette entreprise."
     assert [appel for appel in rollee.appels if appel.startswith("profil")] == []
     assert [lien.rollee_user_id for lien in depots.liens.liens(T)] == ["u-nom"]
 
@@ -321,6 +323,11 @@ def test_le_bouton_d_une_fiche_ne_relie_que_cette_entreprise() -> None:
     assert bilan.phrase == "Un seul compte Rollee correspond : le lien est posé."
     assert [lien.rollee_user_id for lien in depots.liens.liens(T)] == ["u-nom"]
     assert depots.liens.a_choisir(T) == []
+
+
+def test_la_phrase_compte_les_liens_deja_poses() -> None:
+    assert phrase_rapprochement([]) == "Aucun compte Rollee ne correspond à cette entreprise."
+    assert phrase_rapprochement([], 3) == "3 compte(s) Rollee relié(s) à cette entreprise."
 
 
 def test_l_application_relie_le_sur_et_previent_pour_le_reste() -> None:

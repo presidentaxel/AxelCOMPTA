@@ -39,6 +39,19 @@
 > - Écritures : chaque jour, recette contre une **créance sur la plateforme
 >   (467)** ; chaque virement solde la créance (sa contrepartie 471 ou 706 est
 >   vidée, le 512 ne bouge pas) ; les frais vont en 627.
+> - **Seules les courses portent la TVA** (règle validée par des experts
+>   fiscaux, AXE-926). Pourboires (`tips`), bonus (`bonus_amount`) et autres
+>   montants (`other_amount`), compris dans le brut, vont en **7068** : dans le
+>   chiffre d'affaires, sans TVA collectée. Ce que Rollee ne classe nulle part
+>   (brut − course − ces trois parts : 1 209 € sur 186 jours Uber en prod)
+>   reste avec la TVA, par prudence.
+> - **Rollee ↔ banque** (AXE-928) : la banque fait foi pour la compta (une
+>   semaine n'est écrite que si ses virements sont trouvés). Tout l'historique
+>   Rollee est lu et comparé à la banque, par mois et par semaine
+>   (`ingestion/comparaison_rollee.py`, `GET /dossiers/{id}/plateformes/comparaison`) :
+>   rapprochée, pas de relevé bancaire, virement manquant, versé en trop,
+>   payée mais absente de Rollee. Les années sans banque servent de rapport
+>   (CA des courses HT, TVA, hors course, espèces), sans écriture.
 > - Contrôle **par semaine** (`ingestion/semaines_plateforme.py`) : soldée si
 >   l'écart est nul ou vaut k × 0,99 € (k ≤ nombre de virements instantanés),
 >   éventuellement cumulée avec la semaine d'avant ; en attente du POP SVCS

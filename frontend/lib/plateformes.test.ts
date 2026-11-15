@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { etatPlateforme, etatVersement, motifEnClair, resumePlateformes } from "./plateformes";
+import {
+  comparaisonARegarder,
+  etatComparaison,
+  etatPlateforme,
+  etatVersement,
+  motifEnClair,
+  resumePlateformes,
+} from "./plateformes";
 
 const date = (iso: string) => iso.split("-").reverse().join("/");
 
@@ -48,4 +55,12 @@ test("le motif d'un versement à vérifier se dit sans jargon comptable", () => 
   assert.equal(motifEnClair("virement classé en 625100"), "Le virement reçu n'est pas classé en recette.");
   assert.doesNotMatch(motifEnClair("Écriture déséquilibrée : 12 ≠ 13"), /déséquilibrée/);
   assert.doesNotMatch(motifEnClair(null), /null/);
+});
+
+test("AXE-928 : l'état d'une semaine comparée se lit en clair", () => {
+  assert.equal(etatComparaison("virement_manquant"), "virement manquant en banque");
+  assert.equal(etatComparaison("absente_de_rollee"), "payée, mais absente de Rollee");
+  assert.equal(comparaisonARegarder("virement_manquant"), true);
+  assert.equal(comparaisonARegarder("rapprochee"), false);
+  assert.equal(comparaisonARegarder("sans_banque"), false);
 });

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, date, datetime
+from typing import Any
 
 from axelcompta.core.ids import EcritureId
 from axelcompta.core.money import Money
@@ -158,3 +159,16 @@ def test_les_semaines_d_avant_l_historique_bancaire_restent_en_attente() -> None
     )
     assert [s.id for s in passage.stockes] == [_jour().id]  # le vieux jour n'est pas touché
     assert rapprocher_semaines([_jour()], [], _contexte(), AUJOURD_HUI).stockes == []
+
+
+def test_seules_les_courses_portent_la_tva() -> None:
+    """AXE-926 : 848 € gagnés dont 20 € de pourboires, 18 € de bonus et
+    10 € d'autres montants : 48 € sans TVA."""
+    jour = _jour()
+    hors_course: dict[str, Any] = {"tips": 20.0, "bonus_amount": 18.0, "other_amount": 10.0}
+    jour = replace(jour, settlement=replace(jour.settlement, raw_payload=hors_course))
+    virement = _virement(848_00)
+    passage = rapprocher_semaines([jour], [OUVERTURE, virement], _contexte(), AUJOURD_HUI)
+    soldes = _soldes([virement, *passage.ecritures])
+    assert (soldes["7068"], soldes["44571"]) == (-48_00, -72_73)
+    assert "467" not in soldes

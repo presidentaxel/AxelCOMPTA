@@ -345,6 +345,17 @@ def especes_cts(settlement: PlatformSettlement) -> int:
     return centimes(settlement.raw_payload.get("cash_earnings"), "cash_earnings")
 
 
+HORS_COURSE = ("tips", "bonus_amount", "other_amount")
+
+
+def hors_course_cts(settlement: PlatformSettlement) -> int:
+    """AXE-926 : ce qu'un jour rapporte en dehors des courses, compris dans le
+    brut : pourboires, bonus, autres montants. Seules les courses portent la
+    TVA (règle validée par des experts fiscaux, 14/11). Ce que Rollee ne
+    classe nulle part (brut − course − ces trois parts) reste avec la TVA."""
+    return sum(centimes(settlement.raw_payload.get(champ), champ) for champ in HORS_COURSE)
+
+
 def jour_depuis_revenu(
     dossier_id: DossierId, plateforme: Plateforme, revenu: dict[str, Any]
 ) -> PlatformSettlement | None:
