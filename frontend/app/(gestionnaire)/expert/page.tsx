@@ -19,6 +19,7 @@ import {
   ErreurAuthGestionnaire,
   imputerExpert,
   lireFileExpert,
+  listerDossiers,
   ModeExpertRefuse,
 } from "@/lib/auth-gestionnaire";
 import {
@@ -88,6 +89,7 @@ export default function ModeExpertPage() {
   const [visible, setVisible] = useState(PAGE);
   // AXE-823 : « À traiter » (la file) ou une vue des opérations déjà classées.
   const [vue, setVue] = useState<EtatClassees>(() => lireEtat(""));
+  const [portefeuille, setPortefeuille] = useState<{ id: string; nom: string }[]>([]);
   const droit = useDroitGestionnaire();
 
   useEffect(() => {
@@ -139,16 +141,32 @@ export default function ModeExpertPage() {
 
   useEffect(charger, [charger]);
 
+  useEffect(() => {
+    let actif = true;
+    listerDossiers()
+      .then((dossiers) => {
+        if (actif) {
+          setPortefeuille(dossiers.map((dossier) => ({ id: dossier.dossier_id, nom: dossier.nom })));
+        }
+      })
+      .catch(() => {
+        // Le menu reste celui des dossiers déjà présents dans la file.
+      });
+    return () => {
+      actif = false;
+    };
+  }, []);
+
   const entreprises = useMemo(() => {
-    if (file?.chauffeurs?.length) {
-      return [...file.chauffeurs].sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
-    }
     const noms = new Map<string, string>();
+    for (const chauffeur of [...(file?.chauffeurs ?? []), ...portefeuille]) {
+      noms.set(chauffeur.id, chauffeur.nom);
+    }
     for (const sujet of file?.sujets ?? []) noms.set(sujet.dossier_id, sujet.dossier_nom);
     return [...noms.entries()]
       .sort((a, b) => a[1].localeCompare(b[1], "fr"))
       .map(([id, nom]) => ({ id, nom }));
-  }, [file]);
+  }, [file, portefeuille]);
 
   function tauxAEcrire(sujet: SujetExpert): string | undefined {
     if (tauxRetenu[sujet.id]) return tauxRetenu[sujet.id];
@@ -337,7 +355,7 @@ export default function ModeExpertPage() {
       {vue.vue === VUE_RAPPROCHEMENTS && (
         <RapprochementsRollee
           etat={vue}
-          chauffeurs={file?.chauffeurs ?? []}
+          chauffeurs={entreprises}
           onChanger={changerVue}
         />
       )}
@@ -345,7 +363,7 @@ export default function ModeExpertPage() {
         <OperationsClassees
           etat={vue}
           comptes={file?.comptes ?? []}
-          chauffeurs={file?.chauffeurs ?? []}
+          chauffeurs={entreprises}
           ecriture={droit.ecriture}
           onChanger={changerVue}
         />

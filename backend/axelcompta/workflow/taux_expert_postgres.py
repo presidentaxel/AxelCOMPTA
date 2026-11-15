@@ -6,7 +6,8 @@ from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, Row
+from sqlalchemy.exc import ProgrammingError
 
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.core.rls import appliquer_rls
@@ -24,18 +25,28 @@ class PostgresTauxExpert:
     ) -> dict[DossierId, dict[str, str]]:
         if not dossier_ids:
             return {}
+        try:
+            lignes = self._lignes(tenant_id, dossier_ids)
+        except ProgrammingError as exc:
+            if getattr(exc.orig, "pgcode", None) != "42P01":
+                raise
+            return {}
+        resultat: dict[DossierId, dict[str, str]] = {}
+        for dossier_id, cle, taux in lignes:
+            resultat.setdefault(DossierId(dossier_id), {})[str(cle)] = str(taux)
+        return resultat
+
+    def _lignes(
+        self, tenant_id: TenantId, dossier_ids: Sequence[DossierId]
+    ) -> Sequence[Row[tuple[str, str, str]]]:
         with self._engine.connect() as connexion:
             appliquer_rls(connexion)
-            lignes = connexion.execute(
+            return connexion.execute(
                 select(table.c.dossier_id, table.c.cle, table.c.taux).where(
                     table.c.tenant_id == tenant_id,
                     table.c.dossier_id.in_(list(dossier_ids)),
                 )
             ).all()
-        resultat: dict[DossierId, dict[str, str]] = {}
-        for dossier_id, cle, taux in lignes:
-            resultat.setdefault(DossierId(dossier_id), {})[str(cle)] = str(taux)
-        return resultat
 
     def poser(self, tenant_id: TenantId, dossier_id: DossierId, cle: str, taux: str) -> None:
         verifier_taux(taux)

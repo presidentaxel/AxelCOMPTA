@@ -28,7 +28,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("tenant_id", "dossier_id", "cle"),
         sa.CheckConstraint("taux IN ('20', '10', '5.5', '2.1', '0')", name="taux_tva_expert_taux"),
     )
-    op.create_index("ix_taux_tva_expert_dossier_id", "taux_tva_expert", ["dossier_id"])
     op.execute("ALTER TABLE taux_tva_expert ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE taux_tva_expert FORCE ROW LEVEL SECURITY")
     op.execute(
@@ -45,5 +44,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute("DROP POLICY IF EXISTS taux_tva_expert_isolation ON taux_tva_expert")
     op.execute("REVOKE ALL ON taux_tva_expert FROM axelcompta_web")
-    op.drop_index("ix_taux_tva_expert_dossier_id", table_name="taux_tva_expert")
     op.drop_table("taux_tva_expert")
