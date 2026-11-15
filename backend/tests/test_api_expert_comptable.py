@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import cast
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from axelcompta.api.routes import get_experts
+from axelcompta.api.routes import get_experts, get_settlements
 from axelcompta.core.ids import DossierId
+from axelcompta.ingestion.settlements_plateforme import SettlementsMemoire
 from axelcompta.workflow.expert_comptable import (
     ROLE_EXPERT,
     TEXTE_ENGAGEMENT,
@@ -168,3 +171,94 @@ def test_un_admin_habilite_l_expert_sur_des_dossiers_de_son_portefeuille() -> No
     assert reponse.status_code == 200, reponse.text
     assert reponse.json()["email"] == "expert@cabinet.fr"
     assert (inconnu.status_code, incomplet.status_code, membre.status_code) == (404, 422, 403)
+
+
+def test_un_taux_choisi_separe_la_tva_et_un_taux_inconnu_est_refuse() -> None:
+    client = _client_expert()
+    cible = _une_operation_a_imputer(client)
+    refuse = client.post(
+        "/expert/imputations",
+        json={
+            "dossier_id": "DEMO_sophie",
+            "ecriture_id": cible["ecriture_id"],
+            "compte": "6061",
+            "motif": "Taux hors liste",
+            "taux": "19.6",
+        },
+        headers=EN_TETE,
+    )
+    assert refuse.status_code == 422
+
+    reponse = client.post(
+        "/expert/imputations",
+        json={
+            "dossier_id": "DEMO_sophie",
+            "ecriture_id": cible["ecriture_id"],
+            "compte": "6061",
+            "motif": "Carburant, TVA 20",
+            "taux": "20",
+        },
+        headers=EN_TETE,
+    )
+    assert reponse.status_code == 200, reponse.text
+    comptes = {ligne["compte"] for ligne in reponse.json()["lignes"]}
+    assert {"512", "6061", "44566"} <= comptes
+
+
+def test_un_taux_global_reapparait_sur_la_ligne() -> None:
+    client = _client_expert()
+    file = client.get("/expert/file", headers=EN_TETE).json()
+    assert file["chauffeurs"]
+    sujet = next(s for s in file["sujets"] if s["dossier_id"] == "DEMO_sophie" and s["ecriture_id"])
+    pose = client.post(
+        "/expert/taux",
+        json={
+            "dossier_id": sujet["dossier_id"],
+            "ecriture_id": sujet["ecriture_id"],
+            "libelle": sujet["libelle"],
+            "taux": "10",
+            "portee": "global",
+        },
+        headers=EN_TETE,
+    )
+    assert pose.status_code == 204, pose.text
+    sujets = client.get("/expert/file", headers=EN_TETE).json()["sujets"]
+    relu = next(s for s in sujets if s["id"] == sujet["id"])
+    assert (relu["taux_tva"], relu["origine_taux"]) == ("10", "appris")
+
+
+def test_l_expert_ajoute_et_relit_un_ticket() -> None:
+    client = _client_expert()
+    sujet = _une_operation_a_imputer(client)
+    chemin = f"/expert/dossiers/DEMO_sophie/ecritures/{sujet['ecriture_id']}/justificatif"
+    assert client.get(chemin, headers=EN_TETE).status_code == 404
+    pose = client.post(
+        chemin,
+        files={"fichier": ("ticket.jpg", b"\xff\xd8\xff ticket", "image/jpeg")},
+        headers=EN_TETE,
+    )
+    assert pose.status_code == 204, pose.text
+    lu = client.get(chemin, headers=EN_TETE)
+    assert lu.status_code == 200
+    assert lu.content.startswith(b"\xff\xd8")
+    ligne = next(
+        s
+        for s in client.get("/expert/file", headers=EN_TETE).json()["sujets"]
+        if s["ecriture_id"] == sujet["ecriture_id"]
+    )
+    assert ligne["a_justificatif"] is True
+
+
+def test_l_expert_lit_les_rapprochements_rollee_de_son_dossier() -> None:
+    client = _client_expert()
+    cast(FastAPI, client.app).dependency_overrides[get_settlements] = lambda: SettlementsMemoire()
+    reponse = client.get("/expert/dossiers/DEMO_sophie/rapprochements", headers=EN_TETE)
+    assert reponse.status_code == 200
+    assert isinstance(reponse.json(), list)
+
+
+def test_sans_role_expert_les_rapprochements_sont_refuses() -> None:
+    admin = _client_et_stubs(role="admin")[0]
+    cast(FastAPI, admin.app).dependency_overrides[get_settlements] = lambda: SettlementsMemoire()
+    refus = admin.get("/expert/dossiers/DEMO_sophie/rapprochements", headers=EN_TETE)
+    assert refus.status_code == 403

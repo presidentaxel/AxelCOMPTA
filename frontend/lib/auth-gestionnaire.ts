@@ -37,6 +37,7 @@ import type {
   EvenementAnomalie,
   FileExpert,
   ImputationFaite,
+  SemaineRapprochement,
   NouveauChauffeur,
   OperationsClassees,
   ReglageTags,
@@ -503,17 +504,40 @@ export async function lireFileExpert(): Promise<FileExpert> {
   return (await reponse.json()) as FileExpert;
 }
 
+/** Semaines Rollee d'une entreprise : jours (brut, commission, espèces, dû)
+ * et virements bancaires, y compris les semaines déjà soldées. */
+export async function lireRapprochementsExpert(dossierId: string): Promise<SemaineRapprochement[]> {
+  const reponse = await requeteGestionnaire(`/expert/dossiers/${dossierId}/rapprochements`);
+  if (reponse.status === 401) {
+    throw new ErreurAuthGestionnaire();
+  }
+  if (reponse.status === 403) {
+    await refusExpert(reponse);
+  }
+  if (!reponse.ok) {
+    throw new ApiError(`HTTP ${reponse.status}`, reponse.status);
+  }
+  return (await reponse.json()) as SemaineRapprochement[];
+}
+
 /** Impute l'écriture et retourne les sujets à jour de ce dossier seul. */
 export async function imputerExpert(
   dossierId: string,
   ecritureId: string,
   compte: string,
   motif: string,
+  taux?: string,
 ): Promise<ImputationFaite> {
   const reponse = await requeteGestionnaire("/expert/imputations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dossier_id: dossierId, ecriture_id: ecritureId, compte, motif }),
+    body: JSON.stringify({
+      dossier_id: dossierId,
+      ecriture_id: ecritureId,
+      compte,
+      motif,
+      ...(taux ? { taux } : {}),
+    }),
   });
   if (reponse.status === 401) {
     throw new ErreurAuthGestionnaire("Session expirée.");
@@ -532,6 +556,52 @@ export async function imputerExpert(
     throw new ApiError(detail, reponse.status);
   }
   return (await reponse.json()) as ImputationFaite;
+}
+
+export async function poserTauxExpert(entree: {
+  dossierId: string;
+  ecritureId: string;
+  libelle: string;
+  taux: string;
+  portee: "specifique" | "global";
+}): Promise<void> {
+  const reponse = await requeteGestionnaire("/expert/taux", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      dossier_id: entree.dossierId,
+      ecriture_id: entree.ecritureId,
+      libelle: entree.libelle,
+      taux: entree.taux,
+      portee: entree.portee,
+    }),
+  });
+  if (reponse.status === 401) throw new ErreurAuthGestionnaire("Session expirée.");
+  if (reponse.status === 403) await refusExpert(reponse);
+  if (!reponse.ok) throw new ApiError(`Le taux n'a pas été retenu (HTTP ${reponse.status}).`, reponse.status);
+}
+
+export async function lireTicketExpert(dossierId: string, ecritureId: string): Promise<Blob> {
+  const chemin = `/expert/dossiers/${dossierId}/ecritures/${ecritureId}/justificatif`;
+  const reponse = await requeteGestionnaire(chemin);
+  if (reponse.status === 401) throw new ErreurAuthGestionnaire("Session expirée.");
+  if (reponse.status === 403) await refusExpert(reponse);
+  if (!reponse.ok) throw new ApiError("Aucun ticket.", reponse.status);
+  return reponse.blob();
+}
+
+export async function joindreTicketExpert(
+  dossierId: string,
+  ecritureId: string,
+  fichier: File,
+): Promise<void> {
+  const corps = new FormData();
+  corps.set("fichier", fichier);
+  const chemin = `/expert/dossiers/${dossierId}/ecritures/${ecritureId}/justificatif`;
+  const reponse = await requeteGestionnaire(chemin, { method: "POST", body: corps });
+  if (reponse.status === 401) throw new ErreurAuthGestionnaire("Session expirée.");
+  if (reponse.status === 403) await refusExpert(reponse);
+  if (!reponse.ok) throw new ApiError("Le ticket n'a pas été accepté.", reponse.status);
 }
 
 export async function annulerImputation(

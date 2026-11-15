@@ -145,6 +145,13 @@ export type SujetExpert = {
   compte_suggere?: string | null;
   /** AXE-855 : comment l'argent est sorti (code de la banque), comme sous les alertes. */
   moyen_paiement?: string | null;
+  /** AXE-925 : ticket déjà déposé, et taux de TVA retenu à la lecture. */
+  a_justificatif?: boolean;
+  taux_table?: string | null;
+  tva_table_cts?: number | null;
+  taux_tva?: string | null;
+  tva_cts?: number | null;
+  origine_taux?: "table" | "appris" | "specifique" | null;
 };
 
 export type LigneImputation = {
@@ -160,11 +167,45 @@ export type ImputationFaite = {
   sujets: SujetExpert[];
 };
 
+export type JourRapprochement = {
+  date: string;
+  brut_cts: number;
+  commission_cts: number;
+  net_cts: number;
+  especes_cts: number;
+  du_cts: number;
+};
+
+export type VirementRapprochement = {
+  date: string;
+  libelle: string;
+  montant_cts: number;
+  nature: string;
+  compte: string;
+};
+
+/** Une semaine Rollee et les virements bancaires qui la paient. */
+export type SemaineRapprochement = {
+  plateforme: string;
+  du: string;
+  au: string;
+  etat: string;
+  du_cts: number;
+  paye_cts: number;
+  frais_cts: number;
+  ecart_cts: number;
+  motif: string | null;
+  jours: JourRapprochement[];
+  virements: VirementRapprochement[];
+};
+
 export type FileExpert = {
   sujets: SujetExpert[];
   comptes: { compte: string; libelle: string }[];
   /** AXE-829 : tags des dossiers de la file. */
   tags_par_dossier?: Record<string, string[]>;
+  /** AXE-925 : entreprises du portefeuille, pour le tri. */
+  chauffeurs?: { id: string; nom: string }[];
 };
 
 // doc 17 §9 Semaine 4 + AXE-417/418 : exports de clôture (PDF + CSV),
@@ -331,6 +372,8 @@ export type OperationClassee = {
   verdict: "juste" | "faux" | null;
   tva_estimee_cts?: number | null;
   tva_relevee_cts?: number | null;
+  taux_tva?: string | null;
+  a_justificatif?: boolean;
 };
 
 export type OperationsClassees = {

@@ -33,12 +33,26 @@ class StockageFichier:
     def lire(
         self, tenant_id: TenantId, dossier_id: DossierId, ecriture_id: EcritureId
     ) -> bytes | None:
+        trouve = self._chemin_de(tenant_id, dossier_id, ecriture_id)
+        return None if trouve is None else trouve.read_bytes()
+
+    def lire_piece(
+        self, tenant_id: TenantId, dossier_id: DossierId, ecriture_id: EcritureId
+    ) -> tuple[bytes, str] | None:
+        trouve = self._chemin_de(tenant_id, dossier_id, ecriture_id)
+        if trouve is None:
+            return None
+        return trouve.read_bytes(), trouve.suffix.lower()
+
+    def _chemin_de(
+        self, tenant_id: TenantId, dossier_id: DossierId, ecriture_id: EcritureId
+    ) -> Path | None:
         dossier = self._racine / tenant_id / dossier_id
         if not dossier.is_dir():
             return None
         for chemin in dossier.iterdir():
             if chemin.stem == ecriture_id and chemin.is_file():
-                return chemin.read_bytes()
+                return chemin
         return None
 
     def _chemin(self, justificatif: Justificatif) -> Path:

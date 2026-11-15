@@ -74,6 +74,7 @@ from axelcompta.api.routes import (
     get_role_membre,
     get_signatures_inpi,
     get_tags,
+    get_taux_expert,
     get_verdicts,
 )
 from axelcompta.categorize.models import Etage, ProposedEntry
@@ -128,6 +129,7 @@ from axelcompta.workflow.propositions_ia import PropositionsIaMemoire
 from axelcompta.workflow.resolutions_quarantaine import ResolutionsMemoire
 from axelcompta.workflow.signature import DocumentSigne
 from axelcompta.workflow.signature_memory import InMemorySignatureRepository
+from axelcompta.workflow.taux_expert import TauxExpertMemoire
 from axelcompta.workflow.verdicts import VerdictsMemoire
 
 # ES256 (JWT Signing Keys), pas HS256 : ce qu'émet le vrai projet Supabase
@@ -246,6 +248,8 @@ def _surcharger_depots_simples(app: FastAPI) -> None:
     app.dependency_overrides[get_tags] = lambda: tags_stub
     verdicts_stub = VerdictsMemoire()
     app.dependency_overrides[get_verdicts] = lambda: verdicts_stub
+    taux_stub = TauxExpertMemoire()
+    app.dependency_overrides[get_taux_expert] = lambda: taux_stub
 
 
 def _client_et_stubs(
