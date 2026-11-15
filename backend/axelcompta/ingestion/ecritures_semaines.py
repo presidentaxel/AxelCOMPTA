@@ -33,7 +33,13 @@ from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 # AXE-931 : un compte de liaison par plateforme ; 467 pour une plateforme
 # sans compte propre.
 COMPTE_CREANCE = "467"
-COMPTES_CREANCE = {"uber": "4671", "bolt": "4672"}
+COMPTES_CREANCE = {
+    "uber": "4671",
+    "bolt": "4672",
+    "heetch": "4673",
+    "allocab": "4674",
+    "freenow": "4675",
+}
 COMPTE_FRAIS = "627"
 # AXE-926 : revenus de plateforme hors course (pourboires, bonus, autres) :
 # dans le chiffre d'affaires (la liasse lit tout le 70), sans TVA. AXE-931 :

@@ -70,7 +70,7 @@ def test_les_comptes_du_schema_de_l_expert() -> None:
     """AXE-931 : créance par plateforme, caisse, 708 ; 467 pour une
     plateforme sans compte propre."""
     assert compte_creance("uber") == "4671" and compte_creance("bolt") == "4672"
-    assert compte_creance("heetch") == "467"
+    assert compte_creance("lecab") == "467"
     bolt = replace(GAGNE, platform="bolt")
     ecriture = ecriture_recette("j3", bolt, 30_00, LUNDI, "assujetti_taux_reduit", 10_00)
     assert {x.compte for x in ecriture.lignes} >= {"4672", "530", "708"}

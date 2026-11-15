@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from axelcompta.ingestion.ecritures_semaines import compte_creance
 from axelcompta.ingestion.semaines_plateforme import (
     Jour,
     Virement,
@@ -16,6 +17,7 @@ from axelcompta.ingestion.semaines_plateforme import (
     rapprocher_plateforme,
     virement,
 )
+from axelcompta.packs.vtc_demo import charger_plateformes, plateforme_de
 
 AUJOURD_HUI = date(2026, 11, 20)
 
@@ -149,3 +151,34 @@ def test_des_frais_au_dela_du_nombre_de_retraits_ne_sont_pas_inventes() -> None:
     virements = [_v("i1", date(2026, 10, 27), 9802, INSTANT)]
     (semaine,) = rapprocher_plateforme("uber", jours, virements, AUJOURD_HUI)
     assert (semaine.etat, semaine.ecart_cts) == ("a_verifier", 198)
+
+
+def test_free_now_heetch_et_allocab_sont_reconnus_en_banque() -> None:
+    """AXE-933 : Free Now paie la période écrite dans son libellé."""
+    assert plateforme_du_libelle("TRANSCOVO SAS FREENOW CREDIT") == "freenow"
+    assert plateforme_du_libelle("VIR HEETCH SAS") == "heetch"
+    assert plateforme_du_libelle("VIREMENT ALLOCAB") == "allocab"
+    lu = virement("f1", date(2026, 10, 7), 56596, "Freenow Credit 700-1 01.10.-04.10.2026")
+    assert lu is not None
+    assert (lu.plateforme, lu.nature, lu.semaine) == ("freenow", "hebdomadaire", date(2026, 9, 28))
+    sans_periode = virement("f2", date(2026, 10, 7), 1000, "TRANSCOVO SAS FREENOW CREDIT")
+    assert sans_periode is not None and sans_periode.semaine == date(2026, 9, 28)
+    passe_l_an = virement("f3", date(2027, 1, 5), 1000, "Freenow Credit 700-1 28.12.-03.01.2027")
+    assert passe_l_an is not None and passe_l_an.semaine == date(2026, 12, 28)
+
+
+def test_les_plateformes_du_pack() -> None:
+    """AXE-933 : un compte Rollee Heetch, Allocab ou Free Now n'est plus mis
+    en quarantaine, et chaque plateforme a sa créance."""
+    plateformes = charger_plateformes()
+    noms = {
+        nom: getattr(plateforme_de(nom, plateformes), "nom", None)
+        for nom in ("heetch-fleet-rev", "allocab-fleet-rev", "free-now.com-rev", "uber.com-rev")
+    }
+    assert noms == {
+        "heetch-fleet-rev": "heetch",
+        "allocab-fleet-rev": "allocab",
+        "free-now.com-rev": "freenow",
+        "uber.com-rev": "uber",
+    }
+    assert [compte_creance(n) for n in ("heetch", "allocab", "freenow")] == ["4673", "4674", "4675"]
