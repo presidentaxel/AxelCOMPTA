@@ -62,7 +62,7 @@ def test_uber_france_reproduit_le_golden_test_doc13_paragraphe_5_3() -> None:
     ecriture = construire_ecriture_settlement(_transaction(848_00), settlement, numero=1)
 
     assert _montant(ecriture, "512", Sens.DEBIT) == 848_00
-    assert _montant(ecriture, "622", Sens.DEBIT) == 160_00
+    assert _montant(ecriture, "6222", Sens.DEBIT) == 160_00
     assert _montant(ecriture, "44566", Sens.DEBIT) == 32_00
     assert _montant(ecriture, "706", Sens.CREDIT) == 945_45
     assert _montant(ecriture, "44571", Sens.CREDIT) == 94_55
@@ -75,7 +75,7 @@ def test_bolt_autoliquidation_est_equilibree_et_symetrique() -> None:
     settlement = _settlement(500_00, 50_00, 450_00, "autoliquidation_ue", platform="bolt")
     ecriture = construire_ecriture_settlement(_transaction(450_00), settlement, numero=2)
 
-    assert _montant(ecriture, "622", Sens.DEBIT) == 50_00  # déjà HT, pas divisé
+    assert _montant(ecriture, "6222", Sens.DEBIT) == 50_00  # déjà HT, pas divisé
     tva_deductible = _montant(ecriture, "44566", Sens.DEBIT)
     montants_44571 = [
         ligne.montant.centimes for ligne in ecriture.lignes if ligne.compte == "44571"
@@ -101,7 +101,7 @@ def test_franchise_reproduit_le_cas_doc13_paragraphe_5_3() -> None:
     )
 
     assert _montant(ecriture, "512", Sens.DEBIT) == 848_00
-    assert _montant(ecriture, "622", Sens.DEBIT) == 192_00  # TTC, pas de 44566
+    assert _montant(ecriture, "6222", Sens.DEBIT) == 192_00  # TTC, pas de 44566
     assert _montant(ecriture, "706", Sens.CREDIT) == 1_040_00  # brut, pas de TVA
     assert not any(ligne.compte == "44566" for ligne in ecriture.lignes)
     assert not any(ligne.compte == "44571" for ligne in ecriture.lignes)
@@ -188,7 +188,7 @@ def test_virement_plus_ventilation_donnent_le_golden_test_doc13_sans_toucher_au_
         "S1",
     )
     assert _solde(les_deux, "706") == 945_45 and _solde(les_deux, "44571") == 94_55
-    assert -_solde(les_deux, "622") == 160_00 and -_solde(les_deux, "44566") == 32_00
+    assert -_solde(les_deux, "6222") == 160_00 and -_solde(les_deux, "44566") == 32_00
     assert -_solde(les_deux, "512") == 848_00 and all(ligne.compte != "512" for ligne in od.lignes)
     assert all(ligne.compte != "471" for ligne in od.lignes)
     debit, credit = solde(od)
@@ -196,7 +196,7 @@ def test_virement_plus_ventilation_donnent_le_golden_test_doc13_sans_toucher_au_
     assert (
         _solde(les_deux, "706")
         + _solde(les_deux, "44571")
-        + _solde(les_deux, "622")
+        + _solde(les_deux, "6222")
         + _solde(les_deux, "44566")
     ) == 848_00
 

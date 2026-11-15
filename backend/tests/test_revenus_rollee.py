@@ -225,8 +225,8 @@ def test_de_bout_en_bout_le_ca_et_la_tva_sont_justes_et_rejouer_ne_cree_rien() -
     # 2 virements, 2 recettes de jour, 2 soldes, 1 frais
     assert avant == 7
     assert (solde("706"), solde("44571")) == (945_45 + 90_91, 94_55 + 9_09)
-    assert (-solde("622"), -solde("44566"), -solde("627")) == (160_00, 32_00, 99)
-    assert solde("467") == 0 and solde("471") == 0  # créance soldée, plus rien à classer
+    assert (-solde("6222"), -solde("44566"), -solde("627")) == (160_00, 32_00, 99)
+    assert solde("4671") == 0 and solde("471") == 0  # créance soldée, plus rien à classer
     assert "1 semaine(s) rapprochée(s), 0 à vérifier, 0 jour(s) en quarantaine" in resume
     assert {s.etat for s in depots.settlements.lister(D)} == {"reconcilie"}
     assert not journal.lister_quarantaine(D)
