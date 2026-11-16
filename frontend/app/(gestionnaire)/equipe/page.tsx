@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { ConfirmationDialogue, type Confirmation } from "@/components/ConfirmationDialogue";
-import { FormulaireHabilitationExpert } from "@/components/FormulaireHabilitationExpert";
+import { ExpertsDeclares } from "@/components/FormulaireHabilitationExpert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -257,7 +257,7 @@ export default function EquipePage() {
         ))}
       </ul>
       </div>
-      {droit.admin && <FormulaireHabilitationExpert actif={droit.admin} />}
+      <ExpertsDeclares admin={droit.admin} />
       {confirmation && <ConfirmationDialogue confirmation={confirmation} onFermer={() => setConfirmation(null)} />}
     </div>
   );

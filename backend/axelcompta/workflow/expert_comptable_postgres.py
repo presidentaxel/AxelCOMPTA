@@ -16,7 +16,7 @@ from axelcompta.core.rls import appliquer_rls
 from axelcompta.ledger.models import Ecriture
 from axelcompta.ledger.repository import inserer_ecriture
 
-from .expert_comptable import DecisionExpert, Engagement, Habilitation
+from .expert_comptable import DecisionExpert, Engagement, Habilitation, en_vigueur
 from .orm import decisions_expert, engagements_expert, habilitations_expert
 
 
@@ -46,6 +46,14 @@ class PostgresExpertRepository:
                     accordee_le=habilitation.accordee_le,
                 )
             )
+
+    def habilitations_en_vigueur(self, tenant_id: TenantId) -> tuple[Habilitation, ...]:
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            lignes = connexion.execute(
+                select(habilitations_expert).where(habilitations_expert.c.tenant_id == tenant_id)
+            ).all()
+        return en_vigueur(_habilitation(ligne) for ligne in lignes)
 
     def engagement(self, tenant_id: TenantId, email: str) -> Engagement | None:
         ligne = self._derniere(engagements_expert, "accepte_le", tenant_id, email)
