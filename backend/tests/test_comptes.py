@@ -140,6 +140,21 @@ def test_invitation_renvoie_vers_la_page_du_mot_de_passe(monkeypatch: pytest.Mon
     ]
 
 
+def test_renvoyer_pointe_vers_la_page_du_mot_de_passe(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AXELCOMPTA_URL_APP", "https://compta.axelproject.fr")
+    appels: list[httpx.Request] = []
+    depot = _depot_supabase([_utilisateur("d1")], appels)
+
+    depot.renvoyer(DossierId("d1"))
+
+    renvois = [a for a in appels if a.method == "POST" and a.url.path.endswith("/resend")]
+    assert len(renvois) == 1
+    assert renvois[0].url.params["redirect_to"] == (
+        "https://compta.axelproject.fr/chauffeur/accepter-invitation"
+    )
+    assert json.loads(renvois[0].content) == {"type": "signup", "email": "d1@exemple.fr"}
+
+
 def test_inviter_sans_reverifier_ne_relit_pas_les_comptes() -> None:
     appels: list[httpx.Request] = []
     depot = _depot_supabase([], appels)

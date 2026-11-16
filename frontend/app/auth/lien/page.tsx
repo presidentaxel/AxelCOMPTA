@@ -23,6 +23,7 @@ import {
   type FragmentAuth,
 } from "@/lib/auth-lien";
 import { coteDemandee, coteOuverte, type Cote } from "@/lib/cote-connexion";
+import { coteMemorisee } from "@/lib/destination-lien";
 import {
   MESSAGE_ESPACE_CHAUFFEUR,
   MESSAGE_ESPACE_GESTIONNAIRE,
@@ -57,7 +58,7 @@ export default function LienAuthPage() {
     /* eslint-disable react-hooks/set-state-in-effect */
     try {
       const recherche = new URLSearchParams(window.location.search);
-      const demandee = coteDemandee(recherche.toString());
+      const demandee = coteDemandee(recherche.toString()) ?? coteMemorisee();
       setCote(demandee);
       const messageRecherche = messageParametresAuth(recherche);
       if (messageRecherche) throw new ErreurAuthChauffeur(messageRecherche);
@@ -81,7 +82,15 @@ export default function LienAuthPage() {
         setEtape("mot_de_passe");
         return;
       }
-      const chemin = ouvrirSessionDepuisJetons(recu.accessToken, recu.refreshToken, demandee);
+      const chargeLien = decoderChargeUtileJwt(recu.accessToken);
+      const compatible =
+        demandee !== null && coteOuverte(chargeLien.app_metadata, demandee) !== "interdit";
+      const demandeeOuvrir = compatible ? demandee : null;
+      const chemin = ouvrirSessionDepuisJetons(
+        recu.accessToken,
+        recu.refreshToken,
+        demandeeOuvrir,
+      );
       if (recu.type === "email_change") {
         setDestination(chemin);
         setEtape("email_confirme");
@@ -104,7 +113,8 @@ export default function LienAuthPage() {
       await definirMotDePasseAvecJeton(fragment.accessToken, motDePasse);
       const charge = decoderChargeUtileJwt(fragment.accessToken);
       const email = typeof charge.email === "string" ? charge.email : "";
-      const decision = coteOuverte(charge.app_metadata, cote);
+      const demandee = cote && coteOuverte(charge.app_metadata, cote) !== "interdit" ? cote : null;
+      const decision = coteOuverte(charge.app_metadata, demandee);
       if (decision === "chauffeur") {
         const session = await connexionParMotDePasse(email, motDePasse);
         router.replace(cheminApresChauffeur(session.accessToken, session));
@@ -114,7 +124,7 @@ export default function LienAuthPage() {
       } else {
         throw new ErreurAuthChauffeur(
           decision === "interdit"
-            ? cote === "gestionnaire"
+            ? demandee === "gestionnaire"
               ? MESSAGE_ESPACE_CHAUFFEUR
               : MESSAGE_ESPACE_GESTIONNAIRE
             : MESSAGE_SANS_LIEN,

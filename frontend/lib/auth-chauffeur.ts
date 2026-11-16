@@ -27,6 +27,7 @@ import {
 } from "./messages-auth";
 import { avecDossierDeTest, liensDuJeton } from "./compte-de-test";
 import { coteOuverte } from "./cote-connexion";
+import { memoriserCoteLien } from "./destination-lien";
 import { appelAuthentifie, erreurApi, lireCorps } from "./session";
 import type { Identite, IdentiteDossierVue, PreRemplissage } from "./identite-entreprise";
 import type { AnalyseFec, OuvertureVue } from "./ouverture";
@@ -166,12 +167,13 @@ async function ignorerAbsenceDeCompte(reponse: Response): Promise<void> {
 
 /** Page qui reçoit les jetons Supabase (fragment `#access_token`), pour le
  * lien magique, la réinitialisation et la confirmation de changement
- * d'adresse. `cote` est le formulaire qui a demandé le lien : le retour
- * n'ouvre que ce côté. L'invitation chauffeur garde sa page dédiée. */
+ * d'adresse. L'adresse est exactement `/auth/lien`, sans paramètre :
+ * Supabase ignore un `redirect_to` qui n'est pas identique à une URL
+ * autorisée et renvoie alors à la racine du site. Le côté demandé est
+ * mémorisé pour ce navigateur. L'invitation chauffeur garde sa page dédiée. */
 export function urlRetourAuth(cote?: "chauffeur" | "gestionnaire"): string {
-  const url = new URL(`${window.location.origin}/auth/lien`);
-  if (cote) url.searchParams.set("cote", cote);
-  return url.toString();
+  if (cote) memoriserCoteLien(cote);
+  return `${window.location.origin}/auth/lien`;
 }
 
 export async function envoyerLienMagique(
