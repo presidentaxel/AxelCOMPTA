@@ -21,7 +21,7 @@ Ce module est pur : la persistance est derrière `ExpertRepository`.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import Literal, Protocol
@@ -108,6 +108,10 @@ class ExpertRepository(Protocol):
 
     def habiliter(self, habilitation: Habilitation) -> None: ...
 
+    def habilitations_en_vigueur(self, tenant_id: TenantId) -> tuple[Habilitation, ...]:
+        """La déclaration en vigueur de chaque expert du portefeuille (AXE-945)."""
+        ...
+
     def engagement(self, tenant_id: TenantId, email: str) -> Engagement | None:
         """Le plus récent, ou `None`."""
         ...
@@ -154,6 +158,16 @@ def role_de_l_expert(role_actuel: str | None) -> str | None:
     return None if role_actuel == ROLE_ADMIN else ROLE_EXPERT
 
 
+def en_vigueur(habilitations: Iterable[Habilitation]) -> tuple[Habilitation, ...]:
+    """La plus récente de chaque e-mail, par nom : une nouvelle déclaration
+    remplace la précédente (AXE-945)."""
+    dernieres: dict[str, Habilitation] = {}
+    for h in habilitations:
+        if h.email not in dernieres or h.accordee_le > dernieres[h.email].accordee_le:
+            dernieres[h.email] = h
+    return tuple(sorted(dernieres.values(), key=lambda h: h.nom.lower()))
+
+
 def exiger_dossier(actif: ExpertActif, dossier_id: DossierId) -> None:
     if not actif.couvre(dossier_id):
         raise ExpertNonHabilite("Ce dossier n'est pas couvert par votre lettre de mission.")
@@ -190,6 +204,9 @@ class ExpertMemoire:
 
     def habiliter(self, habilitation: Habilitation) -> None:
         self.habilitations.append(replace(habilitation, email=habilitation.email.lower()))
+
+    def habilitations_en_vigueur(self, tenant_id: TenantId) -> tuple[Habilitation, ...]:
+        return en_vigueur(h for h in self.habilitations if h.tenant_id == tenant_id)
 
     def engagement(self, tenant_id: TenantId, email: str) -> Engagement | None:
         trouves = [

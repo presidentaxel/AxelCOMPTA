@@ -108,3 +108,10 @@ def test_la_plus_recente_habilitation_fait_foi(
 
     assert habilitation is not None
     assert habilitation.dossiers == (DossierId("a"), DossierId("b"))
+    # AXE-945 : une ligne par expert, sa déclaration en vigueur.
+    siennes = [
+        h
+        for h in experts.habilitations_en_vigueur(TenantId("t-test"))
+        if h.email == "expert@cabinet.fr"
+    ]
+    assert [h.dossiers for h in siennes] == [(DossierId("a"), DossierId("b"))]
