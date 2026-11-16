@@ -12,9 +12,10 @@ connaît jamais le provider concret**.
 - `DigifactoryProvider` — transactions bancaires (agrège Bridge par contact).
 - `RolleeProvider` — settlements plateformes gig (Uber, Bolt…). Depuis
   AXE-818 : `RolleeHttpClient` (API utilisateur, JWT renouvelé, backoff sur
-  429/5xx) et `lire_revenus` (une période de revenus → un
-  `PlatformSettlement`, ou un rejet avec sa raison si brut − frais ≠ versé).
-  Sans client, la fixture du golden test, comme avant.
+  429/5xx) et `lire_revenus` (depuis AXE-924 : seuls les **jours** sont
+  gardés ; semaines, mois et périodes « custom » sont ignorés sans
+  quarantaine ; gagné = `net_amount`, commission = brut − net, espèces
+  gardées). Sans client, la fixture du golden test, comme avant.
 - `FileImportProvider` — CSV/XLSX/ODS.
 - `BridgeProvider` direct — piste parallèle non bloquante, pas de
   développement actif tant que Digifactory couvre le besoin.
@@ -61,7 +62,11 @@ pipeline selon le chemin retenu le jour de la démo.
   utilisateur, JWT renouvelé sur 401 et rendu à l'appelant pour qu'il le
   garde, 429 et 5xx réessayés ; `lire_revenus` traduit une période en
   `PlatformSettlement` sans jamais arrondir. Depuis AXE-911 : `/users`
-  paginé, profil et coordonnées bancaires, en GET seulement. Testé sur des
+  paginé et profil, en GET seulement ; profil lu dans son enveloppe `data`
+  (AXE-917) ; l'IBAN n'est plus appelé (#170). Trois appels en parallèle
+  au plus ; un 429 est relu une fois.
+- **Au 2026-11-16** : vérifié sur la base réelle (pilote du 14/11) :
+  montants en euros, jours, comptes de flotte (`full_name` seul). Testé sur des
   réponses construites d'après la documentation ; test de contrat sandbox
   hors CI (`pytest -m rollee`). Sans client, `RolleeProvider()` rend
   toujours la fixture du golden test.

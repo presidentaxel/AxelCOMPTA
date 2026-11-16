@@ -126,7 +126,7 @@ de jobs : import des dossiers, bouton « Synchroniser », rappels ; lancé
 par `scripts/worker_planifie.sh`), `nouveaux_contacts.py` (les contacts
 Digifactory sans dossier, proposés au gestionnaire, AXE-845) et
 `rappels.py` (règles automatiques et envoi des rappels par e-mail et SMS,
-AXE-808). Depuis le 2026-11-11 :
+AXE-808). Depuis le 2026-11-11 (complété le 2026-11-16) :
 
 | Fichier | Rôle |
 |---|---|
@@ -135,8 +135,12 @@ AXE-808). Depuis le 2026-11-11 :
 | `tester_branchement.py` | bouton « Tester » d'une intégration (AXE-872) |
 | `plateformes_rollee.py` | le chauffeur relie ses plateformes via Rollee Connect ; traitement des événements Rollee (AXE-819, AXE-820) |
 | `webhooks_rollee.py` | secret et déclaration du webhook d'un branchement Rollee (AXE-820) |
-| `revenus_rollee.py` | revenus Rollee → relevés → rapprochement → OD de ventilation, et leur contre-passation (AXE-821, AXE-889, AXE-911) |
-| `rapprochement_rollee_service.py` | relie les users Rollee à leurs dossiers ; l'algorithme pur est dans `ingestion/rapprochement_rollee.py` (AXE-911) |
+| `revenus_rollee.py` | revenus Rollee (jours) → relevés → semaines rapprochées → écritures, et leur contre-passation (AXE-821, AXE-911, AXE-924) |
+| `revenus_semaines.py` | écrit les semaines soldées ; le rapprochement pur est dans `ingestion/semaines_plateforme.py`, les écritures dans `ingestion/ecritures_semaines.py` (AXE-924, AXE-931) |
+| `explication_semaines.py` | chaque semaine Rollee expliquée pour le mode expert : dû, payé, frais, écart, jours, virements (AXE-925, AXE-932) |
+| `manques_rollee.py` | ce qui manque pour tout rapprocher, en phrases, pour le mode expert (AXE-934) |
+| `noms_attendus_rollee.py` | noms attendus des liens Rollee d'avant #170, pour `scripts/poser_noms_attendus.py` (AXE-922) |
+| `rapprochement_rollee_service.py` | relie les users Rollee à leurs dossiers par la carte (`ingestion/cartes_rollee.py`) et le job `rapprochement_rollee` ; relit Rollee pour tout le portefeuille (AXE-911, #170, AXE-929) ; l'algorithme pur est dans `ingestion/rapprochement_rollee.py` |
 | `llm_synchro.py` | l'étage LLM dans les tâches planifiées : relever, soumettre, alerter ; budget dans `workflow/budget_llm.py` (AXE-887) |
 | `prevenir_admins.py` | mail aux admins d'un cabinet par son SMTP par défaut (AXE-911) |
 

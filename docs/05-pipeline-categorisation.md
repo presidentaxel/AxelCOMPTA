@@ -1,8 +1,9 @@
 # 05 — Pipeline de catégorisation hybride et détection d'anomalies
 
-> **État au 2026-11-13** (ajouté ; le reste du doc décrit la cible) :
-> - Ordre réel (AXE-826) : virements internes (deux jambes opposées sur
->   deux comptes du dossier), règles du pack, modèle, puis catégorie de la
+> **État au 2026-11-16** (ajouté ; le reste du doc décrit la cible) :
+> - Ordre réel (AXE-826) : virements internes (deux jambes opposées, à un
+>   jour près, sur deux comptes du dossier, ou depuis AXE-930 avec le même
+>   libellé sur un même compte : 580, hors des totaux du chauffeur), règles du pack, modèle, puis catégorie de la
 >   banque (Bridge) en simple proposition, jamais imputée seule. Ensuite,
 >   dans les tâches planifiées, l'IA pour ce qui reste au 471.
 > - Étage 1 (règles) et étage 2 (modèle v2 calibré : proposition au-dessus
@@ -28,7 +29,9 @@
 >   s'écrit au grand livre en OD de reclassement (AXE-420). Elle garde son
 >   contexte et l'avis de chaque étage (AXE-871, AXE-901). Le mode expert
 >   relit aussi les opérations déjà classées et note « juste » ou « faux »
->   (AXE-823).
+>   (AXE-823). Depuis AXE-925 : comptes et entreprises cherchables à la
+>   frappe, recherche dans la file, ticket visible, taux de TVA retenu pour
+>   la ligne ou pour tout le libellé.
 > - Anomalies (§6) : profils et détecteurs V1 faits (AXE-437), détecteurs
 >   carburant affinés (AXE-836) ; qualifications en base avec historique
 >   (AXE-814). Rappel non mesuré (AXE-903).

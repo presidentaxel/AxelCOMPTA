@@ -1,6 +1,6 @@
 # 11 — UX / UI : interface B2B
 
-> **État au 2026-11-13** (ajouté ; le reste du doc décrit la cible
+> **État au 2026-11-16** (ajouté ; le reste du doc décrit la cible
 > d'origine) : l'hypothèse « le chauffeur ne voit que la page de signature »
 > est caduque (doc 19). Écrans réels :
 > - Chauffeur (mobile) : Activité, À traiter (avec les versements de
@@ -9,20 +9,28 @@
 >   (AXE-805), Ma société (siège, capital, associés, AXE-846), Reprendre mes
 >   comptes (bilan d'ouverture depuis un FEC, AXE-804), Compte (« Mes
 >   comptes bancaires », AXE-832 et AXE-729 ; « Mes plateformes » avec
->   Rollee Connect et les derniers versements, AXE-819 et AXE-821 ; « Accès
+>   Rollee Connect, les derniers versements et la comparaison Rollee ↔
+>   banque par année, mois et semaine, AXE-819, AXE-821 et AXE-928 ; « Accès
 >   à votre dossier », AXE-812), la carte « Vérifiez votre entreprise »
 >   (AXE-730, et les écarts avec les registres, AXE-849) et la cloche. Une
->   dépense sans ticket montre sa TVA estimée (AXE-831).
+>   dépense sans ticket montre sa TVA estimée (AXE-831). Les virements
+>   entre enveloppes (580) ne comptent ni en entrées ni en sorties ; une
+>   phrase dit combien sont mises de côté (AXE-930).
 > - Gestionnaire : Entreprises (tags, AXE-829 ; nouveaux chauffeurs
->   Digifactory et « Synchroniser », AXE-845 ; comptes à choisir, AXE-851 ;
->   comptes Rollee à choisir et filtre Rollee, AXE-911 ; écarts avec les
+>   Digifactory et « Synchroniser », AXE-845, qui lance aussi Rollee,
+>   AXE-929 ; comptes à choisir, AXE-851 ; comptes Rollee à choisir,
+>   recherche d'un user Rollee par le nom et filtre Rollee, AXE-911 et
+>   AXE-919 ; écarts avec les
 >   registres, AXE-849), Importer des entreprises (AXE-809), Invitations,
 >   Rappels (suivi des envois, AXE-808 ; « plateformes non reliées »,
 >   AXE-890), Équipe (habilitation de l'expert, réinitialisation de la MFA),
 >   Intégrations (plusieurs accès par type : Digifactory, e-mail, SMS,
 >   Rollee, avec Tester, AXE-872 ; activité de l'IA en nombre de libellés,
 >   AXE-887), Mode expert (engagement, motifs, opérations classées, bilan
->   d'ouverture, AXE-800, AXE-823, AXE-804) et Anomalies (historique,
+>   d'ouverture, AXE-800, AXE-823, AXE-804 ; depuis AXE-925 : comptes et
+>   entreprises cherchables, recherche dans la file, ticket, taux de TVA,
+>   « Rapprochements Rollee » par semaine ; « Ce qui manque pour tout
+>   rapprocher », AXE-934) et Anomalies (historique,
 >   opérations bancaires à revoir, AXE-814 et AXE-424).
 > - Écran « Double authentification » à la connexion (AXE-812) ; bandeau
 >   « Mode test, lecture seule » du compte de test (AXE-822) ; textes

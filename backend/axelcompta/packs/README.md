@@ -64,6 +64,12 @@ par un expert-comptable* de ces artefacts pour la V1.
   `tva_deductible.toml` + `tva_deductible.py` (AXE-831) : taux supposé et
   part récupérable de chaque catégorie, avec leur source (CGI, BOFiP) ; en
   cas de doute, rien n'est récupéré. À faire valider (AXE-815).
+- **Au 2026-11-16** : `plateformes.csv` (dans `_AUDIT_DONNEES/packs_vtc/`)
+  reconnaît Heetch, Allocab et Free Now en plus d'Uber et Bolt, tous trois
+  avec une commission à TVA française (`france_20`, AXE-933). Les comptes
+  des recettes de plateformes (4671 à 4675, 530, 708, 6222) suivent le
+  schéma de l'expert-comptable (AXE-931) ; ils sont dans
+  `ingestion/ecritures_semaines.py`, pas dans le pack.
 - **V1 (doc 12, phase 1.1 + 0.2)** : taxonomie complète et mapping
   compte-par-catégorie validés avec le comptable du client (aujourd'hui un
   brouillon d'audit, premier compte listé pris arbitrairement).

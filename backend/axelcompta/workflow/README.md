@@ -122,6 +122,16 @@ seul module autorisé à transformer une `ProposedEntry` (sortie de
     opération → écriture, chaque jour (AXE-900) ;
   - `rappels_auto.py` : déclencheur « plateformes non reliées » (AXE-890) ;
   - `jalons.py` : ex `demo_jalons.py` (AXE-840).
+- **Fait du 2026-11-14 au 2026-11-16** :
+  - `taux_expert.py` / `taux_expert_postgres.py` : le taux de TVA retenu
+    par l'expert pour une ligne ou pour un libellé (table
+    `taux_tva_expert`, migration `a4c8e1d73b29`) ; `tva_imputation.py`
+    ventile l'imputation avec ce taux (AXE-925) ;
+  - `virement_interne.py` : reprise en 580 des virements entre enveloppes
+    déjà écrits, par OD `{S}:virement-interne` repliée à l'écran ;
+    `scripts/reprendre_virements_internes.py` (AXE-930) ;
+  - `classees.py` : recherche (`q`), tri par entreprise, taux et ticket de
+    chaque ligne, badge « virement interne rapproché » (AXE-925, AXE-930).
 - **V1 (doc 12, phase 3)** : actif, prestataire de signature tranché
   (AXE-441).
 

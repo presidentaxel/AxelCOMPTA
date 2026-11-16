@@ -1,6 +1,6 @@
 # 04 — Ingestion des données : Bridge, fichiers, OCR & justificatifs
 
-> **État au 2026-11-13** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-16** (ajouté ; le reste du doc décrit la cible) :
 > - Bancaire : synchro Digifactory réelle, idempotente, avec archive brute,
 >   quarantaine résolue par le gestionnaire (AXE-424) et contre-passation
 >   d'une transaction modifiée (doc 16). Un sous-compte 512x par compte
@@ -10,9 +10,12 @@
 >   d'avant la connexion Digifactory : AXE-833.
 > - La transaction normalisée porte le type d'opération et la catégorie de
 >   la banque (AXE-826).
-> - Plateformes : revenus lus chez Rollee par période (AXE-818), gardés une
->   fois (`settlements_plateforme`), rapprochés du virement bancaire
->   (AXE-821, doc 13). Une période qui ne tombe pas juste part en quarantaine.
+> - Plateformes : revenus lus chez Rollee **jour par jour**, sur tout
+>   l'historique (AXE-924, AXE-928), gardés une fois
+>   (`settlements_plateforme`), rapprochés des virements bancaires **semaine
+>   par semaine** (doc 13). Une semaine qui ne tombe pas juste reste « à
+>   vérifier », avec l'écart chiffré. Uber, Bolt, Heetch, Allocab et Free
+>   Now sont reconnus (AXE-933) ; une autre plateforme part en quarantaine.
 > - Fichiers : aucun profil d'import CSV/Excel générique pour les
 >   opérations (le seul import CSV est celui des dossiers, AXE-809, doc 14).
 >   Relevés Uber et Bolt en secours de Rollee : AXE-801. Le FEC de l'outil

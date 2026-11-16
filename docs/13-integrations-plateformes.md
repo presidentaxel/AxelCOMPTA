@@ -1,62 +1,81 @@
 # 13 — Intégrations de plateformes et pattern DataProvider
 
-> **État au 2026-11-13** (ajouté) : Rollee est branché de bout en bout,
-> testé sur des réponses construites d'après sa documentation (pas encore
-> sur de vraies réponses) :
-> - AXE-817 : accès par le compte Rollee de Serenity, API utilisateur ;
->   AXE-872 : un **branchement** Rollee par compte, jeton chiffré, sandbox
->   ou production.
-> - AXE-818 : client (JWT renouvelé et gardé, 429 et 5xx réessayés) et
->   traduction d'une période de revenus en `PlatformSettlement` (§3). Unité
->   des montants et date du virement : non documentées, à vérifier au test
->   de contrat (`pytest -m rollee`).
-> - AXE-819 : le chauffeur relie ses comptes dans Rollee Connect (§3.3),
->   depuis Compte › Mes plateformes.
-> - AXE-820 : webhooks signés (HMAC SHA-512) et rattrapage quotidien.
-> - AXE-821 : réconciliation (§4, ±1 centime, -3 à +5 jours, nom de la
->   plateforme) et OD de ventilation (§5, golden test §5.3 au centime). Le
->   virement reste en 706, le 512 ne bouge pas. AXE-889 : contre-passée si
->   le virement est reclassé. AXE-891 : « à vérifier » dans « À traiter ».
-> - AXE-911 : chaque user Rollee est relié au bon dossier par empreintes
->   (metadata, IBAN, nom avec e-mail ou téléphone), sinon le gestionnaire
->   choisit. Éteint tant que `AXELCOMPTA_ROLLEE_RAPPROCHEMENT` n'est pas posé.
-> - Reste : sortir un versement de « à vérifier » (AXE-912) ; relevés CSV
->   Uber et Bolt pour un chauffeur sans Rollee (AXE-801) ; périodes
->   quotidiennes de Rollee, si elles existent, à additionner par semaine.
-
-> **Mise à jour 2026-11-14 (AXE-924), le modèle « une période = un virement » est
-> remplacé.** Sur les vraies données (pilote MK DRIVING et B'CARS SERVICES) :
+> **État au 2026-11-16** (ajouté ; le reste du doc décrit la cible
+> d'origine, dont le modèle « une période = un virement » du §4, remplacé) :
+> Rollee tourne sur la base réelle depuis le 14/11 (pilote sur les
+> chauffeurs de Serenity).
+>
+> **Accès et liens**
+> - AXE-817, AXE-872 : accès par le compte Rollee de Serenity, API
+>   utilisateur, un **branchement** par compte, jeton chiffré. Un jeton
+>   renouvelé est toujours gardé (`garder_parametre`).
+> - AXE-818, AXE-820 : client (JWT renouvelé, 429 et 5xx réessayés),
+>   webhooks signés (HMAC SHA-512) et rattrapage quotidien. Montants en
+>   euros, vérifié sur la prod.
+> - AXE-819 : le chauffeur relie ses comptes dans Rollee Connect (§3.3).
+> - Relier un user Rollee à son dossier (AXE-911, puis #170, AXE-917 à
+>   923) : la synchro compare `GET /users` à une **carte** en base
+>   (`cartes_rollee`) et un job `rapprochement_rollee` lit les users
+>   nouveaux ou changés. Empreintes HMAC (metadata, nom avec e-mail ou
+>   téléphone), l'IBAN n'est plus lu. Un nom unique sur la carte relie tout
+>   seul ; sinon le gestionnaire choisit, ou cherche par le nom (nom en
+>   clair, e-mail masqué, jamais de montant).
+> - Un chauffeur peut avoir plusieurs comptes Rollee, et un user « flotte »
+>   porter ceux de plusieurs chauffeurs : le lien garde les **noms attendus**
+>   du dossier, seuls les comptes à ce nom sont retenus (§3.1).
+> - Le bouton Synchroniser du portefeuille relit Rollee pour chaque dossier
+>   relié, après Digifactory, un dossier à la fois (AXE-929).
+>
+> **Revenus (AXE-924, remplace le modèle d'AXE-821)**
 > - Rollee renvoie des jours, des semaines et des mois qui se chevauchent :
 >   **seuls les jours comptent**. Le gagné d'un jour est `net_amount`
->   (brut − commission) ; `payouts` est un retrait, pas le gagné.
-> - Les **espèces** (`cash_earnings`, toutes plateformes) ne passent pas par la
->   banque : dû par la plateforme = net − espèces ; les espèces vont au compte
->   de l'associé (455, 108 en EI).
+>   (brut − commission) ; `payouts` est un retrait, pas le gagné. Tout
+>   l'historique est lu (depuis 2020, AXE-928).
+> - Les **espèces** (`cash_earnings`, toutes plateformes) ne passent pas
+>   par la banque : dû par la plateforme = gagné − espèces.
 > - **Uber verse chaque lundi via POP SVCS** la semaine précédente (période
 >   dans le libellé) ; en cours de semaine, des **virements instantanés**
->   (« Stichting Custodian Uber Payments ») à 0,99 € de frais, pas toujours.
->   Bolt verse le lundi (« BOLT FR »).
-> - Écritures : chaque jour, recette contre une **créance sur la plateforme
->   (467)** ; chaque virement solde la créance (sa contrepartie 471 ou 706 est
->   vidée, le 512 ne bouge pas) ; les frais vont en 627.
-> - **Seules les courses portent la TVA** (règle validée par des experts
->   fiscaux, AXE-926). Pourboires (`tips`), bonus (`bonus_amount`) et autres
->   montants (`other_amount`), compris dans le brut, vont en **7068** : dans le
->   chiffre d'affaires, sans TVA collectée. Ce que Rollee ne classe nulle part
->   (brut − course − ces trois parts : 1 209 € sur 186 jours Uber en prod)
->   reste avec la TVA, par prudence.
-> - **Rollee ↔ banque** (AXE-928) : la banque fait foi pour la compta (une
->   semaine n'est écrite que si ses virements sont trouvés). Tout l'historique
->   Rollee est lu et comparé à la banque, par mois et par semaine
->   (`ingestion/comparaison_rollee.py`, `GET /dossiers/{id}/plateformes/comparaison`) :
->   rapprochée, pas de relevé bancaire, virement manquant, versé en trop,
->   payée mais absente de Rollee. Les années sans banque servent de rapport
->   (CA des courses HT, TVA, hors course, espèces), sans écriture.
-> - Contrôle **par semaine** (`ingestion/semaines_plateforme.py`) : soldée si
->   l'écart est nul ou vaut k × 0,99 € (k ≤ nombre de virements instantanés),
->   éventuellement cumulée avec la semaine d'avant ; en attente du POP SVCS
->   pendant 8 jours ; sinon à vérifier avec l'écart chiffré. Rien n'est écrit
->   pour une semaine qui ne retombe pas juste.
+>   (« Stichting Custodian Uber Payments ») à 0,99 € de frais, pas
+>   toujours. Bolt verse le lundi (« BOLT FR »). Free Now : « TRANSCOVO SAS
+>   FREENOW », semaine lue dans le libellé (AXE-933).
+> - Contrôle **par semaine** (`ingestion/semaines_plateforme.py`) : soldée
+>   si l'écart est nul ou vaut k × 0,99 € (k ≤ nombre d'instantanés),
+>   éventuellement cumulée avec la semaine d'avant ; en attente 8 jours ;
+>   sinon **à vérifier**, avec les frais et l'écart chiffrés (AXE-932). Rien
+>   n'est écrit pour une semaine qui ne retombe pas juste.
+>
+> **Écritures d'une semaine soldée** (`ingestion/ecritures_semaines.py`,
+> schéma de l'expert-comptable, AXE-931)
+> - Chaque jour : recette contre une **créance par plateforme** (4671 Uber,
+>   4672 Bolt, 4673 Heetch, 4674 Allocab, 4675 Free Now ; 467 pour une
+>   autre), espèces en **530 Caisse**, courses en 706 HT + 44571 (10 %),
+>   commission en **6222** (autoliquidation Bolt en 44566/44571, lue par la
+>   CA3).
+> - **Seules les courses portent la TVA** (AXE-926) : pourboires (`tips`),
+>   bonus (`bonus_amount`) et autres montants (`other_amount`) vont en
+>   **708**, sans TVA. Le reste du brut que Rollee ne classe pas garde la
+>   TVA, par prudence.
+> - Chaque virement solde la créance (sa contrepartie 471 ou 706 est
+>   vidée, le 512 ne bouge pas) ; les frais d'instantanés vont en 627.
+> - Les semaines écrites avant AXE-931 (467, 455, 7068, 622) sont reprises
+>   par une OD `{S}:comptes-plateforme` (appliquée en prod le 15/11).
+> - Retirer un lien Rollee contre-passe toutes les écritures des semaines
+>   concernées.
+> - La commission Uber vaut 0 chez Rollee : le CA Uber est pris après
+>   commission tant que Rollee ne la donne pas (AXE-939).
+>
+> **Rollee ↔ banque et ce qui manque**
+> - La banque fait foi pour la compta (une semaine n'est écrite que si ses
+>   virements sont trouvés). Tout l'historique Rollee est comparé à la
+>   banque, par mois et par semaine (AXE-928,
+>   `ingestion/comparaison_rollee.py`, écran du chauffeur) : rapprochée,
+>   pas de relevé bancaire, virement manquant, versé en trop, payée mais
+>   absente de Rollee. Les années sans banque servent de rapport.
+> - Mode expert, « Rapprochements Rollee » (AXE-925, `explication_semaines.py`)
+>   : par semaine, dû, payé, frais, écart, jours et virements. En tête, « Ce
+>   qui manque pour tout rapprocher » (AXE-934, `manques_rollee.py`).
+> - Reste : sortir une semaine de « à vérifier » (AXE-912) ; relevés CSV
+>   Uber et Bolt pour un chauffeur sans Rollee (AXE-801).
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-16
 
@@ -157,9 +176,9 @@ Le provider `digifactory` alimente les transactions bancaires (canal actif pour 
 - **Mode B2C** : le chauffeur s'authentifie lui-même via Rollee Connect (SDK web/mobile).
 - **Mode B2B fleet** : la flotte (le client gestionnaire) gère un compte admin et invite ses chauffeurs en masse. **C'est le mode utilisé pour le client pilote.** Le gestionnaire a accès aux données agrégées de tous ses chauffeurs depuis un seul compte fleet.
 
-Les comptes « flotte » (`uber.com-fleet-rev`, `bolt.eu-fleet-rev`, `allocab-fleet-rev`) n'ont dans leur profil que `full_name`, jamais `first_name` / `last_name`. Le rapprochement lit ce nom. Un même user Rollee peut porter les comptes de plusieurs chauffeurs : le lien garde les empreintes de nom du dossier, et seul le compte à ce nom est retenu. Les autres s'affichent « au nom d'un autre chauffeur, ignoré », sans le nom de cet autre chauffeur, et leurs revenus ne sont pas lus. Un user créé depuis l'espace du chauffeur (`cree`) n'a pas de noms attendus : tous ses comptes sont à lui.
+Les comptes « flotte » (`uber.com-fleet-rev`, `bolt.eu-fleet-rev`, `allocab-fleet-rev`) n'ont dans leur profil que `full_name`, jamais `first_name` / `last_name`. Le rapprochement lit ce nom. Un même user Rollee peut porter les comptes de plusieurs chauffeurs : le lien garde les empreintes de nom du dossier, et seul le compte à ce nom est retenu. Les autres ne sont ni reliés, ni stockés, ni montrés, et leurs revenus ne sont pas lus (AXE-923). Un user créé depuis l'espace du chauffeur (`cree`) n'a pas de noms attendus : tous ses comptes sont à lui.
 
-Heetch et Allocab ne sont pas dans `plateformes.csv`. Tant que Louis n'a pas décidé le régime de TVA de leur commission, leurs relevés partent en quarantaine (« plateforme absente »). `charger_plateformes` ne change pas pour ça.
+Les plateformes reconnues sont dans `_AUDIT_DONNEES/packs_vtc/plateformes.csv` : Uber, Bolt, et depuis le 15/11 Heetch, Allocab et Free Now (AXE-933). Les jours d'une plateforme absente de ce fichier partent en quarantaine (« plateforme absente »).
 
 ### 3.2 Données disponibles via l'API Rollee
 
@@ -261,9 +280,11 @@ Les commissions prélevées par Uber/Bolt sont des achats de services. La TVA ap
 |-------------------------------|----------------------|--------------|
 | Uber France SAS (France) | TVA 20% française | Déductible normalement |
 | Bolt Operations OÜ (Estonie, UE) | Autoliquidation UE (art. 283-2 CGI) | Déductible en autoliquidation |
-| Heetch (France) | TVA 20% française | Déductible normalement |
+| Heetch SAS (France) | TVA 20% française | Déductible normalement |
+| Allocab SAS (France) | TVA 20% française | Déductible normalement |
+| Free Now (Transcovo SAS, France) | TVA 20% française | Déductible normalement |
 
-Cette configuration vit dans le **pack VTC** (`packs/vtc/platforms.yaml`), pas dans le code. Ajouter une plateforme = ajouter une ligne de config.
+Cette configuration vit dans le **pack VTC** (`_AUDIT_DONNEES/packs_vtc/plateformes.csv`, colonne `commission_tva_regime`), pas dans le code. Ajouter une plateforme = ajouter une ligne de config.
 
 ### 5.3 Template d'écriture — settlement réconcilié
 
