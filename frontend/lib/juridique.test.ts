@@ -83,6 +83,17 @@ test("le fournisseur d'IA n'est cité que dans la confidentialité, pseudonymisa
   assert.doesNotMatch(autres, /\b(LLM|Claude|Gemini|OpenAI|GPT|Mistral|Anthropic)\b/u);
 });
 
+test("la confidentialité décrit les demandes d'échange de la page publique et Slack", () => {
+  // AXE-949 : le formulaire de la page publique recueille des données
+  // personnelles et les poste sur Slack. Retirer l'un des deux sans toucher
+  // au texte fait échouer ce test.
+  const confidentialite = lire("confidentialite");
+  assert.match(confidentialite, /Demandes d'échange \(page publique/u);
+  const tableau = confidentialite.split("\n").filter((ligne) => ligne.startsWith("|"));
+  assert.ok(tableau.some((ligne) => /Slack/u.test(ligne) && /demande d'échange/u.test(ligne)));
+  assert.ok(tableau.some((ligne) => /^\| Demandes d'échange \|/u.test(ligne)));
+});
+
 test("les plateformes passent par Rollee, cité comme service", () => {
   // AXE-818 à AXE-821 : Rollee lit les revenus des plateformes.
   const tableau = lire("confidentialite")

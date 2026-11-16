@@ -550,6 +550,14 @@ sans Rollee. Les cinq tickets Rollee sont faits depuis le 12/11 (PR #132 à
 
 ### En cours (16/11)
 
+- Page publique et demandes d'échange (AXE-949), en trois PR sur la branche
+  `arthurreichard/axe-949-landing-axelcompta-page-publique` : l'API
+  `POST /demandes-echange` (table `demandes_echange`, notification Slack,
+  module `prospection/`), la vitrine sur `/` avec son formulaire et ses cinq
+  textes juridiques, puis la confidentialité mise à jour. Restent : un
+  webhook Slack à poser dans le `.env` de la prod, la relecture du texte par
+  Louis, la durée de conservation des demandes (blanc dans la
+  confidentialité), et l'analytics si Louis le veut (hors AXE-949).
 - Pilote Rollee sur la prod : une synchro complète (bouton
   **Synchroniser**) avec le code du 16/11, pour stocker Heetch, Allocab et
   Free Now, récupérer les jours mis de côté avant la lecture jour par jour
