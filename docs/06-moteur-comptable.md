@@ -6,8 +6,8 @@
 >   premier jour de l'exercice ouvert du dossier (AXE-838). I3 (séquence
 >   par dossier et par exercice, tous journaux) et I7 (contrôle quotidien
 >   de la balance, sans correction automatique) depuis le 07/11 (AXE-807).
->   I8 : validateur A.47 A-1 en place, Test Compta Demat pas passé
->   (AXE-484).
+>   I8 : validateur A.47 A-1 en place ; nos FEC de test passent Test
+>   Compta Demat (16/11).
 > - Une décision humaine s'écrit en OD de reclassement du compte en vigueur
 >   vers le nouveau, dans la même transaction que la décision (AXE-420,
 >   AXE-852). Un sous-compte 512x par compte bancaire (AXE-832).
@@ -278,7 +278,7 @@ quand provisionner en CCA/FNP plutôt que d'attendre l'écriture réelle.
 
 | Sortie | Format | Notes |
 |--------|--------|-------|
-| FEC | TXT tabulé, art. A.47 A-1 | 18 colonnes normées ; testé contre « Test Compta Demat » en CI. |
+| FEC | TXT tabulé, art. A.47 A-1 | 18 colonnes normées ; validateur A.47 A-1 en CI, FEC de test passés dans « Test Compta Demat » (16/11, à la main : l'outil est Windows). |
 | Liasse PDF | PDF fidèle CERFA | Pour relecture/signature humaine. |
 | Liasse EDI | EDIFACT/TDFC | Temps 2-3 de la stratégie télédéclaration (doc 02 §5) — produit depuis la liasse pivot. |
 | Dépôt comptes annuels | Dossier Guichet Unique INPI | PDF + données structurées. |

@@ -19,3 +19,30 @@ def test_le_bilan_reel_reste_equilibre() -> None:
         assert actif_net == liasse.cases["2050.EE"]
         assert liasse.cases["2050.DI"] == liasse.cases["2033B.310"]
         assert "2033A.180" in liasse.cases
+
+
+def test_la_liasse_reelle_sert_le_detail_2054_et_le_2059a() -> None:
+    """AXE-484 : un véhicule acheté en 2023 et vendu fin 2025 apparaît ligne
+    « matériel de transport » du 2054 et au 2059-A ; les contrôles inter-
+    cases passent (la clôture lève sinon)."""
+    from datetime import date
+
+    from axelcompta.closing.immobilisations import Cession, Immobilisation
+
+    vehicule = Immobilisation(
+        "v1",
+        "Toyota",
+        "2182",
+        date(2023, 1, 1),
+        30_000_00,
+        60,
+        cession=Cession(date(2025, 12, 1), 12_000_00),
+    )
+    ledger, _ = construire_ledger(PROFIL_KARIM)
+    parametres = dataclasses.replace(
+        parametres_cloture(PROFIL_KARIM), regime_liasse="2050", immobilisations=(vehicule,)
+    )
+    liasse = ClotureSimplifieeService(ledger).cloturer(PROFIL_KARIM.dossier_id, "2025", parametres)
+    assert liasse.cases["2054.MP"] == liasse.cases["2054.0K"]
+    assert liasse.cases["2059A.L1.C7"] == 12_000_00
+    assert liasse.cases["2059A.L1.C8"] == liasse.cases["2059A.L1.C9"]
