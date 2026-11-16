@@ -8,6 +8,7 @@ Sémantique de `FileMemoire`.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import text
@@ -15,7 +16,7 @@ from sqlalchemy.engine import Engine, Row
 
 from axelcompta.core.rls import appliquer_rls
 
-from .file import TENTATIVES_MAX, TYPES, Job, TypeInconnu
+from .file import DELAI_ABANDON, ERREUR_ABANDON, TENTATIVES_MAX, TYPES, Job, TypeInconnu
 
 REQUETE_PRENDRE = """
 SELECT id FROM jobs
@@ -37,6 +38,14 @@ FROM (
   FROM jobs j WHERE j.id = :id
 ) d
 WHERE jobs.id = :id
+"""
+
+
+REQUETE_ABANDONNES = """
+SELECT id FROM jobs
+WHERE statut = 'en_cours' AND coalesce(pris_le, cree_le) < :limite
+ORDER BY cree_le
+FOR UPDATE SKIP LOCKED
 """
 
 
@@ -101,7 +110,7 @@ class FilePostgres:
                 return None
             pris = connexion.execute(
                 text(
-                    "UPDATE jobs SET statut = 'en_cours', verrou_par = :w, "
+                    "UPDATE jobs SET statut = 'en_cours', verrou_par = :w, pris_le = now(), "
                     "tentatives = tentatives + 1 WHERE id = :id RETURNING *"
                 ),
                 {"w": worker, "id": ligne.id},
@@ -119,6 +128,25 @@ class FilePostgres:
             connexion.execute(
                 text(REQUETE_ECHOUER), {"id": identifiant, "e": erreur, "max": TENTATIVES_MAX}
             )
+
+    def relacher_abandonnes(self, delai: timedelta = DELAI_ABANDON) -> list[str]:
+        """AXE-958 : un job `en_cours` pris depuis plus de `delai` a perdu
+        son worker. Il suit la règle d'un échec : de nouveau en attente s'il
+        reste des essais et qu'aucune demande identique n'attend, sinon en
+        échec. Un job pris avant `pris_le` retombe sur `cree_le`."""
+        with self._engine.begin() as connexion:
+            ids = [
+                ligne.id
+                for ligne in connexion.execute(
+                    text(REQUETE_ABANDONNES), {"limite": datetime.now(UTC) - delai}
+                )
+            ]
+            for identifiant in ids:
+                connexion.execute(
+                    text(REQUETE_ECHOUER),
+                    {"id": identifiant, "e": ERREUR_ABANDON, "max": TENTATIVES_MAX},
+                )
+        return ids
 
     def _fermer(self, identifiant: str, statut: str, resultat: str) -> None:
         with self._engine.begin() as connexion:
@@ -146,4 +174,5 @@ def _job(ligne: Row[Any]) -> Job:
         derniere_erreur=ligne.derniere_erreur,
         cree_le=ligne.cree_le,
         termine_le=ligne.termine_le,
+        pris_le=ligne.pris_le,
     )

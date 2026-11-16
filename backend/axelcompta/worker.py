@@ -28,6 +28,7 @@ from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.fiches_import_portefeuille import completer_fiches
 from axelcompta.jobs.file import (
+    ERREUR_ABANDON,
     TYPE_IMPORT_DOSSIERS,
     TYPE_RAPPELS,
     TYPE_RAPPROCHEMENT_ROLLEE,
@@ -329,6 +330,8 @@ def main() -> int:
     planificateur relance chaque minute, sous `flock`)."""
     assurer_modele()
     file = FilePostgres(engine_depuis_env())
+    for identifiant in file.relacher_abandonnes():
+        print(f"[{identifiant}] relâché : {ERREUR_ABANDON}", flush=True)
     deps = dependances_reelles()
     while (job := file.prendre("worker")) is not None:
         try:

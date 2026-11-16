@@ -133,3 +133,35 @@ def test_un_job_en_echec_ne_double_pas_une_demande_qui_attend(
     statuts = {str(ligne.id): str(ligne.statut) for ligne in lignes}
     assert statuts == {pris.id: "echec", attend.id: "en_attente"}
     web.dispose()
+
+
+def test_un_job_abandonne_est_relache(engine: Engine, id_unique: str) -> None:
+    """AXE-958 : un job pris depuis plus de deux heures (worker tué) repart
+    en attente avec son motif ; un job pris à l'instant n'est pas touché."""
+    web = _migrer_et_web(engine, id_unique)
+    with contexte_identite(dossier_id=None, tenant_id=id_unique):
+        vieux = FilePostgres(web).demander(id_unique, TYPE_SYNCHRO)
+        recent = FilePostgres(web).demander(id_unique, TYPE_RAPPROCHEMENT_ROLLEE)
+    worker = FilePostgres(engine)
+    assert worker.prendre("w1") is not None
+    assert worker.prendre("w1") is not None
+    with engine.begin() as connexion:
+        connexion.execute(
+            text("UPDATE jobs SET pris_le = now() - interval '3 hours' WHERE id = :id"),
+            {"id": vieux.id},
+        )
+
+    assert worker.relacher_abandonnes() == [vieux.id]
+
+    with engine.connect() as connexion:
+        lignes = {
+            ligne.id: (ligne.statut, ligne.derniere_erreur)
+            for ligne in connexion.execute(
+                text("SELECT id, statut, derniere_erreur FROM jobs WHERE tenant_id = :t"),
+                {"t": id_unique},
+            )
+        }
+    assert lignes[vieux.id][0] == "en_attente"
+    assert (lignes[vieux.id][1] or "").startswith("Abandonné")
+    assert lignes[recent.id] == ("en_cours", None)
+    web.dispose()
