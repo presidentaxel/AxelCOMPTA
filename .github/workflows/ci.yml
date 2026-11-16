@@ -32,6 +32,11 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    env:
+      # Quelques routes construisent le moteur sans l'interroger. La suite
+      # rapide n'ouvre pas cette URL : Postgres reste dans l'autre job.
+      DATABASE_URL: postgresql://user:password@localhost:5432/axelcompta_dev
+      DATABASE_URL_WEB: postgresql://axelcompta_web:web_password_dev@localhost:5432/axelcompta_dev
     steps:
       - uses: actions/checkout@v4
 
