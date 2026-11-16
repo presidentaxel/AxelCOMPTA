@@ -82,9 +82,7 @@ def deja_couvert(
     if job.actif:
         return True
     return (
-        job.statut == "fait"
-        and job.termine_le is not None
-        and maintenant - job.termine_le < delai
+        job.statut == "fait" and job.termine_le is not None and maintenant - job.termine_le < delai
     )
 
 

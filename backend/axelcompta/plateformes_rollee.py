@@ -358,9 +358,7 @@ def rattraper(suivi: Suivi) -> list[str]:
         if dossier is None:
             continue
         try:
-            lignes.append(
-                asyncio.run(_suivre_dossier(suivi, dossier, donnees=True, complet=True))
-            )
+            lignes.append(asyncio.run(_suivre_dossier(suivi, dossier, donnees=True, complet=True)))
         except Exception as exc:  # noqa: BLE001 — un dossier en échec ne bloque pas les autres
             lignes.append(f"{dossier_id} : ECHEC {type(exc).__name__} : {exc}")
     return lignes

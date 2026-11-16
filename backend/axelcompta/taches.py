@@ -142,9 +142,7 @@ def _synchroniser(
     )
 
 
-def _completer_fiches(
-    bilan: BilanTaches, tenant_id: TenantId, completer: CompleterFiches
-) -> None:
+def _completer_fiches(bilan: BilanTaches, tenant_id: TenantId, completer: CompleterFiches) -> None:
     """Une fiche pour chaque dossier, pour que ce qui manque se voie dans Imports."""
     try:
         ligne = completer(tenant_id)
