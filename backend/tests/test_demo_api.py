@@ -63,6 +63,7 @@ from axelcompta.api.routes import (
     get_journal_portefeuille,
     get_justificatifs,
     get_ledger,
+    get_lire_role,
     get_notifications,
     get_pipeline,
     get_propositions,
@@ -281,6 +282,7 @@ def _client_et_stubs(
     app.dependency_overrides[get_ledger] = lambda: ledger_stub
     experts_stub = ExpertMemoire(ledger_stub)
     app.dependency_overrides[get_ecrire_role] = lambda: lambda _tenant, _email, _role: None
+    app.dependency_overrides[get_lire_role] = lambda: lambda _tenant, _email: None
     app.dependency_overrides[get_experts] = lambda: experts_stub
     if role == ROLE_EXPERT:
         _expert_habilite(experts_stub)

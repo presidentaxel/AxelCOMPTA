@@ -71,7 +71,8 @@ export function FormulaireHabilitationExpert({ actif }: { actif: boolean }) {
       </p>
       <p className="text-sm text-subtle">
         Seul l&apos;expert-comptable habilité voit le détail des dossiers et y écrit, sous sa
-        responsabilité. Le portefeuille garde les agrégats.
+        responsabilité. Le portefeuille garde les agrégats. Un admin peut se déclarer
+        lui-même : il garde son rôle d&apos;admin.
       </p>
       {libelles.map(([nom, libelle, type]) => (
         <label key={nom} className="block text-sm text-ink">
