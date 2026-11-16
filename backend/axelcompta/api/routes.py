@@ -317,6 +317,7 @@ from axelcompta.tenants.fiches_import import (
     CATEGORIES_DOCUMENTS,
     DocumentImport,
     FicheImport,
+    champs_du_registre,
     document_import,
     nouvelle_fiche,
     preremplir,
@@ -324,7 +325,7 @@ from axelcompta.tenants.fiches_import import (
 from axelcompta.tenants.fiches_import import SECTIONS as SECTIONS_IMPORT
 from axelcompta.tenants.fiches_import import changer_statut as changer_statut_import
 from axelcompta.tenants.fiches_import import modifier as modifier_fiche
-from axelcompta.tenants.fiches_import_depot import FichesImportRepository
+from axelcompta.tenants.fiches_import_depot import FichesImportRepository, Instantane
 from axelcompta.tenants.fiches_import_etat import (
     dossier_prevu,
     etat_sections,
@@ -8465,6 +8466,7 @@ class FicheImportVue(FicheImportResumeVue):
     categories_documents: list[ChoixVue]
     registre_lu_le: str | None
     registre_sources: list[str]
+    depuis_registre: list[str]  # champs qui ont encore la valeur lue aux registres
     manque_pour_creer: list[str]
     dossier_prevu: str | None
     dossier_cree: bool
@@ -8543,11 +8545,8 @@ def _documents_vue(documents: list[DocumentImport]) -> list[DocumentImportVue]:
     ]
 
 
-def _fiche_vue(
-    fiche: FicheImport, fiches: FichesImportRepository, dossiers: DossierRepository
-) -> FicheImportVue:
-    documents = fiches.documents(fiche.tenant_id, fiche.id)
-    existants = {d.id for d in dossiers.lister_par_tenant(fiche.tenant_id)}
+def _fiche_vue(instantane: Instantane) -> FicheImportVue:
+    fiche, documents = instantane.fiche, instantane.documents
     exercices_ = exercices_import(fiche.champs, documents, date.today())
     return FicheImportVue(
         **_resume_fiche(fiche, documents).model_dump(),
@@ -8566,9 +8565,10 @@ def _fiche_vue(
         categories_documents=[ChoixVue(cle=k, libelle=v) for k, v in CATEGORIES_DOCUMENTS.items()],
         registre_lu_le=fiche.registre.lu_le.isoformat() if fiche.registre else None,
         registre_sources=list(fiche.registre.sources) if fiche.registre else [],
+        depuis_registre=champs_du_registre(fiche),
         manque_pour_creer=manque_pour_creer(fiche),
         dossier_prevu=dossier_prevu(fiche) if fiche.champs.get("siren") else None,
-        dossier_cree=fiche.dossier_id is not None and fiche.dossier_id in existants,
+        dossier_cree=instantane.dossier_cree,
     )
 
 
@@ -8593,9 +8593,7 @@ def _enregistrer_routes_fiches_import(app: FastAPI) -> None:
         identite: IdentiteDep, fiches: FichesImportDep
     ) -> list[FicheImportResumeVue]:
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
-        return [
-            _resume_fiche(f, fiches.documents(tenant_id, f.id)) for f in fiches.lister(tenant_id)
-        ]
+        return [_resume_fiche(f, documents) for f, documents in fiches.lister(tenant_id)]
 
     @app.post("/portefeuille/imports", response_model=FicheImportVue)
     def ouvrir_fiche_import(
@@ -8603,11 +8601,10 @@ def _enregistrer_routes_fiches_import(app: FastAPI) -> None:
         identite: IdentiteDep,
         role: RoleMembreDep,
         fiches: FichesImportDep,
-        dossiers: DossiersDep,
         lire: LireFicheOfficielleDep,
     ) -> FicheImportVue:
-        """Nom et prénom du chauffeur ; avec un SIREN, l'INSEE et le RNE
-        préremplissent l'entreprise et le dirigeant."""
+        """Nom et prénom du chauffeur ; avec un SIREN ou un SIRET, l'INSEE et
+        le RNE préremplissent l'entreprise et le dirigeant."""
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
         fiche = nouvelle_fiche(
@@ -8620,19 +8617,19 @@ def _enregistrer_routes_fiches_import(app: FastAPI) -> None:
             datetime.now(UTC),
         )
         fiche = _lire_registres(fiche, lire, identite.email)
-        fiches.enregistrer(fiche)
-        return _fiche_vue(fiche, fiches, dossiers)
+        return _fiche_vue(fiches.enregistrer(fiche))
 
     @app.get("/portefeuille/imports/{fiche_id}", response_model=FicheImportVue)
     def lire_fiche_import(
-        fiche_id: str, identite: IdentiteDep, fiches: FichesImportDep, dossiers: DossiersDep
+        fiche_id: str, identite: IdentiteDep, fiches: FichesImportDep
     ) -> FicheImportVue:
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
-        return _fiche_vue(fiches.lire(tenant_id, fiche_id), fiches, dossiers)
+        return _fiche_vue(fiches.instantane(tenant_id, fiche_id))
 
 
 def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
-    """AXE-941 : compléter les champs, relire les registres, changer le statut."""
+    """AXE-941, AXE-946 : compléter les champs (un SIREN nouveau relit les
+    registres), relire les registres, changer le statut."""
 
     @app.patch("/portefeuille/imports/{fiche_id}", response_model=FicheImportVue)
     def completer_fiche_import(
@@ -8641,14 +8638,15 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         identite: IdentiteDep,
         role: RoleMembreDep,
         fiches: FichesImportDep,
-        dossiers: DossiersDep,
+        lire: LireFicheOfficielleDep,
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
-        fiche = fiches.lire(tenant_id, fiche_id)
-        fiche = modifier_fiche(fiche, entree.champs, identite.email, datetime.now(UTC))
-        fiches.enregistrer(fiche)
-        return _fiche_vue(fiche, fiches, dossiers)
+        avant = fiches.lire(tenant_id, fiche_id)
+        fiche = modifier_fiche(avant, entree.champs, identite.email, datetime.now(UTC))
+        if fiche.champs.get("siren") != avant.champs.get("siren"):
+            fiche = _lire_registres(fiche, lire, identite.email)
+        return _fiche_vue(fiches.enregistrer(fiche))
 
     @app.post("/portefeuille/imports/{fiche_id}/registres", response_model=FicheImportVue)
     def relire_registres_fiche(
@@ -8656,10 +8654,9 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         identite: IdentiteDep,
         role: RoleMembreDep,
         fiches: FichesImportDep,
-        dossiers: DossiersDep,
         lire: LireFicheOfficielleDep,
     ) -> FicheImportVue:
-        """Les champs vides seulement : une saisie n'est jamais écrasée."""
+        """Les champs vides et ceux venus du registre ; jamais une saisie."""
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
         fiche = fiches.lire(tenant_id, fiche_id)
@@ -8668,12 +8665,11 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
                 status_code=503, detail="Les registres INSEE et RNE ne sont pas branchés."
             )
         if not fiche.champs.get("siren"):
-            raise HTTPException(status_code=422, detail="Indiquez d'abord le SIREN.")
+            raise HTTPException(status_code=422, detail="Indiquez d'abord le SIREN ou le SIRET.")
         relue = _lire_registres(fiche, lire, identite.email)
         if relue.registre is fiche.registre:
             raise HTTPException(status_code=404, detail="Aucune fiche aux registres pour ce SIREN.")
-        fiches.enregistrer(relue)
-        return _fiche_vue(relue, fiches, dossiers)
+        return _fiche_vue(fiches.enregistrer(relue))
 
     @app.post("/portefeuille/imports/{fiche_id}/statut", response_model=FicheImportVue)
     def changer_statut_fiche(
@@ -8682,14 +8678,12 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         identite: IdentiteDep,
         role: RoleMembreDep,
         fiches: FichesImportDep,
-        dossiers: DossiersDep,
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
         fiche = fiches.lire(tenant_id, fiche_id)
         fiche = changer_statut_import(fiche, entree.statut, identite.email, datetime.now(UTC))
-        fiches.enregistrer(fiche)
-        return _fiche_vue(fiche, fiches, dossiers)
+        return _fiche_vue(fiches.enregistrer(fiche))
 
 
 def _document_accepte(fichier: UploadFile, contenu: bytes) -> None:
@@ -8706,7 +8700,7 @@ def _document_accepte(fichier: UploadFile, contenu: bytes) -> None:
 
 
 def _enregistrer_routes_documents_import(app: FastAPI) -> None:
-    """AXE-941 : déposer, relire et retirer les documents d'une fiche."""
+    """AXE-941 : déposer et relire les documents d'une fiche."""
 
     @app.post("/portefeuille/imports/{fiche_id}/documents", response_model=FicheImportVue)
     async def deposer_document_import(
@@ -8715,7 +8709,6 @@ def _enregistrer_routes_documents_import(app: FastAPI) -> None:
         identite: IdentiteDep,
         role: RoleMembreDep,
         fiches: FichesImportDep,
-        dossiers: DossiersDep,
         categorie: Annotated[str, Form()],
         exercice: Annotated[int | None, Form()] = None,
     ) -> FicheImportVue:
@@ -8735,8 +8728,7 @@ def _enregistrer_routes_documents_import(app: FastAPI) -> None:
             identite.email,
             datetime.now(UTC),
         )
-        fiches.deposer(document, contenu)
-        return _fiche_vue(fiche, fiches, dossiers)
+        return _fiche_vue(fiches.deposer(document, contenu))
 
     @app.get("/portefeuille/imports/{fiche_id}/documents/{document_id}")
     def lire_document_import(
@@ -8762,18 +8754,12 @@ def _enregistrer_route_retrait_document_import(app: FastAPI) -> None:
         identite: IdentiteDep,
         role: RoleMembreDep,
         fiches: FichesImportDep,
-        dossiers: DossiersDep,
     ) -> FicheImportVue:
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
-        fiche = fiches.lire(tenant_id, fiche_id)
-        if fiche.statut == "traitee":
+        if fiches.lire(tenant_id, fiche_id).statut == "traitee":
             raise HTTPException(status_code=409, detail="Cette fiche est traitée.")
-        document, _contenu = fiches.contenu(tenant_id, document_id)
-        if document.fiche_id != fiche_id:
-            raise HTTPException(status_code=404, detail="Document introuvable.")
-        fiches.retirer(tenant_id, document_id)
-        return _fiche_vue(fiche, fiches, dossiers)
+        return _fiche_vue(fiches.retirer(tenant_id, fiche_id, document_id))
 
 
 def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:
@@ -8804,8 +8790,7 @@ def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:
         fiche = dataclasses.replace(
             fiche, dossier_id=resultat.dossier.id, maj_par=identite.email, maj_le=datetime.now(UTC)
         )
-        fiches.enregistrer(fiche)
-        return _fiche_vue(fiche, fiches, dossiers)
+        return _fiche_vue(fiches.enregistrer(fiche))
 
 
 def _enregistrer_routes_imports(app: FastAPI) -> None:

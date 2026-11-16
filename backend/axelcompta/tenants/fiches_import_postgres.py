@@ -6,14 +6,14 @@ from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.engine import Engine, Row
+from sqlalchemy.engine import Connection, Engine, Row
 
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.core.rls import appliquer_rls
 
 from .fiches_import import DocumentImport, FicheImport
-from .fiches_import_depot import FicheIntrouvable
-from .orm import documents_import, fiches_import
+from .fiches_import_depot import FicheIntrouvable, Instantane
+from .orm import documents_import, dossiers, fiches_import
 from .registres_json import fiche_depuis_json, fiche_vers_json
 
 _COLONNES_DOCUMENT = [c for c in documents_import.c if c.name != "contenu"]
@@ -52,46 +52,59 @@ def _document(ligne: Row[Any]) -> DocumentImport:
     )
 
 
+def _valeurs(fiche: FicheImport) -> dict[str, Any]:
+    return {
+        "tenant_id": fiche.tenant_id,
+        "nom": fiche.nom,
+        "prenom": fiche.prenom,
+        "statut": fiche.statut,
+        "champs": dict(fiche.champs),
+        "registre": fiche_vers_json(fiche.registre) if fiche.registre else None,
+        "dossier_id": fiche.dossier_id,
+        "cree_par": fiche.cree_par,
+        "cree_le": fiche.cree_le,
+        "maj_par": fiche.maj_par or fiche.cree_par,
+        "maj_le": fiche.maj_le or fiche.cree_le,
+    }
+
+
 class PostgresFichesImport:
+    """Une connexion par appel : lire une fiche rend aussi ses documents et
+    l'état de son dossier (AXE-946)."""
+
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
 
-    def lister(self, tenant_id: TenantId) -> list[FicheImport]:
+    def lister(self, tenant_id: TenantId) -> list[tuple[FicheImport, list[DocumentImport]]]:
         with self._engine.connect() as connexion:
             appliquer_rls(connexion)
-            lignes = connexion.execute(
+            fiches = connexion.execute(
                 select(fiches_import)
                 .where(fiches_import.c.tenant_id == tenant_id)
                 .order_by(fiches_import.c.maj_le.desc())
             ).all()
-        return [_fiche(ligne) for ligne in lignes]
+            documents = connexion.execute(
+                select(*_COLONNES_DOCUMENT)
+                .where(documents_import.c.tenant_id == tenant_id)
+                .order_by(documents_import.c.depose_le)
+            ).all()
+        par_fiche: dict[str, list[DocumentImport]] = {}
+        for ligne in documents:
+            par_fiche.setdefault(ligne.fiche_id, []).append(_document(ligne))
+        return [(_fiche(f), par_fiche.get(f.id, [])) for f in fiches]
 
     def lire(self, tenant_id: TenantId, fiche_id: str) -> FicheImport:
         with self._engine.connect() as connexion:
             appliquer_rls(connexion)
-            ligne = connexion.execute(
-                select(fiches_import).where(
-                    fiches_import.c.tenant_id == tenant_id, fiches_import.c.id == fiche_id
-                )
-            ).first()
-        if ligne is None:
-            raise FicheIntrouvable("Fiche d'import introuvable.")
-        return _fiche(ligne)
+            return _fiche(_ligne_fiche(connexion, tenant_id, fiche_id))
 
-    def enregistrer(self, fiche: FicheImport) -> None:
-        valeurs = {
-            "tenant_id": fiche.tenant_id,
-            "nom": fiche.nom,
-            "prenom": fiche.prenom,
-            "statut": fiche.statut,
-            "champs": dict(fiche.champs),
-            "registre": fiche_vers_json(fiche.registre) if fiche.registre else None,
-            "dossier_id": fiche.dossier_id,
-            "cree_par": fiche.cree_par,
-            "cree_le": fiche.cree_le,
-            "maj_par": fiche.maj_par or fiche.cree_par,
-            "maj_le": fiche.maj_le or fiche.cree_le,
-        }
+    def instantane(self, tenant_id: TenantId, fiche_id: str) -> Instantane:
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            return _instantane(connexion, _fiche(_ligne_fiche(connexion, tenant_id, fiche_id)))
+
+    def enregistrer(self, fiche: FicheImport) -> Instantane:
+        valeurs = _valeurs(fiche)
         with self._engine.begin() as connexion:
             appliquer_rls(connexion)
             connexion.execute(
@@ -102,23 +115,12 @@ class PostgresFichesImport:
                     set_={k: v for k, v in valeurs.items() if k not in ("cree_par", "cree_le")},
                 )
             )
+            return _instantane(connexion, fiche)
 
-    def documents(self, tenant_id: TenantId, fiche_id: str) -> list[DocumentImport]:
-        with self._engine.connect() as connexion:
-            appliquer_rls(connexion)
-            lignes = connexion.execute(
-                select(*_COLONNES_DOCUMENT)
-                .where(
-                    documents_import.c.tenant_id == tenant_id,
-                    documents_import.c.fiche_id == fiche_id,
-                )
-                .order_by(documents_import.c.depose_le)
-            ).all()
-        return [_document(ligne) for ligne in lignes]
-
-    def deposer(self, document: DocumentImport, contenu: bytes) -> None:
+    def deposer(self, document: DocumentImport, contenu: bytes) -> Instantane:
         with self._engine.begin() as connexion:
             appliquer_rls(connexion)
+            fiche = _fiche(_ligne_fiche(connexion, document.tenant_id, document.fiche_id))
             connexion.execute(
                 documents_import.insert().values(
                     id=document.id,
@@ -135,6 +137,7 @@ class PostgresFichesImport:
                     depose_le=document.depose_le,
                 )
             )
+            return _instantane(connexion, fiche)
 
     def contenu(self, tenant_id: TenantId, document_id: str) -> tuple[DocumentImport, bytes]:
         with self._engine.connect() as connexion:
@@ -149,14 +152,47 @@ class PostgresFichesImport:
             raise FicheIntrouvable("Document introuvable.")
         return _document(ligne), bytes(ligne.contenu)
 
-    def retirer(self, tenant_id: TenantId, document_id: str) -> None:
+    def retirer(self, tenant_id: TenantId, fiche_id: str, document_id: str) -> Instantane:
         with self._engine.begin() as connexion:
             appliquer_rls(connexion)
+            fiche = _fiche(_ligne_fiche(connexion, tenant_id, fiche_id))
             resultat = connexion.execute(
                 delete(documents_import).where(
                     documents_import.c.tenant_id == tenant_id,
+                    documents_import.c.fiche_id == fiche_id,
                     documents_import.c.id == document_id,
                 )
             )
-        if resultat.rowcount == 0:
-            raise FicheIntrouvable("Document introuvable.")
+            if resultat.rowcount == 0:
+                raise FicheIntrouvable("Document introuvable.")
+            return _instantane(connexion, fiche)
+
+
+def _ligne_fiche(connexion: Connection, tenant_id: TenantId, fiche_id: str) -> Row[Any]:
+    ligne = connexion.execute(
+        select(fiches_import).where(
+            fiches_import.c.tenant_id == tenant_id, fiches_import.c.id == fiche_id
+        )
+    ).first()
+    if ligne is None:
+        raise FicheIntrouvable("Fiche d'import introuvable.")
+    return ligne
+
+
+def _instantane(connexion: Connection, fiche: FicheImport) -> Instantane:
+    """Les documents de la fiche, et si son dossier est créé, sur la même
+    connexion."""
+    documents = connexion.execute(
+        select(*_COLONNES_DOCUMENT)
+        .where(
+            documents_import.c.tenant_id == fiche.tenant_id,
+            documents_import.c.fiche_id == fiche.id,
+        )
+        .order_by(documents_import.c.depose_le)
+    ).all()
+    cree = fiche.dossier_id is not None and bool(
+        connexion.execute(
+            select(select(dossiers.c.id).where(dossiers.c.id == fiche.dossier_id).exists())
+        ).scalar()
+    )
+    return Instantane(fiche, [_document(ligne) for ligne in documents], cree)

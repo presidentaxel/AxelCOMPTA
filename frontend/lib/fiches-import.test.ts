@@ -8,7 +8,14 @@ import {
   etatSection,
   libelleStatut,
   nomChauffeur,
+  devinerCategorie,
+  devinerExercice,
+  identifiantComplet,
+  lireListe,
+  progression,
   taille,
+  totalParts,
+  type Associe,
   type SectionImport,
 } from "./fiches-import";
 
@@ -54,4 +61,27 @@ test("cocher et décocher une plateforme", () => {
 
 test("la taille d'un fichier se lit en français", () => {
   assert.deepEqual([taille(500), taille(2048), taille(3_500_000)], ["500 o", "2 Ko", "3,3 Mo"]);
+});
+
+test("le type et l'exercice d'un document se devinent de son nom", () => {
+  const permises = ["liasse", "fec", "balance", "grand_livre", "autre"];
+  assert.equal(devinerCategorie("Liasse_2033_MK_2025.pdf", permises, "autre"), "liasse");
+  assert.equal(devinerCategorie("552100554FEC20251231.txt", permises, "autre"), "fec");
+  assert.equal(devinerCategorie("GL 2024.xlsx", permises, "autre"), "grand_livre");
+  assert.equal(devinerCategorie("kbis.pdf", permises, "autre"), "autre"); // pas permis ici
+  assert.equal(devinerExercice("FEC20251231.txt", [2024, 2025]), 2025);
+  assert.equal(devinerExercice("scan.pdf", [2024, 2025]), null);
+});
+
+test("SIREN ou SIRET complet, et total des parts", () => {
+  assert.equal(identifiantComplet("552 100 554"), "552100554");
+  assert.equal(identifiantComplet("552 100 554 00013"), "55210055400013");
+  assert.equal(identifiantComplet("55210"), null);
+  const associes: Associe[] = [
+    { prenom: "K", nom: "D", fonction: "president", pourcentage: "60,5" },
+    { prenom: "L", nom: "D", fonction: "associe", pourcentage: "39.5" },
+  ];
+  assert.equal(totalParts(associes), 100);
+  assert.deepEqual(lireListe("texte libre d'avant"), []);
+  assert.equal(progression({ sections_completes: 3, sections: 7 }), 43);
 });
