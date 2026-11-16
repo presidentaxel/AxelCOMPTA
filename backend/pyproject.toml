@@ -36,6 +36,10 @@ dependencies = [
 llm = ["anthropic>=2.8"]
 dev = [
     "pytest>=8.0",
+    # CI uniquement : les tests rapides tournent sur plusieurs cœurs.
+    # Pas dans addopts : la suite Postgres partage un rôle de cluster et
+    # détruit le schéma après chaque test, elle reste sur un seul processus.
+    "pytest-xdist>=3.6",
     "mypy>=1.11",
     "ruff>=0.6",
     "import-linter>=2.0",
