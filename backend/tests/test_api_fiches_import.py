@@ -14,6 +14,7 @@ from axelcompta.api.routes import (
     get_fiches_import,
     get_lire_contacts_digifactory,
     get_lire_fiche_officielle,
+    get_lire_premiere_ecriture_digifactory,
 )
 from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, FileMemoire
 from axelcompta.tenants.branchements import BranchementsMemoire
@@ -218,6 +219,27 @@ def test_le_contact_digifactory_de_la_personne_et_sinon_pas_connecte() -> None:
     assert trouve["lu"] is True
     assert [(c["contact_nr"], c["a_un_dossier"]) for c in trouve["contacts"]] == [("22755", False)]
     assert panne == {"lu": False, "contacts": []}
+
+
+def test_l_historique_bancaire_est_la_premiere_ecriture_digifactory() -> None:
+    client, _file = _client()
+    app = cast(FastAPI, client.app)
+    app.dependency_overrides[get_lire_premiere_ecriture_digifactory] = lambda: (
+        lambda _branchements, contact: date(2024, 3, 2) if contact == "22755" else None
+    )
+    fiche = _ouvrir(client)
+    route = f"/portefeuille/imports/{fiche['id']}/digifactory/22755/historique"
+
+    trouve = client.get(route, headers=EN_TETE)
+
+    def en_panne(_branchements: object, _contact: str) -> date:
+        raise RuntimeError("Digifactory injoignable")
+
+    app.dependency_overrides[get_lire_premiere_ecriture_digifactory] = lambda: en_panne
+    panne = client.get(route, headers=EN_TETE)
+
+    assert trouve.json() == {"lu": True, "debut": "2024-03-02"}
+    assert panne.json() == {"lu": False, "debut": None}
 
 
 def test_saisir_un_siret_lance_seul_la_recherche_aux_registres() -> None:

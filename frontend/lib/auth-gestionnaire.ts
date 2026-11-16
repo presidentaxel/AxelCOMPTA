@@ -46,7 +46,7 @@ import type {
 
 import type { FicheAnnuaireRollee, FicheRollee, RolleePortefeuille } from "./liens-rollee";
 import type { AnalyseFec, OuvertureVue } from "./ouverture";
-import type { DigifactoryFiche, FicheImport, FicheImportResume } from "./fiches-import";
+import type { DigifactoryFiche, FicheImport, FicheImportResume, HistoriqueDigifactory } from "./fiches-import";
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
 export type SessionGestionnaire = {
@@ -1434,6 +1434,18 @@ export async function chercherDigifactoryImport(id: string): Promise<Digifactory
   const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/digifactory`);
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
   return (await reponse.json()) as DigifactoryFiche;
+}
+
+/** Date de la première écriture Digifactory du contact, pour l'historique bancaire. */
+export async function historiqueDigifactoryImport(
+  id: string,
+  contactNr: string,
+): Promise<HistoriqueDigifactory> {
+  const reponse = await requeteGestionnaire(
+    `/portefeuille/imports/${id}/digifactory/${encodeURIComponent(contactNr)}/historique`,
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as HistoriqueDigifactory;
 }
 
 export async function deposerDocumentImport(id: string, fichier: File, emplacement: string): Promise<FicheImport> {

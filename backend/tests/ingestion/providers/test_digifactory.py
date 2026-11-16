@@ -9,6 +9,7 @@ import pytest
 
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.ingestion.providers.digifactory import (
+    FIXTURE_PAYLOAD_PAR_DEFAUT,
     DigifactoryAuthError,
     DigifactoryHttpClient,
     DigifactoryProvider,
@@ -16,6 +17,7 @@ from axelcompta.ingestion.providers.digifactory import (
     fenetres_mensuelles,
     parser_lot,
     parser_transactions,
+    premiere_ecriture,
 )
 from axelcompta.tenants.models import Dossier
 
@@ -200,6 +202,24 @@ def test_health_avec_client_reel_401() -> None:
     sante = asyncio.run(provider.health())
     assert sante.ok is False
     assert "401" in sante.message
+
+
+def test_la_premiere_ecriture_ignore_le_supprime_et_le_futur() -> None:
+    assert premiere_ecriture(FIXTURE_PAYLOAD_PAR_DEFAUT) == date(2026, 9, 3)
+    assert premiere_ecriture([]) is None
+    plus_ancien = {
+        "acc": {
+            "tx": {
+                "id": "vieux",
+                "date": "2022-01-15",
+                "amount": 10,
+                "updated_at": "2022-01-15T08:00:00",
+                "deleted": False,
+                "future": False,
+            }
+        }
+    }
+    assert premiere_ecriture(plus_ancien) == date(2022, 1, 15)
 
 
 def test_reponse_vide_est_un_lot_vide() -> None:

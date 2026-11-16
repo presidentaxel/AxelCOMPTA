@@ -176,7 +176,12 @@ SECTIONS: tuple[Section, ...] = (
         "Le contact Digifactory (Bridge) qui remonte les comptes du chauffeur.",
         (
             Champ("contact_digifactory", "Numéro de contact Digifactory", obligatoire=True),
-            Champ("debut_historique", "Début de l'historique bancaire", "date"),
+            Champ(
+                "debut_historique",
+                "Début de l'historique bancaire",
+                "date",
+                aide="Date de la première écriture que Digifactory a pour ce chauffeur.",
+            ),
             Champ(
                 "comptes_bancaires",
                 "Comptes bancaires",
