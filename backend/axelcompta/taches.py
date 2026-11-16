@@ -46,6 +46,9 @@ from axelcompta.llm_synchro import mesurer_llm, passer_llm
 from axelcompta.modeles_distants import assurer_modele
 from axelcompta.notifier import notifier_depuis_base
 from axelcompta.plateformes_rollee import rattraper, suivi_postgres
+from axelcompta.prospection.postgres import PostgresDemandes
+from axelcompta.prospection.service import relancer
+from axelcompta.prospection.slack import notifieur_depuis_env
 from axelcompta.rappels import envoyer, planifier
 from axelcompta.rapprochement_rollee_service import (
     entretenir_cartes,
@@ -283,6 +286,15 @@ def _rappels(engine: Engine, maintenant: datetime) -> list[str]:
     return [f"rappels : {crees} créé(s) ; {resume_envois(bilan)}"]
 
 
+def _demandes_echange(engine: Engine, maintenant: datetime) -> list[str]:
+    """AXE-949 : les demandes d'échange dont l'équipe n'a pas été prévenue.
+    Un échec est dit, il n'arrête pas les autres tâches."""
+    try:
+        return [relancer(PostgresDemandes(engine), notifieur_depuis_env(), maintenant)]
+    except Exception as exc:  # noqa: BLE001 — la passe suivante réessaiera
+        return [f"demandes d'échange : échec ({type(exc).__name__})"]
+
+
 def _rollee(rattraper_rollee: Callable[[], list[str]]) -> list[str]:
     """AXE-820 : chaque dossier relié à Rollee est relu, webhook ou pas."""
     try:
@@ -336,6 +348,7 @@ def passer(sans_synchro: bool, debut: datetime) -> BilanTaches:
     )
     bilan.lignes += _llm(lambda: passer_llm(engine, debut))
     bilan.lignes += _rappels(engine, debut)
+    bilan.lignes += _demandes_echange(engine, debut)
     try:
         bilan.lignes += detecter_portefeuilles(dependances_reelles(), debut.date())
     except Exception as exc:  # noqa: BLE001 — la détection n'arrête pas le passage

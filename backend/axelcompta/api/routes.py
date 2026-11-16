@@ -42,7 +42,17 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol, cast
 
 import httpx
-from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, Response, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -271,6 +281,12 @@ from axelcompta.plateformes_rollee import (
     recevoir,
     relire_comptes,
 )
+from axelcompta.prospection.models import DemandeEchange, TropDeDemandes
+from axelcompta.prospection.postgres import PostgresDemandes
+from axelcompta.prospection.repository import DemandesRepository
+from axelcompta.prospection.service import notifier as notifier_equipe
+from axelcompta.prospection.service import recevoir as recevoir_demande
+from axelcompta.prospection.slack import Notifieur, notifieur_depuis_env
 from axelcompta.rapprochement_rollee_service import (
     avancement_dossier,
     depots_postgres,
@@ -8331,6 +8347,7 @@ def _enregistrer_routes_integrations(app: FastAPI) -> None:
     _enregistrer_route_fiche_webhook(app)
     _enregistrer_routes_branchements_dossier(app)
     _enregistrer_routes_envoi(app)
+    _enregistrer_routes_prospection(app)
     _enregistrer_routes_plateformes(app)
     _enregistrer_route_webhook_rollee(app)
     _enregistrer_route_versements(app)
@@ -8378,6 +8395,77 @@ def _enregistrer_routes_envoi(app: FastAPI) -> None:
         envois.desinscrire(DossierId(d), c)
         canal = "par e-mail" if c == "mail" else "par SMS"
         return DesinscriptionVue(message=f"Vous ne recevrez plus de rappels {canal}.")
+
+
+class DemandeEchangeEntree(BaseModel):
+    """Le formulaire de la page publique (AXE-949). Les longueurs fines sont
+    vérifiées par le domaine, en français ; ces plafonds ne servent qu'à
+    refuser un corps démesuré. `site_web` est un champ piège : invisible pour
+    une personne, rempli par un robot."""
+
+    nom: str = Field(max_length=2000)
+    email: str = Field(max_length=2000)
+    organisation: str = Field(max_length=2000)
+    role: str = Field(max_length=50)
+    message: str | None = Field(default=None, max_length=10000)
+    site_web: str = Field(default="", max_length=2000)
+
+
+class DemandeEchangeVue(BaseModel):
+    message: str
+
+
+def get_demandes_echange() -> DemandesRepository:
+    """Demandes d'échange de la page publique (AXE-949)."""
+    return PostgresDemandes(_engine())
+
+
+DemandesEchangeDep = Annotated[DemandesRepository, Depends(get_demandes_echange)]
+
+
+def get_notifieur_demandes() -> Notifieur | None:
+    """Le webhook Slack de l'équipe ; `None` s'il n'est pas posé."""
+    return notifieur_depuis_env()
+
+
+NotifieurDemandesDep = Annotated[Notifieur | None, Depends(get_notifieur_demandes)]
+
+
+def _recevoir_la_demande(
+    entree: DemandeEchangeEntree, depot: DemandesRepository, maintenant: datetime
+) -> DemandeEchange | None:
+    try:
+        return recevoir_demande(
+            depot,
+            id=str(uuid.uuid4()),
+            nom=entree.nom,
+            email=entree.email,
+            organisation=entree.organisation,
+            role=entree.role,
+            message=entree.message,
+            piege=entree.site_web,
+            maintenant=maintenant,
+        )
+    except TropDeDemandes as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+
+
+def _enregistrer_routes_prospection(app: FastAPI) -> None:
+    @app.post("/demandes-echange", status_code=201, response_model=DemandeEchangeVue)
+    def demander_un_echange(
+        entree: DemandeEchangeEntree,
+        taches: BackgroundTasks,
+        depot: DemandesEchangeDep,
+        notifieur: NotifieurDemandesDep,
+    ) -> DemandeEchangeVue:
+        """Page publique, sans compte (AXE-949). La demande est enregistrée
+        dans la requête ; l'équipe est prévenue après la réponse, et une panne
+        de Slack ne la perd pas (tâches planifiées)."""
+        maintenant = datetime.now(UTC)
+        demande = _recevoir_la_demande(entree, depot, maintenant)
+        if demande is not None:
+            taches.add_task(notifier_equipe, depot, notifieur, demande, maintenant)
+        return DemandeEchangeVue(message="Merci, nous revenons vers vous par e-mail.")
 
 
 class NouveauChauffeurVue(BaseModel):
