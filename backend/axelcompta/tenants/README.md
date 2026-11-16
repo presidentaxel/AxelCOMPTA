@@ -150,6 +150,13 @@ d'héritage implicite (doc 03 §3bis, doc 06 §7).
   d'un import (la fiche sort de la liste, rien ne s'efface).
   `axelcompta/traitement_documents_import.py` lit les FEC et les relevés QIF
   au dépôt ; les autres restent « à lire » (OCR : AXE-943).
+- AXE-950 : chaque exercice a un rôle pour la reprise. Un exercice clos
+  dont la liasse n'est pas encore due (clôture + 3 mois + 15 jours ; 31/12 :
+  deuxième jour ouvré après le 1er mai + 15 jours) est « à déclarer » par
+  nous : on ne demande pas sa liasse. La liasse et le FEC à récupérer sont
+  ceux du dernier exercice déposé (« source » du report à nouveau). Un
+  exercice dont la date est passée mais jamais déposé se coche « en retard »
+  (champ `en_retard`) : on remonte à l'exercice d'avant.
 - `registres.py` lit aussi au RNE la date de clôture (« 3112 ») et la date
   de première clôture.
 

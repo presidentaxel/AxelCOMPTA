@@ -29,7 +29,7 @@ from .fiches_import import (
     Section,
     Statut,
 )
-from .fiches_import_calculs import bornes
+from .fiches_import_calculs import bornes, date_limite_liasse
 from .fiches_import_listes import lire_associes, total_parts
 from .import_dossiers import identifiant
 
@@ -65,15 +65,28 @@ class Emplacement:
         return bool(self.documents)
 
 
+RoleExercice = Literal["en_cours", "a_declarer", "source", "anterieur"]
+
+
 @dataclass(frozen=True, slots=True)
 class Exercice:
+    """AXE-950 : « à déclarer » par nous tant que la date limite de sa liasse
+    n'est pas passée (ou s'il n'a jamais été déposé) ; « source » : le
+    dernier exercice déposé, dont la liasse donne le report à nouveau."""
+
     debut: date
     fin: date
-    etat: Literal["clos", "en_cours"]
+    role: RoleExercice
+    echeance: date | None  # date limite de dépôt de sa liasse
+    en_retard: bool = False
 
     @property
     def annee(self) -> int:
         return self.fin.year
+
+    @property
+    def etat(self) -> Literal["clos", "en_cours"]:
+        return "en_cours" if self.role == "en_cours" else "clos"
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,13 +97,38 @@ class EtatSection:
     manquants: tuple[str, ...]
 
 
+def annees_en_retard(champs: Mapping[str, str]) -> set[int]:
+    return {int(a) for a in champs.get("en_retard", "").split(",") if a.isdigit()}
+
+
+def _roles(clos: list[date], aujourd_hui: date, retard: set[int]) -> dict[date, RoleExercice]:
+    """En remontant depuis le dernier exercice clos : à déclarer tant que la
+    date limite n'est pas passée ou qu'il n'a pas été déposé ; le premier
+    exercice déposé est la source du report à nouveau."""
+    roles: dict[date, RoleExercice] = {}
+    for fin in reversed(clos):
+        if aujourd_hui <= date_limite_liasse(fin) or fin.year in retard:
+            roles[fin] = "a_declarer"
+            continue
+        roles[fin] = "source"
+        break
+    return roles
+
+
 def exercices(champs: Mapping[str, str], aujourd_hui: date) -> list[Exercice]:
-    """Les exercices clos depuis 2024 et l'exercice en cours."""
-    return [
-        Exercice(debut, fin, "clos" if fin < aujourd_hui else "en_cours")
-        for debut, fin in bornes(champs, aujourd_hui)
-        if fin.year >= ANNEE_MIN_REPRISE
-    ]
+    """L'exercice en cours, ceux à déclarer par nous, la source du report à
+    nouveau, et les exercices antérieurs déposés depuis 2024."""
+    tous = bornes(champs, aujourd_hui)
+    retard = annees_en_retard(champs)
+    roles = _roles([fin for _d, fin in tous if fin < aujourd_hui], aujourd_hui, retard)
+    resultat = []
+    for debut, fin in tous:
+        role: RoleExercice = "en_cours" if fin >= aujourd_hui else roles.get(fin, "anterieur")
+        if role == "anterieur" and fin.year < ANNEE_MIN_REPRISE:
+            continue
+        echeance = None if role == "en_cours" else date_limite_liasse(fin)
+        resultat.append(Exercice(debut, fin, role, echeance, fin.year in retard))
+    return resultat
 
 
 def cle_du_document(document: DocumentImport) -> str:
@@ -106,52 +144,74 @@ def _jj(jour: date) -> str:
     return jour.strftime("%d/%m/%Y")
 
 
-def _reprise(champs: Mapping[str, str], aujourd_hui: date) -> list[Emplacement]:
-    clos = [e for e in exercices(champs, aujourd_hui) if e.etat == "clos"]
-    dernier = clos[-1].fin if clos else None
-    emplacements = []
-    for e in clos:
-        cle, utile = f"reprise:{{}}:{e.annee}", e.fin == dernier
-        quand = f"de l'exercice clos le {_jj(e.fin)}"
-        pourquoi = "donne le report à nouveau" if utile else "si vous l'avez"
-        emplacements += [
-            Emplacement(
-                cle.format("liasse"),
-                "reprise",
-                "liasse",
-                e.annee,
-                f"Liasse fiscale {e.annee}",
-                f"2033 ou 2065 {quand} ; {pourquoi}.",
-                utile,
-            ),
+def _emplacements_exercice(e: Exercice, suivant: Exercice | None) -> list[Emplacement]:
+    cle, quand = f"reprise:{{}}:{e.annee}", f"de l'exercice clos le {_jj(e.fin)}"
+    if e.role == "a_declarer":
+        echeance = _jj(e.echeance) if e.echeance else ""
+        return [
             Emplacement(
                 cle.format("fec"),
                 "reprise",
                 "fec",
                 e.annee,
-                f"FEC {e.annee}",
-                f"Fichier des écritures {quand}, à demander à l'ancien comptable.",
-                utile,
-            ),
-            Emplacement(
-                cle.format("balance"),
-                "reprise",
-                "balance",
-                e.annee,
-                f"Balance {e.annee}",
-                "Seulement sans FEC.",
-                False,
-            ),
-            Emplacement(
-                cle.format("grand_livre"),
-                "reprise",
-                "grand_livre",
-                e.annee,
-                f"Grand livre {e.annee}",
-                "Seulement sans FEC.",
+                f"Écritures {e.annee} déjà saisies",
+                f"Exercice à déclarer par nous (liasse avant le {echeance}) : FEC ou grand "
+                "livre, seulement si l'ancien comptable a commencé.",
                 False,
             ),
         ]
+    source = e.role == "source"
+    pour = (
+        f"donne le report à nouveau pour déclarer l'exercice {suivant.annee}"
+        if source and suivant
+        else "si vous l'avez"
+    )
+    return [
+        Emplacement(
+            cle.format("liasse"),
+            "reprise",
+            "liasse",
+            e.annee,
+            f"Liasse fiscale {e.annee}",
+            f"2033 ou 2065 {quand}, déjà déposée ; {pour}.",
+            source,
+        ),
+        Emplacement(
+            cle.format("fec"),
+            "reprise",
+            "fec",
+            e.annee,
+            f"FEC {e.annee}",
+            f"Fichier des écritures {quand}, à demander à l'ancien comptable.",
+            source,
+        ),
+        Emplacement(
+            cle.format("balance"),
+            "reprise",
+            "balance",
+            e.annee,
+            f"Balance {e.annee}",
+            "Seulement sans FEC.",
+            False,
+        ),
+        Emplacement(
+            cle.format("grand_livre"),
+            "reprise",
+            "grand_livre",
+            e.annee,
+            f"Grand livre {e.annee}",
+            "Seulement sans FEC.",
+            False,
+        ),
+    ]
+
+
+def _reprise(champs: Mapping[str, str], aujourd_hui: date) -> list[Emplacement]:
+    liste = exercices(champs, aujourd_hui)
+    emplacements = []
+    for i, e in enumerate(liste):
+        if e.role != "en_cours":
+            emplacements += _emplacements_exercice(e, liste[i + 1] if i + 1 < len(liste) else None)
     emplacements.append(
         Emplacement(
             "reprise:autre",

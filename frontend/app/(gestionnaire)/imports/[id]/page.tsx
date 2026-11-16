@@ -348,7 +348,13 @@ function PanneauSection({
         <p className="mt-1 text-sm text-subtle">{section.description}</p>
       </div>
       <ContenuSection fiche={fiche} section={section} modifiable={modifiable} enregistrer={enregistrer} />
-      <EmplacementsSection fiche={fiche} section={section.cle} modifiable={modifiable} onFiche={onFiche} />
+      <EmplacementsSection
+        fiche={fiche}
+        section={section.cle}
+        modifiable={modifiable}
+        onFiche={onFiche}
+        enregistrer={enregistrer}
+      />
       {section.manquants.length > 0 && (
         <p className="text-sm text-subtle">
           Manque encore : <span className="text-ink">{section.manquants.join(", ")}</span>.
@@ -415,7 +421,7 @@ function ContenuSection({
           enregistrer={enregistrer}
         />
       )}
-      {section.champs.map(champ)}
+      {section.champs.filter((c) => c.cle !== "en_retard").map(champ)}
     </div>
   );
 }
