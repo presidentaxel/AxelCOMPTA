@@ -77,6 +77,10 @@ toute autre vente.
   comptes Rollee cherchés seuls avec recherche manuelle en secours,
   glisser-déposer des documents avec un type par fichier.
 - Accès d'un expert-comptable modifiables dans Équipe (AXE-945).
+- Fiche v3 (AXE-947) : TVA et exercice en cours déduits, contact
+  Digifactory cherché seul (sinon « pas encore connecté »), un emplacement
+  par document attendu, statuts calculés (fiche et documents), FEC et QIF
+  lus au dépôt, annuler un import.
 - Suites : relier la banque et Rollee depuis la fiche, lire le FEC pour le
   report à nouveau (AXE-942) ; OCR des liasses (AXE-943).
 - Un admin déclaré expert-comptable garde ses droits d'admin (AXE-940).

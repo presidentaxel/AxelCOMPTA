@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import date
 from typing import Protocol
 
 from axelcompta.core.errors import Introuvable
 from axelcompta.core.ids import TenantId
 
 from .fiches_import import DocumentImport, FicheImport
+from .fiches_import_etat import statut_calcule
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,24 +74,30 @@ class FichesImportMemoire:
         )
 
     def lister(self, tenant_id: TenantId) -> list[tuple[FicheImport, list[DocumentImport]]]:
-        siennes = [f for f in self.fiches.values() if f.tenant_id == tenant_id]
+        siennes = [
+            f for f in self.fiches.values() if f.tenant_id == tenant_id and f.annulee_le is None
+        ]
         siennes.sort(key=lambda f: f.maj_le or f.cree_le, reverse=True)
         return [(f, self._documents(tenant_id, f.id)) for f in siennes]
 
     def lire(self, tenant_id: TenantId, fiche_id: str) -> FicheImport:
         fiche = self.fiches.get(fiche_id)
-        if fiche is None or fiche.tenant_id != tenant_id:
+        if fiche is None or fiche.tenant_id != tenant_id or fiche.annulee_le is not None:
             raise FicheIntrouvable("Fiche d'import introuvable.")
         return fiche
 
-    def instantane(self, tenant_id: TenantId, fiche_id: str) -> Instantane:
-        fiche = self.lire(tenant_id, fiche_id)
+    def _instantane(self, fiche: FicheImport) -> Instantane:
+        documents = self._documents(fiche.tenant_id, fiche.id)
+        fiche = replace(fiche, statut=statut_calcule(fiche, documents, date.today()))
+        self.fiches[fiche.id] = fiche
         cree = fiche.dossier_id is not None and self._existe(fiche.dossier_id)
-        return Instantane(fiche, self._documents(tenant_id, fiche_id), cree)
+        return Instantane(fiche, documents, cree)
+
+    def instantane(self, tenant_id: TenantId, fiche_id: str) -> Instantane:
+        return self._instantane(self.lire(tenant_id, fiche_id))
 
     def enregistrer(self, fiche: FicheImport) -> Instantane:
-        self.fiches[fiche.id] = fiche
-        return self.instantane(fiche.tenant_id, fiche.id)
+        return self._instantane(fiche)
 
     def deposer(self, document: DocumentImport, contenu: bytes) -> Instantane:
         self.fichiers[document.id] = (document, contenu)

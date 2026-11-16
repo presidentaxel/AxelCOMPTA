@@ -216,6 +216,7 @@ from axelcompta.ingestion.comptes_rollee import (
 from axelcompta.ingestion.comptes_rollee_postgres import PostgresComptesRollee
 from axelcompta.ingestion.consentement import ReleveConsentement, SanteConnexion, classer
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
+from axelcompta.ingestion.digifactory_contacts import nom_affiche, siren_contact
 from axelcompta.ingestion.journal import EntreeQuarantaine, JournalIngestion
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ingestion.liens_rollee import Lien, LienDejaPris, LiensRollee, lien_manuel
@@ -323,15 +324,20 @@ from axelcompta.tenants.fiches_import import (
     preremplir,
 )
 from axelcompta.tenants.fiches_import import SECTIONS as SECTIONS_IMPORT
-from axelcompta.tenants.fiches_import import changer_statut as changer_statut_import
+from axelcompta.tenants.fiches_import import annuler as annuler_fiche
 from axelcompta.tenants.fiches_import import modifier as modifier_fiche
 from axelcompta.tenants.fiches_import_depot import FichesImportRepository, Instantane
 from axelcompta.tenants.fiches_import_etat import (
+    ContactDigifactory,
+    cle_du_document,
+    contacts_correspondants,
     dossier_prevu,
     etat_sections,
     ligne_dossier,
     manque_pour_creer,
+    statut_calcule,
 )
+from axelcompta.tenants.fiches_import_etat import emplacements as emplacements_import
 from axelcompta.tenants.fiches_import_etat import exercices as exercices_import
 from axelcompta.tenants.fiches_import_postgres import PostgresFichesImport
 from axelcompta.tenants.franchise_tva import MillesimeInconnu, suivre_franchise
@@ -382,6 +388,7 @@ from axelcompta.tenants.tags import (
 )
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.tester_branchement import tester as tester_branchement
+from axelcompta.traitement_documents_import import traiter as traiter_document_import
 from axelcompta.webhooks_rollee import preparer as preparer_webhook
 from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT
 from axelcompta.workflow.avis_etages import avis_etages, proposition_affichee
@@ -8378,12 +8385,27 @@ def _enregistrer_routes_import_dossiers(app: FastAPI) -> None:
         return _synchronisation_vue(demandes.dernier(str(tenant_id), TYPE_IMPORT_DOSSIERS))
 
 
-# --- Fiches d'import d'un chauffeur (AXE-941) --------------------------------
+# --- Fiches d'import d'un chauffeur (AXE-941, AXE-946, AXE-947) --------------
 
 TAILLE_MAX_DOCUMENT_IMPORT = 20 * 1024 * 1024  # 20 Mo
 EXTENSIONS_IMPORT = frozenset(
-    {".pdf", ".csv", ".txt", ".xml", ".xls", ".xlsx", ".ods", ".jpg", ".jpeg", ".png", ".zip"}
+    {
+        ".pdf",
+        ".csv",
+        ".txt",
+        ".xml",
+        ".xls",
+        ".xlsx",
+        ".ods",
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".zip",
+        ".qif",
+    }
 )
+REFUS_IMPORT_LECTURE = "Votre rôle est en lecture seule : vous ne pouvez pas modifier un import."
+LireContactsDigifactory = Callable[[list[Branchement]], dict[str, dict[str, object]]]
 
 
 def get_fiches_import() -> FichesImportRepository:
@@ -8391,8 +8413,19 @@ def get_fiches_import() -> FichesImportRepository:
     return PostgresFichesImport(_engine())
 
 
+def get_lire_contacts_digifactory() -> LireContactsDigifactory:
+    """Les contacts des branchements Digifactory, lus en direct (remplacé en
+    test : jamais d'appel réel)."""
+    from axelcompta.worker import contacts_du_portefeuille
+
+    return lambda branchements: asyncio.run(contacts_du_portefeuille(branchements))
+
+
 FichesImportDep = Annotated[FichesImportRepository, Depends(get_fiches_import)]
 LireFicheOfficielleDep = Annotated[LireFicheOfficielle | None, Depends(get_lire_fiche_officielle)]
+LireContactsDigifactoryDep = Annotated[
+    LireContactsDigifactory, Depends(get_lire_contacts_digifactory)
+]
 
 
 class ChoixVue(BaseModel):
@@ -8419,19 +8452,11 @@ class SectionImportVue(BaseModel):
     champs: list[ChampImportVue]
 
 
-class PieceImportVue(BaseModel):
-    categorie: str
-    libelle: str
-    attendue: bool
-    recue: bool
-
-
 class ExerciceImportVue(BaseModel):
     annee: int
     debut: str
     fin: str
     etat: str
-    pieces: list[PieceImportVue]
 
 
 class DocumentImportVue(BaseModel):
@@ -8439,10 +8464,22 @@ class DocumentImportVue(BaseModel):
     categorie: str
     libelle: str
     exercice: int | None
+    emplacement: str
     nom_fichier: str
     taille: int
     depose_par: str
     depose_le: str
+    statut_traitement: str  # traite | a_traiter | illisible
+    resume: str
+
+
+class EmplacementVue(BaseModel):
+    cle: str
+    section: str
+    libelle: str
+    explication: str
+    attendu: bool
+    documents: list[DocumentImportVue]
 
 
 class FicheImportResumeVue(BaseModel):
@@ -8451,9 +8488,10 @@ class FicheImportResumeVue(BaseModel):
     prenom: str
     denomination: str | None
     siren: str | None
-    statut: str
+    statut: str  # calculé : a_importer | en_traitement | traitee
     sections_completes: int
     sections: int
+    documents_a_lire: int
     dossier_id: str | None
     maj_par: str
     maj_le: str
@@ -8462,11 +8500,10 @@ class FicheImportResumeVue(BaseModel):
 class FicheImportVue(FicheImportResumeVue):
     sections_detail: list[SectionImportVue]
     exercices: list[ExerciceImportVue]
-    documents: list[DocumentImportVue]
-    categories_documents: list[ChoixVue]
+    emplacements: list[EmplacementVue]
     registre_lu_le: str | None
     registre_sources: list[str]
-    depuis_registre: list[str]  # champs qui ont encore la valeur lue aux registres
+    depuis_registre: list[str]
     manque_pour_creer: list[str]
     dossier_prevu: str | None
     dossier_cree: bool
@@ -8482,21 +8519,34 @@ class ChampsFicheEntree(BaseModel):
     champs: dict[str, str]
 
 
-class StatutFicheEntree(BaseModel):
-    statut: str
+class ContactDigifactoryVue(BaseModel):
+    contact_nr: str
+    nom: str
+    siren: str | None
+    raison: str
+    a_un_dossier: bool
+
+
+class DigifactoryFicheVue(BaseModel):
+    """AXE-947 : le contact Digifactory de la personne, s'il existe."""
+
+    lu: bool  # False : Digifactory n'a pas répondu
+    contacts: list[ContactDigifactoryVue]
 
 
 def _resume_fiche(fiche: FicheImport, documents: list[DocumentImport]) -> FicheImportResumeVue:
-    etats = etat_sections(fiche, documents, date.today())
+    aujourd_hui = date.today()
+    etats = etat_sections(fiche, documents, aujourd_hui)
     return FicheImportResumeVue(
         id=fiche.id,
         nom=fiche.nom,
         prenom=fiche.prenom,
         denomination=fiche.champs.get("denomination"),
         siren=fiche.champs.get("siren"),
-        statut=fiche.statut,
+        statut=statut_calcule(fiche, documents, aujourd_hui),
         sections_completes=sum(1 for e in etats if e.complet),
         sections=len(etats),
+        documents_a_lire=sum(1 for d in documents if d.statut_traitement != "traite"),
         dossier_id=fiche.dossier_id,
         maj_par=fiche.maj_par,
         maj_le=(fiche.maj_le or fiche.cree_le).isoformat(),
@@ -8529,40 +8579,45 @@ def _sections_vue(fiche: FicheImport, documents: list[DocumentImport]) -> list[S
     ]
 
 
-def _documents_vue(documents: list[DocumentImport]) -> list[DocumentImportVue]:
-    return [
-        DocumentImportVue(
-            id=d.id,
-            categorie=d.categorie,
-            libelle=CATEGORIES_DOCUMENTS.get(d.categorie, d.categorie),
-            exercice=d.exercice,
-            nom_fichier=d.nom_fichier,
-            taille=d.taille,
-            depose_par=d.depose_par,
-            depose_le=d.depose_le.isoformat(),
-        )
-        for d in documents
-    ]
+def _document_vue(d: DocumentImport) -> DocumentImportVue:
+    return DocumentImportVue(
+        id=d.id,
+        categorie=d.categorie,
+        libelle=CATEGORIES_DOCUMENTS.get(d.categorie, d.categorie),
+        exercice=d.exercice,
+        emplacement=cle_du_document(d),
+        nom_fichier=d.nom_fichier,
+        taille=d.taille,
+        depose_par=d.depose_par,
+        depose_le=d.depose_le.isoformat(),
+        statut_traitement=d.statut_traitement,
+        resume=d.resume,
+    )
 
 
 def _fiche_vue(instantane: Instantane) -> FicheImportVue:
     fiche, documents = instantane.fiche, instantane.documents
-    exercices_ = exercices_import(fiche.champs, documents, date.today())
+    aujourd_hui = date.today()
     return FicheImportVue(
         **_resume_fiche(fiche, documents).model_dump(),
         sections_detail=_sections_vue(fiche, documents),
         exercices=[
             ExerciceImportVue(
-                annee=e.annee,
-                debut=e.debut.isoformat(),
-                fin=e.fin.isoformat(),
-                etat=e.etat,
-                pieces=[PieceImportVue(**dataclasses.asdict(p)) for p in e.pieces],
+                annee=e.annee, debut=e.debut.isoformat(), fin=e.fin.isoformat(), etat=e.etat
             )
-            for e in exercices_
+            for e in exercices_import(fiche.champs, aujourd_hui)
         ],
-        documents=_documents_vue(documents),
-        categories_documents=[ChoixVue(cle=k, libelle=v) for k, v in CATEGORIES_DOCUMENTS.items()],
+        emplacements=[
+            EmplacementVue(
+                cle=e.cle,
+                section=e.section,
+                libelle=e.libelle,
+                explication=e.explication,
+                attendu=e.attendu,
+                documents=[_document_vue(d) for d in e.documents],
+            )
+            for e in emplacements_import(fiche.champs, documents, aujourd_hui)
+        ],
         registre_lu_le=fiche.registre.lu_le.isoformat() if fiche.registre else None,
         registre_sources=list(fiche.registre.sources) if fiche.registre else [],
         depuis_registre=champs_du_registre(fiche),
@@ -8570,9 +8625,6 @@ def _fiche_vue(instantane: Instantane) -> FicheImportVue:
         dossier_prevu=dossier_prevu(fiche) if fiche.champs.get("siren") else None,
         dossier_cree=instantane.dossier_cree,
     )
-
-
-REFUS_IMPORT_LECTURE = "Votre rôle est en lecture seule : vous ne pouvez pas modifier un import."
 
 
 def _lire_registres(fiche: FicheImport, lire: LireFicheOfficielle | None, par: str) -> FicheImport:
@@ -8626,10 +8678,20 @@ def _enregistrer_routes_fiches_import(app: FastAPI) -> None:
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
         return _fiche_vue(fiches.instantane(tenant_id, fiche_id))
 
+    @app.post("/portefeuille/imports/{fiche_id}/annuler", status_code=204)
+    def annuler_fiche_import(
+        fiche_id: str, identite: IdentiteDep, role: RoleMembreDep, fiches: FichesImportDep
+    ) -> None:
+        """AXE-947 : l'import n'est plus voulu ; la fiche sort de la liste."""
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        fiche = fiches.lire(tenant_id, fiche_id)
+        fiches.enregistrer(annuler_fiche(fiche, identite.email, datetime.now(UTC)))
+
 
 def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
     """AXE-941, AXE-946 : compléter les champs (un SIREN nouveau relit les
-    registres), relire les registres, changer le statut."""
+    registres) et relire les registres."""
 
     @app.patch("/portefeuille/imports/{fiche_id}", response_model=FicheImportVue)
     def completer_fiche_import(
@@ -8671,19 +8733,48 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
             raise HTTPException(status_code=404, detail="Aucune fiche aux registres pour ce SIREN.")
         return _fiche_vue(fiches.enregistrer(relue))
 
-    @app.post("/portefeuille/imports/{fiche_id}/statut", response_model=FicheImportVue)
-    def changer_statut_fiche(
+
+def _contacts_de_la_fiche(
+    fiche: FicheImport, brut: Mapping[str, Mapping[str, object]], dossiers: set[str]
+) -> list[ContactDigifactoryVue]:
+    contacts = [
+        ContactDigifactory(str(nr), nom_affiche(c, str(nr)), siren_contact(c))
+        for nr, c in brut.items()
+    ]
+    return [
+        ContactDigifactoryVue(
+            contact_nr=t.contact.contact_nr,
+            nom=t.contact.nom,
+            siren=t.contact.siren,
+            raison=t.raison,
+            a_un_dossier=f"DIGI_{t.contact.contact_nr}" in dossiers,
+        )
+        for t in contacts_correspondants(fiche, contacts)
+    ]
+
+
+def _enregistrer_route_digifactory_fiche(app: FastAPI) -> None:
+    """AXE-947 : comme la synchro, chercher le contact Digifactory de la
+    personne (SIREN, dénomination, nom et prénom)."""
+
+    @app.get("/portefeuille/imports/{fiche_id}/digifactory", response_model=DigifactoryFicheVue)
+    def chercher_digifactory_fiche(
         fiche_id: str,
-        entree: StatutFicheEntree,
         identite: IdentiteDep,
-        role: RoleMembreDep,
         fiches: FichesImportDep,
-    ) -> FicheImportVue:
-        tenant_id, identite = _verifier_acces_gestionnaire(identite)
-        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        dossiers: DossiersDep,
+        branchements: BranchementsDep,
+        lire_contacts: LireContactsDigifactoryDep,
+    ) -> DigifactoryFicheVue:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
         fiche = fiches.lire(tenant_id, fiche_id)
-        fiche = changer_statut_import(fiche, entree.statut, identite.email, datetime.now(UTC))
-        return _fiche_vue(fiches.enregistrer(fiche))
+        digifactory = [b for b in branchements.lister(tenant_id) if b.type == "digifactory"]
+        try:
+            brut = lire_contacts(digifactory)
+        except Exception:  # noqa: BLE001 — Digifactory injoignable : on le dit
+            return DigifactoryFicheVue(lu=False, contacts=[])
+        existants = {str(d.id) for d in dossiers.lister_par_tenant(tenant_id)}
+        return DigifactoryFicheVue(lu=True, contacts=_contacts_de_la_fiche(fiche, brut, existants))
 
 
 def _document_accepte(fichier: UploadFile, contenu: bytes) -> None:
@@ -8691,7 +8782,7 @@ def _document_accepte(fichier: UploadFile, contenu: bytes) -> None:
     if extension not in EXTENSIONS_IMPORT:
         raise HTTPException(
             status_code=422,
-            detail="Format refusé : PDF, CSV, TXT, XML, Excel, ODS, JPG, PNG ou ZIP.",
+            detail="Format refusé : PDF, QIF, CSV, TXT, XML, Excel, ODS, JPG, PNG ou ZIP.",
         )
     if not contenu:
         raise HTTPException(status_code=422, detail="Le fichier est vide.")
@@ -8700,7 +8791,8 @@ def _document_accepte(fichier: UploadFile, contenu: bytes) -> None:
 
 
 def _enregistrer_routes_documents_import(app: FastAPI) -> None:
-    """AXE-941 : déposer et relire les documents d'une fiche."""
+    """AXE-941, AXE-947 : déposer un document à son emplacement (lu tout de
+    suite si c'est un FEC ou un QIF), et le relire."""
 
     @app.post("/portefeuille/imports/{fiche_id}/documents", response_model=FicheImportVue)
     async def deposer_document_import(
@@ -8709,25 +8801,26 @@ def _enregistrer_routes_documents_import(app: FastAPI) -> None:
         identite: IdentiteDep,
         role: RoleMembreDep,
         fiches: FichesImportDep,
-        categorie: Annotated[str, Form()],
-        exercice: Annotated[int | None, Form()] = None,
+        emplacement: Annotated[str, Form()],
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
         fiche = fiches.lire(tenant_id, fiche_id)
         contenu = await fichier.read()
         _document_accepte(fichier, contenu)
+        nom = fichier.filename or "document"
         document = document_import(
             uuid.uuid4().hex,
             fiche,
-            categorie,
-            exercice,
-            fichier.filename or "document",
+            emplacement,
+            nom,
             fichier.content_type or "application/octet-stream",
             contenu,
             identite.email,
             datetime.now(UTC),
         )
+        statut, resume = traiter_document_import(document.categorie, nom, contenu)
+        document = dataclasses.replace(document, statut_traitement=statut, resume=resume)
         return _fiche_vue(fiches.deposer(document, contenu))
 
     @app.get("/portefeuille/imports/{fiche_id}/documents/{document_id}")
@@ -8742,8 +8835,7 @@ def _enregistrer_routes_documents_import(app: FastAPI) -> None:
 
 
 def _enregistrer_route_retrait_document_import(app: FastAPI) -> None:
-    """AXE-941 : retirer un document déposé par erreur, tant que la fiche
-    n'est pas traitée."""
+    """AXE-941 : retirer un document déposé par erreur."""
 
     @app.delete(
         "/portefeuille/imports/{fiche_id}/documents/{document_id}", response_model=FicheImportVue
@@ -8757,8 +8849,6 @@ def _enregistrer_route_retrait_document_import(app: FastAPI) -> None:
     ) -> FicheImportVue:
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
-        if fiches.lire(tenant_id, fiche_id).statut == "traitee":
-            raise HTTPException(status_code=409, detail="Cette fiche est traitée.")
         return _fiche_vue(fiches.retirer(tenant_id, fiche_id, document_id))
 
 
@@ -8798,6 +8888,7 @@ def _enregistrer_routes_imports(app: FastAPI) -> None:
     _enregistrer_routes_import_dossiers(app)
     _enregistrer_routes_fiches_import(app)
     _enregistrer_routes_fiches_import_saisie(app)
+    _enregistrer_route_digifactory_fiche(app)
     _enregistrer_routes_documents_import(app)
     _enregistrer_route_retrait_document_import(app)
     _enregistrer_route_chauffeur_importe(app)

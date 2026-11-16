@@ -46,7 +46,7 @@ import type {
 
 import type { FicheAnnuaireRollee, FicheRollee, RolleePortefeuille } from "./liens-rollee";
 import type { AnalyseFec, OuvertureVue } from "./ouverture";
-import type { FicheImport, FicheImportResume, StatutImport } from "./fiches-import";
+import type { DigifactoryFiche, FicheImport, FicheImportResume } from "./fiches-import";
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
 export type SessionGestionnaire = {
@@ -1423,22 +1423,23 @@ export async function relireRegistresImport(id: string): Promise<FicheImport> {
   return ficheOuErreur(await requeteGestionnaire(`/portefeuille/imports/${id}/registres`, { method: "POST" }));
 }
 
-export async function changerStatutImport(id: string, statut: StatutImport): Promise<FicheImport> {
-  return ficheOuErreur(
-    await requeteGestionnaire(`/portefeuille/imports/${id}/statut`, jsonImport("POST", { statut })),
-  );
+/** AXE-947 : l'import n'est plus voulu ; la fiche sort de la liste. */
+export async function annulerFicheImport(id: string): Promise<void> {
+  const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/annuler`, { method: "POST" });
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
 }
 
-export async function deposerDocumentImport(
-  id: string,
-  fichier: File,
-  categorie: string,
-  exercice: number | null,
-): Promise<FicheImport> {
+/** AXE-947 : le contact Digifactory de la personne, comme la synchro. */
+export async function chercherDigifactoryImport(id: string): Promise<DigifactoryFiche> {
+  const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/digifactory`);
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as DigifactoryFiche;
+}
+
+export async function deposerDocumentImport(id: string, fichier: File, emplacement: string): Promise<FicheImport> {
   const corps = new FormData();
   corps.append("fichier", fichier);
-  corps.append("categorie", categorie);
-  if (exercice !== null) corps.append("exercice", String(exercice));
+  corps.append("emplacement", emplacement);
   return ficheOuErreur(
     await requeteGestionnaire(`/portefeuille/imports/${id}/documents`, { method: "POST", body: corps }),
   );

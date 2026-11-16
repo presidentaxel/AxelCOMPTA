@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, LoaderCircle } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { ZoneDeTexte } from "@/components/ZoneDeTexte";
 import { Button } from "@/components/ui/button";
@@ -32,21 +32,32 @@ export function ChampAuto({
   duRegistre: boolean;
   enregistrer: Enregistrer;
 }) {
-  const [valeur, setValeur] = useState(champ.valeur);
+  // `null` : le champ suit la fiche (registre, déductions) ; sinon la saisie
+  // en cours, gardée tant que des envois sont en vol (optimistic UI).
+  const [brouillon, setBrouillon] = useState<string | null>(null);
   const [etat, setEtat] = useState<Etat>("repos");
   const [erreur, setErreur] = useState<string | null>(null);
+  const enVol = useRef(0);
+  const valeur = brouillon ?? champ.valeur;
   const id = `champ-${champ.cle}`;
 
   async function envoyer(nouvelle: string) {
-    if (nouvelle.trim() === champ.valeur) return;
+    if (nouvelle.trim() === champ.valeur && enVol.current === 0) {
+      setBrouillon(null);
+      return;
+    }
+    enVol.current += 1;
     setEtat("envoi");
     setErreur(null);
     try {
       await enregistrer({ [champ.cle]: nouvelle.trim() });
       setEtat("fait");
+      if (enVol.current === 1) setBrouillon((b) => (b === nouvelle ? null : b));
     } catch (exception) {
       setEtat("repos");
       setErreur(exception instanceof Error ? exception.message : "Erreur inattendue.");
+    } finally {
+      enVol.current -= 1;
     }
   }
 
@@ -66,7 +77,7 @@ export function ChampAuto({
           valeur={valeur}
           desactive={!modifiable}
           onChange={(v) => {
-            setValeur(v);
+            setBrouillon(v);
             setEtat("repos");
             if (champ.type === "choix" || champ.type === "multi") void envoyer(v);
           }}

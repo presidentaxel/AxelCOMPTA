@@ -142,6 +142,14 @@ d'héritage implicite (doc 03 §3bis, doc 06 §7).
   relit les registres, qui remplacent ce qu'ils avaient rempli, jamais une
   saisie. Chaque lecture ou écriture d'une fiche rend son instantané
   (fiche, documents, dossier créé) en une connexion.
+- AXE-947 : `fiches_import_calculs.py` (pur) déduit le n° de TVA
+  (FR + clé + SIREN, vérifié auprès de VIES) et l'exercice en cours ; une
+  déduction suit ses données, jamais par-dessus une saisie. Emplacements de
+  documents (un par pièce attendue, avec son explication), statut de la
+  fiche calculé, contact Digifactory cherché comme la synchro, annulation
+  d'un import (la fiche sort de la liste, rien ne s'efface).
+  `axelcompta/traitement_documents_import.py` lit les FEC et les relevés QIF
+  au dépôt ; les autres restent « à lire » (OCR : AXE-943).
 - `registres.py` lit aussi au RNE la date de clôture (« 3112 ») et la date
   de première clôture.
 
