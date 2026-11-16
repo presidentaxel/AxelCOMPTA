@@ -11,12 +11,14 @@ from fastapi.testclient import TestClient
 from axelcompta.api.routes import (
     get_branchements,
     get_demandes_jobs,
+    get_dossiers,
     get_fiches_import,
     get_lire_contacts_digifactory,
     get_lire_fiche_officielle,
     get_lire_premiere_ecriture_digifactory,
 )
-from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, FileMemoire
+from axelcompta.core.ids import DossierId
+from axelcompta.jobs.file import FileMemoire
 from axelcompta.tenants.branchements import BranchementsMemoire
 from axelcompta.tenants.fiches_import_depot import FichesImportMemoire
 from axelcompta.tenants.registres import FicheOfficielle
@@ -43,7 +45,9 @@ OFFICIELLE = FicheOfficielle(
 def _client(role: str = "admin", registres: bool = True) -> tuple[TestClient, FileMemoire]:
     client = _client_et_stubs(role=role)[0]
     app = cast(FastAPI, client.app)
-    fiches, file = FichesImportMemoire(), FileMemoire()
+    depot = app.dependency_overrides[get_dossiers]()
+    fiches = FichesImportMemoire(existe=lambda ident: depot.obtenir(DossierId(ident)) is not None)
+    file = FileMemoire()
     app.dependency_overrides[get_fiches_import] = lambda: fiches
     app.dependency_overrides[get_demandes_jobs] = lambda: file
     lire = (lambda siren: OFFICIELLE if siren == SIREN else None) if registres else None
@@ -161,13 +165,14 @@ def test_un_releve_qif_depose_est_lu_tout_de_suite() -> None:
     assert document["resume"].startswith("QIF lu : 1 opérations")
 
 
-def test_creer_le_chauffeur_confie_le_dossier_au_worker() -> None:
+def test_une_fiche_complete_est_tout_de_suite_au_portefeuille() -> None:
     client, file = _client()
     fiche = _ouvrir(client)
     route = f"/portefeuille/imports/{fiche['id']}"
+    depot = cast(FastAPI, client.app).dependency_overrides[get_dossiers]()
 
     incomplet = client.post(f"{route}/chauffeur", headers=EN_TETE)
-    client.patch(
+    complete = client.patch(
         route,
         json={
             "champs": {
@@ -178,13 +183,17 @@ def test_creer_le_chauffeur_confie_le_dossier_au_worker() -> None:
         },
         headers=EN_TETE,
     )
-    cree = client.post(f"{route}/chauffeur", headers=EN_TETE)
+    encore = client.post(f"{route}/chauffeur", headers=EN_TETE)
 
     assert incomplet.status_code == 422 and "Imposition" in incomplet.json()["detail"]
-    assert cree.status_code == 200, cree.text
-    assert (cree.json()["dossier_id"], cree.json()["dossier_cree"]) == (f"SIREN_{SIREN}", False)
-    job = file.dernier("TENANT_DEMO", TYPE_IMPORT_DOSSIERS)
-    assert job is not None and "MK DRIVING" in job.payload
+    assert complete.status_code == 200, complete.text
+    assert (complete.json()["dossier_id"], complete.json()["dossier_cree"]) == (
+        f"SIREN_{SIREN}",
+        True,
+    )
+    assert depot.obtenir(DossierId(f"SIREN_{SIREN}")).nom == "MK DRIVING"
+    assert encore.status_code == 200 and encore.json()["dossier_cree"] is True
+    assert file.dernier("TENANT_DEMO", "import_dossiers") is None
 
 
 def test_annuler_un_import_le_sort_de_la_liste() -> None:

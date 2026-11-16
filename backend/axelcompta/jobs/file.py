@@ -36,6 +36,9 @@ TENTATIVES_MAX = 3
 # (conteneur remplacé au déploiement, processus tué). Le plus long observé
 # en production : une synchro de 15 minutes.
 DELAI_ABANDON = timedelta(hours=2)
+# Un rapprochement qui vient de finir, ou qui tourne, n'est pas relancé :
+# cinq clics d'affilée reparcouraient les mêmes comptes.
+DELAI_SANS_RELANCER = timedelta(minutes=10)
 ERREUR_ABANDON = (
     "Abandonné : le worker s'est arrêté pendant le travail (redéploiement ?). "
     "Relancé automatiquement s'il reste des essais."
@@ -68,6 +71,19 @@ class Job:
     @property
     def actif(self) -> bool:
         return self.statut in ("en_attente", "en_cours")
+
+
+def deja_couvert(
+    job: Job | None, maintenant: datetime, delai: timedelta = DELAI_SANS_RELANCER
+) -> bool:
+    """Vrai si ce job tourne encore, ou s'il s'est terminé dans `delai`."""
+    if job is None:
+        return False
+    if job.actif:
+        return True
+    return (
+        job.statut == "fait" and job.termine_le is not None and maintenant - job.termine_le < delai
+    )
 
 
 class FileMemoire:

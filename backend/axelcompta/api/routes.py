@@ -239,6 +239,7 @@ from axelcompta.jobs.file import (
     TYPE_SYNCHRO,
     DemandesDeJobs,
     Job,
+    deja_couvert,
 )
 from axelcompta.jobs.postgres import FilePostgres
 from axelcompta.ledger.banque import (
@@ -334,8 +335,8 @@ from axelcompta.tenants.fiches_import_etat import (
     contacts_correspondants,
     dossier_prevu,
     etat_sections,
-    ligne_dossier,
     manque_pour_creer,
+    relier_au_portefeuille,
     statut_calcule,
 )
 from axelcompta.tenants.fiches_import_etat import emplacements as emplacements_import
@@ -8279,6 +8280,9 @@ def _enregistrer_routes_rollee_carte(app: FastAPI) -> None:
     ) -> SynchronisationVue | None:
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, "La lecture seule ne lance pas de rapprochement.")
+        dernier = demandes.dernier(tenant_id, TYPE_RAPPROCHEMENT_ROLLEE)
+        if deja_couvert(dernier, datetime.now(UTC)):
+            return _synchronisation_vue(dernier)
         return _synchronisation_vue(demandes.demander(tenant_id, TYPE_RAPPROCHEMENT_ROLLEE))
 
     @app.get("/portefeuille/rollee/rapprochement", response_model=SynchronisationVue | None)
@@ -8775,6 +8779,18 @@ def _fiche_vue(instantane: Instantane) -> FicheImportVue:
     )
 
 
+def _poser_dossier(
+    fiche: FicheImport, dossiers: DossierRepository
+) -> tuple[FicheImport, tuple[str, ...]]:
+    """Crée le dossier dès que la fiche a de quoi exister au portefeuille,
+    et la relie. Une fiche incomplète revient telle quelle, avec ce qui manque."""
+    existants = dossiers.lister_par_tenant(fiche.tenant_id)
+    reliee, a_creer, erreurs = relier_au_portefeuille(fiche, existants)
+    if a_creer is not None:
+        dossiers.enregistrer_lot((a_creer,))
+    return reliee, erreurs
+
+
 def _lire_registres(fiche: FicheImport, lire: LireFicheOfficielle | None, par: str) -> FicheImport:
     """Préremplit depuis l'INSEE et le RNE si un SIREN est connu et les
     registres branchés ; sinon la fiche ne change pas."""
@@ -8802,9 +8818,11 @@ def _enregistrer_routes_fiches_import(app: FastAPI) -> None:
         role: RoleMembreDep,
         fiches: FichesImportDep,
         lire: LireFicheOfficielleDep,
+        dossiers: DossiersDep,
     ) -> FicheImportVue:
         """Nom et prénom du chauffeur ; avec un SIREN ou un SIRET, l'INSEE et
-        le RNE préremplissent l'entreprise et le dirigeant."""
+        le RNE préremplissent l'entreprise et le dirigeant. Dès que la fiche
+        peut être une entreprise, elle l'est aussi au portefeuille."""
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
         fiche = nouvelle_fiche(
@@ -8817,6 +8835,7 @@ def _enregistrer_routes_fiches_import(app: FastAPI) -> None:
             datetime.now(UTC),
         )
         fiche = _lire_registres(fiche, lire, identite.email)
+        fiche, _erreurs = _poser_dossier(fiche, dossiers)
         return _fiche_vue(fiches.enregistrer(fiche))
 
     @app.get("/portefeuille/imports/{fiche_id}", response_model=FicheImportVue)
@@ -8849,6 +8868,7 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         role: RoleMembreDep,
         fiches: FichesImportDep,
         lire: LireFicheOfficielleDep,
+        dossiers: DossiersDep,
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
@@ -8858,6 +8878,7 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         # (bouton « Relire les registres », AXE-951).
         if "siren" in entree.champs or fiche.champs.get("siren") != avant.champs.get("siren"):
             fiche = _lire_registres(fiche, lire, identite.email)
+        fiche, _erreurs = _poser_dossier(fiche, dossiers)
         return _fiche_vue(fiches.enregistrer(fiche))
 
     @app.post("/portefeuille/imports/{fiche_id}/registres", response_model=FicheImportVue)
@@ -9028,7 +9049,8 @@ def _enregistrer_route_retrait_document_import(app: FastAPI) -> None:
 
 def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:
     """AXE-941 : la fiche ajoute le chauffeur au portefeuille, par le même
-    chemin que l'import CSV (AXE-809) : validée ici, créée par le worker."""
+    chemin que l'import CSV (AXE-809). La création est immédiate : l'entreprise
+    est dans les deux listes dès que les champs obligatoires sont là."""
 
     @app.post("/portefeuille/imports/{fiche_id}/chauffeur", response_model=FicheImportVue)
     def creer_chauffeur_importe(
@@ -9037,23 +9059,19 @@ def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:
         role: RoleMembreDep,
         fiches: FichesImportDep,
         dossiers: DossiersDep,
-        demandes: DemandesJobsDep,
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
         fiche = fiches.lire(tenant_id, fiche_id)
-        manque = manque_pour_creer(fiche)
-        if manque:
-            raise HTTPException(status_code=422, detail=f"À compléter : {', '.join(manque)}.")
-        ligne = ligne_dossier(fiche)
-        existants = [d.id for d in dossiers.lister_par_tenant(tenant_id)]
-        (resultat,) = rapport_import(tenant_id, [ligne], existants).lignes
-        if resultat.dossier is None:
-            raise HTTPException(status_code=422, detail=" ".join(resultat.erreurs))
-        demandes.demander(str(tenant_id), TYPE_IMPORT_DOSSIERS, json.dumps({"lignes": [ligne]}))
-        fiche = dataclasses.replace(
-            fiche, dossier_id=resultat.dossier.id, maj_par=identite.email, maj_le=datetime.now(UTC)
-        )
+        fiche = dataclasses.replace(fiche, maj_par=identite.email, maj_le=datetime.now(UTC))
+        fiche, erreurs = _poser_dossier(fiche, dossiers)
+        if erreurs:
+            detail = (
+                f"À compléter : {', '.join(erreurs)}."
+                if manque_pour_creer(fiche)
+                else " ".join(erreurs)
+            )
+            raise HTTPException(status_code=422, detail=detail)
         return _fiche_vue(fiches.enregistrer(fiche))
 
 
