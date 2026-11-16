@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import date
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Connection, Engine, Row
 
@@ -13,6 +15,7 @@ from axelcompta.core.rls import appliquer_rls
 
 from .fiches_import import DocumentImport, FicheImport
 from .fiches_import_depot import FicheIntrouvable, Instantane
+from .fiches_import_etat import statut_calcule
 from .orm import documents_import, dossiers, fiches_import
 from .registres_json import fiche_depuis_json, fiche_vers_json
 
@@ -33,6 +36,8 @@ def _fiche(ligne: Row[Any]) -> FicheImport:
         dossier_id=DossierId(ligne.dossier_id) if ligne.dossier_id else None,
         maj_par=ligne.maj_par,
         maj_le=ligne.maj_le,
+        annulee_le=ligne.annulee_le,
+        annulee_par=ligne.annulee_par or "",
     )
 
 
@@ -49,6 +54,9 @@ def _document(ligne: Row[Any]) -> DocumentImport:
         empreinte=ligne.empreinte,
         depose_par=ligne.depose_par,
         depose_le=ligne.depose_le,
+        emplacement=ligne.emplacement,
+        statut_traitement=ligne.statut_traitement,
+        resume=ligne.resume,
     )
 
 
@@ -65,6 +73,8 @@ def _valeurs(fiche: FicheImport) -> dict[str, Any]:
         "cree_le": fiche.cree_le,
         "maj_par": fiche.maj_par or fiche.cree_par,
         "maj_le": fiche.maj_le or fiche.cree_le,
+        "annulee_le": fiche.annulee_le,
+        "annulee_par": fiche.annulee_par or None,
     }
 
 
@@ -80,7 +90,7 @@ class PostgresFichesImport:
             appliquer_rls(connexion)
             fiches = connexion.execute(
                 select(fiches_import)
-                .where(fiches_import.c.tenant_id == tenant_id)
+                .where(fiches_import.c.tenant_id == tenant_id, fiches_import.c.annulee_le.is_(None))
                 .order_by(fiches_import.c.maj_le.desc())
             ).all()
             documents = connexion.execute(
@@ -101,7 +111,8 @@ class PostgresFichesImport:
     def instantane(self, tenant_id: TenantId, fiche_id: str) -> Instantane:
         with self._engine.connect() as connexion:
             appliquer_rls(connexion)
-            return _instantane(connexion, _fiche(_ligne_fiche(connexion, tenant_id, fiche_id)))
+            fiche = _fiche(_ligne_fiche(connexion, tenant_id, fiche_id))
+            return _instantane(connexion, fiche, ecrire=False)
 
     def enregistrer(self, fiche: FicheImport) -> Instantane:
         valeurs = _valeurs(fiche)
@@ -135,6 +146,9 @@ class PostgresFichesImport:
                     contenu=contenu,
                     depose_par=document.depose_par,
                     depose_le=document.depose_le,
+                    emplacement=document.emplacement,
+                    statut_traitement=document.statut_traitement,
+                    resume=document.resume,
                 )
             )
             return _instantane(connexion, fiche)
@@ -174,14 +188,14 @@ def _ligne_fiche(connexion: Connection, tenant_id: TenantId, fiche_id: str) -> R
             fiches_import.c.tenant_id == tenant_id, fiches_import.c.id == fiche_id
         )
     ).first()
-    if ligne is None:
+    if ligne is None or ligne.annulee_le is not None:
         raise FicheIntrouvable("Fiche d'import introuvable.")
     return ligne
 
 
-def _instantane(connexion: Connection, fiche: FicheImport) -> Instantane:
-    """Les documents de la fiche, et si son dossier est créé, sur la même
-    connexion."""
+def _instantane(connexion: Connection, fiche: FicheImport, ecrire: bool = True) -> Instantane:
+    """Les documents de la fiche, si son dossier est créé, et son statut
+    calculé (gardé en base à chaque écriture), sur la même connexion."""
     documents = connexion.execute(
         select(*_COLONNES_DOCUMENT)
         .where(
@@ -195,4 +209,10 @@ def _instantane(connexion: Connection, fiche: FicheImport) -> Instantane:
             select(select(dossiers.c.id).where(dossiers.c.id == fiche.dossier_id).exists())
         ).scalar()
     )
-    return Instantane(fiche, [_document(ligne) for ligne in documents], cree)
+    lus = [_document(ligne) for ligne in documents]
+    statut = statut_calcule(fiche, lus, date.today())
+    if ecrire and statut != fiche.statut:
+        connexion.execute(
+            update(fiches_import).where(fiches_import.c.id == fiche.id).values(statut=statut)
+        )
+    return Instantane(replace(fiche, statut=statut), lus, cree)

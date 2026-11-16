@@ -15,8 +15,7 @@ from axelcompta.core.ids import TenantId
 from axelcompta.tenants.fiches_import import (
     SECTIONS,
     FicheImport,
-    FicheTraitee,
-    changer_statut,
+    annuler,
     depuis_registre,
     document_import,
     modifier,
@@ -24,6 +23,7 @@ from axelcompta.tenants.fiches_import import (
     preremplir,
     valider,
 )
+from axelcompta.tenants.fiches_import_calculs import numero_tva
 from axelcompta.tenants.registres import FicheOfficielle, PersonneOfficielle
 
 LE = datetime(2026, 11, 16, 10, 0, tzinfo=UTC)
@@ -100,26 +100,34 @@ def test_chaque_type_de_champ_est_range_ou_refuse_avec_un_message() -> None:
             valider(saisie)
 
 
-def test_modifier_passe_en_traitement_et_une_fiche_traitee_ne_bouge_plus() -> None:
+def test_modifier_range_les_champs_et_annuler_garde_la_trace() -> None:
     fiche = modifier(_fiche(), {"email": "k@x.fr", "telephone": ""}, "b@axel.fr", LE)
-    assert (fiche.statut, fiche.champs["email"], fiche.maj_par) == (
-        "en_traitement",
-        "k@x.fr",
-        "b@axel.fr",
-    )
+    assert (fiche.champs["email"], fiche.maj_par) == ("k@x.fr", "b@axel.fr")
     assert "telephone" not in fiche.champs
-    traitee = changer_statut(fiche, "traitee", "b@axel.fr", LE)
-    with pytest.raises(FicheTraitee):
-        modifier(traitee, {"email": "autre@x.fr"}, "b@axel.fr", LE)
-    with pytest.raises(SaisieInvalide, match="Statut inconnu"):
-        changer_statut(fiche, "archivee", "b@axel.fr", LE)
-    assert modifier(changer_statut(traitee, "en_traitement", "b", LE), {"email": "a@x.fr"}, "b", LE)
+    annulee = annuler(fiche, "b@axel.fr", LE)
+    assert (annulee.annulee_le, annulee.annulee_par) == (LE, "b@axel.fr")
+
+
+def test_la_tva_et_l_exercice_en_cours_se_deduisent_sans_ecraser_une_saisie() -> None:
+    """AXE-947 : FR + clé + SIREN ; exercice en cours d'après la clôture."""
+    fiche = modifier(_fiche(), {"date_creation": "2023-03-15", "cloture": "31/12"}, "b", LE)
+    assert fiche.champs["numero_tva"] == "FR96552100554"
+    assert (fiche.champs["exercice_debut"], fiche.champs["exercice_fin"]) == (
+        "2026-01-01",
+        "2026-12-31",
+    )
+    decale = modifier(fiche, {"cloture": "30/06"}, "b", LE)
+    assert (decale.champs["exercice_debut"], decale.champs["exercice_fin"]) == (
+        "2026-07-01",
+        "2027-06-30",
+    )
+    saisi = modifier(fiche, {"exercice_debut": "2026-02-01"}, "b", LE)
+    assert modifier(saisi, {"cloture": "30/06"}, "b", LE).champs["exercice_debut"] == "2026-02-01"
 
 
 def test_les_registres_remplissent_les_vides_sans_ecraser_une_saisie() -> None:
     assert depuis_registre(_officielle())["siege"] == "3 rue de la Paix, 75002 Paris"
     fiche = preremplir(_fiche(), _officielle(), "b@axel.fr", LE)
-    assert fiche.statut == "a_importer"
     assert (fiche.nom, fiche.prenom) == ("Dupont", "Karim")  # saisis, gardés
     assert fiche.champs["denomination"] == "MK DRIVING"
     assert (fiche.champs["cloture"], fiche.champs["premiere_cloture"]) == ("31/12", "2023-12-31")
@@ -127,19 +135,24 @@ def test_les_registres_remplissent_les_vides_sans_ecraser_une_saisie() -> None:
     assert fiche.registre is not None and fiche.registre.sources == ("insee", "rne")
 
 
-def test_un_document_garde_son_empreinte_et_sa_categorie() -> None:
+def test_un_document_garde_son_emplacement_et_son_empreinte() -> None:
     contenu = b"%PDF-1.4 liasse"
     document = document_import(
-        "d1", _fiche(), "liasse", 2025, "liasse.pdf", "application/pdf", contenu, "b", LE
+        "d1", _fiche(), "reprise:liasse:2025", "liasse.pdf", "application/pdf", contenu, "b", LE
     )
-    assert (document.taille, document.empreinte) == (
-        len(contenu),
-        hashlib.sha256(contenu).hexdigest(),
+    assert (document.categorie, document.exercice, document.emplacement) == (
+        "liasse",
+        2025,
+        "reprise:liasse:2025",
     )
-    with pytest.raises(SaisieInvalide, match="Catégorie"):
-        document_import("d2", _fiche(), "photo", None, "x.pdf", "", contenu, "b", LE)
-    with pytest.raises(SaisieInvalide, match="Exercice"):
-        document_import("d3", _fiche(), "fec", 25, "x.txt", "", contenu, "b", LE)
+    assert document.empreinte == hashlib.sha256(contenu).hexdigest()
+    for emplacement, message in (
+        ("reprise:photo", "Catégorie"),
+        ("ailleurs:kbis", "Emplacement inconnu"),
+        ("reprise:fec:25", "Exercice"),
+    ):
+        with pytest.raises(SaisieInvalide, match=message):
+            document_import("d2", _fiche(), emplacement, "x.pdf", "", contenu, "b", LE)
 
 
 def test_chaque_categorie_a_une_cle_unique_et_des_champs_uniques() -> None:
@@ -162,3 +175,9 @@ def test_un_siren_corrige_remplace_ce_qui_venait_du_registre_pas_la_saisie() -> 
     assert relue.champs["denomination"] == "BONNE SOCIETE"
     assert relue.champs["siege"] == "Saisi à la main"
     assert json.loads(relue.champs["associes"])[0]["fonction"] == "president"
+
+
+def test_la_cle_de_tva_suit_la_formule_officielle() -> None:
+    """Vérifié auprès de VIES le 16/11 : FR64 443061841 est valide."""
+    assert numero_tva("443061841") == "FR64443061841"
+    assert numero_tva("12345") is None

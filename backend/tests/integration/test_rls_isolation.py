@@ -55,6 +55,7 @@ from axelcompta.tenants.branchements import Modification, modifier, nouveau
 from axelcompta.tenants.branchements_postgres import PostgresBranchements
 from axelcompta.tenants.exercices import ExerciceClos, ExerciceDejaClos
 from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
+from axelcompta.tenants.fiches_import import annuler as annuler_fiche
 from axelcompta.tenants.fiches_import import document_import, nouvelle_fiche
 from axelcompta.tenants.fiches_import import modifier as modifier_fiche
 from axelcompta.tenants.fiches_import_depot import FicheIntrouvable
@@ -885,12 +886,14 @@ def test_une_fiche_d_import_et_ses_documents_restent_dans_leur_portefeuille(
         web.enregistrer(fiche)
         web.enregistrer(modifier_fiche(fiche, {"email": "k@x.fr"}, "b", le))
         document = document_import(
-            "doc-a", fiche, "kbis", None, "kbis.pdf", "application/pdf", b"%PDF", "b", le
+            "doc-a", fiche, "documents:kbis", "kbis.pdf", "application/pdf", b"%PDF", "b", le
         )
         web.deposer(document, b"%PDF")
         relue = web.lire(TenantId("tenant-a"), "fiche-a")
         assert (relue.statut, relue.champs["email"]) == ("en_traitement", "k@x.fr")
         assert web.contenu(TenantId("tenant-a"), "doc-a") == (document, b"%PDF")
+        web.enregistrer(annuler_fiche(relue, "b", le))  # AXE-947 : sort de la liste
+        assert web.lister(TenantId("tenant-a")) == []
     with contexte_identite(dossier_id=None, tenant_id="tenant-b"):
         assert web.lister(TenantId("tenant-a")) == []
         with pytest.raises(FicheIntrouvable):

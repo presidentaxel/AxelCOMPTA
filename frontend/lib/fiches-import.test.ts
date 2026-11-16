@@ -6,6 +6,9 @@ import {
   basculerChoix,
   champsModifies,
   etatSection,
+  libelleTraitement,
+  parExercice,
+  type EmplacementImport,
   libelleStatut,
   nomChauffeur,
   devinerCategorie,
@@ -84,4 +87,25 @@ test("SIREN ou SIRET complet, et total des parts", () => {
   assert.equal(totalParts(associes), 100);
   assert.deepEqual(lireListe("texte libre d'avant"), []);
   assert.equal(progression({ sections_completes: 3, sections: 7 }), 43);
+});
+
+test("les emplacements se rangent par exercice, le plus récent d'abord", () => {
+  const e = (cle: string): EmplacementImport => ({
+    cle,
+    section: cle.split(":")[0],
+    libelle: cle,
+    explication: "",
+    attendu: true,
+    documents: [],
+  });
+  const groupes = parExercice([e("reprise:liasse:2024"), e("reprise:autre"), e("reprise:liasse:2025")]);
+  assert.deepEqual(
+    groupes.map(([annee, liste]) => [annee, liste.map((x) => x.cle)]),
+    [
+      [2025, ["reprise:liasse:2025"]],
+      [2024, ["reprise:liasse:2024"]],
+      [null, ["reprise:autre"]],
+    ],
+  );
+  assert.equal(libelleTraitement("traite"), "Lu automatiquement");
 });

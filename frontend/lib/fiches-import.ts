@@ -39,25 +39,33 @@ export type SectionImport = {
   champs: ChampImport[];
 };
 
-export type PieceImport = { categorie: string; libelle: string; attendue: boolean; recue: boolean };
+export type ExerciceImport = { annee: number; debut: string; fin: string; etat: "clos" | "en_cours" };
 
-export type ExerciceImport = {
-  annee: number;
-  debut: string;
-  fin: string;
-  etat: "clos" | "en_cours";
-  pieces: PieceImport[];
-};
+/** AXE-947 : ce qui a été tiré d'un document. */
+export type StatutDocument = "traite" | "a_traiter" | "illisible";
 
 export type DocumentImport = {
   id: string;
   categorie: string;
   libelle: string;
   exercice: number | null;
+  emplacement: string;
   nom_fichier: string;
   taille: number;
   depose_par: string;
   depose_le: string;
+  statut_traitement: StatutDocument;
+  resume: string;
+};
+
+/** AXE-947 : un document attendu, son explication et ce qui y est déposé. */
+export type EmplacementImport = {
+  cle: string;
+  section: string;
+  libelle: string;
+  explication: string;
+  attendu: boolean;
+  documents: DocumentImport[];
 };
 
 export type FicheImportResume = {
@@ -69,6 +77,7 @@ export type FicheImportResume = {
   statut: StatutImport;
   sections_completes: number;
   sections: number;
+  documents_a_lire: number;
   dossier_id: string | null;
   maj_par: string;
   maj_le: string;
@@ -77,8 +86,7 @@ export type FicheImportResume = {
 export type FicheImport = FicheImportResume & {
   sections_detail: SectionImport[];
   exercices: ExerciceImport[];
-  documents: DocumentImport[];
-  categories_documents: ChoixImport[];
+  emplacements: EmplacementImport[];
   registre_lu_le: string | null;
   registre_sources: string[];
   depuis_registre: string[];
@@ -200,4 +208,37 @@ export function valeurChamp(fiche: Pick<FicheImport, "sections_detail">, cle: st
     if (champ) return champ.valeur;
   }
   return "";
+}
+
+// --- AXE-947 ---------------------------------------------------------------
+
+export type ContactDigifactory = {
+  contact_nr: string;
+  nom: string;
+  siren: string | null;
+  raison: string;
+  a_un_dossier: boolean;
+};
+export type DigifactoryFiche = { lu: boolean; contacts: ContactDigifactory[] };
+
+export function libelleTraitement(statut: StatutDocument): string {
+  if (statut === "traite") return "Lu automatiquement";
+  return statut === "illisible" ? "Illisible" : "À lire";
+}
+
+/** « reprise:liasse:2025 » → 2025 ; `null` hors exercice. */
+export function anneeEmplacement(cle: string): number | null {
+  const annee = cle.split(":")[2];
+  return annee ? Number(annee) : null;
+}
+
+/** Les emplacements d'une catégorie, rangés par exercice (le plus récent
+ * d'abord) ; ceux sans exercice à la fin, sous `null`. */
+export function parExercice(emplacements: EmplacementImport[]): [number | null, EmplacementImport[]][] {
+  const groupes = new Map<number | null, EmplacementImport[]>();
+  for (const e of emplacements) {
+    const annee = anneeEmplacement(e.cle);
+    groupes.set(annee, [...(groupes.get(annee) ?? []), e]);
+  }
+  return [...groupes.entries()].sort(([a], [b]) => (b ?? -1) - (a ?? -1));
 }

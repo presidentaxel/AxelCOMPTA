@@ -1,42 +1,68 @@
-"""Ce qui manque à une fiche d'import, et les exercices à reprendre (AXE-941). Pur.
+"""Ce qui manque à une fiche d'import, ses emplacements de documents et son
+statut (AXE-941, AXE-947). Pur.
 
-Les exercices se déduisent de la date de création, de la date de clôture
-(« 31/12 ») et, si on la connaît, de la date de première clôture. Pour un
-exercice clos, on attend la liasse et le FEC (ou, sans FEC, la balance et le
-grand livre). Seul le **dernier exercice clos** est indispensable : c'est lui
-qui donne le report à nouveau. Les plus anciens, depuis 2024, se reprennent
-s'ils sont disponibles.
+**Emplacements** : un par document attendu, avec ce que c'est et pourquoi.
+Pour un exercice clos depuis 2024 : liasse et FEC (ou balance et grand
+livre sans FEC) ; seul le dernier exercice clos est indispensable, il donne
+le report à nouveau. En banque : les relevés des mois que Digifactory ne
+couvre pas, et le RIB. Documents administratifs : Kbis, statuts, et la
+lettre de l'ancien comptable (facultative).
+
+**Statut** : calculé, jamais choisi. « À importer » tant qu'il n'y a que le
+nom ; « traitée » quand chaque catégorie est complète et qu'aucun document
+n'est illisible ; « en traitement » entre les deux.
 """
 
 from __future__ import annotations
 
-import calendar
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+import unicodedata
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Literal
 
 from .fiches_import import (
     CATEGORIES_DOCUMENTS,
-    DOCUMENTS_ADMINISTRATIFS,
     SECTIONS,
     DocumentImport,
     FicheImport,
     Section,
+    Statut,
 )
+from .fiches_import_calculs import bornes
 from .fiches_import_listes import lire_associes, total_parts
 from .import_dossiers import identifiant
 
 ANNEE_MIN_REPRISE = 2024
-EXERCICES_MAX = 40  # garde-fou : une date de création absurde ne boucle pas
+SECTION_PAR_CATEGORIE = {
+    "liasse": "reprise",
+    "fec": "reprise",
+    "balance": "reprise",
+    "grand_livre": "reprise",
+    "releve_bancaire": "banque",
+    "rib": "banque",
+    "kbis": "documents",
+    "statuts": "documents",
+    "lettre_comptable": "documents",
+    "autre": "documents",
+}
+CHAMPS_DE_DEPART = frozenset({"nom", "prenom"})
 
 
 @dataclass(frozen=True, slots=True)
-class Piece:
+class Emplacement:
+    cle: str  # « reprise:liasse:2025 »
+    section: str
     categorie: str
+    exercice: int | None
     libelle: str
-    attendue: bool  # indispensable ; sinon « si vous l'avez »
-    recue: bool
+    explication: str
+    attendu: bool  # indispensable ; sinon « si vous l'avez »
+    documents: tuple[DocumentImport, ...] = ()
+
+    @property
+    def rempli(self) -> bool:
+        return bool(self.documents)
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +70,6 @@ class Exercice:
     debut: date
     fin: date
     etat: Literal["clos", "en_cours"]
-    pieces: tuple[Piece, ...]
 
     @property
     def annee(self) -> int:
@@ -59,67 +84,170 @@ class EtatSection:
     manquants: tuple[str, ...]
 
 
-def _cloture_dans(annee: int, jour: int, mois: int) -> date:
-    return date(annee, mois, min(jour, calendar.monthrange(annee, mois)[1]))
+def exercices(champs: Mapping[str, str], aujourd_hui: date) -> list[Exercice]:
+    """Les exercices clos depuis 2024 et l'exercice en cours."""
+    return [
+        Exercice(debut, fin, "clos" if fin < aujourd_hui else "en_cours")
+        for debut, fin in bornes(champs, aujourd_hui)
+        if fin.year >= ANNEE_MIN_REPRISE
+    ]
 
 
-def _bornes(champs: Mapping[str, str], aujourd_hui: date) -> list[tuple[date, date]]:
-    """(début, fin) de chaque exercice, de la création à l'exercice en cours."""
-    try:
-        creation = date.fromisoformat(champs["date_creation"])
-        jour, mois = (int(x) for x in champs["cloture"].split("/"))
-    except (KeyError, ValueError):
-        return []
-    premiere = champs.get("premiere_cloture")
-    fin = date.fromisoformat(premiere) if premiere else _cloture_dans(creation.year, jour, mois)
-    if fin <= creation:
-        fin = _cloture_dans(fin.year + 1, jour, mois)
-    bornes = [(creation, fin)]
-    while fin < aujourd_hui and len(bornes) < EXERCICES_MAX:
-        debut, fin = fin + timedelta(days=1), _cloture_dans(fin.year + 1, jour, mois)
-        bornes.append((debut, fin))
-    return bornes
+def cle_du_document(document: DocumentImport) -> str:
+    """Son emplacement ; pour un document d'avant AXE-947, celui de sa catégorie."""
+    if document.emplacement:
+        return document.emplacement
+    section = SECTION_PAR_CATEGORIE.get(document.categorie, "documents")
+    annee = f":{document.exercice}" if section == "reprise" and document.exercice else ""
+    return f"{section}:{document.categorie}{annee}"
 
 
-def _pieces(
-    annee: int, documents: Sequence[DocumentImport], indispensable: bool
-) -> tuple[Piece, ...]:
-    recues = {d.categorie for d in documents if d.exercice == annee}
-    avec_fec = "fec" in recues
-    return (
-        Piece("liasse", CATEGORIES_DOCUMENTS["liasse"], indispensable, "liasse" in recues),
-        Piece("fec", CATEGORIES_DOCUMENTS["fec"], indispensable, avec_fec),
-        Piece(
-            "balance",
-            CATEGORIES_DOCUMENTS["balance"],
-            indispensable and not avec_fec,
-            "balance" in recues,
-        ),
-        Piece(
-            "grand_livre",
-            CATEGORIES_DOCUMENTS["grand_livre"],
-            indispensable and not avec_fec,
-            "grand_livre" in recues,
-        ),
+def _jj(jour: date) -> str:
+    return jour.strftime("%d/%m/%Y")
+
+
+def _reprise(champs: Mapping[str, str], aujourd_hui: date) -> list[Emplacement]:
+    clos = [e for e in exercices(champs, aujourd_hui) if e.etat == "clos"]
+    dernier = clos[-1].fin if clos else None
+    emplacements = []
+    for e in clos:
+        cle, utile = f"reprise:{{}}:{e.annee}", e.fin == dernier
+        quand = f"de l'exercice clos le {_jj(e.fin)}"
+        pourquoi = "donne le report à nouveau" if utile else "si vous l'avez"
+        emplacements += [
+            Emplacement(
+                cle.format("liasse"),
+                "reprise",
+                "liasse",
+                e.annee,
+                f"Liasse fiscale {e.annee}",
+                f"2033 ou 2065 {quand} ; {pourquoi}.",
+                utile,
+            ),
+            Emplacement(
+                cle.format("fec"),
+                "reprise",
+                "fec",
+                e.annee,
+                f"FEC {e.annee}",
+                f"Fichier des écritures {quand}, à demander à l'ancien comptable.",
+                utile,
+            ),
+            Emplacement(
+                cle.format("balance"),
+                "reprise",
+                "balance",
+                e.annee,
+                f"Balance {e.annee}",
+                "Seulement sans FEC.",
+                False,
+            ),
+            Emplacement(
+                cle.format("grand_livre"),
+                "reprise",
+                "grand_livre",
+                e.annee,
+                f"Grand livre {e.annee}",
+                "Seulement sans FEC.",
+                False,
+            ),
+        ]
+    emplacements.append(
+        Emplacement(
+            "reprise:autre",
+            "reprise",
+            "autre",
+            None,
+            "Autre document comptable",
+            "Bilan, tableau des immobilisations, contrat de LOA, échéancier d'emprunt…",
+            False,
+        )
     )
+    return emplacements
 
 
-def exercices(
+def _releves(champs: Mapping[str, str]) -> Emplacement:
+    cle, libelle = "banque:releve_bancaire", "Relevés bancaires"
+    debut, historique = champs.get("exercice_debut"), champs.get("debut_historique")
+    if not champs.get("contact_digifactory"):
+        explication = (
+            "La banque n'est pas encore connectée à Digifactory : relevés de "
+            "l'exercice en cours, en PDF, QIF ou CSV."
+        )
+        return Emplacement(cle, "banque", "releve_bancaire", None, libelle, explication, True)
+    if debut and historique and historique > debut:
+        veille = date.fromisoformat(historique) - timedelta(days=1)
+        explication = (
+            f"Du {_jj(date.fromisoformat(debut))} au {_jj(veille)} : avant l'historique "
+            "Digifactory. En PDF, QIF ou CSV."
+        )
+        return Emplacement(cle, "banque", "releve_bancaire", None, libelle, explication, True)
+    explication = "Digifactory couvre l'exercice en cours : seulement si des mois manquent."
+    return Emplacement(cle, "banque", "releve_bancaire", None, libelle, explication, False)
+
+
+def _vides(champs: Mapping[str, str], aujourd_hui: date) -> list[Emplacement]:
+    return [
+        *_reprise(champs, aujourd_hui),
+        _releves(champs),
+        Emplacement("banque:rib", "banque", "rib", None, "RIB", "Du compte professionnel.", True),
+        Emplacement(
+            "documents:kbis", "documents", "kbis", None, "Kbis", "Extrait de moins de 3 mois.", True
+        ),
+        Emplacement(
+            "documents:statuts",
+            "documents",
+            "statuts",
+            None,
+            "Statuts",
+            "Dernière version signée.",
+            True,
+        ),
+        Emplacement(
+            "documents:lettre_comptable",
+            "documents",
+            "lettre_comptable",
+            None,
+            "Lettre de l'ancien expert-comptable",
+            "Facultative.",
+            False,
+        ),
+        Emplacement(
+            "documents:autre",
+            "documents",
+            "autre",
+            None,
+            "Autre document",
+            "Tout autre justificatif.",
+            False,
+        ),
+    ]
+
+
+def emplacements(
     champs: Mapping[str, str], documents: Sequence[DocumentImport], aujourd_hui: date
-) -> list[Exercice]:
-    """Les exercices clos depuis 2024 et l'exercice en cours, du plus ancien
-    au plus récent. Vide sans date de création ni date de clôture."""
-    bornes = [(d, f) for d, f in _bornes(champs, aujourd_hui) if f.year >= ANNEE_MIN_REPRISE]
-    clos = [f for _d, f in bornes if f < aujourd_hui]
-    dernier_clos = max(clos) if clos else None
-    resultat = []
-    for debut, fin in bornes:
-        if fin >= aujourd_hui:
-            resultat.append(Exercice(debut, fin, "en_cours", ()))
-            continue
-        pieces = _pieces(fin.year, documents, indispensable=fin == dernier_clos)
-        resultat.append(Exercice(debut, fin, "clos", pieces))
-    return resultat
+) -> list[Emplacement]:
+    """Chaque emplacement et ses documents ; un document dont l'emplacement
+    n'est plus proposé (date de clôture changée) garde le sien."""
+    par_cle: dict[str, list[DocumentImport]] = {}
+    for d in documents:
+        par_cle.setdefault(cle_du_document(d), []).append(d)
+    vides = _vides(champs, aujourd_hui)
+    connus = {e.cle for e in vides}
+    orphelins = [
+        Emplacement(
+            cle,
+            cle.split(":")[0],
+            docs[0].categorie,
+            docs[0].exercice,
+            CATEGORIES_DOCUMENTS.get(docs[0].categorie, "Document"),
+            "Déposé plus tôt.",
+            False,
+        )
+        for cle, docs in par_cle.items()
+        if cle not in connus
+    ]
+    return [replace(e, documents=tuple(par_cle.get(e.cle, ()))) for e in [*vides, *orphelins]]
 
 
 def _manquants_champs(section: Section, champs: Mapping[str, str]) -> list[str]:
@@ -132,32 +260,35 @@ def _manquants_champs(section: Section, champs: Mapping[str, str]) -> list[str]:
         total = total_parts(associes)
         if any(a.pourcentage for a in associes) and total != 100:
             manquants.append(f"Parts des associés : {total.normalize():f} % sur 100 %")
+    if section.cle == "reprise" and not (champs.get("date_creation") and champs.get("cloture")):
+        manquants.append("Date de création et date de clôture (catégorie Entreprise)")
     return manquants
-
-
-def _manquants_reprise(champs: Mapping[str, str], liste: Sequence[Exercice]) -> list[str]:
-    if not champs.get("date_creation") or not champs.get("cloture"):
-        return ["Date de création et date de clôture (catégorie Entreprise)"]
-    return [f"{p.libelle} {e.annee}" for e in liste for p in e.pieces if p.attendue and not p.recue]
 
 
 def etat_sections(
     fiche: FicheImport, documents: Sequence[DocumentImport], aujourd_hui: date
 ) -> list[EtatSection]:
-    """Chaque catégorie : complète, ou ce qui lui manque."""
-    liste = exercices(fiche.champs, documents, aujourd_hui)
-    deposes = {d.categorie for d in documents}
+    """Chaque catégorie : complète, ou ce qui lui manque (champs attendus et
+    emplacements attendus vides)."""
+    vides = [
+        e for e in emplacements(fiche.champs, documents, aujourd_hui) if e.attendu and not e.rempli
+    ]
     etats = []
     for section in SECTIONS:
         manquants = _manquants_champs(section, fiche.champs)
-        if section.cle == "reprise":
-            manquants += _manquants_reprise(fiche.champs, liste)
-        if section.cle == "documents":
-            manquants += [
-                CATEGORIES_DOCUMENTS[c] for c in DOCUMENTS_ADMINISTRATIFS if c not in deposes
-            ]
+        manquants += [e.libelle for e in vides if e.section == section.cle]
         etats.append(EtatSection(section.cle, section.libelle, not manquants, tuple(manquants)))
     return etats
+
+
+def statut_calcule(
+    fiche: FicheImport, documents: Sequence[DocumentImport], aujourd_hui: date
+) -> Statut:
+    if not documents and set(fiche.champs) <= CHAMPS_DE_DEPART:
+        return "a_importer"
+    complete = all(e.complet for e in etat_sections(fiche, documents, aujourd_hui))
+    lisibles = all(d.statut_traitement != "illisible" for d in documents)
+    return "traitee" if complete and lisibles else "en_traitement"
 
 
 POUR_CREER = (
@@ -199,3 +330,45 @@ def ligne_dossier(fiche: FicheImport) -> dict[str, str]:
 def dossier_prevu(fiche: FicheImport) -> str:
     ligne = ligne_dossier(fiche)
     return str(identifiant(ligne["siren"], ligne["contact_digifactory"]))
+
+
+# --- Contact Digifactory de la fiche (AXE-947) --------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ContactDigifactory:
+    contact_nr: str
+    nom: str
+    siren: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Correspondance:
+    contact: ContactDigifactory
+    raison: str  # « même SIREN » ou « même nom »
+
+
+def _mots(texte: str) -> set[str]:
+    ascii_ = unicodedata.normalize("NFKD", texte).encode("ascii", "ignore").decode().upper()
+    return {m for m in "".join(c if c.isalnum() else " " for c in ascii_).split() if len(m) > 1}
+
+
+def contacts_correspondants(
+    fiche: FicheImport, contacts: Iterable[ContactDigifactory]
+) -> list[Correspondance]:
+    """Comme la synchro : le même SIREN, ou un nom de contact qui contient la
+    dénomination ou le nom et le prénom du chauffeur."""
+    champs = fiche.champs
+    siren = champs.get("siren")
+    noms = [
+        m
+        for m in (_mots(champs.get("denomination", "")), _mots(f"{fiche.prenom} {fiche.nom}"))
+        if m
+    ]
+    trouves = []
+    for contact in contacts:
+        if siren and contact.siren == siren:
+            trouves.append(Correspondance(contact, "même SIREN"))
+        elif any(nom <= _mots(contact.nom) for nom in noms):
+            trouves.append(Correspondance(contact, "même nom"))
+    return sorted(trouves, key=lambda c: (c.raison != "même SIREN", c.contact.nom))

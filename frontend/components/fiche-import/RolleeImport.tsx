@@ -38,7 +38,8 @@ export function RolleeImport({
   modifiable: boolean;
   enregistrer: Enregistrer;
 }) {
-  const retenus = lireListe<CompteRolleeRetenu>(champ.valeur);
+  // Optimistic UI : le choix s'affiche tout de suite, l'API confirme.
+  const [retenus, setRetenus] = useState(() => lireListe<CompteRolleeRetenu>(champ.valeur));
   const [auto, setAuto] = useState<FicheAnnuaireRollee[] | null>(null);
   const [requete, setRequete] = useState("");
   const [trouves, setTrouves] = useState<{ requete: string; fiches: FicheAnnuaireRollee[] } | null>(null);
@@ -68,10 +69,13 @@ export function RolleeImport({
     const suivants = deja
       ? retenus.filter((r) => r.rollee_user_id !== fiche.rollee_user_id)
       : [...retenus, { rollee_user_id: fiche.rollee_user_id, nom: fiche.nom, plateformes: fiche.plateformes }];
+    const avant = retenus;
+    setRetenus(suivants);
     setErreur(null);
     try {
       await enregistrer({ comptes_rollee: suivants.length ? JSON.stringify(suivants) : "" });
     } catch (exception) {
+      setRetenus(avant);
       setErreur(exception instanceof Error ? exception.message : "Erreur inattendue.");
     }
   }

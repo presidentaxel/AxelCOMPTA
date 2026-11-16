@@ -426,6 +426,9 @@ fiches_import = Table(
     Column("cree_le", DateTime(timezone=True), nullable=False),
     Column("maj_par", String, nullable=False),
     Column("maj_le", DateTime(timezone=True), nullable=False),
+    # AXE-947 : un import annulé sort de la liste ; rien ne s'efface.
+    Column("annulee_le", DateTime(timezone=True), nullable=True),
+    Column("annulee_par", String, nullable=True),
     CheckConstraint(
         "statut IN ('a_importer', 'en_traitement', 'traitee')", name="fiches_import_statut"
     ),
@@ -447,4 +450,12 @@ documents_import = Table(
     Column("contenu", LargeBinary, nullable=False),
     Column("depose_par", String, nullable=False),
     Column("depose_le", DateTime(timezone=True), nullable=False),
+    # AXE-947 : son emplacement sur la fiche, et ce qui en a été tiré.
+    Column("emplacement", String, nullable=False, server_default=""),
+    Column("statut_traitement", String, nullable=False, server_default="a_traiter"),
+    Column("resume", String, nullable=False, server_default=""),
+    CheckConstraint(
+        "statut_traitement IN ('a_traiter', 'traite', 'illisible')",
+        name="documents_import_statut_traitement",
+    ),
 )
