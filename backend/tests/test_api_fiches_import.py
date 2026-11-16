@@ -247,3 +247,19 @@ def test_la_fiche_dit_quels_champs_viennent_encore_du_registre() -> None:
         headers=EN_TETE,
     ).json()
     assert "denomination" not in modifiee["depuis_registre"]
+
+
+def test_le_navigateur_peut_supprimer() -> None:
+    """AXE-948 : le contrôle préalable (CORS) acceptait GET, POST, PUT et
+    PATCH, pas DELETE ; retirer un document échouait avant même l'appel."""
+    client, _file = _client()
+    for methode in ("DELETE", "PATCH"):
+        reponse = client.options(
+            "/portefeuille/imports/f/documents/d",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": methode,
+            },
+        )
+        assert reponse.status_code == 200, methode
+        assert methode in reponse.headers["access-control-allow-methods"]

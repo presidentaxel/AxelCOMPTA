@@ -2406,7 +2406,9 @@ def _configurer_cors(app: FastAPI) -> None:
         CORSMiddleware,
         # 3000 est l'origine habituelle. 3001 sert quand ce port est déjà pris.
         allow_origins=[ORIGINE_FRONTEND_DEV, "http://localhost:3001"],
-        allow_methods=["GET", "POST", "PUT", "PATCH"],
+        # DELETE : retirer un document, un membre, une invitation, une règle
+        # de rappel (AXE-948 : sans lui, le navigateur bloquait ces appels).
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["*"],
         # Lu par le front pour enregistrer un fichier sous le nom choisi par
         # le serveur (FEC : `<SIREN>FEC<AAAAMMJJ>.txt`, nom légal A.47 A-1).
