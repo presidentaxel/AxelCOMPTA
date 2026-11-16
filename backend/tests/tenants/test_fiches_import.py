@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
+import json
 from datetime import UTC, date, datetime
 
 import pytest
@@ -60,7 +62,7 @@ def test_une_fiche_s_ouvre_avec_le_nom_ou_le_prenom_et_un_siren_valide() -> None
     assert nouvelle_fiche("f2", T, "", "Karim", "", "x", LE).champs == {"prenom": "Karim"}
     with pytest.raises(SaisieInvalide, match="nom ou le prénom"):
         nouvelle_fiche("f3", T, " ", "", "", "x", LE)
-    with pytest.raises(SaisieInvalide, match="SIREN invalide"):
+    with pytest.raises(SaisieInvalide, match="SIREN ou SIRET invalide"):
         nouvelle_fiche("f4", T, "Dupont", "", "123456789", "x", LE)
 
 
@@ -144,3 +146,19 @@ def test_chaque_categorie_a_une_cle_unique_et_des_champs_uniques() -> None:
     assert len({s.cle for s in SECTIONS}) == len(SECTIONS) == 7
     cles = [c.cle for s in SECTIONS for c in s.champs]
     assert len(cles) == len(set(cles))
+
+
+def test_un_siret_donne_aussi_le_siren() -> None:
+    assert valider({"siren": "552 100 554 00013"}) == {"siren": SIREN, "siret": "55210055400013"}
+    with pytest.raises(SaisieInvalide, match="clé de contrôle"):
+        valider({"siren": "55210055400014"})
+
+
+def test_un_siren_corrige_remplace_ce_qui_venait_du_registre_pas_la_saisie() -> None:
+    fiche = preremplir(_fiche(), _officielle(), "b", LE)
+    fiche = modifier(fiche, {"siege": "Saisi à la main"}, "b", LE)
+    autre = dataclasses.replace(_officielle(), denomination="BONNE SOCIETE", siege=None)
+    relue = preremplir(fiche, autre, "b", LE)
+    assert relue.champs["denomination"] == "BONNE SOCIETE"
+    assert relue.champs["siege"] == "Saisi à la main"
+    assert json.loads(relue.champs["associes"])[0]["fonction"] == "president"

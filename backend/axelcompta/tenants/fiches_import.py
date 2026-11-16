@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -27,6 +27,12 @@ from typing import Literal
 from axelcompta.core.errors import SaisieInvalide
 from axelcompta.core.ids import DossierId, TenantId
 
+from .fiches_import_listes import (
+    FONCTIONS,
+    associes_du_registre,
+    ranger_associes,
+    ranger_comptes_rollee,
+)
 from .import_dossiers import siren_valide
 from .registres import FicheOfficielle
 
@@ -44,6 +50,9 @@ TypeChamp = Literal[
     "montant",
     "annee",
     "jour_mois",
+    "siret",
+    "associes",
+    "rollee",
 ]
 LONGUEUR_MAX = 2_000
 
@@ -93,7 +102,8 @@ SECTIONS: tuple[Section, ...] = (
         "Entreprise",
         "Préremplie par l'INSEE et le RNE avec le SIREN.",
         (
-            Champ("siren", "SIREN", "siren", True),
+            Champ("siren", "SIREN ou SIRET", "siren", True),
+            Champ("siret", "SIRET du siège", "siret"),
             Champ("denomination", "Dénomination", obligatoire=True),
             Champ("forme_juridique", "Forme juridique", "choix", True, FORMES),
             Champ("siege", "Adresse du siège", obligatoire=True),
@@ -115,9 +125,10 @@ SECTIONS: tuple[Section, ...] = (
             Champ("telephone", "Téléphone", "telephone"),
             Champ(
                 "associes",
-                "Associés et parts",
-                "long",
-                aide="Un associé par ligne : nom, % du capital.",
+                "Associés",
+                "associes",
+                choix=tuple(FONCTIONS.items()),
+                aide="Fonction et part du capital de chacun.",
             ),
         ),
     ),
@@ -179,12 +190,7 @@ SECTIONS: tuple[Section, ...] = (
         "Les plateformes du chauffeur et ses comptes Rollee (il peut en avoir plusieurs).",
         (
             Champ("plateformes", "Plateformes utilisées", "multi", True, PLATEFORMES),
-            Champ(
-                "comptes_rollee",
-                "Comptes Rollee",
-                "long",
-                aide="Un compte par ligne : plateforme, nom ou e-mail.",
-            ),
+            Champ("comptes_rollee", "Comptes Rollee retenus", "rollee"),
         ),
     ),
     Section(
@@ -285,28 +291,61 @@ def _choix(champ: Champ, texte: str) -> str:
     return ",".join(dict.fromkeys(valeurs))
 
 
+def _luhn(chiffres: str) -> bool:
+    total = 0
+    for rang, chiffre in enumerate(int(c) for c in reversed(chiffres)):
+        double = chiffre * 2 if rang % 2 == 1 else chiffre
+        total += double - 9 if double > 9 else double
+    return total % 10 == 0
+
+
+def _identifiant(champ: Champ, texte: str) -> str:
+    """SIREN (9 chiffres) ; le champ « SIREN ou SIRET » accepte aussi un
+    SIRET (14), dont `valider` tire le SIREN."""
+    chiffres = re.sub(r"[\s.]", "", texte)
+    if len(chiffres) == 14 and chiffres.isdigit() and siren_valide(chiffres[:9]):
+        if _luhn(chiffres) or chiffres.startswith("356000000"):  # La Poste : hors Luhn
+            return chiffres
+        raise SaisieInvalide("SIRET invalide : la clé de contrôle ne correspond pas.")
+    if champ.type == "siren" and siren_valide(chiffres):
+        return chiffres
+    attendu = (
+        "neuf chiffres (SIREN) ou quatorze (SIRET)"
+        if champ.type == "siren"
+        else "quatorze chiffres"
+    )
+    raise SaisieInvalide(f"{champ.libelle} invalide : {attendu}.")
+
+
+def _controle(motif: str, message: str) -> Callable[[Champ, str], str]:
+    def ranger(champ: Champ, texte: str) -> str:
+        if not re.fullmatch(motif, texte):
+            raise SaisieInvalide(message.format(libelle=champ.libelle))
+        return texte
+
+    return ranger
+
+
+_RANGEMENTS: dict[str, Callable[[Champ, str], str]] = {
+    "siren": _identifiant,
+    "siret": _identifiant,
+    "associes": lambda _c, texte: ranger_associes(texte),
+    "rollee": lambda _c, texte: ranger_comptes_rollee(texte),
+    "email": _controle(r"[^@\s]+@[^@\s]+\.[^@\s]+", "E-mail invalide."),
+    "telephone": _controle(r"[+\d][\d\s.()-]{8,}", "Téléphone invalide."),
+    "annee": _controle(r"(19|20)\d\d", "{libelle} : une année, par exemple 2025."),
+    "choix": _choix,
+    "multi": _choix,
+    "montant": lambda c, texte: _montant(texte, c.libelle),
+    "date": lambda c, texte: _date(texte, c.libelle),
+    "jour_mois": lambda c, texte: _jour_mois(texte, c.libelle),
+}
+
+
 def _valeur(champ: Champ, texte: str) -> str:
     """La valeur rangée, ou `SaisieInvalide` avec un message pour l'écran."""
-    if champ.type == "siren":
-        siren = texte.replace(" ", "")
-        if not siren_valide(siren):
-            raise SaisieInvalide("SIREN invalide : neuf chiffres.")
-        return siren
-    if champ.type == "email" and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", texte):
-        raise SaisieInvalide("E-mail invalide.")
-    if champ.type == "telephone" and len(re.sub(r"\D", "", texte)) < 9:
-        raise SaisieInvalide("Téléphone invalide.")
-    if champ.type == "annee" and not re.fullmatch(r"(19|20)\d\d", texte):
-        raise SaisieInvalide(f"{champ.libelle} : une année, par exemple 2025.")
-    if champ.type in ("choix", "multi"):
-        return _choix(champ, texte)
-    if champ.type == "montant":
-        return _montant(texte, champ.libelle)
-    if champ.type == "date":
-        return _date(texte, champ.libelle)
-    if champ.type == "jour_mois":
-        return _jour_mois(texte, champ.libelle)
-    return texte
+    ranger = _RANGEMENTS.get(champ.type)
+    return ranger(champ, texte) if ranger else texte
 
 
 def valider(saisie: Mapping[str, str]) -> dict[str, str]:
@@ -320,6 +359,9 @@ def valider(saisie: Mapping[str, str]) -> dict[str, str]:
         if len(texte) > LONGUEUR_MAX:
             raise SaisieInvalide(f"{champ.libelle} : {LONGUEUR_MAX} caractères au plus.")
         rangees[cle] = _valeur(champ, texte) if texte else ""
+    siren = rangees.get("siren", "")
+    if len(siren) == 14:  # un SIRET saisi dans « SIREN ou SIRET »
+        rangees["siren"], rangees["siret"] = siren[:9], siren
     return rangees
 
 
@@ -368,18 +410,25 @@ def depuis_registre(officielle: FicheOfficielle) -> dict[str, str]:
         valeurs["prenom"] = officielle.personnes[0].prenoms.split(" ")[0]
     if valeurs["forme_juridique"] not in {cle for cle, _ in FORMES}:
         valeurs["forme_juridique"] = ""
+    valeurs["associes"] = associes_du_registre(
+        [(p.nom, p.prenoms) for p in officielle.personnes], officielle.forme_juridique
+    )
     return {k: v for k, v in valeurs.items() if v}
 
 
 def preremplir(
     fiche: FicheImport, officielle: FicheOfficielle, par: str, le: datetime
 ) -> FicheImport:
-    """Les registres remplissent les champs vides ; une saisie n'est jamais
+    """Les registres remplissent les champs vides, et remplacent ce qui venait
+    de la lecture précédente (un SIREN corrigé) ; une saisie n'est jamais
     écrasée. La lecture est gardée avec la fiche."""
     if fiche.statut == "traitee":
         raise FicheTraitee("Cette fiche est traitée : repassez-la en traitement pour la modifier.")
-    lus = depuis_registre(officielle)
-    champs = {**lus, **fiche.champs}
+    anciens = depuis_registre(fiche.registre) if fiche.registre else {}
+    champs = dict(fiche.champs)
+    for cle, valeur in depuis_registre(officielle).items():
+        if not champs.get(cle) or champs[cle] == anciens.get(cle):
+            champs[cle] = valeur
     return replace(
         fiche,
         champs=champs,
@@ -422,3 +471,11 @@ def document_import(
         depose_par=par,
         depose_le=le,
     )
+
+
+def champs_du_registre(fiche: FicheImport) -> list[str]:
+    """Les champs qui ont encore la valeur lue aux registres (AXE-946)."""
+    if fiche.registre is None:
+        return []
+    lus = depuis_registre(fiche.registre)
+    return sorted(cle for cle, valeur in lus.items() if fiche.champs.get(cle) == valeur)
