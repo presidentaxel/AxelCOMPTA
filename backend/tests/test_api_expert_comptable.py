@@ -341,3 +341,22 @@ def test_l_expert_lit_ce_qui_manque_meme_sans_rollee_ni_banque() -> None:
     premier, *suite = reponse.json()["manques"]
     assert premier == "Aucun compte Rollee n'est relié à cette entreprise : rien à rapprocher."
     assert all("aucun jour Rollee" in phrase for phrase in suite)  # virements de la démo
+
+
+def test_l_equipe_voit_les_experts_declares_et_un_admin_modifie_leurs_dossiers() -> None:
+    """AXE-945 : la déclaration en vigueur se relit pour être modifiée ; la
+    nouvelle remplace l'ancienne, l'engagement déjà accepté reste."""
+    client = _client_et_stubs(role=ROLE_EXPERT)[0]  # habilité sur 3 dossiers, engagé
+    avant = client.get("/portefeuille/experts", headers=EN_TETE).json()
+
+    admin, _ecrits = _admin_qui_note_les_roles({})
+    admin.app.dependency_overrides[get_experts] = client.app.dependency_overrides[get_experts]  # type: ignore[attr-defined]
+    corps = {**CORPS_EXPERT, "email": "gestionnaire@example.com", "dossiers": ["DEMO_karim"]}
+    assert admin.post("/portefeuille/experts", json=corps, headers=EN_TETE).status_code == 200
+    (apres,) = client.get("/portefeuille/experts", headers=EN_TETE).json()
+
+    assert [(e["email"], len(e["dossiers"]), e["engagement_accepte"]) for e in avant] == [
+        ("gestionnaire@example.com", 3, True)
+    ]
+    assert (apres["dossiers"], apres["engagement_accepte"]) == (["DEMO_karim"], True)
+    assert client.get("/expert/file", headers=EN_TETE).status_code == 200

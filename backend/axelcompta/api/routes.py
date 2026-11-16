@@ -9065,8 +9065,37 @@ def _role_avant_habilitation(
     return lire_role(tenant_id, email) or ("admin" if deja_membre else None)
 
 
+class ExpertDeclareVue(HabilitationVue):
+    """AXE-945 : la déclaration en vigueur, pour la modifier sans tout ressaisir."""
+
+    accordee_le: str
+    engagement_accepte: bool
+
+
+def _enregistrer_route_experts_declares(app: FastAPI) -> None:
+    @app.get("/portefeuille/experts", response_model=list[ExpertDeclareVue])
+    def lister_experts(identite: IdentiteDep, experts: ExpertsDep) -> list[ExpertDeclareVue]:
+        """Les experts déclarés du portefeuille et leurs dossiers (des
+        identifiants, aucun montant). Lu par toute l'équipe ; seul un admin
+        modifie."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        vues = []
+        for h in experts.habilitations_en_vigueur(tenant_id):
+            engagement = experts.engagement(tenant_id, h.email)
+            vues.append(
+                ExpertDeclareVue(
+                    **_habilitation_vue(h).model_dump(),
+                    accordee_le=h.accordee_le.isoformat(),
+                    engagement_accepte=engagement is not None
+                    and engagement.version == VERSION_ENGAGEMENT,
+                )
+            )
+        return vues
+
+
 def _enregistrer_routes_expert_comptable(app: FastAPI) -> None:
     """AXE-800 : un admin habilite l'expert ; l'expert accepte l'engagement."""
+    _enregistrer_route_experts_declares(app)
 
     @app.post("/portefeuille/experts", response_model=HabilitationVue)
     def habiliter_expert(

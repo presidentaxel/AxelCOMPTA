@@ -263,6 +263,15 @@ export async function accepterEngagementExpert(version: string, texte: string): 
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
 }
 
+/** AXE-945 : la déclaration en vigueur de chaque expert, pour la modifier. */
+export type ExpertDeclare = HabilitationExpert & { accordee_le: string; engagement_accepte: boolean };
+
+export async function listerExperts(): Promise<ExpertDeclare[]> {
+  const reponse = await requeteGestionnaire("/portefeuille/experts");
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as ExpertDeclare[];
+}
+
 /** AXE-800 : un admin déclare l'expert-comptable du portefeuille. */
 export async function habiliterExpert(entree: HabilitationExpert): Promise<HabilitationExpert> {
   const reponse = await requeteGestionnaire("/portefeuille/experts", {
