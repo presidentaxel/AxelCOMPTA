@@ -1,0 +1,99 @@
+# Production sur un droplet. Postgres reste Supabase (DATABASE_URL du .env).
+# Le script deploy/mettre-a-jour.sh applique les migrations avant de
+# remplacer l'API : un échec laisse l'ancienne version en place.
+name: axelcompta
+
+x-journaux: &journaux
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  migrate:
+    <<: *journaux
+    image: axelcompta-backend:prod
+    env_file: .env
+    profiles: ["migration"]
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    <<: *journaux
+    image: axelcompta-backend:prod
+    build: ./backend
+    env_file: .env
+    init: true
+    restart: unless-stopped
+    volumes:
+      - modeles:/opt/axelcompta/_AUDIT_DONNEES/modeles
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/sante', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 40s
+
+  web:
+    <<: *journaux
+    image: axelcompta-web:prod
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?NEXT_PUBLIC_API_BASE_URL manquant}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?NEXT_PUBLIC_SUPABASE_URL manquant}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?NEXT_PUBLIC_SUPABASE_ANON_KEY manquant}
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+        NEXT_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY: ${NEXT_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY:-}
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000').then((r)=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  worker:
+    <<: *journaux
+    image: axelcompta-backend:prod
+    env_file: .env
+    init: true
+    restart: unless-stopped
+    command: ["supercronic", "/opt/axelcompta/backend/docker/crontab"]
+    volumes:
+      - modeles:/opt/axelcompta/_AUDIT_DONNEES/modeles
+
+  caddy:
+    <<: *journaux
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN manquant}
+      API_DOMAIN: ${API_DOMAIN:?API_DOMAIN manquant}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL manquant}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  modeles:
+  caddy_data:
+  caddy_config:

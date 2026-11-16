@@ -73,6 +73,7 @@ from axelcompta.api.auth import (
     identite_tolerante,
 )
 from axelcompta.api.erreurs import brancher_erreurs
+from axelcompta.api.origines import origines_autorisees
 from axelcompta.categorize.appris import (
     OperationTranchee,
     PropositionApprise,
@@ -509,7 +510,6 @@ _EXTENSIONS_IMAGE = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 COMPTE_ATTENTE = "471"  # doc 06 §2 : compte d'attente par défaut, "à trancher"
 TYPE_DOCUMENT_CLOTURE = "cloture"  # jalon d'exercice : la validation chauffeur n'apparaît qu'après
 TYPE_DOCUMENT_GREFFE_INPI = "greffe_inpi"  # doc 20 : dépôt des comptes annuels
-ORIGINE_FRONTEND_DEV = "http://localhost:3000"
 # **Retiré le 2026-09-11 (doc 19 §8bis)** : `UTILISATEUR_DEMO` (stub pour
 # le cas « gestionnaire sans login » sur les routes de tranchage/signature)
 # n'a plus de raison d'être — ces routes exigent désormais un vrai jeton
@@ -2404,8 +2404,7 @@ def _joindre_justificatif(
 def _configurer_cors(app: FastAPI) -> None:
     app.add_middleware(
         CORSMiddleware,
-        # 3000 est l'origine habituelle. 3001 sert quand ce port est déjà pris.
-        allow_origins=[ORIGINE_FRONTEND_DEV, "http://localhost:3001"],
+        allow_origins=origines_autorisees(),
         # DELETE : retirer un document, un membre, une invitation, une règle
         # de rappel (AXE-948 : sans lui, le navigateur bloquait ces appels).
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
