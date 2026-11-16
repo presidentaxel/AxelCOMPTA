@@ -5,6 +5,7 @@ import { useLayoutEffect } from "react";
 import { decoderChargeUtileJwt } from "@/lib/auth-chauffeur";
 import { deconnecterGestionnaire, obtenirSessionGestionnaire } from "@/lib/auth-gestionnaire";
 import { coteOuverte } from "@/lib/cote-connexion";
+import { repriseLienAuth } from "@/lib/destination-lien";
 import { laisserMessageConnexion } from "@/lib/message-connexion";
 import { MESSAGE_ESPACE_CHAUFFEUR } from "@/lib/messages-auth";
 
@@ -12,6 +13,16 @@ import { MESSAGE_ESPACE_CHAUFFEUR } from "@/lib/messages-auth";
  * côté gestionnaire. La session déjà stockée est effacée. */
 export function GardeEspaceGestionnaire() {
   useLayoutEffect(() => {
+    const reprise = repriseLienAuth(
+      window.location.pathname,
+      window.location.search,
+      window.location.hash,
+    );
+    if (reprise.action === "rediriger") {
+      window.location.replace(reprise.url);
+      return;
+    }
+    if (reprise.action === "rester") return;
     const session = obtenirSessionGestionnaire();
     if (!session) return;
     let autorise = false;
