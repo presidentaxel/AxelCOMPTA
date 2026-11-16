@@ -263,3 +263,16 @@ def test_le_navigateur_peut_supprimer() -> None:
         )
         assert reponse.status_code == 200, methode
         assert methode in reponse.headers["access-control-allow-methods"]
+
+
+def test_renvoyer_le_meme_siren_relit_les_registres() -> None:
+    """AXE-951 : « Relire les registres » renvoie le SIREN inchangé."""
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    route = f"/portefeuille/imports/{fiche['id']}"
+    client.patch(route, json={"champs": {"denomination": ""}}, headers=EN_TETE)
+
+    relue = client.patch(route, json={"champs": {"siren": SIREN}}, headers=EN_TETE).json()
+
+    entreprise = {c["cle"]: c["valeur"] for c in _section(relue, "entreprise")["champs"]}
+    assert entreprise["denomination"] == "MK DRIVING"

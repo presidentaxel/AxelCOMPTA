@@ -43,7 +43,7 @@ def fiche_depuis_json(donnees: dict[str, Any]) -> FicheOfficielle:
             "sources": tuple(donnees.get("sources") or ()),
             "dirigeants": tuple(donnees.get("dirigeants") or ()),
             "personnes": tuple(
-                PersonneOfficielle(**personne)
+                PersonneOfficielle(**{**personne, "roles": tuple(personne.get("roles") or ())})
                 for personne in donnees.get("personnes") or ()
                 if isinstance(personne, dict)
             ),

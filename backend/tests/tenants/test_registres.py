@@ -86,7 +86,7 @@ def test_rne_leve_l_ambiguite_sas_sasu_et_lit_capital_et_dirigeants() -> None:
     assert (plusieurs.forme_juridique, unique.forme_juridique) == ("SAS", "SASU")
     assert plusieurs.capital_cts == 100000
     assert plusieurs.dirigeants == ("Karim AMRANI",)
-    assert plusieurs.personnes == (PersonneOfficielle("AMRANI", "Karim"),)
+    assert plusieurs.personnes == (PersonneOfficielle("AMRANI", "Karim", prenom_usuel="Karim"),)
 
 
 def test_une_personne_rne_garde_nom_et_commune_pas_la_rue_ni_la_date() -> None:
@@ -112,7 +112,9 @@ def test_une_personne_rne_garde_nom_et_commune_pas_la_rue_ni_la_date() -> None:
     fiche = fiche_rne(reponse, SIREN, LE)
     assert fiche is not None
     assert fiche.personnes == (
-        PersonneOfficielle("REICHARD", "Arthur Louis", "92160", "ANTONY", "France"),
+        PersonneOfficielle(
+            "REICHARD", "Arthur Louis", "92160", "ANTONY", "France", prenom_usuel="Arthur"
+        ),
     )
     assert fiche.dirigeants == ("Arthur REICHARD",)
 
@@ -228,3 +230,38 @@ def test_le_rne_donne_la_date_de_cloture_et_la_premiere_cloture() -> None:
     assert (illisible.cloture, illisible.premiere_cloture) == (None, None)
     combinee = combiner(fiche_insee(INSEE_SIREN, INSEE_SIRET, SIREN, LE), fiche)
     assert combinee is not None and combinee.cloture == "31/12"
+
+
+def test_une_personne_repetee_au_rne_n_est_lue_qu_une_fois_avec_ses_roles() -> None:
+    """AXE-951, vu au RNE le 16/11 : la même présidente dans deux pouvoirs
+    (même rôle, nom d'usage en plus dans le second), un ancien dirigeant
+    inactif, un prénom composé."""
+    reponse = copy.deepcopy(RNE_SAS_PLURIPERSONNELLE)
+    morale = reponse["formality"]["content"]["personneMorale"]
+
+    def pouvoir(
+        role: str, prenoms: list[str], actif: bool = True, **en_plus: str
+    ) -> dict[str, Any]:
+        description = {"nom": "DUPONT", "prenoms": prenoms, "dateDeNaissance": "1980-01", **en_plus}
+        return {
+            "roleEntreprise": role,
+            "typeDePersonne": "INDIVIDU",
+            "actif": actif,
+            "individu": {"descriptionPersonne": description},
+        }
+
+    morale["composition"]["pouvoirs"] = [
+        pouvoir("73", ["Marie Claire", "Anne"]),
+        pouvoir("73", ["Marie Claire", "Ane"], nomUsage="MARTIN"),  # 2e prénom saisi autrement
+        pouvoir("53", ["Marie Claire", "Anne"]),
+        pouvoir("30", ["Jean"], actif=False),
+    ]
+
+    fiche = fiche_rne(reponse, SIREN, LE)
+
+    assert fiche is not None
+    (personne,) = fiche.personnes
+    assert (personne.prenom_usuel, personne.roles) == ("Marie Claire", ("73", "53"))
+    assert fiche.dirigeants == ("Marie Claire DUPONT",)
+    relue = fiche_depuis_json(fiche_vers_json(fiche))
+    assert relue.personnes == fiche.personnes

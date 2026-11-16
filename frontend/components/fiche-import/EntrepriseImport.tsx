@@ -67,6 +67,25 @@ export function EntrepriseImport({
           />
         </div>
         <ResultatRegistre fiche={fiche} recherche={recherche} erreur={erreur} />
+        {modifiable && fiche.siren && !recherche && (
+          <button
+            type="button"
+            className="mt-2 text-sm font-medium text-ink underline underline-offset-4"
+            onClick={async () => {
+              setRecherche(true);
+              setErreur(null);
+              try {
+                await enregistrer({ siren: fiche.siren ?? "" });
+              } catch (exception) {
+                setErreur(exception instanceof Error ? exception.message : "Erreur inattendue.");
+              } finally {
+                setRecherche(false);
+              }
+            }}
+          >
+            Relire les registres
+          </button>
+        )}
       </div>
       <div className="grid gap-5 sm:grid-cols-2">
         {autres.map((champ) => (
