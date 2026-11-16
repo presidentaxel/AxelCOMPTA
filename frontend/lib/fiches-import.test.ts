@@ -14,6 +14,7 @@ import {
   type ExerciceImport,
   type EmplacementImport,
   libelleStatut,
+  fichesSansDossier,
   nomChauffeur,
   devinerCategorie,
   devinerExercice,
@@ -37,6 +38,18 @@ const SECTION: SectionImport = {
     { cle: "email", libelle: "E-mail", type: "email", obligatoire: true, choix: [], aide: "", valeur: "" },
   ],
 };
+
+test("une fiche sans dossier du portefeuille reste à part", () => {
+  const fiches = [
+    { dossier_id: "DIGI_1" },
+    { dossier_id: null },
+    { dossier_id: "SIREN_9" },
+  ];
+  assert.deepEqual(
+    fichesSansDossier(fiches, [{ dossier_id: "DIGI_1" }]).map((fiche) => fiche.dossier_id),
+    [null, "SIREN_9"],
+  );
+});
 
 test("chaque statut a son libellé et son badge", () => {
   assert.equal(libelleStatut("a_importer"), "À importer");

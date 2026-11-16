@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Aide, pourquoiEnvoi } from "@/components/Aide";
+import { Badge } from "@/components/Badge";
 import { useCanauxEnvoi } from "@/lib/use-canaux-envoi";
 import { IntegrationsDossier } from "@/components/IntegrationsDossier";
 import { SuiviEnvois } from "@/components/SuiviEnvois";
@@ -21,6 +22,7 @@ import {
   lireRolleePortefeuille,
   lirePortefeuilleSession,
   listerDossiers,
+  listerFichesImport,
   listerDossiersRetires,
   listerRegles,
   lireTags,
@@ -49,6 +51,13 @@ import {
   gardeEtape,
   rangEtape,
 } from "@/lib/filtres-portefeuille";
+import {
+  badgeStatut,
+  fichesSansDossier,
+  libelleStatut,
+  nomChauffeur,
+  type FicheImportResume,
+} from "@/lib/fiches-import";
 import { formatDate, formatMontant } from "@/lib/format";
 import { gardeTag, libelleTag, SANS_TAG, TOUS_LES_TAGS, totauxPortefeuille } from "@/lib/tags";
 import type { DossierAgregat, ReglageTags } from "@/lib/types";
@@ -106,6 +115,7 @@ export function EcranEntreprises() {
   const [confirmerRetrait, setConfirmerRetrait] = useState(false);
   const [erreurRetrait, setErreurRetrait] = useState<string | null>(null);
   const [retires, setRetires] = useState<{ dossier_id: string; nom: string }[]>([]);
+  const [fiches, setFiches] = useState<FicheImportResume[]>([]);
 
   const charger = useCallback(() => {
     listerDossiers()
@@ -119,6 +129,14 @@ export function EcranEntreprises() {
       });
   }, [router]);
   const synchro = useSynchronisationPortefeuille(charger);
+  const rechargerFiches = useCallback(() => {
+    listerFichesImport()
+      .then(setFiches)
+      .catch(() => setFiches([]));
+  }, []);
+  useEffect(() => {
+    rechargerFiches();
+  }, [rechargerFiches, dossiers]);
   const chargerRollee = useCallback(() => {
     lireRolleePortefeuille()
       .then(setRollee)
@@ -231,6 +249,15 @@ export function EcranEntreprises() {
   );
 
   const choisi = dossiers?.find((dossier) => dossier.dossier_id === selection) ?? null;
+  const fichesParDossier = useMemo(() => {
+    const parDossier = new Map<string, FicheImportResume>();
+    for (const fiche of fiches) {
+      if (fiche.dossier_id) parDossier.set(fiche.dossier_id, fiche);
+    }
+    return parDossier;
+  }, [fiches]);
+  const enImport = useMemo(() => fichesSansDossier(fiches, dossiers ?? []), [fiches, dossiers]);
+  const ficheChoisie = choisi ? fichesParDossier.get(choisi.dossier_id) : undefined;
 
   return (
     <div className="flex items-start gap-6">
@@ -252,6 +279,25 @@ export function EcranEntreprises() {
         )}
       </div>
       <NouveauxChauffeurs etat={synchro} ecriture={droit.ecriture} />
+      {enImport.length > 0 && (
+        <section className="mt-6 rounded-md border border-border bg-canvas p-4" aria-labelledby="titre-en-import">
+          <h2 id="titre-en-import" className="text-sm font-semibold text-ink">En cours d&apos;import</h2>
+          <p className="mt-1 text-sm text-subtle">
+            Ces entreprises sont aussi dans Imports. Elles rejoignent la liste dès que les informations
+            obligatoires sont là.
+          </p>
+          <ul className="mt-3">
+            {enImport.map((fiche) => (
+              <li key={fiche.id} className="flex items-center justify-between gap-3 border-b border-hairline py-2">
+                <Link href={`/imports/${fiche.id}`} className="text-sm font-medium text-signal hover:underline">
+                  {nomChauffeur(fiche)}
+                </Link>
+                <Badge variant={badgeStatut(fiche.statut)}>{libelleStatut(fiche.statut)}</Badge>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {retires.length > 0 && (
         <section className="mt-6 rounded-md border border-border bg-canvas p-4">
           <h2 className="text-sm font-semibold text-ink">Retirées de la liste</h2>
@@ -447,6 +493,7 @@ export function EcranEntreprises() {
       <ul className="mt-4">
         {tranche.map((dossier) => {
           const bloque = etapeBloquante(dossier.etape_courante, dossier.statut_invitation === "actif");
+          const fiche = fichesParDossier.get(dossier.dossier_id);
           return (
           <li
             key={dossier.dossier_id}
@@ -527,11 +574,19 @@ export function EcranEntreprises() {
                 {formatMontant(dossier.resultat_cts)}
               </span>
             </button>
+            {fiche && (
+              <Link
+                href={`/imports/${fiche.id}`}
+                className="mt-2 shrink-0 text-sm font-medium text-signal hover:underline"
+              >
+                Import · {libelleStatut(fiche.statut)}
+              </Link>
+            )}
           </li>
           );
         })}
       </ul>
-      {dossiers && dossiers.length === 0 && (
+      {dossiers && dossiers.length === 0 && enImport.length === 0 && (
         <p className="py-10 text-sm text-subtle">Aucune entreprise dans ce portefeuille.</p>
       )}
       {dossiers && dossiers.length > 0 && visibles.length === 0 && (
@@ -575,6 +630,14 @@ export function EcranEntreprises() {
               >
                 Anomalies
               </Link>
+              {ficheChoisie && (
+                <Link
+                  href={`/imports/${ficheChoisie.id}`}
+                  className="mt-1 ml-3 inline-block text-sm font-medium text-signal hover:underline"
+                >
+                  Import · {libelleStatut(ficheChoisie.statut)}
+                </Link>
+              )}
             </div>
             <Button
               type="button"
