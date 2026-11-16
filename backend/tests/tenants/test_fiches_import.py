@@ -181,3 +181,21 @@ def test_la_cle_de_tva_suit_la_formule_officielle() -> None:
     """Vérifié auprès de VIES le 16/11 : FR64 443061841 est valide."""
     assert numero_tva("443061841") == "FR64443061841"
     assert numero_tva("12345") is None
+
+
+def test_relire_les_registres_retire_un_associe_lu_en_double_avant() -> None:
+    """AXE-951 : une fiche préremplie avec la même personne deux fois (lecture
+    d'avant) n'en garde qu'une après relecture, si personne ne l'a modifiée."""
+    double = PersonneOfficielle("AGBO", "Toussaint W")
+    avant = dataclasses.replace(_officielle(), personnes=(double, double))
+    fiche = preremplir(_fiche(), avant, "b", LE)
+    assert len(json.loads(fiche.champs["associes"])) == 2
+
+    apres = dataclasses.replace(
+        _officielle(),
+        personnes=(
+            PersonneOfficielle("AGBO", "Toussaint W", prenom_usuel="Toussaint", roles=("73",)),
+        ),
+    )
+    (associe,) = json.loads(preremplir(fiche, apres, "b", LE).champs["associes"])
+    assert (associe["prenom"], associe["fonction"]) == ("Toussaint", "president")

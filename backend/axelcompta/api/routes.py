@@ -8707,7 +8707,9 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
         avant = fiches.lire(tenant_id, fiche_id)
         fiche = modifier_fiche(avant, entree.champs, identite.email, datetime.now(UTC))
-        if fiche.champs.get("siren") != avant.champs.get("siren"):
+        # Un SIREN envoyé, même inchangé, demande de relire les registres
+        # (bouton « Relire les registres », AXE-951).
+        if "siren" in entree.champs or fiche.champs.get("siren") != avant.champs.get("siren"):
             fiche = _lire_registres(fiche, lire, identite.email)
         return _fiche_vue(fiches.enregistrer(fiche))
 

@@ -52,9 +52,19 @@ def test_une_ancienne_saisie_libre_se_lit_comme_une_liste_vide() -> None:
 
 
 def test_les_dirigeants_du_registre_deviennent_des_associes_a_completer() -> None:
-    lignes = json.loads(associes_du_registre([("DUPONT", "Karim Ali")], "SASU"))
+    lignes = json.loads(
+        associes_du_registre(
+            [("DUPONT", "Marie Claire", ("73",)), ("MARTIN", "Jean", ("53",))], "SARL"
+        )
+    )
     assert lignes == [
-        {"prenom": "Karim", "nom": "DUPONT", "fonction": "president", "pourcentage": ""}
+        {"prenom": "Marie Claire", "nom": "DUPONT", "fonction": "president", "pourcentage": ""},
+        {
+            "prenom": "Jean",
+            "nom": "MARTIN",
+            "fonction": "gerant",
+            "pourcentage": "",
+        },  # 53 : non deviné
     ]
     assert associes_du_registre([], "SASU") == ""
 
