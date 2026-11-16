@@ -31,6 +31,7 @@ import {
 } from "./auth-chauffeur";
 import type {
   AlerteAnomalie,
+  CompteBancaireVue,
   EtatCategorisation,
   DossierAgregat,
   EntreeQuarantaine,
@@ -544,6 +545,49 @@ export async function lireManquesRapprochementExpert(dossierId: string): Promise
     throw new ApiError(`HTTP ${reponse.status}`, reponse.status);
   }
   return ((await reponse.json()) as { manques: string[] }).manques;
+}
+
+/** AXE-956 : comptes bancaires d'une entreprise, pour l'expert habilité.
+ * Un gestionnaire non expert reçoit `ModeExpertRefuse`. */
+export async function lireComptesBancairesExpert(dossierId: string): Promise<CompteBancaireVue[]> {
+  const reponse = await requeteGestionnaire(`/expert/dossiers/${dossierId}/comptes-bancaires`);
+  if (reponse.status === 401) {
+    throw new ErreurAuthGestionnaire();
+  }
+  if (reponse.status === 403) {
+    await refusExpert(reponse);
+  }
+  if (!reponse.ok) {
+    throw erreurApi(await lireCorps(reponse), reponse);
+  }
+  return (await reponse.json()) as CompteBancaireVue[];
+}
+
+/** AXE-956 : l'expert retient (activité) ou écarte (personnel) un compte à
+ * la place du dirigeant. Retourne les comptes à jour. */
+export async function deciderCompteBancaireExpert(
+  dossierId: string,
+  compte: string,
+  retenu: boolean,
+): Promise<CompteBancaireVue[]> {
+  const reponse = await requeteGestionnaire(
+    `/expert/dossiers/${dossierId}/comptes-bancaires/${compte}/decision`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ retenu }),
+    },
+  );
+  if (reponse.status === 401) {
+    throw new ErreurAuthGestionnaire();
+  }
+  if (reponse.status === 403) {
+    await refusExpert(reponse);
+  }
+  if (!reponse.ok) {
+    throw erreurApi(await lireCorps(reponse), reponse);
+  }
+  return (await reponse.json()) as CompteBancaireVue[];
 }
 
 /** Impute l'écriture et retourne les sujets à jour de ce dossier seul. */
