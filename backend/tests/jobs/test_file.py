@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from axelcompta.jobs.executer import executer
@@ -107,3 +109,43 @@ def test_un_job_en_echec_ne_double_pas_une_demande_qui_attend() -> None:
     seconde = file.demander("t", TYPE_SYNCHRO)
     file.echouer(premiere.id)
     assert (file.lire(premiere.id).statut, file.lire(seconde.id).statut) == ("echec", "en_attente")
+
+
+MIDI = datetime(2026, 11, 16, 12, 0, tzinfo=UTC)
+
+
+def test_un_job_abandonne_par_son_worker_revient_en_attente() -> None:
+    """AXE-958 : le worker tué au redéploiement laissait le job en cours."""
+    file = FileMemoire()
+    file.deposer("j", "ten", TYPE_SYNCHRO, "{}")
+    file.prendre("worker", MIDI)
+    assert file.relacher_abandonnes(MIDI + timedelta(hours=3)) == ["j"]
+    assert file.lire("j").statut == "en_attente"
+    assert file.prendre("worker", MIDI) is not None
+
+
+def test_un_job_en_cours_depuis_peu_n_est_pas_touche() -> None:
+    file = FileMemoire()
+    file.deposer("j", "ten", TYPE_SYNCHRO, "{}")
+    file.prendre("worker", MIDI)
+    assert file.relacher_abandonnes(MIDI + timedelta(minutes=30)) == []
+    assert file.lire("j").statut == "en_cours"
+
+
+def test_un_job_abandonne_sans_essai_restant_passe_en_echec() -> None:
+    file = FileMemoire()
+    file.deposer("j", "ten", TYPE_SYNCHRO, "{}")
+    for _ in range(3):
+        file.prendre("worker", MIDI)
+        file.relacher_abandonnes(MIDI + timedelta(hours=3))
+    assert file.lire("j").statut == "echec"
+
+
+def test_un_job_abandonne_dont_la_demande_attend_deja_passe_en_echec() -> None:
+    """La même demande, déposée pendant le job (AXE-921), refera le travail."""
+    file = FileMemoire()
+    file.deposer("j", "ten", TYPE_SYNCHRO, "{}")
+    file.prendre("worker", MIDI)
+    file.deposer("k", "ten", TYPE_SYNCHRO, "{}")
+    file.relacher_abandonnes(MIDI + timedelta(hours=3))
+    assert (file.lire("j").statut, file.lire("k").statut) == ("echec", "en_attente")

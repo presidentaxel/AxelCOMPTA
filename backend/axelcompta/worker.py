@@ -26,7 +26,9 @@ from datetime import UTC, date, datetime
 
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.fiches_import_portefeuille import completer_fiches
 from axelcompta.jobs.file import (
+    ERREUR_ABANDON,
     TYPE_IMPORT_DOSSIERS,
     TYPE_RAPPELS,
     TYPE_RAPPROCHEMENT_ROLLEE,
@@ -49,6 +51,8 @@ from axelcompta.rapprochement_rollee_service import (
     rapprocher_maintenant,
     relever_portefeuille_postgres,
 )
+from axelcompta.registres_officiels import lecteur_depuis_env
+from axelcompta.surveillance import sentinelle_sentry
 from axelcompta.synchro_digifactory import (
     TYPE_DIGIFACTORY,
     ResultatDossier,
@@ -100,6 +104,8 @@ class Dependances:
     rapprocher_rollee: Callable[[TenantId, str | None], str] | None = None
     # Bouton « Synchroniser » : relit Rollee pour chaque dossier relié.
     relever_rollee: Callable[[TenantId], str] | None = None
+    # AXE-952 : une fiche d'import par dossier, complétée de ce qu'on sait.
+    completer_fiches: Callable[[TenantId], str] | None = None
 
 
 def _stockee(proposition: Proposition, maintenant: datetime) -> PropositionStockee:
@@ -189,9 +195,10 @@ def synchroniser_portefeuille_suivi(
         retenus(tous, etat, "synchro"), exclus(tous, etat, "categorisation")
     )
     rollee = deps.relever_rollee(tenant_id) if deps.relever_rollee is not None else None
+    fiches = deps.completer_fiches(tenant_id) if deps.completer_fiches is not None else None
     deps.prechauffer(tous)
     texte = resume(len(crees), propositions, resultats)
-    return f"{texte} · {rollee}" if rollee else texte
+    return " · ".join(m for m in (texte, rollee, fiches) if m)
 
 
 def _quantite(nombre: int, singulier: str, pluriel: str) -> str:
@@ -315,14 +322,18 @@ def dependances_reelles() -> Dependances:
         traiter_rollee=lambda t: traiter_evenements(suivi_postgres(engine), t),
         rapprocher_rollee=lambda t, d: rapprocher_maintenant(engine, t, d),
         relever_rollee=lambda t: relever_portefeuille_postgres(engine, t),
+        completer_fiches=lambda t: completer_fiches(engine, t, lecteur_depuis_env()),
     )
 
 
 def main() -> int:
     """Une passe : toutes les demandes en attente, puis s'arrête (le
     planificateur relance chaque minute, sous `flock`)."""
+    sentinelle = sentinelle_sentry()
     assurer_modele()
     file = FilePostgres(engine_depuis_env())
+    for identifiant in file.relacher_abandonnes():
+        print(f"[{identifiant}] relâché : {ERREUR_ABANDON}", flush=True)
     deps = dependances_reelles()
     while (job := file.prendre("worker")) is not None:
         try:
@@ -330,6 +341,7 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001 — l'erreur est gardée et affichée
             file.echouer(job.id, f"{type(exc).__name__}: {exc}")
             print(f"[{job.id}] échec : {exc}", flush=True)
+            sentinelle.job_en_echec(exc, job.type, job.id)
         else:
             file.terminer(job.id, resultat)
             print(f"[{job.id}] {resultat}", flush=True)

@@ -251,7 +251,15 @@ class SupabaseCompteRepository(CompteRepository):
         if utilisateur.get("email_confirmed_at") or utilisateur.get("confirmed_at"):
             raise InvitationFermee("Le compte est déjà ouvert.")
         email = str(utilisateur["email"])
-        reponse = self._client.post("/resend", json={"type": "signup", "email": email})
+        # Même page que l'invitation d'origine : sans `redirect_to`, Supabase
+        # renvoie à l'adresse du site et le lien n'ouvre pas le mot de passe.
+        params = {}
+        retour = url_retour_invitation(_CHEMIN_INVITATION_CHAUFFEUR)
+        if retour is not None:
+            params["redirect_to"] = retour
+        reponse = self._client.post(
+            "/resend", params=params, json={"type": "signup", "email": email}
+        )
         reponse.raise_for_status()
         return Invitation(dossier_id=dossier_id, email=email, statut=StatutInvitation.INVITE)
 

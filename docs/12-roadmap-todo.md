@@ -24,8 +24,12 @@ Rollee = un virement » ne tenait pas. Les recettes des plateformes sont
 maintenant rapprochées de la banque **semaine par semaine**, et écrites
 sur les comptes du schéma de l'expert-comptable (4671 Uber, 4672 Bolt,
 530, 708, 6222). Pour la première fois, des recettes Rollee sont au grand
-livre de dossiers réels : MK DRIVING et B'CARS SERVICES. Ce qui manque
-pour la V1 : **un mois réel exporté** (AXE-733), et la mise en production.
+livre de dossiers réels : MK DRIVING et B'CARS SERVICES. Le 16/11, 15 PR
+de plus (#186 à #200) ont livré les fiches d'import des chauffeurs et
+**mis l'application en production** : un push sur la branche `prod`
+déploie sur un droplet (AXE-427). Ce qui manque pour la V1 : **un mois
+réel exporté** (AXE-733), et la restauration chronométrée des sauvegardes
+(AXE-811).
 
 **Où on en est par rapport au plan.** Projet « V1 prod » (cible
 **31/12/2026**, initiative « Prod-ready trio → Market janv. 2027 ») :
@@ -33,15 +37,31 @@ l'étape 3 du plan de novembre (Rollee en production) est faite pour les
 dossiers reliés : 9 dossiers sur 15 ont un user Rollee. **Pas encore
 fait** : la première synchro de tous les chauffeurs réels (AXE-728) et le
 mois exporté (AXE-733). Aucun dossier `DIGI_` n'a encore été tranché ni
-clôturé de bout en bout.
+clôturé de bout en bout. L'étape de décembre « branche prod et
+déploiement continu » (AXE-427) est faite en avance, le 16/11.
 
-**La base réelle est à jour du code au 16/11** (migration `a4c8e1d73b29`,
-appliquée le 16/11). Le pilote tourne sur la prod depuis le 14/11, avec
+**L'application est en ligne depuis le 16/11** (PR #190 et #195). Un
+droplet fait tourner l'API, le front, Caddy (HTTPS), le worker (chaque
+minute) et les tâches planifiées (chaque heure), avec `supercronic` dans
+le conteneur `worker`. Postgres reste sur Supabase. Un push sur `prod`
+envoie le code, passe les migrations, puis remplace les conteneurs ; si
+les migrations échouent, l'API en service n'est pas arrêtée. Premier
+déploiement vert le 16/11 à 15:54 : `https://api.axelproject.fr/sante`
+répond `{"statut":"ok"}`, le front est sur `https://compta.axelproject.fr`.
+La PR #200 (AXE-952) est sur `main`, pas encore sur `prod`. Reste
+d'AXE-811 : ADR-003 en « décidé », restauration chronométrée, runbook.
+Mode d'emploi : [backend/README.md](../backend/README.md), « Déployer la
+production ».
+
+**La base réelle est à jour du code au 16/11** (migration `c8a4f1d2e7b5`,
+fiches d'import ; depuis le 16/11, le déploiement de `prod` passe les
+migrations lui-même). Le pilote tourne sur la prod depuis le 14/11, avec
 l'accord de Louis : chaque écriture en simulation d'abord, puis appliquée
 après son OK. Reste à appliquer : la reprise des virements internes
-(AXE-930, 484 OD simulées). Hors Rollee, AXE-842 (crontab, clés INSEE/RNE,
-S3, Anthropic, reprises du 10 au 13/11) et AXE-850 (écritures restées au
-471) restent ouverts. Mode d'emploi :
+(AXE-930, 484 OD simulées). Hors Rollee, AXE-842 (clés INSEE/RNE, S3,
+Anthropic, reprises du 10 au 13/11) et AXE-850 (écritures restées au 471)
+restent ouverts. Le crontab d'AXE-842 n'attend plus le poste de Louis : le
+worker et les tâches tournent sur le droplet. Mode d'emploi :
 [backend/README.md](../backend/README.md), « Mettre en route les tickets
 du 13 au 16/11 ».
 
@@ -61,29 +81,79 @@ du 13 au 16/11 ».
 Client de référence V1 : Serenity Gestion, installé étape par étape avant
 toute autre vente.
 
-### En cours depuis le 2026-11-16 : reprise des chauffeurs
+### Fait le 2026-11-16 (PR #186 à #200)
 
-- **Fiches d'import** (AXE-941) : menu « Imports » du gestionnaire. Une
-  fiche par chauffeur, remplie catégorie par catégorie (entreprise,
-  dirigeant, fiscalité, reprise comptable, banque, plateformes, documents),
+**Mise en production (AXE-427 fait, AXE-811 en cours, AXE-948)**
+- Déploiement au push de la branche `prod` (#190) : workflow
+  « Déploiement production », droplet préparé par
+  `deploy/bootstrap-droplet.sh`, `docker-compose.prod.yml`, migrations
+  avant le remplacement des conteneurs. Première promotion de `main` vers
+  `prod` par PR, en merge commit (#195) : `prod` garde deux correctifs
+  absents de `main` (textes juridiques dans l'image web, pack VTC lu par
+  la file expert).
+- Le navigateur peut supprimer : le CORS autorise `DELETE` et l'adresse
+  publique du front (AXE-948, #193). Retirer un document, un membre, une
+  invitation ou une règle de rappel était bloqué.
+- Les treize modèles HTML des e-mails d'authentification Supabase
+  (invitation, connexion, sécurité) sont dans `deploy/emails/` (AXE-955,
+  #199).
+
+**Reprise des chauffeurs : fiches d'import (AXE-941, 946, 947, 950 à 952,
+955)**
+- Menu **Imports** du gestionnaire (AXE-941, #188). Une fiche par
+  chauffeur, remplie catégorie par catégorie (entreprise, dirigeant,
+  fiscalité, reprise comptable, banque, plateformes, documents),
   préremplie par l'INSEE et le RNE avec le SIREN, y compris la date de
   clôture et la date de première clôture. Les exercices à reprendre depuis
   2024 et leurs pièces se calculent seuls. Statut à importer → en
   traitement → traitée ; les documents sont gardés chez nous. La fiche
   ajoute le chauffeur au portefeuille ; il est invité plus tard.
-- Fiche v2 (AXE-946) : plus rapide (une connexion par action, catégories
-  sans rechargement, enregistrement champ par champ), catégories à gauche,
-  « SIREN ou SIRET » avec recherche automatique, associés en lignes,
-  comptes Rollee cherchés seuls avec recherche manuelle en secours,
-  glisser-déposer des documents avec un type par fichier.
-- Accès d'un expert-comptable modifiables dans Équipe (AXE-945).
-- Fiche v3 (AXE-947) : TVA et exercice en cours déduits, contact
+- Fiche v2 (AXE-946, #191) : plus rapide (une connexion par action,
+  catégories sans rechargement, enregistrement champ par champ),
+  catégories à gauche, « SIREN ou SIRET » avec recherche automatique,
+  associés en lignes, comptes Rollee cherchés seuls avec recherche
+  manuelle en secours, glisser-déposer des documents avec un type par
+  fichier.
+- Fiche v3 (AXE-947, #192) : TVA et exercice en cours déduits, contact
   Digifactory cherché seul (sinon « pas encore connecté »), un emplacement
   par document attendu, statuts calculés (fiche et documents), FEC et QIF
   lus au dépôt, annuler un import.
+- La liasse à récupérer est celle du **dernier exercice déposé**, pas
+  celle de l'exercice que nous allons déclarer (AXE-950, #194). Date
+  limite de dépôt : clôture + 3 mois + 15 jours, ou, pour une clôture au
+  31/12, deuxième jour ouvré après le 1er mai + 15 jours.
+- Dirigeants du RNE lus une fois par personne, sans les anciens
+  dirigeants, prénom composé gardé entier (AXE-951, #196).
+- « Début de l'historique bancaire » se remplit avec la date de la
+  première écriture Digifactory du contact relié (AXE-955, #199). Point de
+  départ pour AXE-833 (mois d'avant la connexion Digifactory).
+- **Chaque entreprise déjà au portefeuille a sa fiche** (AXE-952, #200),
+  créée et complétée à chaque synchro avec ce qu'on sait déjà : dossier,
+  identité saisie, Rollee, banque, INSEE et RNE. Sur `main`, pas encore
+  sur `prod`.
 - Suites : relier la banque et Rollee depuis la fiche, lire le FEC pour le
-  report à nouveau (AXE-942) ; OCR des liasses (AXE-943).
-- Un admin déclaré expert-comptable garde ses droits d'admin (AXE-940).
+  report à nouveau (AXE-942, en cours) ; OCR des liasses (AXE-943).
+
+**Équipe et accès (AXE-940, 945, 953)**
+- Un admin déclaré expert-comptable garde ses droits d'admin (AXE-940,
+  #187).
+- Les accès d'un expert-comptable déjà déclaré se modifient dans Équipe
+  (AXE-945, #189).
+- Le lien d'invitation ouvre le choix du mot de passe, puis connecte : un
+  membre arrive sur `/auth/lien`, un chauffeur sur
+  `/chauffeur/accepter-invitation`. Les experts-comptables sont sous
+  « Inviter quelqu'un », une recherche filtre les membres, et un membre
+  retiré est déconnecté, même après un rechargement (AXE-953, #197).
+
+**CI (AXE-954, #198)**
+- Les tests rapides (1 666, sur tous les cœurs avec `pytest-xdist`),
+  l'intégration Postgres et le frontend tournent en parallèle. Le contrôle
+  exigé garde son nom `backend (lint · types · tests)`.
+
+**Linear remis à jour le 16/11** : AXE-953, 954 et 955 créés après coup
+pour les PR #197, #198 et #199 ; AXE-427 terminé ; AXE-770, 811, 842, 939
+et 942 en cours ; AXE-778 (landing) fermé en doublon d'AXE-949 ; point
+d'avancement du projet publié (le précédent datait du 06/10).
 
 ### Fait du 2026-11-13 au 2026-11-16 (PR #166 à #185)
 
@@ -192,7 +262,8 @@ toute autre vente.
 - Webhooks signés `POST /webhooks/rollee/{branchement}` et rattrapage
   quotidien à 4 h (AXE-820, #135). Le gestionnaire prépare le webhook de
   chaque compte dans Intégrations (adresse, secret, cases à cocher chez
-  Rollee), une fois l'API en ligne (AXE-811).
+  Rollee), une fois l'API en ligne (AXE-811). L'API est en ligne depuis
+  le 16/11 : les webhooks peuvent être déclarés.
 - Revenus → rapprochement → **OD de ventilation** 706 HT, 44571, 622, 44566
   (autoliquidation Bolt), sans toucher au virement ni au 512 (AXE-821,
   #136). Golden test doc 13 §5.3 au centime ; rejouer n'écrit rien. États :
@@ -483,6 +554,11 @@ sans Rollee. Les cinq tickets Rollee sont faits depuis le 12/11 (PR #132 à
 - Questions à Rollee (Pierrick, AXE-939) : la commission Uber (0 chez
   Rollee), les jours sans course non remontés (MK DRIVING, 2 € le 24/10),
   les comptes de flotte muets, trois profils toujours en erreur 500.
+- AXE-811 : la production tourne depuis le 16/11 ; restent l'ADR-003 en
+  « décidé » (région, offre de sauvegarde, CLOUD Act), une restauration
+  chronométrée (RTO, RPO) et le runbook dans `docs/`.
+- Fiches d'import : premières fiches remplies sur la prod, et AXE-942
+  (banque, Rollee et FEC depuis la fiche).
 - AXE-842 : appliquer en production le reste de ce qui est mergé depuis le
   05/11 (crontab, clés, reprises du 10 au 13/11). Décision de Louis du
   06/11 : étape par étape, chaque reprise en simulation, puis appliquée
@@ -509,9 +585,11 @@ AXE-424, et tout le cœur VTC ci-dessus. Reste, dans l'ordre :
    exporté.
 
 **Décembre — prod fiable au 31/12** (AXE-770, échéance 15/12)
-- AXE-427 : branche prod et déploiement continu.
-- AXE-811 : hébergement de production (ADR-003) et restauration
-  chronométrée. Les webhooks Rollee l'attendent (adresse publique).
+- ~~AXE-427 : branche prod et déploiement continu~~ : fait le 16/11
+  (#190, #195).
+- AXE-811 : l'hébergement est fait (droplet, 16/11). Reste : ADR-003 en
+  « décidé » et restauration chronométrée. Les webhooks Rollee peuvent
+  maintenant être déclarés (adresse publique de l'API).
 - AXE-441 : décider du périmètre de la signature qualifiée RGS (devis
   Yousign/Docusign, ADR-004), puis le circuit clôture → archive.
 
@@ -550,7 +628,8 @@ sur une référence provisoire). Détail plus haut.
 **Reste à faire**
 - AXE-801 : versements Uber/Bolt depuis les relevés CSV (secours de
   Rollee).
-- Production : AXE-811 (hébergement et restauration), AXE-813 (CGU/CGV, DPA
+- Production : AXE-811 (restauration chronométrée et ADR-003 ;
+  l'hébergement est fait le 16/11), AXE-813 (CGU/CGV, DPA
   et engagement de l'expert-comptable relus par un juriste ; les textes
   sont rédigés, AXE-859).
 - Calendrier : AXE-815 (relecture par un expert-comptable **avant le
@@ -591,6 +670,13 @@ sur une référence provisoire). Détail plus haut.
   rapprochements restent donc fermés dans le mode expert.
 - Cliquer sur **Synchroniser** (code du 16/11 en place).
 - Valider l'application de la reprise des virements internes (AXE-930).
+- Déclarer chez Rollee le webhook de chaque compte (Intégrations › Rollee),
+  maintenant que l'API a une adresse publique.
+- Compléter l'hébergeur applicatif dans les textes juridiques
+  (`mentions-legales.md`, `confidentialite.md`, aujourd'hui « À
+  COMPLÉTER ») : fournisseur et région du droplet.
+- Promouvoir `main` vers `prod` pour livrer AXE-952 (PR `main` → `prod`,
+  en merge commit).
 
 ### Ce qui reste vrai de septembre
 
@@ -912,7 +998,8 @@ de bout en bout, liasse conforme, FEC accepté, signature réelle effectuée sur
 - [ ] Chaos : pannes LLM/Digifactory/worker → reprise propre prouvée.
 - [ ] Test d'intrusion externe + corrections.
 - [ ] Runbook incident + exercice sur table (doc 10 §6).
-- [ ] Restauration de sauvegarde chronométrée.
+- [ ] Restauration de sauvegarde chronométrée (AXE-811 ; l'hébergement de
+      production est fait le 2026-11-16).
 - [ ] Questionnaire sécurité du client complété ; SSO si exigé.
 - [ ] Période de marche en double : la compta pilote produite en parallèle de
       l'existant pendant 2-3 mois, écarts analysés → c'est LE test de vérité.

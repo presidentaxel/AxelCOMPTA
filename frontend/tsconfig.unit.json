@@ -31,6 +31,8 @@
     "lib/messages-mfa.test.ts",
     "lib/desinscription.ts",
     "lib/desinscription.test.ts",
+    "lib/destination-lien.ts",
+    "lib/destination-lien.test.ts",
     "lib/mfa-code.ts",
     "lib/mfa.test.ts",
     "lib/tva.ts",

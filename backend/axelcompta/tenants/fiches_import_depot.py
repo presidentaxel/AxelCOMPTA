@@ -40,6 +40,11 @@ class FichesImportRepository(Protocol):
         """`FicheIntrouvable` si elle n'est pas de ce portefeuille."""
         ...
 
+    def toutes(self, tenant_id: TenantId) -> list[FicheImport]:
+        """Toutes les fiches, annulées comprises (AXE-952 : une fiche annulée
+        ne revient pas à la synchro)."""
+        ...
+
     def instantane(self, tenant_id: TenantId, fiche_id: str) -> Instantane: ...
 
     def enregistrer(self, fiche: FicheImport) -> Instantane:
@@ -79,6 +84,9 @@ class FichesImportMemoire:
         ]
         siennes.sort(key=lambda f: f.maj_le or f.cree_le, reverse=True)
         return [(f, self._documents(tenant_id, f.id)) for f in siennes]
+
+    def toutes(self, tenant_id: TenantId) -> list[FicheImport]:
+        return [f for f in self.fiches.values() if f.tenant_id == tenant_id]
 
     def lire(self, tenant_id: TenantId, fiche_id: str) -> FicheImport:
         fiche = self.fiches.get(fiche_id)

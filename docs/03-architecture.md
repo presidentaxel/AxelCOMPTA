@@ -27,8 +27,14 @@
 >   d'Anthropic (AXE-887, éteinte par défaut).
 > - Depuis le 2026-11-05, la base Supabase `AxelCompta` est la base réelle
 >   du portefeuille Serenity ; aucun dossier ni compte de démo n'y reste
->   (doc 17). Isolation stricte (AXE-810), hébergement de production à
->   trancher (AXE-811).
+>   (doc 17). Isolation stricte (AXE-810).
+> - Depuis le 2026-11-16, l'application est en production sur un droplet
+>   DigitalOcean (API, front, Caddy, worker et tâches planifiées en
+>   conteneurs, `docker-compose.prod.yml`). Postgres reste sur Supabase.
+>   Un push sur la branche `prod` déploie, migrations d'abord (AXE-427).
+>   Le §8 et le §9 (OVH en production) ne sont donc pas suivis pour le
+>   calcul ; décision à écrire dans ADR-003, avec la restauration
+>   chronométrée (AXE-811).
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-09-24
 

@@ -63,9 +63,9 @@ import {
 import {
   PastillesTags,
   PoseEnLot,
-  ReglageExclusions,
   TagsDuDossier,
 } from "@/components/TagsEntreprises";
+import { ComptesBancairesExpert } from "@/components/ComptesBancairesExpert";
 
 const COMPTES_A_CHOISIR = "a_choisir";
 // AXE-911 : filtre sur l'état du lien Rollee de chaque entreprise.
@@ -283,16 +283,6 @@ export function EcranEntreprises() {
           </ul>
         </section>
       )}
-      {reglageTags && (
-        <ReglageExclusions
-          reglage={reglageTags}
-          ecriture={droit.ecriture}
-          onModifie={(reglage) => {
-            setReglageTags(reglage);
-            charger();
-          }}
-        />
-      )}
       {dossiers ? (
         <dl className="mt-8 flex flex-wrap gap-x-12 gap-y-4">
           <Total
@@ -402,6 +392,11 @@ export function EcranEntreprises() {
             ]}
             onChoisir={(valeur) => ecrire({ tag: valeur })}
           />
+        )}
+        {reglageTags && (
+          <Link href="/portefeuille/tags" className="text-sm whitespace-nowrap text-signal hover:underline">
+            Gérer les tags
+          </Link>
         )}
         <Filtre
           libelle="Tri"
@@ -654,6 +649,13 @@ export function EcranEntreprises() {
                 )}
               </dl>
             </section>
+
+            <ComptesBancairesExpert
+              key={choisi.dossier_id}
+              dossierId={choisi.dossier_id}
+              phraseAttente={phraseComptesAChoisir(choisi)}
+              onDecide={charger}
+            />
 
             {reglageTags && (
               <div className="mt-5 border-t border-border pt-4">

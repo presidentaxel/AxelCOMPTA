@@ -11,6 +11,7 @@
  */
 
 import { ApiError } from "./api";
+import { repriseLienAuth } from "./destination-lien";
 import { laisserMessageConnexion, messageConnexionEnAttente } from "./message-connexion";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
@@ -95,6 +96,23 @@ export function renvoyerVersConnexion<S extends Jetons>(
   espace: EspaceAuthentifie<S>,
   motif?: string,
 ): never {
+  // Un lien de réinitialisation ou d'invitation dépose ses jetons dans le
+  // fragment, souvent sur l'accueil. Partir vers la connexion ici les
+  // efface : la personne n'arrive jamais à choisir son mot de passe.
+  if (typeof window !== "undefined") {
+    const reprise = repriseLienAuth(
+      window.location.pathname,
+      window.location.search,
+      window.location.hash,
+    );
+    if (reprise.action === "rediriger") {
+      window.location.replace(reprise.url);
+      throw new SessionExpiree(motif ?? "Votre session a expiré. Reconnectez-vous.");
+    }
+    if (reprise.action === "rester") {
+      throw new SessionExpiree(motif ?? "Votre session a expiré. Reconnectez-vous.");
+    }
+  }
   espace.effacer();
   if (motif) laisserMessageConnexion(motif);
   if (typeof window !== "undefined") {
