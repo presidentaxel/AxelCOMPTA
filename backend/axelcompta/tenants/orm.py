@@ -19,6 +19,7 @@ from sqlalchemy import (
     Identity,
     Index,
     Integer,
+    LargeBinary,
     String,
     Table,
     Text,
@@ -404,4 +405,46 @@ branchements_dossier = Table(
     Column("type", String, primary_key=True),
     Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False),
     Column("branchement_id", String, ForeignKey("branchements.id"), nullable=False),
+)
+
+
+# Fiches d'import d'un chauffeur (AXE-941) : une par chauffeur à reprendre,
+# dans le portefeuille du gestionnaire qui l'a ouverte. Les champs saisis
+# sont un JSON clé → valeur (catégories de `tenants/fiches_import.py`).
+fiches_import = Table(
+    "fiches_import",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False, index=True),
+    Column("nom", String, nullable=False),
+    Column("prenom", String, nullable=False),
+    Column("statut", String, nullable=False),
+    Column("champs", JSON, nullable=False),
+    Column("registre", JSON, nullable=True),
+    Column("dossier_id", String, nullable=True),
+    Column("cree_par", String, nullable=False),
+    Column("cree_le", DateTime(timezone=True), nullable=False),
+    Column("maj_par", String, nullable=False),
+    Column("maj_le", DateTime(timezone=True), nullable=False),
+    CheckConstraint(
+        "statut IN ('a_importer', 'en_traitement', 'traitee')", name="fiches_import_statut"
+    ),
+)
+
+# Documents déposés sur une fiche d'import, gardés chez nous (AXE-941).
+documents_import = Table(
+    "documents_import",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("fiche_id", String, ForeignKey("fiches_import.id"), nullable=False, index=True),
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False),
+    Column("categorie", String, nullable=False),
+    Column("exercice", Integer, nullable=True),
+    Column("nom_fichier", String, nullable=False),
+    Column("type_mime", String, nullable=False),
+    Column("taille", Integer, nullable=False),
+    Column("empreinte", String, nullable=False),
+    Column("contenu", LargeBinary, nullable=False),
+    Column("depose_par", String, nullable=False),
+    Column("depose_le", DateTime(timezone=True), nullable=False),
 )

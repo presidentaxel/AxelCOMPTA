@@ -313,6 +313,26 @@ from axelcompta.tenants.contacts_proposes import ContactsProposesRepository
 from axelcompta.tenants.contacts_proposes_postgres import PostgresContactsProposes
 from axelcompta.tenants.exercices import ExerciceRepository
 from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
+from axelcompta.tenants.fiches_import import (
+    CATEGORIES_DOCUMENTS,
+    DocumentImport,
+    FicheImport,
+    document_import,
+    nouvelle_fiche,
+    preremplir,
+)
+from axelcompta.tenants.fiches_import import SECTIONS as SECTIONS_IMPORT
+from axelcompta.tenants.fiches_import import changer_statut as changer_statut_import
+from axelcompta.tenants.fiches_import import modifier as modifier_fiche
+from axelcompta.tenants.fiches_import_depot import FichesImportRepository
+from axelcompta.tenants.fiches_import_etat import (
+    dossier_prevu,
+    etat_sections,
+    ligne_dossier,
+    manque_pour_creer,
+)
+from axelcompta.tenants.fiches_import_etat import exercices as exercices_import
+from axelcompta.tenants.fiches_import_postgres import PostgresFichesImport
 from axelcompta.tenants.franchise_tva import MillesimeInconnu, suivre_franchise
 from axelcompta.tenants.identite_json import identite_vers_json
 from axelcompta.tenants.identite_saisie import (
@@ -8357,6 +8377,447 @@ def _enregistrer_routes_import_dossiers(app: FastAPI) -> None:
         return _synchronisation_vue(demandes.dernier(str(tenant_id), TYPE_IMPORT_DOSSIERS))
 
 
+# --- Fiches d'import d'un chauffeur (AXE-941) --------------------------------
+
+TAILLE_MAX_DOCUMENT_IMPORT = 20 * 1024 * 1024  # 20 Mo
+EXTENSIONS_IMPORT = frozenset(
+    {".pdf", ".csv", ".txt", ".xml", ".xls", ".xlsx", ".ods", ".jpg", ".jpeg", ".png", ".zip"}
+)
+
+
+def get_fiches_import() -> FichesImportRepository:
+    """Postgres, rôle web, RLS par portefeuille ; `FichesImportMemoire` en test."""
+    return PostgresFichesImport(_engine())
+
+
+FichesImportDep = Annotated[FichesImportRepository, Depends(get_fiches_import)]
+LireFicheOfficielleDep = Annotated[LireFicheOfficielle | None, Depends(get_lire_fiche_officielle)]
+
+
+class ChoixVue(BaseModel):
+    cle: str
+    libelle: str
+
+
+class ChampImportVue(BaseModel):
+    cle: str
+    libelle: str
+    type: str
+    obligatoire: bool
+    choix: list[ChoixVue]
+    aide: str
+    valeur: str
+
+
+class SectionImportVue(BaseModel):
+    cle: str
+    libelle: str
+    description: str
+    complet: bool
+    manquants: list[str]
+    champs: list[ChampImportVue]
+
+
+class PieceImportVue(BaseModel):
+    categorie: str
+    libelle: str
+    attendue: bool
+    recue: bool
+
+
+class ExerciceImportVue(BaseModel):
+    annee: int
+    debut: str
+    fin: str
+    etat: str
+    pieces: list[PieceImportVue]
+
+
+class DocumentImportVue(BaseModel):
+    id: str
+    categorie: str
+    libelle: str
+    exercice: int | None
+    nom_fichier: str
+    taille: int
+    depose_par: str
+    depose_le: str
+
+
+class FicheImportResumeVue(BaseModel):
+    id: str
+    nom: str
+    prenom: str
+    denomination: str | None
+    siren: str | None
+    statut: str
+    sections_completes: int
+    sections: int
+    dossier_id: str | None
+    maj_par: str
+    maj_le: str
+
+
+class FicheImportVue(FicheImportResumeVue):
+    sections_detail: list[SectionImportVue]
+    exercices: list[ExerciceImportVue]
+    documents: list[DocumentImportVue]
+    categories_documents: list[ChoixVue]
+    registre_lu_le: str | None
+    registre_sources: list[str]
+    manque_pour_creer: list[str]
+    dossier_prevu: str | None
+    dossier_cree: bool
+
+
+class NouvelleFicheEntree(BaseModel):
+    nom: str = ""
+    prenom: str = ""
+    siren: str = ""
+
+
+class ChampsFicheEntree(BaseModel):
+    champs: dict[str, str]
+
+
+class StatutFicheEntree(BaseModel):
+    statut: str
+
+
+def _resume_fiche(fiche: FicheImport, documents: list[DocumentImport]) -> FicheImportResumeVue:
+    etats = etat_sections(fiche, documents, date.today())
+    return FicheImportResumeVue(
+        id=fiche.id,
+        nom=fiche.nom,
+        prenom=fiche.prenom,
+        denomination=fiche.champs.get("denomination"),
+        siren=fiche.champs.get("siren"),
+        statut=fiche.statut,
+        sections_completes=sum(1 for e in etats if e.complet),
+        sections=len(etats),
+        dossier_id=fiche.dossier_id,
+        maj_par=fiche.maj_par,
+        maj_le=(fiche.maj_le or fiche.cree_le).isoformat(),
+    )
+
+
+def _sections_vue(fiche: FicheImport, documents: list[DocumentImport]) -> list[SectionImportVue]:
+    etats = {e.cle: e for e in etat_sections(fiche, documents, date.today())}
+    return [
+        SectionImportVue(
+            cle=s.cle,
+            libelle=s.libelle,
+            description=s.description,
+            complet=etats[s.cle].complet,
+            manquants=list(etats[s.cle].manquants),
+            champs=[
+                ChampImportVue(
+                    cle=c.cle,
+                    libelle=c.libelle,
+                    type=c.type,
+                    obligatoire=c.obligatoire,
+                    choix=[ChoixVue(cle=k, libelle=v) for k, v in c.choix],
+                    aide=c.aide,
+                    valeur=fiche.champs.get(c.cle, ""),
+                )
+                for c in s.champs
+            ],
+        )
+        for s in SECTIONS_IMPORT
+    ]
+
+
+def _documents_vue(documents: list[DocumentImport]) -> list[DocumentImportVue]:
+    return [
+        DocumentImportVue(
+            id=d.id,
+            categorie=d.categorie,
+            libelle=CATEGORIES_DOCUMENTS.get(d.categorie, d.categorie),
+            exercice=d.exercice,
+            nom_fichier=d.nom_fichier,
+            taille=d.taille,
+            depose_par=d.depose_par,
+            depose_le=d.depose_le.isoformat(),
+        )
+        for d in documents
+    ]
+
+
+def _fiche_vue(
+    fiche: FicheImport, fiches: FichesImportRepository, dossiers: DossierRepository
+) -> FicheImportVue:
+    documents = fiches.documents(fiche.tenant_id, fiche.id)
+    existants = {d.id for d in dossiers.lister_par_tenant(fiche.tenant_id)}
+    exercices_ = exercices_import(fiche.champs, documents, date.today())
+    return FicheImportVue(
+        **_resume_fiche(fiche, documents).model_dump(),
+        sections_detail=_sections_vue(fiche, documents),
+        exercices=[
+            ExerciceImportVue(
+                annee=e.annee,
+                debut=e.debut.isoformat(),
+                fin=e.fin.isoformat(),
+                etat=e.etat,
+                pieces=[PieceImportVue(**dataclasses.asdict(p)) for p in e.pieces],
+            )
+            for e in exercices_
+        ],
+        documents=_documents_vue(documents),
+        categories_documents=[ChoixVue(cle=k, libelle=v) for k, v in CATEGORIES_DOCUMENTS.items()],
+        registre_lu_le=fiche.registre.lu_le.isoformat() if fiche.registre else None,
+        registre_sources=list(fiche.registre.sources) if fiche.registre else [],
+        manque_pour_creer=manque_pour_creer(fiche),
+        dossier_prevu=dossier_prevu(fiche) if fiche.champs.get("siren") else None,
+        dossier_cree=fiche.dossier_id is not None and fiche.dossier_id in existants,
+    )
+
+
+REFUS_IMPORT_LECTURE = "Votre rôle est en lecture seule : vous ne pouvez pas modifier un import."
+
+
+def _lire_registres(fiche: FicheImport, lire: LireFicheOfficielle | None, par: str) -> FicheImport:
+    """Préremplit depuis l'INSEE et le RNE si un SIREN est connu et les
+    registres branchés ; sinon la fiche ne change pas."""
+    siren = fiche.champs.get("siren")
+    if not siren or lire is None:
+        return fiche
+    officielle = lire(siren)
+    return preremplir(fiche, officielle, par, datetime.now(UTC)) if officielle else fiche
+
+
+def _enregistrer_routes_fiches_import(app: FastAPI) -> None:
+    """AXE-941 : la liste des fiches, en ouvrir une, la lire."""
+
+    @app.get("/portefeuille/imports", response_model=list[FicheImportResumeVue])
+    def lister_fiches_import(
+        identite: IdentiteDep, fiches: FichesImportDep
+    ) -> list[FicheImportResumeVue]:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return [
+            _resume_fiche(f, fiches.documents(tenant_id, f.id)) for f in fiches.lister(tenant_id)
+        ]
+
+    @app.post("/portefeuille/imports", response_model=FicheImportVue)
+    def ouvrir_fiche_import(
+        entree: NouvelleFicheEntree,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+        dossiers: DossiersDep,
+        lire: LireFicheOfficielleDep,
+    ) -> FicheImportVue:
+        """Nom et prénom du chauffeur ; avec un SIREN, l'INSEE et le RNE
+        préremplissent l'entreprise et le dirigeant."""
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        fiche = nouvelle_fiche(
+            uuid.uuid4().hex,
+            tenant_id,
+            entree.nom,
+            entree.prenom,
+            entree.siren,
+            identite.email,
+            datetime.now(UTC),
+        )
+        fiche = _lire_registres(fiche, lire, identite.email)
+        fiches.enregistrer(fiche)
+        return _fiche_vue(fiche, fiches, dossiers)
+
+    @app.get("/portefeuille/imports/{fiche_id}", response_model=FicheImportVue)
+    def lire_fiche_import(
+        fiche_id: str, identite: IdentiteDep, fiches: FichesImportDep, dossiers: DossiersDep
+    ) -> FicheImportVue:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _fiche_vue(fiches.lire(tenant_id, fiche_id), fiches, dossiers)
+
+
+def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
+    """AXE-941 : compléter les champs, relire les registres, changer le statut."""
+
+    @app.patch("/portefeuille/imports/{fiche_id}", response_model=FicheImportVue)
+    def completer_fiche_import(
+        fiche_id: str,
+        entree: ChampsFicheEntree,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+        dossiers: DossiersDep,
+    ) -> FicheImportVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        fiche = fiches.lire(tenant_id, fiche_id)
+        fiche = modifier_fiche(fiche, entree.champs, identite.email, datetime.now(UTC))
+        fiches.enregistrer(fiche)
+        return _fiche_vue(fiche, fiches, dossiers)
+
+    @app.post("/portefeuille/imports/{fiche_id}/registres", response_model=FicheImportVue)
+    def relire_registres_fiche(
+        fiche_id: str,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+        dossiers: DossiersDep,
+        lire: LireFicheOfficielleDep,
+    ) -> FicheImportVue:
+        """Les champs vides seulement : une saisie n'est jamais écrasée."""
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        fiche = fiches.lire(tenant_id, fiche_id)
+        if lire is None:
+            raise HTTPException(
+                status_code=503, detail="Les registres INSEE et RNE ne sont pas branchés."
+            )
+        if not fiche.champs.get("siren"):
+            raise HTTPException(status_code=422, detail="Indiquez d'abord le SIREN.")
+        relue = _lire_registres(fiche, lire, identite.email)
+        if relue.registre is fiche.registre:
+            raise HTTPException(status_code=404, detail="Aucune fiche aux registres pour ce SIREN.")
+        fiches.enregistrer(relue)
+        return _fiche_vue(relue, fiches, dossiers)
+
+    @app.post("/portefeuille/imports/{fiche_id}/statut", response_model=FicheImportVue)
+    def changer_statut_fiche(
+        fiche_id: str,
+        entree: StatutFicheEntree,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+        dossiers: DossiersDep,
+    ) -> FicheImportVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        fiche = fiches.lire(tenant_id, fiche_id)
+        fiche = changer_statut_import(fiche, entree.statut, identite.email, datetime.now(UTC))
+        fiches.enregistrer(fiche)
+        return _fiche_vue(fiche, fiches, dossiers)
+
+
+def _document_accepte(fichier: UploadFile, contenu: bytes) -> None:
+    extension = Path(fichier.filename or "").suffix.lower()
+    if extension not in EXTENSIONS_IMPORT:
+        raise HTTPException(
+            status_code=422,
+            detail="Format refusé : PDF, CSV, TXT, XML, Excel, ODS, JPG, PNG ou ZIP.",
+        )
+    if not contenu:
+        raise HTTPException(status_code=422, detail="Le fichier est vide.")
+    if len(contenu) > TAILLE_MAX_DOCUMENT_IMPORT:
+        raise HTTPException(status_code=413, detail="Le fichier dépasse 20 Mo.")
+
+
+def _enregistrer_routes_documents_import(app: FastAPI) -> None:
+    """AXE-941 : déposer, relire et retirer les documents d'une fiche."""
+
+    @app.post("/portefeuille/imports/{fiche_id}/documents", response_model=FicheImportVue)
+    async def deposer_document_import(
+        fiche_id: str,
+        fichier: UploadFile,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+        dossiers: DossiersDep,
+        categorie: Annotated[str, Form()],
+        exercice: Annotated[int | None, Form()] = None,
+    ) -> FicheImportVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        fiche = fiches.lire(tenant_id, fiche_id)
+        contenu = await fichier.read()
+        _document_accepte(fichier, contenu)
+        document = document_import(
+            uuid.uuid4().hex,
+            fiche,
+            categorie,
+            exercice,
+            fichier.filename or "document",
+            fichier.content_type or "application/octet-stream",
+            contenu,
+            identite.email,
+            datetime.now(UTC),
+        )
+        fiches.deposer(document, contenu)
+        return _fiche_vue(fiche, fiches, dossiers)
+
+    @app.get("/portefeuille/imports/{fiche_id}/documents/{document_id}")
+    def lire_document_import(
+        fiche_id: str, document_id: str, identite: IdentiteDep, fiches: FichesImportDep
+    ) -> Response:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        document, contenu = fiches.contenu(tenant_id, document_id)
+        if document.fiche_id != fiche_id:
+            raise HTTPException(status_code=404, detail="Document introuvable.")
+        return _fichier(contenu, document.type_mime, document.nom_fichier)
+
+
+def _enregistrer_route_retrait_document_import(app: FastAPI) -> None:
+    """AXE-941 : retirer un document déposé par erreur, tant que la fiche
+    n'est pas traitée."""
+
+    @app.delete(
+        "/portefeuille/imports/{fiche_id}/documents/{document_id}", response_model=FicheImportVue
+    )
+    def retirer_document_import(
+        fiche_id: str,
+        document_id: str,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+        dossiers: DossiersDep,
+    ) -> FicheImportVue:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        fiche = fiches.lire(tenant_id, fiche_id)
+        if fiche.statut == "traitee":
+            raise HTTPException(status_code=409, detail="Cette fiche est traitée.")
+        document, _contenu = fiches.contenu(tenant_id, document_id)
+        if document.fiche_id != fiche_id:
+            raise HTTPException(status_code=404, detail="Document introuvable.")
+        fiches.retirer(tenant_id, document_id)
+        return _fiche_vue(fiche, fiches, dossiers)
+
+
+def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:
+    """AXE-941 : la fiche ajoute le chauffeur au portefeuille, par le même
+    chemin que l'import CSV (AXE-809) : validée ici, créée par le worker."""
+
+    @app.post("/portefeuille/imports/{fiche_id}/chauffeur", response_model=FicheImportVue)
+    def creer_chauffeur_importe(
+        fiche_id: str,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+        dossiers: DossiersDep,
+        demandes: DemandesJobsDep,
+    ) -> FicheImportVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        fiche = fiches.lire(tenant_id, fiche_id)
+        manque = manque_pour_creer(fiche)
+        if manque:
+            raise HTTPException(status_code=422, detail=f"À compléter : {', '.join(manque)}.")
+        ligne = ligne_dossier(fiche)
+        existants = [d.id for d in dossiers.lister_par_tenant(tenant_id)]
+        (resultat,) = rapport_import(tenant_id, [ligne], existants).lignes
+        if resultat.dossier is None:
+            raise HTTPException(status_code=422, detail=" ".join(resultat.erreurs))
+        demandes.demander(str(tenant_id), TYPE_IMPORT_DOSSIERS, json.dumps({"lignes": [ligne]}))
+        fiche = dataclasses.replace(
+            fiche, dossier_id=resultat.dossier.id, maj_par=identite.email, maj_le=datetime.now(UTC)
+        )
+        fiches.enregistrer(fiche)
+        return _fiche_vue(fiche, fiches, dossiers)
+
+
+def _enregistrer_routes_imports(app: FastAPI) -> None:
+    """Import CSV des dossiers (AXE-809) et fiches d'import (AXE-941)."""
+    _enregistrer_routes_import_dossiers(app)
+    _enregistrer_routes_fiches_import(app)
+    _enregistrer_routes_fiches_import_saisie(app)
+    _enregistrer_routes_documents_import(app)
+    _enregistrer_route_retrait_document_import(app)
+    _enregistrer_route_chauffeur_importe(app)
+
+
 def _nouveaux_chauffeurs(
     tenant_id: TenantId, contacts: ContactsProposesRepository
 ) -> list[NouveauChauffeurVue]:
@@ -8903,7 +9364,7 @@ def create_app() -> FastAPI:
     _configurer_contexte_rls(app)
     _enregistrer_routes_dossiers(app)
     _enregistrer_route_lecture_dossier(app)
-    _enregistrer_routes_import_dossiers(app)
+    _enregistrer_routes_imports(app)
     _enregistrer_routes_securite(app)
     _enregistrer_routes_mfa_et_acces(app)
     _enregistrer_route_compte_de_test(app)

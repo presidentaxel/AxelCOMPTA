@@ -61,6 +61,20 @@ du 13 au 16/11 ».
 Client de référence V1 : Serenity Gestion, installé étape par étape avant
 toute autre vente.
 
+### En cours depuis le 2026-11-16 : reprise des chauffeurs
+
+- **Fiches d'import** (AXE-941) : menu « Imports » du gestionnaire. Une
+  fiche par chauffeur, remplie catégorie par catégorie (entreprise,
+  dirigeant, fiscalité, reprise comptable, banque, plateformes, documents),
+  préremplie par l'INSEE et le RNE avec le SIREN, y compris la date de
+  clôture et la date de première clôture. Les exercices à reprendre depuis
+  2024 et leurs pièces se calculent seuls. Statut à importer → en
+  traitement → traitée ; les documents sont gardés chez nous. La fiche
+  ajoute le chauffeur au portefeuille ; il est invité plus tard.
+- Suites : relier la banque et Rollee depuis la fiche, lire le FEC pour le
+  report à nouveau (AXE-942) ; OCR des liasses (AXE-943).
+- Un admin déclaré expert-comptable garde ses droits d'admin (AXE-940).
+
 ### Fait du 2026-11-13 au 2026-11-16 (PR #166 à #185)
 
 **Rollee sur la base réelle : relier les bons comptes (AXE-917 à 923, 927)**

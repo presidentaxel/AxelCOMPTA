@@ -26,12 +26,16 @@ def fiche_vers_json(fiche: FicheOfficielle) -> dict[str, Any]:
     donnees = dataclasses.asdict(fiche)
     donnees["lu_le"] = fiche.lu_le.isoformat()
     donnees["date_creation"] = fiche.date_creation.isoformat() if fiche.date_creation else None
+    donnees["premiere_cloture"] = (
+        fiche.premiere_cloture.isoformat() if fiche.premiere_cloture else None
+    )
     return donnees
 
 
 def fiche_depuis_json(donnees: dict[str, Any]) -> FicheOfficielle:
     siege = donnees.get("siege")
     creation = donnees.get("date_creation")
+    premiere = donnees.get("premiere_cloture")
     return FicheOfficielle(
         **{
             **donnees,
@@ -45,5 +49,6 @@ def fiche_depuis_json(donnees: dict[str, Any]) -> FicheOfficielle:
             ),
             "siege": Adresse(**siege) if isinstance(siege, dict) else None,
             "date_creation": date.fromisoformat(creation) if creation else None,
+            "premiere_cloture": date.fromisoformat(premiere) if premiere else None,
         }
     )

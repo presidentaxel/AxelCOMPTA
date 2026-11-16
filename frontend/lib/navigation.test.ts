@@ -24,11 +24,12 @@ test("un seul lien est actif pour un chemin donné", () => {
   }
 });
 
-test("la barre garde les sept entrées, dans l'ordre", () => {
+test("la barre garde les huit entrées, dans l'ordre", () => {
   assert.deepEqual(
     ENTREES_GESTIONNAIRE.map((entree) => entree.libelle),
     [
       "Entreprises",
+      "Imports",
       "Mode expert",
       "Connexions bancaires",
       "Rappels",

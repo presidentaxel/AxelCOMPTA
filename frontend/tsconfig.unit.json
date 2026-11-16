@@ -19,6 +19,8 @@
     "lib/activite-llm.ts",
     "lib/activite-llm.test.ts",
     "lib/liens-rollee.ts",
+    "lib/fiches-import.ts",
+    "lib/fiches-import.test.ts",
     "lib/liens-rollee.test.ts",
     "lib/loa.ts",
     "lib/loa.test.ts",

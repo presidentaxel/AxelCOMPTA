@@ -214,3 +214,17 @@ def test_trancher_un_ecart_absent_ou_cessee_officielle_est_refuse() -> None:
     cessee = EcartRegistre(CHAMP_ETAT, "active", "cessée")
     with pytest.raises(TranchageRefuse):
         trancher(_dossier(ecarts_registre=(cessee,)), CHAMP_ETAT, "officielle")
+
+
+def test_le_rne_donne_la_date_de_cloture_et_la_premiere_cloture() -> None:
+    """AXE-941, format lu au RNE le 16/11 : « 3112 » et une date ISO."""
+    fiche = fiche_rne(
+        _rne(dateClotureExerciceSocial="3112", datePremiereCloture="2026-12-31"), SIREN, LE
+    )
+    illisible = fiche_rne(_rne(dateClotureExerciceSocial="1399"), SIREN, LE)
+
+    assert fiche is not None and illisible is not None
+    assert (fiche.cloture, fiche.premiere_cloture) == ("31/12", date(2026, 12, 31))
+    assert (illisible.cloture, illisible.premiere_cloture) == (None, None)
+    combinee = combiner(fiche_insee(INSEE_SIREN, INSEE_SIRET, SIREN, LE), fiche)
+    assert combinee is not None and combinee.cloture == "31/12"
