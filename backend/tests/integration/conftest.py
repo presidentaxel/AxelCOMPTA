@@ -20,6 +20,7 @@ import axelcompta.anomaly.orm  # noqa: F401
 import axelcompta.documents.orm  # noqa: F401
 import axelcompta.ingestion.orm  # noqa: F401
 import axelcompta.ledger.orm  # noqa: F401
+import axelcompta.prospection.orm  # noqa: F401
 import axelcompta.tenants.orm  # noqa: F401
 import axelcompta.workflow.orm  # noqa: F401
 from axelcompta.core.db import engine_depuis_env, metadata
