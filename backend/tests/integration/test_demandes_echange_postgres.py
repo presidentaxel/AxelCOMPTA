@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import ProgrammingError
 
@@ -52,10 +52,7 @@ def proprietaire(engine: Engine) -> PostgresDemandes:
     return PostgresDemandes(engine)
 
 
-@pytest.fixture
-def web(engine: Engine) -> Iterator[PostgresDemandes]:
-    """Les mêmes appels, avec le rôle de l'API."""
-    _migrer()
+def _moteur_role_web(engine: Engine) -> Engine:
     moteur = create_engine(engine.url)
 
     @event.listens_for(moteur, "connect")
@@ -64,6 +61,14 @@ def web(engine: Engine) -> Iterator[PostgresDemandes]:
         curseur.execute("SET ROLE axelcompta_web")
         curseur.close()
 
+    return moteur
+
+
+@pytest.fixture
+def web(engine: Engine) -> Iterator[PostgresDemandes]:
+    """Les mêmes appels, avec le rôle de l'API."""
+    _migrer()
+    moteur = _moteur_role_web(engine)
     yield PostgresDemandes(moteur)
     moteur.dispose()
 
@@ -112,3 +117,67 @@ def test_le_role_web_ne_lit_ni_les_noms_ni_les_messages(web: PostgresDemandes) -
     web.ajouter(_demande("d1", "claire@cabinet.fr"))
     with pytest.raises(ProgrammingError, match="permission denied"):
         web.non_notifiees(MAINTENANT + timedelta(minutes=10), 3, 10)
+
+
+def test_la_rls_est_active_avec_une_politique_par_droit_du_role_web(
+    proprietaire: PostgresDemandes, engine: Engine
+) -> None:
+    with engine.connect() as connexion:
+        active = connexion.execute(
+            text("SELECT relrowsecurity FROM pg_class WHERE relname = 'demandes_echange'")
+        ).scalar_one()
+        politiques = {
+            (p.cmd, p.roles[0])
+            for p in connexion.execute(
+                text("SELECT cmd, roles FROM pg_policies WHERE tablename = 'demandes_echange'")
+            )
+        }
+    assert active is True
+    assert politiques == {
+        ("INSERT", "axelcompta_web"),
+        ("SELECT", "axelcompta_web"),
+        ("UPDATE", "axelcompta_web"),
+    }
+
+
+FONCTION_RLS_AUTO = """
+CREATE FUNCTION public.rls_auto_enable_test() RETURNS event_trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'pg_catalog' AS $$
+DECLARE cmd record;
+BEGIN
+  FOR cmd IN SELECT * FROM pg_event_trigger_ddl_commands()
+             WHERE command_tag = 'CREATE TABLE' AND object_type = 'table' LOOP
+    IF cmd.schema_name = 'public' THEN
+      EXECUTE format('alter table if exists %s enable row level security', cmd.object_identity);
+    END IF;
+  END LOOP;
+END; $$
+"""
+
+
+def test_le_role_web_ecrit_quand_le_fournisseur_active_la_rls_sur_toute_nouvelle_table(
+    engine: Engine,
+) -> None:
+    """Supabase le fait seul (déclencheur `ensure_rls`) : sans politique pour le
+    rôle web, l'API ne pouvait plus enregistrer une demande en production."""
+    with engine.begin() as connexion:
+        try:
+            connexion.execute(text(FONCTION_RLS_AUTO))
+            connexion.execute(
+                text(
+                    "CREATE EVENT TRIGGER rls_auto_test ON ddl_command_end "
+                    "WHEN TAG IN ('CREATE TABLE') EXECUTE FUNCTION public.rls_auto_enable_test()"
+                )
+            )
+        except ProgrammingError:
+            pytest.skip("créer un déclencheur d'événement demande un super-utilisateur")
+    moteur = _moteur_role_web(engine)
+    try:
+        _migrer()
+        PostgresDemandes(moteur).ajouter(_demande("d1", "claire@cabinet.fr"))
+        assert PostgresDemandes(moteur).nombre_depuis(MAINTENANT - timedelta(minutes=1)) == 1
+    finally:
+        moteur.dispose()
+        with engine.begin() as connexion:
+            connexion.execute(text("DROP EVENT TRIGGER IF EXISTS rls_auto_test"))
+            connexion.execute(text("DROP FUNCTION IF EXISTS public.rls_auto_enable_test()"))

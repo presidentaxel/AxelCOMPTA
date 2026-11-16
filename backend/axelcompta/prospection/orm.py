@@ -3,7 +3,9 @@
 Pas de `tenant_id` ni de `dossier_id` : une demande arrive avant tout
 portefeuille, d'une personne qui n'a pas de compte. Le rôle web ne peut donc
 pas la lire en entier : il ajoute une ligne, compte les demandes récentes et
-note le résultat de la notification (voir la migration).
+note le résultat de la notification (voir la migration). La RLS y est active
+(Supabase l'active seule) avec des politiques qui laissent passer le rôle web ;
+les droits par colonne font la limite.
 """
 
 from __future__ import annotations

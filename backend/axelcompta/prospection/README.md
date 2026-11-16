@@ -30,6 +30,9 @@ avec la landing.
 - **Le rôle web ne lit pas les demandes** : il en ajoute une, compte les
   demandes récentes (e-mail et date) et note le résultat de la notification.
   Les noms et les messages ne sont lus que par les tâches planifiées.
+- **La RLS est activée explicitement par la migration**, avec une politique
+  par droit pour le rôle web. Supabase l'active seul sur toute nouvelle table
+  de `public` : sans politique, l'API ne pourrait plus rien écrire.
 - Ce module ne dépend que de `core` (import-linter).
 
 ## Doc de référence
