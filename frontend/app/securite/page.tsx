@@ -14,9 +14,9 @@ export default function AncienneAdresseSecurite() {
   const router = useRouter();
 
   useEffect(() => {
-    const retour = cheminDeRetour(window.location.search, "/");
+    const retour = cheminDeRetour(window.location.search, "/portefeuille");
     const params = new URLSearchParams({
-      retour: retour === "/securite" || retour.startsWith("/securite?") ? "/" : retour,
+      retour: retour === "/securite" || retour.startsWith("/securite?") ? "/portefeuille" : retour,
     });
     router.replace(`${CHEMIN_DOUBLE_AUTHENTIFICATION}?${params.toString()}`);
   }, [router]);

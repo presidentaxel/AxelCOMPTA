@@ -50,7 +50,7 @@ export default function LienAuthPage() {
   const idMotDePasse = useId();
   const [etape, setEtape] = useState<Etape>("lecture");
   const [fragment, setFragment] = useState<FragmentAuth | null>(null);
-  const [destination, setDestination] = useState("/");
+  const [destination, setDestination] = useState("/portefeuille");
   const [motDePasse, setMotDePasse] = useState("");
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -138,7 +138,7 @@ export default function LienAuthPage() {
         router.replace(cheminApresChauffeur(session.accessToken, session));
       } else if (decision === "gestionnaire") {
         await connexionGestionnaire(email, motDePasse);
-        router.replace("/");
+        router.replace("/portefeuille");
       } else {
         throw new ErreurAuthChauffeur(
           decision === "interdit"

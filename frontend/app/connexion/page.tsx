@@ -27,7 +27,7 @@ export default function ConnexionGestionnairePage() {
         onConnecte={async (email, motDePasse) => {
           await connexionGestionnaire(email, motDePasse);
           await tracerConnexionGestionnaire();
-          const retour = cheminDeRetour(window.location.search, "/");
+          const retour = cheminDeRetour(window.location.search, "/portefeuille");
           const moi = await lireMoi().catch(() => null);
           // AXE-812 : un admin saisit son code (ou s'enrôle) avant d'entrer.
           router.replace(
