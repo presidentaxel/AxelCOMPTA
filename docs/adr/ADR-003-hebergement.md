@@ -9,6 +9,13 @@
 > Isolation stricte de la production : AXE-810. Décision de
 > production (région, sauvegardes, CLOUD Act pour l'auth) et restauration
 > chronométrée : AXE-811.
+>
+> **État au 2026-11-16** : le calcul (API, front, worker, tâches
+> planifiées) tourne sur un droplet DigitalOcean, déployé à chaque push
+> sur la branche `prod` (AXE-427, PR #190). La base reste Supabase. Région
+> du droplet, offre de sauvegarde, position sur le CLOUD Act et
+> restauration chronométrée restent à écrire ici pour passer cet ADR en
+> « décidé » (AXE-811).
 **Décideurs :** Louis Vedovato
 
 ## Contexte

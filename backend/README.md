@@ -370,6 +370,10 @@ acceptés, détection des contacts Digifactory sans dossier, synchro, caches.
 
     * * * * * /chemin/vers/AxeLCompta/backend/scripts/worker_planifie.sh
 
+En production (depuis le 16/11), ce crontab n'est plus à poser : le
+conteneur `worker` lance le worker chaque minute et les tâches chaque heure
+(`backend/docker/crontab`, `supercronic`). Voir « Déployer la production ».
+
 ## Mettre en route les tickets du 05 au 10/11 sur une base existante
 
 Le code mergé ne suffit pas : sur la base réelle, il faut aussi (suivi dans
@@ -427,7 +431,7 @@ reprise en simulation, puis appliquée après accord.
    1. jeton sandbox, puis `python -m pytest -m rollee` depuis `backend/`
       (unité des montants, AXE-818) ;
    2. Intégrations › Rollee : jeton de production, « Tester » ;
-   3. une fois l'API en ligne (AXE-811), sur chaque compte Rollee
+   3. l'API est en ligne depuis le 16/11 : sur chaque compte Rollee
       d'Intégrations : saisir l'adresse publique de l'API, puis le popup
       du webhook donne l'adresse, le secret et les cases à cocher dans le
       formulaire Rollee (ou `python -m axelcompta.webhooks_rollee
@@ -511,6 +515,32 @@ en route : `alembic upgrade head` (migration `b7f3e2a91c40`). Le
 préremplissage par le SIREN utilise `INSEE_API_KEY` et le compte RNE ;
 sans eux, tout se saisit à la main. « Ajouter le chauffeur au portefeuille »
 dépose un job `import_dossiers` : le worker doit tourner.
+
+## Déployer la production (AXE-427)
+
+En service depuis le 16/11. Un droplet fait tourner l'API, le front, Caddy
+(HTTPS), le worker et les tâches (`docker-compose.prod.yml`). Postgres
+reste sur Supabase.
+
+- **Livrer** : PR de `main` vers `prod`, **mergée en merge commit** (pas de
+  squash : `prod` a des correctifs que `main` n'a pas). Le push sur `prod`
+  lance le workflow « Déploiement production » (`deploy/depuis-ci.sh`,
+  puis `deploy/mettre-a-jour.sh` sur le droplet) : build des images,
+  migrations, puis remplacement des conteneurs. Si les migrations
+  échouent, l'API en service n'est pas arrêtée.
+- **Vérifier** : `https://api.axelproject.fr/sante` répond
+  `{"statut":"ok"}` ; un clic sur Synchroniser est traité dans la minute
+  (journal du conteneur `worker`).
+- **Installer un nouveau droplet** : Ubuntu, 4 Go de RAM au moins
+  (le modèle de catégorisation tient en mémoire), deux DNS (front et API).
+  En root, `bash deploy/bootstrap-droplet.sh`, puis les secrets GitHub
+  `DROPLET_HOST`, `DROPLET_USER` (`deploy`), `DROPLET_SSH_KEY`,
+  `DROPLET_KNOWN_HOSTS`. Déposer `/opt/axelcompta/.env` (section
+  Déploiement de `.env.example`, même clé Fernet que la base en service,
+  propriétaire `deploy`, mode 600) et autoriser
+  `https://<front>/auth/lien` dans Supabase.
+- Modèles des e-mails d'authentification Supabase : `deploy/emails/`.
+- Reste (AXE-811) : restauration chronométrée des sauvegardes et runbook.
 
 ## Mettre en route Rollee après la PR 170 (AXE-922)
 
