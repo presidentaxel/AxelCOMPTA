@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   absenceDeCompte,
   LONGUEUR_MIN_MOT_DE_PASSE,
+  MESSAGE_CODE_REQUIS,
   MESSAGE_EMAIL_NON_CONFIRME,
   MESSAGE_GENERIQUE,
   MESSAGE_IDENTIFIANTS,
@@ -28,6 +29,15 @@ class ErreurAuthChauffeur extends Error {
 }
 
 describe("traduireCorpsAuth", () => {
+  it("ne dit pas « lien expiré » quand la double authentification est exigée (AXE-961)", () => {
+    const corps = {
+      code: 401,
+      error_code: "insufficient_aal",
+      msg: "AAL2 session is required to update email or password when MFA is enabled.",
+    };
+    assert.equal(traduireCorpsAuth(corps, 401), MESSAGE_CODE_REQUIS);
+  });
+
   it("traduit un mot de passe refusé (forme actuelle)", () => {
     const message = traduireCorpsAuth(
       { code: 400, error_code: "invalid_credentials", msg: "Invalid login credentials" },
