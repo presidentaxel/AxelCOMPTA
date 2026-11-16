@@ -2405,7 +2405,8 @@ def _configurer_cors(app: FastAPI) -> None:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origines_autorisees(),
-        # DELETE : suppression d'une règle de rappel, d'un membre, d'une invitation.
+        # DELETE : retirer un document, un membre, une invitation, une règle
+        # de rappel (AXE-948 : sans lui, le navigateur bloquait ces appels).
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["*"],
         # Lu par le front pour enregistrer un fichier sous le nom choisi par
