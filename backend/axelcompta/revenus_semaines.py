@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
+from typing import Literal
 
 from axelcompta.core.errors import DomaineError
 from axelcompta.core.pcg import est_compte_banque
@@ -34,6 +35,7 @@ from axelcompta.ingestion.ecritures_settlement import TAUX_TVA_RECETTES_PAR_REGI
 from axelcompta.ingestion.providers.base import PlatformSettlement
 from axelcompta.ingestion.providers.rollee import especes_cts, hors_course_cts
 from axelcompta.ingestion.semaines_plateforme import (
+    FRAIS_INSTANTANE_CTS,
     Jour,
     Semaine,
     Virement,
@@ -45,7 +47,7 @@ from axelcompta.ingestion.semaines_plateforme import (
 from axelcompta.ingestion.settlements_plateforme import SettlementStocke
 from axelcompta.ledger.contrepassation import annulees
 from axelcompta.ledger.models import Ecriture, Journal, Sens
-from axelcompta.ledger.periodes import Periode
+from axelcompta.ledger.periodes import Periode, date_de_report
 from axelcompta.tenants.models import Dossier
 from axelcompta.workflow.reclassement import projeter
 
@@ -256,3 +258,131 @@ def rapprocher_semaines(
             passage.semaines.append(semaine)
             passage.stockes += [_suite(jours[j], semaine, motif, contexte) for j in semaine.jours]
     return passage
+
+
+# AXE-912 : ce que l'expert-comptable décide pour une semaine qui ne retombe
+# pas juste seule.
+Decision = Literal["ecrire", "ecarter"]
+
+
+class RienATrancher(DomaineError):
+    """Aucun jour ni virement de cette semaine n'attend une décision."""
+
+
+def trancher_semaine(
+    stockes: Sequence[SettlementStocke],
+    grand_livre: Sequence[Ecriture],
+    contexte: Contexte,
+    semaine: tuple[str, date],
+    decision: Decision,
+    motif: str,
+) -> Passage:
+    """AXE-912 : sortir une semaine (plateforme, lundi) de « à vérifier ».
+
+    * `ecrire` : la recette de chaque jour, le solde de chaque virement de
+      la semaine (sauf ceux qu'un humain a classés ailleurs qu'en 471 ou
+      706 : leur classement est gardé) et les frais d'instantanés. L'écart
+      reste sur la créance de la plateforme (467x), visible au bilan. Une
+      date dans un exercice clos passe au premier jour de l'exercice ouvert.
+    * `ecarter` : les jours sortent de la comptabilité (`delie`), rien n'est
+      écrit. Pour des jours qui ne sont pas des recettes de la société.
+
+    Rejouer n'écrit rien de plus : les identifiants dérivent du jour, du
+    virement ou de la semaine."""
+    plateforme, lundi_ = semaine
+    jours, virements = _de_la_semaine(stockes, grand_livre, plateforme, lundi_)
+    if not jours and (decision == "ecarter" or not virements):
+        raise RienATrancher(
+            f"Rien à trancher pour {plateforme.capitalize()}, semaine du {lundi_:%d/%m/%Y}."
+        )
+    trace = motif.strip()[:150]
+    if decision == "ecarter":
+        return Passage(
+            stockes=[
+                replace(
+                    s,
+                    etat="delie",
+                    motif=f"écarté par l'expert : {trace}"[:200],
+                    maj_le=contexte.maintenant,
+                )
+                for s in jours
+            ]
+        )
+    ecritures = _ecritures_tranchees(plateforme, lundi_, jours, virements, contexte)
+    return Passage(
+        stockes=[
+            replace(
+                s,
+                etat="reconcilie",
+                motif=f"écrit par l'expert : {trace}"[:200],
+                ecriture_id=str(id_recette(s.id)),
+                maj_le=contexte.maintenant,
+            )
+            for s in jours
+        ],
+        ecritures=ecritures,
+    )
+
+
+def _de_la_semaine(
+    stockes: Sequence[SettlementStocke],
+    grand_livre: Sequence[Ecriture],
+    plateforme: str,
+    lundi_: date,
+) -> tuple[list[SettlementStocke], dict[str, tuple[Virement, Ecriture]]]:
+    """Les jours en attente et les virements libres d'une semaine."""
+    jours = [
+        s
+        for s in _jours(stockes).values()
+        if s.settlement.platform == plateforme and lundi(s.settlement.period_start) == lundi_
+    ]
+    virements = {
+        i: (lu, e)
+        for i, (lu, e) in virements_libres(grand_livre).items()
+        if lu.plateforme == plateforme and lu.semaine == lundi_
+    }
+    return jours, virements
+
+
+def _ecritures_tranchees(
+    plateforme: str,
+    lundi_: date,
+    jours: Sequence[SettlementStocke],
+    virements: dict[str, tuple[Virement, Ecriture]],
+    contexte: Contexte,
+) -> list[Ecriture]:
+    dossier = contexte.dossier
+    ecritures = [
+        ecriture_recette(
+            s.id,
+            s.settlement,
+            especes_cts(s.settlement),
+            lundi_,
+            dossier.tva_recettes_regime,
+            hors_course_cts(s.settlement),
+        )
+        for s in jours
+    ]
+    instantanes = 0
+    for lu, ecriture in virements.values():
+        compte = _contrepartie(ecriture)
+        if compte not in CONTREPARTIES:
+            continue  # classé ailleurs par un humain : on n'y touche pas
+        ecritures.append(ecriture_solde(ecriture, compte, lu.montant_cts, plateforme, lundi_))
+        instantanes += lu.nature == "instantane"
+    if instantanes:
+        dates = [s.settlement.period_start for s in jours] + [
+            lu.le for lu, _e in virements.values()
+        ]
+        ecritures.append(
+            ecriture_frais(
+                dossier.id, plateforme, lundi_, max(dates), FRAIS_INSTANTANE_CTS * instantanes
+            )
+        )
+    return [
+        replace(
+            e,
+            date=date_de_report(e.date, contexte.periodes_closes, dossier.exercice_debut),
+        )
+        for e in ecritures
+    ]

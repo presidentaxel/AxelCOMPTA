@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { SelectRecherche } from "@/components/ui/select-recherche";
 import {
@@ -9,6 +11,7 @@ import {
   lireManquesRapprochementExpert,
   lireRapprochementsExpert,
   ModeExpertRefuse,
+  trancherSemaineExpert,
 } from "@/lib/auth-gestionnaire";
 import { changer, type EtatClassees } from "@/lib/classees";
 import { formatDate, formatMontant } from "@/lib/format";
@@ -43,6 +46,7 @@ export function RapprochementsRollee({
   } | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [filtre, setFiltre] = useState("toutes");
+  const [relecture, setRelecture] = useState(0);
   const dossier = etat.chauffeur;
   const semaines = charge?.dossier === dossier ? charge.semaines : null;
   const manques = charge?.dossier === dossier ? charge.manques : [];
@@ -73,7 +77,7 @@ export function RapprochementsRollee({
     return () => {
       actif = false;
     };
-  }, [dossier]);
+  }, [dossier, relecture]);
 
   const affichees = useMemo(
     () => (filtre === "toutes" ? (semaines ?? []) : (semaines ?? []).filter((s) => s.etat === filtre)),
@@ -132,7 +136,12 @@ export function RapprochementsRollee({
       {affichees.length > 0 && (
         <div className="mt-4 divide-y divide-slate-100 border-t border-slate-100">
           {affichees.map((semaine) => (
-            <Semaine key={`${semaine.plateforme}-${semaine.du}`} semaine={semaine} />
+            <Semaine
+              key={`${semaine.plateforme}-${semaine.du}`}
+              dossier={dossier}
+              semaine={semaine}
+              onTranchee={() => setRelecture((n) => n + 1)}
+            />
           ))}
         </div>
       )}
@@ -140,7 +149,15 @@ export function RapprochementsRollee({
   );
 }
 
-function Semaine({ semaine }: { semaine: SemaineRapprochement }) {
+function Semaine({
+  dossier,
+  semaine,
+  onTranchee,
+}: {
+  dossier: string;
+  semaine: SemaineRapprochement;
+  onTranchee: () => void;
+}) {
   return (
     <details className="py-3">
       <summary className="cursor-pointer text-sm text-ink">
@@ -157,9 +174,89 @@ function Semaine({ semaine }: { semaine: SemaineRapprochement }) {
         </span>
       </summary>
       {semaine.motif && <p className="mt-2 text-sm text-subtle">{semaine.motif}</p>}
+      {semaine.etat === "a_verifier" && (
+        <DecisionSemaine dossier={dossier} semaine={semaine} onTranchee={onTranchee} />
+      )}
       <Jours jours={semaine.jours} />
       <Virements virements={semaine.virements} />
     </details>
+  );
+}
+
+/** AXE-912 : la sortie d'une semaine qui ne retombe pas juste seule. */
+function DecisionSemaine({
+  dossier,
+  semaine,
+  onTranchee,
+}: {
+  dossier: string;
+  semaine: SemaineRapprochement;
+  onTranchee: () => void;
+}) {
+  const [motif, setMotif] = useState("");
+  const [enCours, setEnCours] = useState(false);
+  const [message, setMessage] = useState<{ texte: string; erreur: boolean } | null>(null);
+
+  async function decider(decision: "ecrire" | "ecarter") {
+    setEnCours(true);
+    setMessage(null);
+    try {
+      const resume = await trancherSemaineExpert(dossier, {
+        plateforme: semaine.plateforme,
+        lundi: semaine.du,
+        decision,
+        motif,
+      });
+      setMessage({ texte: resume, erreur: false });
+      onTranchee();
+    } catch (exception) {
+      setMessage({
+        texte: exception instanceof Error ? exception.message : "La décision n'a pas pu être enregistrée.",
+        erreur: true,
+      });
+    } finally {
+      setEnCours(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-md border border-border bg-canvas-app p-3">
+      <p className="text-sm text-ink">
+        Cette semaine ne retombe pas juste seule. <strong>Écrire telle quelle</strong> passe la recette
+        de chaque jour et le solde des virements ; l&apos;écart reste dû par la plateforme, au compte
+        de la plateforme. <strong>Écarter</strong> sort ces jours de la comptabilité, sans rien écrire.
+      </p>
+      <Input
+        className="mt-2"
+        value={motif}
+        onChange={(evenement) => setMotif(evenement.target.value)}
+        placeholder="Motif (obligatoire), par ex. commission Uber absente chez Rollee"
+        aria-label="Motif de la décision"
+      />
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          disabled={enCours || !motif.trim()}
+          onClick={() => decider("ecrire")}
+        >
+          Écrire telle quelle
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={enCours || !motif.trim()}
+          onClick={() => decider("ecarter")}
+        >
+          Écarter ces jours
+        </Button>
+      </div>
+      {message && (
+        <p className={`mt-2 text-sm ${message.erreur ? "text-danger" : "text-subtle"}`}>{message.texte}</p>
+      )}
+    </div>
   );
 }
 
