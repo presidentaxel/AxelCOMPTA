@@ -1,6 +1,6 @@
 # 10 — Sécurité, RGPD et protection des données
 
-> **État au 2026-11-13** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-16** (ajouté ; le reste du doc décrit la cible) :
 > - Fait : RLS par dossier sur les tables, pseudonymisation obligatoire
 >   avant tout LLM avec tests de fuite (AXE-436), journal d'audit
 >   append-only des décisions et signatures, Sentry seulement si un DSN est
@@ -20,11 +20,15 @@
 >   (Fernet, clé `AXELCOMPTA_CLE_INTEGRATIONS` hors base), jamais renvoyés à
 >   l'écran ; les rappels ne contiennent jamais de montant (AXE-808,
 >   AXE-872).
-> - Rollee (AXE-819 à 821, 911) : le chauffeur saisit ses identifiants Uber
->   et Bolt chez Rollee, jamais chez nous ; le user Rollee ne porte que le
->   `dossier_id`. Webhooks vérifiés par HMAC. Le rapprochement compare des
->   empreintes HMAC : ni nom, ni IBAN, ni e-mail gardés en clair. Le
->   gestionnaire ne voit aucun montant.
+> - Rollee (AXE-819 à 821, 911, 919, 923) : le chauffeur saisit ses
+>   identifiants Uber et Bolt chez Rollee, jamais chez nous. Webhooks
+>   vérifiés par HMAC. Le rapprochement compare des empreintes HMAC ;
+>   l'IBAN n'est plus lu. La carte des users Rollee (`cartes_rollee`, RLS
+>   par tenant) garde le **nom en clair** et l'**e-mail masqué**, pour la
+>   recherche du gestionnaire (décision de Louis du 14/11 : ce sont ses
+>   chauffeurs). Le gestionnaire ne voit **aucun montant**. Un compte au nom
+>   d'un autre chauffeur, porté par le même user « flotte », n'est ni relié,
+>   ni stocké, ni montré, et ses revenus ne sont pas lus (AXE-922, 923).
 > - IA (AXE-887, AXE-888) : seuls des libellés pseudonymisés partent chez
 >   Anthropic, montant en ordre de grandeur ; une fuite détectée bloque
 >   l'envoi. Clé dans l'environnement du serveur, jamais dans le repo.

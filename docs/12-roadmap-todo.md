@@ -1,6 +1,6 @@
 # 12 — Roadmap et TODO maître
 
-> Statut : brouillon à valider. Dernière mise à jour : 2026-11-13.
+> Statut : brouillon à valider. Dernière mise à jour : 2026-11-16.
 > **Seule source de l'état du projet dans le repo** (fait, en cours, prévu).
 > Le suivi au jour le jour est dans Linear, projet
 > [Axel Compta — V1 prod](https://linear.app/axel-project/project/axel-compta-v1-prod-api-ingestion-fiabilite-899778ce7b41)
@@ -16,41 +16,135 @@
 > #3 à #39) est archivé tel quel dans
 > [archive/12-recalage-2026-09.md](archive/12-recalage-2026-09.md).
 
-## État au 2026-11-13 (à lire avant tout le reste)
+## État au 2026-11-16 (à lire avant tout le reste)
 
-**En une phrase :** du 10 au 13/11, 41 PR (#125 à #165) ont livré le cœur
-comptable VTC qui manquait : recettes Uber et Bolt lues chez Rollee et
-ventilées en 706, TVA et commission ; TVA déductible des dépenses ;
-véhicule amorti ou en LOA ; bilan d'ouverture repris d'un FEC ; identité de
-la société et registres officiels. L'IA (Claude Fable 5.2) propose une
-catégorie dans la synchro, sous budget, éteinte par défaut. L'interface est
-passée au design system v2. Ce qui manque pour la V1 : **un mois réel
-exporté** (AXE-733), et la mise en production.
+**En une phrase :** du 13 au 16/11, 16 PR (#166 à #185) ont fait tourner
+Rollee sur la base réelle. Le pilote a montré que le modèle « une période
+Rollee = un virement » ne tenait pas. Les recettes des plateformes sont
+maintenant rapprochées de la banque **semaine par semaine**, et écrites
+sur les comptes du schéma de l'expert-comptable (4671 Uber, 4672 Bolt,
+530, 708, 6222). Pour la première fois, des recettes Rollee sont au grand
+livre de dossiers réels : MK DRIVING et B'CARS SERVICES. Ce qui manque
+pour la V1 : **un mois réel exporté** (AXE-733), et la mise en production.
 
 **Où on en est par rapport au plan.** Projet « V1 prod » (cible
 **31/12/2026**, initiative « Prod-ready trio → Market janv. 2027 ») :
-l'analyse critique du 05/11 est presque soldée côté code (AXE-802, 803,
-804 faits ; AXE-801 reste, en secours de Rollee). **Pas encore fait** : la
-première synchro des chauffeurs réels (AXE-728) et le mois exporté
-(AXE-733). Aucun dossier `DIGI_` n'a encore été tranché ni clôturé de bout
-en bout.
+l'étape 3 du plan de novembre (Rollee en production) est faite pour les
+dossiers reliés : 9 dossiers sur 15 ont un user Rollee. **Pas encore
+fait** : la première synchro de tous les chauffeurs réels (AXE-728) et le
+mois exporté (AXE-733). Aucun dossier `DIGI_` n'a encore été tranché ni
+clôturé de bout en bout.
 
-**Attention : code mergé ≠ production à jour.** Rien de la semaine ne
-tourne sur la base réelle tant qu'AXE-842 n'est pas fait : 14 migrations
-depuis le 10/11, les clés à poser (Rollee, INSEE/RNE, S3, Anthropic), les
-reprises en simulation puis appliquées (TVA déductible, décisions,
-comptes bancaires), la crontab. Mode d'emploi :
+**La base réelle est à jour du code au 16/11** (migration `a4c8e1d73b29`,
+appliquée le 16/11). Le pilote tourne sur la prod depuis le 14/11, avec
+l'accord de Louis : chaque écriture en simulation d'abord, puis appliquée
+après son OK. Reste à appliquer : la reprise des virements internes
+(AXE-930, 484 OD simulées). Hors Rollee, AXE-842 (crontab, clés INSEE/RNE,
+S3, Anthropic, reprises du 10 au 13/11) et AXE-850 (écritures restées au
+471) restent ouverts. Mode d'emploi :
 [backend/README.md](../backend/README.md), « Mettre en route les tickets
-du 10 au 13/11 ». Des écritures restent au 471 depuis la synchro sans
-modèle du 05/11 (AXE-850).
+du 13 au 16/11 ».
 
-**Rien de ce qui suit n'a encore tourné sur de vraies données** : les
-réponses de Rollee, de l'INSEE et du RNE sont construites d'après leur
-documentation, l'IA n'a pas été appelée depuis la synchro, aucun vrai FEC
-n'a été repris. Chaque PR dit comment le vérifier.
+**Vu sur la prod (lecture seule, 16/11)** :
+- 191 jours Rollee rapprochés et écrits, 167 à vérifier, 3 563 en attente
+  de banque (surtout des semaines d'avant le premier relevé bancaire, ou
+  de dossiers sans banque).
+- Six dossiers ont des jours Rollee mais aucun relevé bancaire : rien ne
+  peut y être rapproché. L'écran « Ce qui manque » du mode expert le dit
+  (AXE-934).
+- DIGI_4952 (gestionnaire de flotte) : comptes Uber et Bolt de flotte
+  reliés et connectés, mais Rollee ne remonte aucun jour. À signaler à
+  Rollee (AXE-939).
+- La commission Uber vaut 0 chez Rollee : le CA Uber est pris après
+  commission tant que Rollee ne la donne pas (question à Rollee, AXE-939).
 
 Client de référence V1 : Serenity Gestion, installé étape par étape avant
 toute autre vente.
+
+### Fait du 2026-11-13 au 2026-11-16 (PR #166 à #185)
+
+**Rollee sur la base réelle : relier les bons comptes (AXE-917 à 923, 927)**
+- La synchro d'un dossier ne lit plus les profils pendant la requête
+  (#170) : elle compare `GET /users` à une **carte** en base
+  (`cartes_rollee`) et dépose un job `rapprochement_rollee`. Un user à 0
+  compte n'est pas lu ; un user déjà lu n'est relu que si son nombre de
+  comptes change. L'IBAN Rollee n'est plus appelé. Le profil est lu dans
+  son enveloppe `data` (AXE-917).
+- Un chauffeur peut avoir **plusieurs comptes Rollee**, et un user
+  « flotte » peut porter les comptes de plusieurs chauffeurs. Le lien garde
+  les **noms attendus** du dossier ; seuls les comptes à ce nom sont
+  retenus (AXE-922, `scripts/poser_noms_attendus.py` pour les liens
+  d'avant). Un compte au nom d'un autre chauffeur n'est **ni relié, ni
+  stocké, ni montré** (AXE-923, décision de Louis du 14/11).
+- Un nom unique sur toute la carte relie tout seul (AXE-918). Le
+  gestionnaire cherche un user Rollee par son nom (AXE-919) : nom en clair,
+  e-mail masqué, **jamais de montant** (décision de Louis du 14/11). Un
+  lien manuel sans nom connu est refusé (409).
+- Une demande déposée pendant un job en cours attend son tour au lieu
+  d'être perdue (AXE-921, migration `b6e2d8f1c093`).
+- « Aucun compte Rollee » ne s'affiche plus pour une entreprise déjà reliée
+  (AXE-927).
+
+**Recettes des plateformes : semaine par semaine (AXE-924, 926, 928, 931
+à 934)**
+- Seuls les **jours** Rollee comptent ; semaines, mois et périodes
+  « custom » se chevauchent et sont ignorés (AXE-924, #174). Le gagné d'un
+  jour est `net_amount`. Une semaine est **soldée** si Σ (gagné − espèces)
+  des jours = Σ virements attribués (POP SVCS : période du libellé ; BOLT
+  FR : semaine d'avant ; instantané : sa semaine), à k × 0,99 € de frais
+  près (k ≤ nombre d'instantanés), éventuellement avec la semaine d'avant.
+  Sinon en attente 8 jours, puis **à vérifier** avec l'écart chiffré.
+  L'ancien modèle d'AXE-821 (une période = un virement, OD de ventilation)
+  n'est plus appelé par la synchro.
+- **Seules les courses portent la TVA** (10 %, AXE-926, #175 et #177) :
+  pourboires, bonus et autres montants sont hors TVA. Sur la prod, ~515 €
+  de TVA en moins sur l'exercice. Le reste du brut que Rollee ne classe
+  pas garde la TVA, par prudence.
+- **Comptes du schéma de l'expert-comptable** (AXE-931, #182) : créance
+  par plateforme (4671 Uber, 4672 Bolt, puis 4673 Heetch, 4674 Allocab,
+  4675 Free Now ; 467 pour une plateforme inconnue), espèces en **530
+  Caisse**, hors course en **708**, commission en **6222**.
+  L'autoliquidation de la commission Bolt reste en 44566/44571, que la
+  CA3 lit. Le 708 compte dans le CA des seuils de franchise. Reprise des
+  semaines déjà écrites par OD `{S}:comptes-plateforme` : **363 OD
+  appliquées le 15/11** (MK DRIVING 215, B'CARS 148), soldes contrôlés.
+- **Rollee ↔ banque sur tout l'historique** (AXE-928, #179) : la banque
+  reste la source de vérité de la compta, Rollee est lu depuis 2020 et
+  comparé par mois et par semaine. Les années sans banque servent de
+  rapport (CA HT, TVA, hors course, espèces), sans écriture. Écran du
+  chauffeur, dans Mes plateformes.
+- Les frais d'instantanés sont montrés même quand la semaine ne tombe pas
+  juste (AXE-932, #183) : MK DRIVING, semaine du 19/10, 6,93 € de frais et
+  2,00 € versés en trop (et non plus « 4,93 € dus »).
+- **Heetch, Allocab et Free Now** sont stockés et rapprochés (AXE-933,
+  #184) : commission avec TVA française (`france_20`), virements Free Now
+  reconnus (« TRANSCOVO SAS FREENOW », semaine lue dans le libellé). Aucun
+  virement Heetch ni Allocab trouvé en banque à ce jour.
+- **Ce qui manque**, pour chaque entreprise, même sans banque (AXE-934,
+  #185) : compte Rollee à reconnecter, plateforme non prise en charge,
+  banque absente ou trop courte, semaines payées sans jour Rollee ou
+  gagnées sans virement. En tête des rapprochements du mode expert.
+
+**Synchro et banque (AXE-929, 930)**
+- Le bouton **Synchroniser** du portefeuille lance Digifactory, puis Rollee
+  pour chaque dossier relié, un dossier après l'autre (AXE-929, #180).
+- Les virements entre enveloppes d'un même compte (MK DRIVING :
+  « cotisation URSSAF » −50 € / +50 €) sont appariés par libellé et passent
+  en **580**, hors des totaux du chauffeur (AXE-930, #181). Reprise des
+  opérations déjà écrites : `scripts/reprendre_virements_internes.py`,
+  484 OD simulées, **pas encore appliquée**.
+
+**Mode expert (AXE-925, #176)**
+- Compte et entreprise se choisissent en tapant ; la file et les
+  opérations classées se cherchent (« total 23 ») et se trient par
+  entreprise.
+- Le ticket du chauffeur se voit et s'ajoute depuis la ligne.
+- Le taux de TVA proposé s'affiche ; l'expert le change pour la ligne ou
+  pour tout le libellé (`taux_tva_expert`, migration `a4c8e1d73b29`).
+- **Rapprochements Rollee** : par entreprise et par semaine, dû Rollee,
+  payé en banque, frais, écart, puis le détail des jours et des virements.
+  Une entreprise hors de la lettre de mission dit pourquoi au lieu de
+  rester vide.
 
 ### Fait du 2026-11-10 au 2026-11-13 (PR #125 à #165)
 
@@ -355,15 +449,23 @@ Les relevés CSV (AXE-801) restent la source de secours pour un chauffeur
 sans Rollee. Les cinq tickets Rollee sont faits depuis le 12/11 (PR #132 à
 #136).
 
-### En cours (13/11)
+### En cours (16/11)
 
-- AXE-842 : appliquer en production tout ce qui est mergé depuis le 05/11
-  (voir l'alerte en tête). Décision de Louis du 06/11 : étape par étape,
-  chaque reprise en simulation, puis appliquée après accord.
-- Vérifications sur de vraies données, une par PR : test de contrat Rollee
-  en sandbox (unité des montants, signature des webhooks), lecture d'un
-  vrai SIREN à l'INSEE et au RNE, un vrai FEC repris, simulation du
-  rapprochement Rollee sur la prod (AXE-911).
+- Pilote Rollee sur la prod : une synchro complète (bouton
+  **Synchroniser**) avec le code du 16/11, pour stocker Heetch, Allocab et
+  Free Now, récupérer les jours mis de côté avant la lecture jour par jour
+  (14/11), et réécrire les motifs des semaines à vérifier. Puis comprendre
+  pourquoi les comptes de flotte de DIGI_4952 ne remontent rien.
+- Questions à Rollee (Pierrick, AXE-939) : la commission Uber (0 chez
+  Rollee), les jours sans course non remontés (MK DRIVING, 2 € le 24/10),
+  les comptes de flotte muets, trois profils toujours en erreur 500.
+- AXE-842 : appliquer en production le reste de ce qui est mergé depuis le
+  05/11 (crontab, clés, reprises du 10 au 13/11). Décision de Louis du
+  06/11 : étape par étape, chaque reprise en simulation, puis appliquée
+  après accord. Reprise des virements internes (AXE-930) à appliquer.
+- Vérifications sur de vraies données : lecture d'un vrai SIREN à l'INSEE
+  et au RNE, un vrai FEC repris. Rollee est vérifié sur la prod depuis le
+  14/11 (montants en euros, jours, flottes).
 
 ### Prévu
 
@@ -374,9 +476,11 @@ AXE-424, et tout le cœur VTC ci-dessus. Reste, dans l'ordre :
 1. AXE-842 : production à jour, puis AXE-850 : reprendre les écritures
    restées au 471 après la synchro sans modèle du 05/11.
 2. AXE-728 : première synchro et bulletin de connexion des chauffeurs réels.
-3. Brancher Rollee en production : branchement, chauffeurs reliés, relevés
-   rapprochés. AXE-801 (relevés CSV Uber et Bolt) reste le secours pour un
-   chauffeur sans Rollee ; il réutilisera la même OD de ventilation.
+3. ~~Brancher Rollee en production~~ : fait le 14-15/11 pour les 9
+   dossiers reliés (rapprochement par semaine, AXE-924). Reste : relier les
+   6 autres dossiers, et la banque des dossiers qui n'en ont pas. AXE-801
+   (relevés CSV Uber et Bolt) reste le secours pour un chauffeur sans
+   Rollee ; il passera par le même rapprochement par semaine (AXE-924).
 4. **AXE-733 (le jalon)** : un mois d'un dossier réel, tranché, équilibré,
    exporté.
 
@@ -393,7 +497,8 @@ AXE-424, et tout le cœur VTC ci-dessus. Reste, dans l'ordre :
   seulement s'il fait mieux sur le jeu gelé ; avec lui, le top 3 du modèle
   dans l'entrée du LLM.
 - AXE-903 : mesurer le rappel de la détection d'anomalies.
-- AXE-912 : débloquer un versement de plateforme « à vérifier ».
+- AXE-912 : débloquer un versement de plateforme « à vérifier » (depuis
+  AXE-924 : une semaine à vérifier).
 
 **Après, ou à trancher**
 - AXE-423 : finir l'audit du dataset 10 ans. La relecture des 500 lignes
@@ -402,6 +507,8 @@ AXE-424, et tout le cœur VTC ci-dessus. Reste, dans l'ordre :
 - AXE-433 : connexion bancaire directe par le chauffeur (basse priorité).
 - AXE-484 : annexes 2054 à 2059 en détail et Test Compta Demat (basse).
 - AXE-765 : connecter Qonto et un accès dédié pour le bot Finance & Admin.
+- AXE-920 : dividendes, « date dans le futur » entre minuit et 1 h (date
+  UTC au lieu de Paris) ; un test échoue sur `main` à cette heure-là.
 
 ### Plan V1 de l'analyse critique du 2026-11-05 : où on en est
 
@@ -424,8 +531,10 @@ sur une référence provisoire). Détail plus haut.
   sont rédigés, AXE-859).
 - Calendrier : AXE-815 (relecture par un expert-comptable **avant le
   31/01/2027** ; les liasses 2026 partent en mai 2027). Elle doit couvrir
-  les choix pris cette semaine : table de TVA déductible, plafond de
-  l'art. 39-4 non appliqué au VTC, comptes du pack.
+  les choix pris en novembre : table de TVA déductible, plafond de
+  l'art. 39-4 non appliqué au VTC, comptes du pack. Les comptes des
+  recettes de plateformes suivent déjà le schéma envoyé par
+  l'expert-comptable (AXE-931).
 
 ### Décisions à prendre (ouvertes dans Linear)
 
@@ -438,6 +547,11 @@ sur une référence provisoire). Détail plus haut.
   continu et décision RGS), et arbitrer ce qui glisse en T1 2027.
 - Offboarding (doc 14 §2 : export et purge d'un tenant, RGPD) : aucun
   ticket. À décider s'il fait partie de la V1 ou du contrat (AXE-813).
+- Rapprochement par semaine : garder la règle « k × 0,99 € avec k ≤
+  nombre d'instantanés », ou exiger k = nombre d'instantanés ? Un centime
+  reste sur le 4672 de B'CARS (arrondi Bolt) : l'accepter ou l'écrire ?
+- MK DRIVING : quel compte bancaire reçoit Uber de juin à début août ?
+  Sans lui, 9 semaines Uber restent sans virement.
 
 ### Actions hors code (Louis)
 
@@ -446,8 +560,13 @@ sur une référence provisoire). Détail plus haut.
 - Faire valider par un expert-comptable la référence de 68 libellés qui a
   servi au banc de l'IA, puis relancer le banc.
 - Créer la clé Sirene 3.11 et le compte RNE (AXE-849).
-- Lancer la simulation du rapprochement Rollee sur la prod et poser le
-  bilan sur AXE-911.
+- ~~Lancer la simulation du rapprochement Rollee sur la prod~~ : fait le
+  14/11.
+- Cocher dans **Équipe** les dossiers de sa lettre de mission d'expert :
+  elle en couvre 8 sur 15. B'CARS SERVICES (DIGI_86930) n'y est pas, ses
+  rapprochements restent donc fermés dans le mode expert.
+- Cliquer sur **Synchroniser** (code du 16/11 en place).
+- Valider l'application de la reprise des virements internes (AXE-930).
 
 ### Ce qui reste vrai de septembre
 

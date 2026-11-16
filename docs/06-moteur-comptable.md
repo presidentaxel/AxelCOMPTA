@@ -1,6 +1,6 @@
 # 06 — Moteur comptable (`ledger` + `closing` + `filings`)
 
-> **État au 2026-11-13** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-16** (ajouté ; le reste du doc décrit la cible) :
 > - Invariants : I2 tenu en base (2026-09-24). I4 tenu en base depuis le
 >   06/11 (trigger, AXE-806) ; une correction d'exercice clos est datée du
 >   premier jour de l'exercice ouvert du dossier (AXE-838). I3 (séquence
@@ -11,11 +11,17 @@
 > - Une décision humaine s'écrit en OD de reclassement du compte en vigueur
 >   vers le nouveau, dans la même transaction que la décision (AXE-420,
 >   AXE-852). Un sous-compte 512x par compte bancaire (AXE-832).
-> - Templates du pack VTC faits du 12 au 13/11 :
->   - versements de plateformes : OD de ventilation 706 HT, 44571, 622,
->     44566 (autoliquidation Bolt) sur le virement déjà en 706, sans toucher
->     au 512 (AXE-821) ; contre-passée si le virement quitte le 706
->     (AXE-889) ou si le lien Rollee est retiré (AXE-911) ;
+> - Templates du pack VTC faits du 12 au 16/11 :
+>   - recettes de plateformes, **par semaine soldée** (AXE-924, remplace
+>     l'OD de ventilation d'AXE-821) : chaque jour, créance par plateforme
+>     (4671 Uber, 4672 Bolt, 4673 à 4675 Heetch, Allocab, Free Now ; 467
+>     sinon) contre 706 HT + 44571 pour les courses, **708** sans TVA pour
+>     pourboires, bonus et autres (AXE-926), commission en **6222**
+>     (autoliquidation Bolt en 44566/44571), espèces en **530** (AXE-931) ;
+>     chaque virement solde la créance, sans toucher au 512 ; frais
+>     d'instantanés en 627. Contre-passées si le lien Rollee est retiré ;
+>   - virements entre enveloppes d'un même compte : 580, par appariement à
+>     la synchro ou par OD `{S}:virement-interne` pour le passé (AXE-930) ;
 >   - TVA déductible estimée par catégorie sur les dépenses bancaires
 >     (AXE-831, `packs/tva_deductible.toml`) ;
 >   - immobilisations : amortissement linéaire au prorata (30/360), dotation

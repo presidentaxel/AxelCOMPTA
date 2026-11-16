@@ -337,22 +337,22 @@ Détail complet de la correspondance arbre ↔ docs : [docs/18-organisation-code
 
 ## Modules
 
-| Module | Rôle en une ligne | État au 2026-11-13 | Manque pour la V1 |
+| Module | Rôle en une ligne | État au 2026-11-16 | Manque pour la V1 |
 |---|---|---|---|
 | [`core/`](axelcompta/core/README.md) | Types partagés : monnaie, erreurs, ids typés, accès DB, métriques | Actif | — |
 | [`tenants/`](axelcompta/tenants/README.md) | Tenants, dossiers, matrice statut × régime, avenants, agrégats, tags, Sirene, import CSV | Actif (tous statuts sauf micro), création en masse (AXE-809), Sirene (AXE-834), tags (AXE-829), configuration confirmée (AXE-730), identité saisie (AXE-846), écarts INSEE/RNE (AXE-849), branchements (AXE-872) | Clés INSEE/RNE posées et lues en réel |
-| [`packs/`](axelcompta/packs/README.md) | Packs métier : taxonomies, règles, templates | Règles du premier flux réel (AXE-871), plancher par règle, TVA déductible par catégorie (AXE-831), LOA en 612 et véhicule en 2182 | Taxonomie et table de TVA relues (AXE-815) |
-| [`ingestion/providers/`](axelcompta/ingestion/providers/README.md) | Interface `DataProvider` + implémentations | Digifactory réel (un client par branchement, AXE-872), comptes retenus et 512x, client Rollee (AXE-818 à 821), rapprochement user Rollee ↔ dossier (AXE-911) | Rollee vu en réel, relevés Uber/Bolt (AXE-801), sortie de « à vérifier » (AXE-912) |
+| [`packs/`](axelcompta/packs/README.md) | Packs métier : taxonomies, règles, templates | Règles du premier flux réel (AXE-871), plancher par règle, TVA déductible par catégorie (AXE-831), LOA en 612 et véhicule en 2182, Heetch, Allocab et Free Now (AXE-933) | Taxonomie et table de TVA relues (AXE-815) |
+| [`ingestion/providers/`](axelcompta/ingestion/providers/README.md) | Interface `DataProvider` + implémentations | Digifactory réel (un client par branchement, AXE-872), comptes retenus et 512x, client Rollee vu en réel (AXE-818, AXE-924), carte et liens Rollee (AXE-911, #170, AXE-922, AXE-923), rapprochement par semaine et comparaison Rollee ↔ banque (AXE-924, AXE-928) | Relevés Uber/Bolt (AXE-801), sortie de « à vérifier » (AXE-912) |
 | [`documents/`](axelcompta/documents/README.md) | Justificatifs, OCR, Factur-X, matching | Stockage en base (AXE-425) | OCR, matching, WORM |
-| [`categorize/`](axelcompta/categorize/README.md) | Pipeline règles → ML → LLM → revue humaine | Virements internes, règles, modèle v2, catégorie Bridge ; prompt du LLM (AXE-888), objectifs mesurés (AXE-816), seuils par catégorie (AXE-871) | Jeu gelé (AXE-902), recalibrage (AXE-904), décision AXE-905 |
+| [`categorize/`](axelcompta/categorize/README.md) | Pipeline règles → ML → LLM → revue humaine | Virements internes (même libellé sur un compte depuis AXE-930), règles, modèle v2, catégorie Bridge ; prompt du LLM (AXE-888), objectifs mesurés (AXE-816), seuils par catégorie (AXE-871) | Jeu gelé (AXE-902), recalibrage (AXE-904), décision AXE-905 |
 | [`anomaly/`](axelcompta/anomaly/README.md) | Détection d'abus / anomalies | Détecteurs V1 (AXE-437, AXE-836), qualifications en base (AXE-814) | Jeu d'évaluation |
-| [`ledger/`](axelcompta/ledger/README.md) | ❤️ Moteur comptable pur | I2, I3, I4, I7 tenus (AXE-806, AXE-807), contre-passation, sous-comptes 512x, OD de ventilation des plateformes (AXE-821) | I8 : Test Compta Demat (AXE-484) |
+| [`ledger/`](axelcompta/ledger/README.md) | ❤️ Moteur comptable pur | I2, I3, I4, I7 tenus (AXE-806, AXE-807), contre-passation, sous-comptes 512x ; les écritures des semaines de plateforme sont dans `ingestion/` (AXE-924, AXE-931) | I8 : Test Compta Demat (AXE-484) |
 | [`closing/`](axelcompta/closing/README.md) | Clôture d'exercice, états financiers | Liasse 2033/2031, réel normal en totaux, CA3 annuelle et par période (AXE-805), immobilisations (AXE-802), LOA (AXE-803), bilan d'ouverture depuis un FEC et déficits (AXE-804) | Saisie guidée sans FEC, annexes en détail (AXE-484) |
 | [`filings/`](axelcompta/filings/README.md) | Renderers FEC, PDF, EDI-TDFC, INPI | FEC validé, CERFA 2065/2031/2033, dossier INPI | Test Compta Demat (AXE-484), signature RGS (AXE-441) |
-| [`workflow/`](axelcompta/workflow/README.md) | Validation, revue, notifications, signature | Décisions en OD de reclassement avec contexte et avis des étages (AXE-420, AXE-871, AXE-901), quarantaine (AXE-424), expert-comptable (AXE-800), rappels envoyés (AXE-808, AXE-890), budget et lots du LLM (AXE-887), indicateurs de catégorisation (AXE-900) | Signature RGS (AXE-441) |
+| [`workflow/`](axelcompta/workflow/README.md) | Validation, revue, notifications, signature | Décisions en OD de reclassement avec contexte et avis des étages (AXE-420, AXE-871, AXE-901), quarantaine (AXE-424), expert-comptable (AXE-800), rappels envoyés (AXE-808, AXE-890), budget et lots du LLM (AXE-887), indicateurs de catégorisation (AXE-900), taux de TVA de l'expert (AXE-925), virements internes en 580 (AXE-930) | Signature RGS (AXE-441) |
 | [`api/`](axelcompta/api/README.md) | Routes FastAPI, auth, permissions | `api.app`, `api/routes.py`, `api/auth.py` (AXE-840), rôles dont expert, MFA, `/metrics` à jeton, erreurs 4xx | Chaque route vers la façade de son module (AXE-428) |
 | [`pseudonymize/`](axelcompta/pseudonymize/) | Seule porte vers un LLM | Fait (AXE-436), fournisseur Anthropic par l'API Batch (AXE-887) | Allumé en production, avec une limite de dépense |
-| [`jobs/`](axelcompta/jobs/) | File de jobs Postgres (ADR-002) | Utilisée par le worker (AXE-809, AXE-845, AXE-808, événements Rollee AXE-820) | — |
+| [`jobs/`](axelcompta/jobs/) | File de jobs Postgres (ADR-002) | Utilisée par le worker (AXE-809, AXE-845, AXE-808, événements Rollee AXE-820, `rapprochement_rollee` #170) ; une demande faite pendant un job en cours attend son tour (AXE-921) | — |
 | [`ml/`](axelcompta/ml/README.md) | Entraînement, évaluation, registry modèles | Entraînement dans `_AUDIT_DONNEES/`, modèle versionné dans un bucket S3 (AXE-847) | Promotion (AXE-904), dérive |
 
 ## Ce qui existe déjà et sera réutilisé (hors de cet arbre)
@@ -454,21 +454,59 @@ vont dans Sentry ; le gestionnaire ne voit que le nombre de libellés.
 `scripts/proposer_ia.py --dossier ID [--appliquer]` reste pour remplir le
 cache d'un dossier à la main (démo d'AXE-888, plafond `--plafond-usd`).
 
-## Rollee (AXE-818 à 821, 889 à 891, 911)
+## Rollee (AXE-818 à 821, 911, 917 à 934)
 
 - `plateformes_rollee.py` : le chauffeur relie ses plateformes (Rollee
-  Connect) ; traitement des jobs `rollee` déposés par les webhooks.
-- `revenus_rollee.py` : revenus → `settlements_plateforme` → rapprochement
-  → OD `{virement}:ventilation-plateforme`. Rejouer n'écrit rien.
+  Connect) ; traitement des jobs `rollee` déposés par les webhooks. Un
+  compte au nom d'un autre chauffeur n'est pas stocké (AXE-923).
+- `revenus_rollee.py` : jours Rollee → `settlements_plateforme` →
+  semaines rapprochées (`ingestion/semaines_plateforme.py`) → écritures
+  (`revenus_semaines.py`, `ingestion/ecritures_semaines.py`). Seules les
+  semaines couvertes par la banque sont écrites. Rejouer n'écrit rien.
 - `rapprochement_rollee_service.py` et `scripts/rapprocher_rollee.py` :
-  relier les users Rollee existants à leurs dossiers, par empreintes.
+  relier les users Rollee à leurs dossiers par la carte (`cartes_rollee`)
+  et le job `rapprochement_rollee` ; `relever_portefeuille` relit Rollee
+  pour chaque dossier relié, un à la fois, depuis le bouton Synchroniser
+  (AXE-929).
+- Mode expert : `explication_semaines.py` (une semaine expliquée) et
+  `manques_rollee.py` (ce qui manque pour tout rapprocher), routes
+  `GET /expert/dossiers/{id}/rapprochements` et `…/rapprochements/manques`.
+- **Jamais deux lectures Rollee en même temps** : passer par la file de
+  jobs (`synchro_digifactory` ou `rapprochement_rollee`), que le worker
+  traite une à une.
 - Le jeton Rollee renouvelé en route est toujours gardé dans le
   branchement (`garder_parametre`) : un jeton renouvelé et perdu casse
   l'accès.
 
+## Mettre en route les tickets du 13 au 16/11 sur une base existante
+
+Fait sur la base réelle du 14 au 16/11, avec l'accord de Louis, sauf la
+dernière étape. Dans l'ordre, pour une autre base :
+
+1. `alembic upgrade head` : de `a8d4e2c71b06` à `a4c8e1d73b29` (taux de
+   TVA de l'expert). L'API refuse de démarrer sur une base en retard. La
+   base réelle est à `a4c8e1d73b29` depuis le 16/11.
+2. Rollee, comme dans la section suivante (noms attendus avant toute
+   synchro).
+3. Reprise des semaines déjà écrites sur les comptes de l'expert-comptable
+   (AXE-931 ; **363 OD appliquées le 15/11** sur la base réelle) :
+
+       python scripts/reprendre_comptes_plateforme.py --tenant TENANT              # simulation
+       python scripts/reprendre_comptes_plateforme.py --tenant TENANT --appliquer
+
+   Arrêter le worker pendant l'écriture : un worker sur un code d'avant
+   AXE-931 écrirait de nouvelles semaines sur les anciens comptes.
+4. Redémarrer API et worker, puis **Synchroniser** : Rollee est relu pour
+   chaque dossier relié, sur tout l'historique.
+5. Reprise des virements entre enveloppes en 580 (AXE-930 ; 484 OD
+   simulées, **pas encore appliquée** sur la base réelle) :
+
+       python scripts/reprendre_virements_internes.py --tenant TENANT              # simulation
+       python scripts/reprendre_virements_internes.py --tenant TENANT --appliquer
+
 ## Mettre en route Rollee après la PR 170 (AXE-922)
 
-Dans cet ordre, sur la base réelle :
+Fait sur la base réelle le 14/11. Dans cet ordre, pour une autre base :
 
 1. `alembic upgrade head` (`e7c3a9b41d28` recherche par nom, `f3a9c7e15d82`
    titulaire par compte), puis redémarrer l'API et le worker.

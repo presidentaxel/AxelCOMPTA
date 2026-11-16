@@ -111,10 +111,31 @@ ne dépend jamais d'`ingestion` en retour, règle absolue doc 03 §3).
     l'historique des liens retirés et la file « à choisir » (AXE-911).
   Chacun a son dépôt `_postgres.py`. `digifactory_contacts.py` (ex
   `demo_digifactory.py`, AXE-840) : le contact Digifactory → dossier.
-- **Prévu au 2026-11-13** : première synchro des chauffeurs réels
+- **Fait du 2026-11-14 au 2026-11-16 (Rollee sur la base réelle)** :
+  - `cartes_rollee.py` / `cartes_rollee_postgres.py` : la carte des users
+    Rollee déjà lus (empreintes, nombre de comptes, nom en clair, e-mail
+    masqué, aucun montant) ; `annuaire_rollee.py` : la recherche du
+    gestionnaire par le nom (#170, AXE-919) ;
+  - `comptes_rollee.py`, `liens_rollee.py` : plusieurs comptes par
+    chauffeur, noms attendus du lien, seuls les comptes à ce nom retenus ;
+    un compte d'un autre chauffeur n'est pas stocké (AXE-922, AXE-923) ;
+  - `semaines_plateforme.py` (pur) : le rapprochement **par semaine** des
+    jours Rollee et des virements (POP SVCS, instantanés, BOLT FR, Free
+    Now ; frais de 0,99 €), états soldée, en attente, à vérifier (AXE-924,
+    AXE-932, AXE-933) ;
+  - `ecritures_semaines.py` (pur) : les écritures d'une semaine soldée, sur
+    les comptes de l'expert-comptable (4671 à 4675, 530, 706/708, 6222,
+    627 ; AXE-924, 926, 931) ; `reprise_comptes_plateforme.py` : les OD
+    `{S}:comptes-plateforme` qui reprennent les semaines écrites avant
+    (AXE-931) ;
+  - `comparaison_rollee.py` (pur) : Rollee ↔ banque par année, mois et
+    semaine, sur tout l'historique (AXE-928).
+  `ecriture_de_ventilation()` et `reconciliation.py` (AXE-821) restent
+  pour leurs tests et pour AXE-889 ; la synchro ne les appelle plus.
+- **Prévu au 2026-11-16** : première synchro de tous les chauffeurs réels
   (AXE-728), relevés Uber et Bolt en secours de Rollee (AXE-801), sortie
-  de « à vérifier » (AXE-912), mois d'avant la connexion Digifactory
-  (AXE-833).
+  d'une semaine « à vérifier » (AXE-912), mois d'avant la connexion
+  Digifactory (AXE-833).
 
 ## Doc de référence
 

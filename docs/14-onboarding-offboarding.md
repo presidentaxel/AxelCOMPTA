@@ -1,6 +1,6 @@
 # 14 — Onboarding et offboarding des tenants
 
-> **État au 2026-11-13** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-16** (ajouté ; le reste du doc décrit la cible) :
 > - Fait : invitations en masse, renvoi et annulation (AXE-702) ; écran des
 >   connexions bancaires Digifactory et relances dans la cloche.
 > - Fait : création des dossiers en masse depuis un CSV (« ; » ou « , »,
@@ -23,8 +23,9 @@
 > - Fait : intégrations du portefeuille en branchements, plusieurs par type
 >   (AXE-872). Le chauffeur relie Uber et Bolt via Rollee Connect (AXE-819),
 >   relancé tant qu'il ne l'a pas fait (AXE-890) ; un user Rollee existant
->   est relié à son dossier automatiquement ou par le gestionnaire
->   (AXE-911).
+>   est relié à son dossier automatiquement ou par le gestionnaire, qui le
+>   cherche par le nom (AXE-911, AXE-919). Un chauffeur peut avoir
+>   plusieurs comptes Rollee ; seuls ceux à son nom sont retenus (AXE-922).
 > - Fait : reprise d'historique par import du FEC de l'outil précédent
 >   (§1.6, AXE-804), par le dirigeant ou l'expert-comptable habilité. Pas
 >   fait : la saisie guidée sans FEC, la reprise des immobilisations (à

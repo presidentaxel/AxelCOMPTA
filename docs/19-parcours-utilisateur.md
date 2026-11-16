@@ -159,10 +159,17 @@ dossiers de sa lettre de mission.
 - Plateformes (Rollee) : « Plateformes reliées : 1/2 · 1 à reconnecter ·
   3 versements à vérifier ». Le détail des versements (brut, commission,
   versé) n'est qu'au chauffeur (AXE-819, AXE-821, AXE-891).
-- Relier un compte Rollee au bon dossier (AXE-911) : le gestionnaire voit
-  ce qui correspond (« même IBAN », « même nom »), des initiales, les
-  plateformes et les 4 derniers chiffres de l'IBAN. Il choisit, ou retire
-  un lien avec un motif ; chaque geste va au journal d'accès.
+- Relier un compte Rollee au bon dossier (AXE-911, AXE-919) : le
+  gestionnaire voit ce qui correspond (« même nom »), le nom du user Rollee
+  en clair, son e-mail masqué (« e•••n@x.fr ») et ses plateformes. Il
+  cherche un user par le nom, choisit, ou retire un lien avec un motif ;
+  chaque geste va au journal d'accès. Un compte au nom d'un autre chauffeur
+  n'est ni relié ni montré (AXE-923).
+- Ce qui manque pour rapprocher Rollee et la banque (AXE-934) : l'expert
+  habilité le voit en tête des rapprochements (compte à reconnecter,
+  banque absente, semaines sans virement). Le détail des semaines (dû,
+  payé, écart) n'est qu'au chauffeur et à l'expert habilité (AXE-925,
+  AXE-928).
 - Registres officiels (AXE-849) : l'écart s'affiche en clair, sauf les noms
   de personnes (« Dirigeant différent de celui du registre. »).
 - IA (AXE-887) : le nombre de libellés proposés ce mois-ci, jamais le coût.
