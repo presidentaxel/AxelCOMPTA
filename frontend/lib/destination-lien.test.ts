@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { destinationLienAuth, repriseLienAuth } from "./destination-lien";
+import { adresseRetourAuth, destinationLienAuth, repriseLienAuth } from "./destination-lien";
 
 function jeton(charge: Record<string, unknown>): string {
   const corps = Buffer.from(JSON.stringify(charge)).toString("base64url");
@@ -55,6 +55,36 @@ test("une erreur Supabase dans l'adresse n'est pas une session expirée", () => 
   assert.equal(
     destinationLienAuth("/", "", "#error=access_denied&error_code=otp_expired"),
     "/auth/lien#error=access_denied&error_code=otp_expired",
+  );
+});
+
+test("le lien d'e-mail non encore échangé garde le côté demandé", () => {
+  assert.equal(
+    destinationLienAuth(
+      "/portefeuille",
+      "?token_hash=abc&type=recovery&cote=gestionnaire",
+      "",
+    ),
+    "/auth/lien?token_hash=abc&type=recovery&cote=gestionnaire",
+  );
+  assert.equal(
+    destinationLienAuth("/", "?token_hash=abc&type=magiclink&cote=chauffeur", ""),
+    "/auth/lien?token_hash=abc&type=magiclink&cote=chauffeur",
+  );
+});
+
+test("l'adresse de retour porte le côté du formulaire", () => {
+  assert.equal(
+    adresseRetourAuth("https://compta.axelproject.fr", "gestionnaire"),
+    "https://compta.axelproject.fr/auth/lien?cote=gestionnaire",
+  );
+  assert.equal(
+    adresseRetourAuth("https://compta.axelproject.fr", "chauffeur"),
+    "https://compta.axelproject.fr/auth/lien?cote=chauffeur",
+  );
+  assert.equal(
+    adresseRetourAuth("https://compta.axelproject.fr"),
+    "https://compta.axelproject.fr/auth/lien?flux=compte",
   );
 });
 

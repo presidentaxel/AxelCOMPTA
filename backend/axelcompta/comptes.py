@@ -142,6 +142,7 @@ class SupabaseConfig:
 
 _PAR_PAGE = 200
 _PAGES_MAX = 50
+# Le courriel ajoute `?token_hash` à cette adresse : pas de query ici.
 _CHEMIN_INVITATION_MEMBRE = "/auth/lien"
 _CHEMIN_INVITATION_CHAUFFEUR = "/chauffeur/accepter-invitation"
 

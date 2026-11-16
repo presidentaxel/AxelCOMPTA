@@ -1,32 +1,52 @@
 /** Où déposer un lien Supabase quand il n'arrive pas sur sa page.
  *
- * Le tableau de bord n'accepte un `redirect_to` que s'il est identique à
- * une URL autorisée. Sinon le lien retombe sur l'adresse du site, avec les
- * jetons dans le fragment. L'accueil envoie alors vers `/portefeuille`, et
- * la session absente ne doit pas effacer ce fragment. */
+ * Le `redirect_to` porte le côté du formulaire (`?cote=`). Supabase compare
+ * l'adresse sans cette query à la liste autorisée, puis la conserve. Si le
+ * lien retombe quand même sur l'accueil, le fragment ou `token_hash` est
+ * repris ici, avant que l'absence de session n'envoie vers la connexion.
+ * Le côté est aussi gardé dans ce navigateur : le clic depuis l'e-mail
+ * ouvre un autre onglet, qui n'a pas le sessionStorage de la demande. */
 
 import { coteOuverte, type Cote } from "./cote-connexion";
 
 const CLE_COTE = "axelcompta_cote_lien";
 
-/** Le formulaire qui demande le lien. Le `redirect_to` reste sans paramètre,
- * pour coller à l'URL autorisée ; le côté est relu au retour, sur ce
- * navigateur. */
+function coteStockee(stockage: Storage): Cote | null {
+  const cote = stockage.getItem(CLE_COTE);
+  return cote === "chauffeur" || cote === "gestionnaire" ? cote : null;
+}
+
+/** Le formulaire qui demande le lien. `localStorage` : le nouvel onglet de
+ * l'e-mail le lit encore. `sessionStorage` : un onglet déjà ouvert, avant
+ * ce changement. */
 export function memoriserCoteLien(cote: Cote): void {
+  try {
+    window.localStorage.setItem(CLE_COTE, cote);
+  } catch {
+    // Le jeton suffit quand le compte n'a qu'un côté.
+  }
   try {
     window.sessionStorage.setItem(CLE_COTE, cote);
   } catch {
-    // Le jeton suffit quand le compte n'a qu'un côté.
+    // idem
   }
 }
 
 export function coteMemorisee(): Cote | null {
   try {
-    const cote = window.sessionStorage.getItem(CLE_COTE);
-    return cote === "chauffeur" || cote === "gestionnaire" ? cote : null;
+    return coteStockee(window.localStorage) ?? coteStockee(window.sessionStorage);
   } catch {
     return null;
   }
+}
+
+/** Adresse exacte passée à Supabase. La query est le côté, ou `flux=compte`
+ * pour le changement d'adresse : le courriel ajoute `&token_hash` derrière,
+ * donc un `?` est toujours là. */
+export function adresseRetourAuth(origin: string, cote?: Cote | null): string {
+  const base = `${origin}/auth/lien`;
+  if (cote === "chauffeur" || cote === "gestionnaire") return `${base}?cote=${cote}`;
+  return `${base}?flux=compte`;
 }
 
 function parametres(fragment: string): URLSearchParams {
@@ -46,7 +66,11 @@ export function fragmentPorteUnLien(fragment: string): boolean {
 function recherchePorteUnLien(recherche: string): boolean {
   const recu = new URLSearchParams(recherche);
   return (
-    recu.has("code") || recu.has("error") || recu.has("error_code") || recu.has("error_description")
+    recu.has("code") ||
+    recu.has("token_hash") ||
+    recu.has("error") ||
+    recu.has("error_code") ||
+    recu.has("error_description")
   );
 }
 

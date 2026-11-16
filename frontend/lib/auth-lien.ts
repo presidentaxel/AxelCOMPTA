@@ -5,8 +5,11 @@
 
 import {
   decoderChargeUtileJwt,
+  enTetesSupabase,
   enregistrerSessionChauffeur,
   ErreurAuthChauffeur,
+  extraireErreurSupabase,
+  URL_SUPABASE,
 } from "./auth-chauffeur";
 import {
   deconnecterGestionnaire,
@@ -14,12 +17,14 @@ import {
   ouvrirSessionGestionnaire,
 } from "./auth-gestionnaire";
 import { cheminDuDossier, liensDuJeton } from "./compte-de-test";
-import { coteOuverte, type Cote } from "./cote-connexion";
+import { coteDemandee, coteOuverte, type Cote } from "./cote-connexion";
+import { coteMemorisee } from "./destination-lien";
 import { CHEMIN_DOUBLE_AUTHENTIFICATION } from "./mfa-code";
 import {
   MESSAGE_ESPACE_CHAUFFEUR,
   MESSAGE_ESPACE_GESTIONNAIRE,
   MESSAGE_LIEN_EXPIRE,
+  MESSAGE_LIEN_INCOMPLET,
   MESSAGE_SANS_LIEN,
   messageParametresAuth,
   traduireExceptionAuth,
@@ -43,6 +48,83 @@ export function pageInvitation(accessToken: string): "chauffeur" | "gestionnaire
   const cote = coteOuverte(charge.app_metadata, null);
   if (cote === "chauffeur" || cote === "gestionnaire") return cote;
   throw new ErreurAuthChauffeur(MESSAGE_SANS_LIEN);
+}
+
+const TYPES_JETON = new Set(["signup", "invite", "magiclink", "recovery", "email_change", "email"]);
+
+const echanges = new Map<string, Promise<FragmentAuth>>();
+
+async function appelerVerify(tokenHash: string, type: string): Promise<FragmentAuth> {
+  if (!TYPES_JETON.has(type)) throw new ErreurAuthChauffeur(MESSAGE_LIEN_EXPIRE);
+  let reponse: Response;
+  try {
+    reponse = await fetch(`${URL_SUPABASE}/auth/v1/verify`, {
+      method: "POST",
+      headers: enTetesSupabase(),
+      body: JSON.stringify({ token_hash: tokenHash, type }),
+    });
+  } catch (exception) {
+    throw new ErreurAuthChauffeur(traduireExceptionAuth(exception));
+  }
+  if (!reponse.ok) await extraireErreurSupabase(reponse);
+  const corps = (await reponse.json().catch(() => ({}))) as {
+    access_token?: string;
+    refresh_token?: string;
+    session?: { access_token?: string; refresh_token?: string };
+  };
+  const session = corps.session ?? corps;
+  if (!session.access_token || !session.refresh_token) {
+    throw new ErreurAuthChauffeur(MESSAGE_LIEN_EXPIRE);
+  }
+  return { accessToken: session.access_token, refreshToken: session.refresh_token, type };
+}
+
+/** Un seul échange par jeton : React relance l'effet en développement, et
+ * Supabase refuse le second appel (« déjà ouvert »). */
+export function echangerJetonHash(tokenHash: string, type: string): Promise<FragmentAuth> {
+  const cle = `${type}\n${tokenHash}`;
+  const deja = echanges.get(cle);
+  if (deja) return deja;
+  const promesse = appelerVerify(tokenHash, type).catch((exception: unknown) => {
+    echanges.delete(cle);
+    throw exception;
+  });
+  echanges.set(cle, promesse);
+  return promesse;
+}
+
+function deposerFragment(recu: FragmentAuth): void {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("token_hash");
+  const hash = new URLSearchParams({
+    access_token: recu.accessToken,
+    refresh_token: recu.refreshToken,
+    type: recu.type,
+  });
+  url.hash = hash.toString();
+  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+/** Lit le lien ouvert dans cet onglet. `token_hash` vient du courriel : on
+ * l'échange ici, un logiciel de messagerie qui ne fait qu'ouvrir l'adresse
+ * ne consomme pas le jeton. Le côté est celui de l'adresse, sinon celui
+ * mémorisé quand le formulaire a demandé le lien. */
+export async function lireLienCourant(): Promise<{ fragment: FragmentAuth; cote: Cote | null }> {
+  const recherche = new URLSearchParams(window.location.search);
+  const cote = coteDemandee(recherche.toString()) ?? coteMemorisee();
+  const message = messageParametresAuth(recherche);
+  if (message) throw new ErreurAuthChauffeur(message);
+  const tokenHash = recherche.get("token_hash");
+  const type = recherche.get("type");
+  if (tokenHash && type && !window.location.hash.includes("access_token=")) {
+    const recu = await echangerJetonHash(tokenHash, type);
+    deposerFragment(recu);
+    return { fragment: recu, cote };
+  }
+  if (recherche.get("code") && !window.location.hash.includes("access_token=")) {
+    throw new ErreurAuthChauffeur(MESSAGE_LIEN_INCOMPLET);
+  }
+  return { fragment: lireFragmentAuth(window.location.hash), cote };
 }
 
 export function lireFragmentAuth(fragment: string): FragmentAuth {

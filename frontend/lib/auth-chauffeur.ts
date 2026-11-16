@@ -27,7 +27,7 @@ import {
 } from "./messages-auth";
 import { avecDossierDeTest, liensDuJeton } from "./compte-de-test";
 import { coteOuverte } from "./cote-connexion";
-import { memoriserCoteLien } from "./destination-lien";
+import { adresseRetourAuth, memoriserCoteLien } from "./destination-lien";
 import { appelAuthentifie, erreurApi, lireCorps } from "./session";
 import type { Identite, IdentiteDossierVue, PreRemplissage } from "./identite-entreprise";
 import type { AnalyseFec, OuvertureVue } from "./ouverture";
@@ -165,15 +165,13 @@ async function ignorerAbsenceDeCompte(reponse: Response): Promise<void> {
   throw new ErreurAuthChauffeur(traduireCorpsAuth(corps, reponse.status));
 }
 
-/** Page qui reçoit les jetons Supabase (fragment `#access_token`), pour le
- * lien magique, la réinitialisation et la confirmation de changement
- * d'adresse. L'adresse est exactement `/auth/lien`, sans paramètre :
- * Supabase ignore un `redirect_to` qui n'est pas identique à une URL
- * autorisée et renvoie alors à la racine du site. Le côté demandé est
- * mémorisé pour ce navigateur. L'invitation chauffeur garde sa page dédiée. */
+/** Page qui reçoit le lien (jeton dans la query, ou fragment `#access_token`
+ * pour un courriel encore ancien). `?cote=` dit quel formulaire a demandé
+ * le lien : un compte qui a les deux accès n'ouvre que celui-là. Le côté
+ * est aussi mémorisé, au cas où Supabase renverrait à la racine du site. */
 export function urlRetourAuth(cote?: "chauffeur" | "gestionnaire"): string {
   if (cote) memoriserCoteLien(cote);
-  return `${window.location.origin}/auth/lien`;
+  return adresseRetourAuth(window.location.origin, cote);
 }
 
 export async function envoyerLienMagique(
