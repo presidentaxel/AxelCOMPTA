@@ -352,6 +352,23 @@ def _client_expert() -> TestClient:
     return _client_et_stubs(role=ROLE_EXPERT)[0]
 
 
+def test_un_membre_retire_est_refuse_meme_avec_un_jeton_valide() -> None:
+    """Retirer l'accès laisse le jeton Supabase en vie. Chaque appel, y
+    compris celui que l'écran fait au rechargement, répond 401 pour que le
+    navigateur efface la session."""
+    client = _client()
+    app = cast(FastAPI, client.app)
+
+    def _retire(identite: IdentiteDep) -> str | None:
+        return "retire" if identite is not None and identite.tenant_id is not None else None
+
+    app.dependency_overrides[get_role_appelant] = _retire
+    for chemin in ("/portefeuille/moi", "/dossiers"):
+        reponse = client.get(chemin, headers=_en_tete_gestionnaire())
+        assert reponse.status_code == 401
+        assert reponse.json()["detail"] == "Accès retiré."
+
+
 def test_lister_dossiers_retourne_les_3_chauffeurs_type() -> None:
     reponse = _client().get("/dossiers", headers=_en_tete_gestionnaire())
     assert reponse.status_code == 200

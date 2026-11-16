@@ -40,6 +40,7 @@ export default function EquipePage() {
   const [emailInvite, setEmailInvite] = useState("");
   const [roleInvite, setRoleInvite] = useState<RoleMembre>("membre");
   const [enCours, setEnCours] = useState(false);
+  const [recherche, setRecherche] = useState("");
   // Un chargement lancé avant une invitation ou un changement de rôle ne
   // réécrit pas la liste avec la réponse plus ancienne.
   const requeteCourante = useRef(0);
@@ -93,6 +94,10 @@ export default function EquipePage() {
       : email
         ? [{ email, role: "admin" as const, statut: "actif" as const }]
         : [];
+  const cherche = recherche.trim().toLowerCase();
+  const listeFiltree = cherche
+    ? liste.filter((membre) => membre.email.toLowerCase().includes(cherche))
+    : liste;
 
   return (
     <div>
@@ -106,8 +111,9 @@ export default function EquipePage() {
       )}
 
       <div className="mt-8 grid items-start gap-8 lg:grid-cols-3">
+      <div className="space-y-10 lg:col-span-2">
       <form
-        className="space-y-4 lg:col-span-2"
+        className="space-y-4"
         onSubmit={async (evenement) => {
           evenement.preventDefault();
           setEnCours(true);
@@ -144,8 +150,22 @@ export default function EquipePage() {
           Envoyer l&apos;invitation
         </Button>
       </form>
-      <ul>
-        {liste.map((membre) => (
+      <ExpertsDeclares admin={droit.admin} />
+      </div>
+      <section aria-labelledby="titre-equipe">
+        <h2 id="titre-equipe" className="text-sm font-medium text-ink">
+          Membres de l&apos;équipe
+        </h2>
+        <Input
+          type="search"
+          value={recherche}
+          onChange={(evenement) => setRecherche(evenement.target.value)}
+          placeholder="Rechercher un membre"
+          aria-label="Rechercher un membre"
+          className="mt-3"
+        />
+      <ul className="mt-2">
+        {listeFiltree.map((membre) => (
           <li key={membre.email} className="border-b border-hairline py-4">
             <p className="text-sm font-medium text-ink">
               {membre.email}
@@ -256,8 +276,11 @@ export default function EquipePage() {
           </li>
         ))}
       </ul>
+        {cherche && listeFiltree.length === 0 && (
+          <p className="mt-4 text-sm text-subtle">Aucun membre ne correspond.</p>
+        )}
+      </section>
       </div>
-      <ExpertsDeclares admin={droit.admin} />
       {confirmation && <ConfirmationDialogue confirmation={confirmation} onFermer={() => setConfirmation(null)} />}
     </div>
   );

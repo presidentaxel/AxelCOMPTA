@@ -11,7 +11,7 @@
  */
 
 import { ApiError } from "./api";
-import { messageConnexionEnAttente } from "./message-connexion";
+import { laisserMessageConnexion, messageConnexionEnAttente } from "./message-connexion";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -85,15 +85,37 @@ async function renouveler<S extends Jetons>(espace: EspaceAuthentifie<S>): Promi
   }
 }
 
-/** Efface la session et quitte la page interne pour la page de connexion. */
-export function renvoyerVersConnexion<S extends Jetons>(espace: EspaceAuthentifie<S>): never {
+export const MESSAGE_ACCES_RETIRE = "Votre accès a été retiré.";
+const DETAIL_ACCES_RETIRE = "Accès retiré.";
+
+/** Efface la session et quitte la page interne pour la page de connexion.
+ * `motif` remplace « session expirée » : un accès retiré n'est pas une
+ * échéance de jeton. */
+export function renvoyerVersConnexion<S extends Jetons>(
+  espace: EspaceAuthentifie<S>,
+  motif?: string,
+): never {
   espace.effacer();
+  if (motif) laisserMessageConnexion(motif);
   if (typeof window !== "undefined") {
     const retour = window.location.pathname + window.location.search;
-    const parametres = new URLSearchParams({ session: "expiree", retour });
+    const parametres = new URLSearchParams({
+      session: motif ? "retire" : "expiree",
+      retour,
+    });
     window.location.replace(`${espace.pageConnexion}?${parametres.toString()}`);
   }
-  throw new SessionExpiree("Votre session a expiré. Reconnectez-vous.");
+  throw new SessionExpiree(motif ?? "Votre session a expiré. Reconnectez-vous.");
+}
+
+async function accesRetire(reponse: Response): Promise<boolean> {
+  if (reponse.status !== 401) return false;
+  try {
+    const corps = (await reponse.clone().json()) as { detail?: unknown };
+    return corps.detail === DETAIL_ACCES_RETIRE;
+  } catch {
+    return false;
+  }
 }
 
 async function envoyer(url: string, init: RequestInit, accessToken: string): Promise<Response> {
@@ -126,10 +148,13 @@ export async function appelAuthentifie<S extends Jetons>(
   }
   const reponse = await envoyer(url, init, session.accessToken);
   if (reponse.status !== 401) return reponse;
+  // Le jeton est encore bon : le renouveler ne rendrait pas l'accès.
+  if (await accesRetire(reponse)) renvoyerVersConnexion(espace, MESSAGE_ACCES_RETIRE);
   if (!(await renouveler(espace))) renvoyerVersConnexion(espace);
   const renouvelee = espace.lire();
   if (!renouvelee) renvoyerVersConnexion(espace);
   const rejouee = await envoyer(url, init, renouvelee.accessToken);
+  if (await accesRetire(rejouee)) renvoyerVersConnexion(espace, MESSAGE_ACCES_RETIRE);
   if (rejouee.status === 401) renvoyerVersConnexion(espace);
   return rejouee;
 }

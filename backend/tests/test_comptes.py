@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 
@@ -112,6 +114,29 @@ def test_membres_distingue_invitation_envoyee_et_acceptee() -> None:
     assert [(membre.email, membre.accepte) for membre in membres] == [
         ("marie@exemple.fr", False),
         ("paul@exemple.fr", True),
+    ]
+
+
+def test_invitation_renvoie_vers_la_page_du_mot_de_passe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Le lien dépose la personne sur la page qui lui fait choisir un mot
+    de passe, pas sur l'accueil de l'application."""
+    monkeypatch.setenv("AXELCOMPTA_URL_APP", "https://compta.axelproject.fr/")
+    appels: list[httpx.Request] = []
+    depot = _depot_supabase([], appels)
+
+    depot.inviter_membre("T1", "marie@exemple.fr")
+    depot.inviter(DossierId("d1"), "sophie@exemple.fr", verifier_existant=False)
+
+    invitations = [a for a in appels if a.method == "POST" and a.url.path.endswith("/invite")]
+    assert [json.loads(a.content) for a in invitations] == [
+        {
+            "email": "marie@exemple.fr",
+            "redirect_to": "https://compta.axelproject.fr/auth/lien",
+        },
+        {
+            "email": "sophie@exemple.fr",
+            "redirect_to": "https://compta.axelproject.fr/chauffeur/accepter-invitation",
+        },
     ]
 
 
