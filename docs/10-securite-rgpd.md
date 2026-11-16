@@ -40,6 +40,12 @@
 > - Production hébergée depuis le 16/11 sur un droplet (HTTPS par Caddy,
 >   CORS limité à l'adresse publique du front, AXE-427, AXE-948).
 >   L'hébergeur applicatif reste à reporter dans les textes juridiques.
+> - Page publique (AXE-949) : un visiteur sans compte laisse nom, e-mail,
+>   organisation, profil et un message facultatif. Le rôle web ne peut que
+>   les ajouter, les compter et noter la notification ; seules les tâches
+>   planifiées les relisent. L'équipe est prévenue sur Slack par un webhook
+>   gardé dans l'environnement, jamais en base ni dans un journal. La durée de
+>   conservation de ces demandes reste à décider.
 > - Pas fait : sauvegardes avec restauration testée (AXE-811), relecture
 >   juriste, acceptation tracée et DPA
 >   signé (AXE-813), offboarding (export et purge d'un tenant, doc 14 :
@@ -88,6 +94,7 @@ appels LLM, injection via fichiers importés, exfiltration base, erreur interne
 | Dataset d'entraînement | Pseudonymisé, durée contractuelle | Purge/re-pseudonymisation à la sortie d'un client. |
 | Logs applicatifs | 12 mois (sans données nominatives dans les logs — lint des appels de log) | Rotation. |
 | Comptes utilisateurs inactifs | 24 mois | Anonymisation. |
+| Demandes d'échange de la page publique (nom, e-mail, organisation, message) | À décider (AXE-949) | Purge. |
 
 Procédures à implémenter : export des données d'un tenant (réversibilité
 contractuelle), purge complète d'un tenant, réponse à une demande d'accès d'une

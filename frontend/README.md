@@ -91,6 +91,15 @@ chauffeur (mobile) est cadré dans [doc 19](../docs/19-parcours-utilisateur.md).
   à la fois, « Annuler »), Exercice, Mon résultat, Compte et cloche. Revues
   UX AXE-563 et AXE-564 traitées. Tests Playwright dans `e2e/`
   (`npm run e2e`).
+- **Page publique (AXE-949)** : `/` affiche la vitrine d'AxeLCompta, lisible
+  sans compte (`app/(public)/page.tsx`, composants dans `components/landing/`,
+  texte dans `lib/landing-contenu.ts`). Le formulaire « Demander un échange »
+  envoie vers `POST /demandes-echange` (`lib/demande-echange.ts`) ; le pied de
+  page donne les cinq textes juridiques. Une personne déjà connectée est
+  renvoyée vers `/portefeuille` ou `/chauffeur` par `GardeAccueil`
+  (`lib/accueil.ts`) : la session est dans le navigateur, le serveur ne la lit
+  pas. Aucun traceur ni mesure d'audience. Les destinations par défaut après
+  connexion sont `/portefeuille`, plus `/`.
 - **V1 (doc 12, phase 3-4)** : Next.js complet sur `api/` (le vrai backend,
   auth/MFA, multi-tenant), design system (`DESIGN.md`), maquettes Figma
   validées avec 2 utilisateurs cibles (doc 12 §0.3).

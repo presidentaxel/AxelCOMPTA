@@ -540,6 +540,16 @@ reste sur Supabase.
   propriétaire `deploy`, mode 600) et autoriser
   `https://<front>/auth/lien` dans Supabase.
 - Modèles des e-mails d'authentification Supabase : `deploy/emails/`.
+- **Demandes d'échange de la page publique (AXE-949)** : poser
+  `AXELCOMPTA_SLACK_DEMANDES_WEBHOOK` dans `/opt/axelcompta/.env` (un
+  webhook entrant Slack, adresse en `https://hooks.slack.com/`), puis
+  relancer `api` et `worker`. Sans lui, les demandes sont gardées dans la
+  table `demandes_echange` et l'équipe n'est pas prévenue ; elles partent
+  dès qu'il est posé (les tâches planifiées réessaient chaque heure, trois
+  essais). Une demande dont les trois essais ont échoué part dans Sentry.
+  Pour relire les demandes : `SELECT cree_le, nom, email, organisation,
+  role, notifiee_le, tentatives FROM demandes_echange ORDER BY cree_le
+  DESC;` avec le rôle propriétaire (le rôle web ne lit pas les noms).
 - Reste (AXE-811) : restauration chronométrée des sauvegardes et runbook.
 
 ## Mettre en route Rollee après la PR 170 (AXE-922)

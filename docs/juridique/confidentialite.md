@@ -1,8 +1,9 @@
 # Confidentialité et sous-traitance des données
 
-> Version du 2026-11-13. Projet, à relire par un juriste (AXE-813). Écrit à
-> partir des services réellement branchés dans le code le 2026-11-13
-> (ajouts depuis le 2026-11-10 : Rollee, Anthropic, INSEE et RNE).
+> Version du 2026-11-16. Projet, à relire par un juriste (AXE-813). Écrit à
+> partir des services réellement branchés dans le code le 2026-11-16
+> (ajouts depuis le 2026-11-10 : Rollee, Anthropic, INSEE et RNE ; depuis le
+> 2026-11-13 : les demandes d'échange de la page publique et Slack).
 
 ## 1. Qui fait quoi
 
@@ -11,6 +12,8 @@
   qui suit sa propre comptabilité) est **responsable de traitement**.
   **AXEL PROJECT** est son **sous-traitant** au sens de l'article 28 du RGPD.
 - Pour les comptes utilisateurs (e-mail de connexion, journal des accès),
+  AXEL PROJECT est responsable de traitement.
+- Pour les demandes d'échange envoyées depuis la page publique,
   AXEL PROJECT est responsable de traitement.
 
 Contact : contact@axelproject.fr.
@@ -39,6 +42,9 @@ Contact : contact@axelproject.fr.
   n'est gardé dans cette carte.
 - Ce que disent les registres publics de l'entreprise (INSEE, RNE) :
   dénomination, forme, siège, capital, dirigeants, état.
+- Demandes d'échange (page publique d'AxeLCompta, sans compte) : nom,
+  e-mail professionnel, organisation, profil (cabinet ou centrale) et message
+  facultatif, saisis par la personne qui demande l'échange.
 
 ## 3. Pourquoi
 
@@ -52,6 +58,8 @@ Contact : contact@axelproject.fr.
   **sur nos propres machines**. [À COMPLÉTER par le juriste : couverture
   contractuelle de cette réutilisation, doc 02 §8.]
 - Sécuriser les accès (double authentification, journal des accès).
+- Répondre à une demande d'échange et organiser l'échange demandé.
+  [À COMPLÉTER par le juriste : base légale de ce traitement.]
 
 **Service d'intelligence artificielle externe.** Le classement automatique
 se fait d'abord par des règles et par un modèle statistique exécuté sur nos
@@ -74,6 +82,7 @@ qu'AXEL PROJECT ne l'a pas allumé.
 | **Sentry** (Functional Software, Inc.), seulement s'il est activé | Rapports d'erreurs techniques, sans donnée personnelle (`send_default_pii` désactivé côté serveur) | [À COMPLÉTER : région du projet Sentry] |
 | **Rollee**, seulement si le dirigeant relie ses plateformes | Lecture des revenus et des versements des plateformes (Uber, Bolt) reliées par le dirigeant dans Rollee Connect. AxeLCompta ne transmet à Rollee que l'identifiant du dossier ; les identifiants Uber et Bolt sont saisis chez Rollee, jamais chez AxeLCompta. | [À COMPLÉTER : localisation des données chez Rollee] |
 | **Anthropic, PBC**, seulement si le service est activé | Proposition de catégorie pour des libellés d'opérations pseudonymisés (section 3) | [À COMPLÉTER : région de traitement et durée de conservation chez Anthropic] |
+| **Slack** (Salesforce, Inc.) | Messagerie interne d'AXEL PROJECT : chaque demande d'échange y est publiée (nom, e-mail, organisation, profil, message) pour qu'un membre de l'équipe y réponde | [À COMPLÉTER : localisation des données chez Slack, entité contractante] |
 | Hébergeur de l'application | Serveur web et API | [À COMPLÉTER : hébergeur applicatif, AXE-811] |
 
 **Chaîne bancaire.** AxeLCompta n'interroge pas les banques. Le dirigeant
@@ -98,7 +107,8 @@ Sirene de l'INSEE et le Registre national des entreprises (INPI).
 **Transferts hors de l'Union européenne.** Supabase, Inc. est une société
 de droit américain : même hébergées en Irlande, les données peuvent être
 soumises à une demande d'une autorité américaine (CLOUD Act, ADR-003).
-Anthropic, PBC est aussi une société de droit américain.
+Anthropic, PBC et Slack (Salesforce, Inc.) sont aussi des sociétés de droit
+américain.
 [À COMPLÉTER par le juriste : mécanisme d'encadrement (clauses
 contractuelles types, DPA Supabase).]
 
@@ -111,13 +121,15 @@ contractuelles types, DPA Supabase).]
 | Opérations bancaires brutes non comptabilisées | Durée du dossier + 1 an | Suppression |
 | Journaux techniques | 12 mois, sans donnée nominative | Rotation |
 | Comptes utilisateurs inactifs | 24 mois | Anonymisation |
+| Demandes d'échange | [À COMPLÉTER : durée de conservation] | Suppression |
 
 ## 6. Cookies et traceurs
 
 AxeLCompta ne dépose **aucun traceur de mesure d'audience ni publicitaire**.
 La session de connexion est gardée dans le stockage local du navigateur,
 uniquement pour vous garder connecté. La police de caractères est servie
-par l'application elle-même.
+par l'application elle-même. La page d'accueil publique n'en dépose pas non
+plus.
 
 ## 7. Vos droits
 
@@ -129,6 +141,9 @@ données d'un dossier, la demande passe par l'entreprise responsable de
 traitement ; AXEL PROJECT l'aide à y répondre.
 
 Chaque dossier peut exporter son FEC à tout moment.
+
+Pour une demande d'échange envoyée depuis la page publique, écrivez à
+contact@axelproject.fr.
 
 Vous pouvez saisir la CNIL (www.cnil.fr).
 
