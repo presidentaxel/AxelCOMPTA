@@ -29,7 +29,9 @@ def installer_sentry(dsn: str | None = None) -> bool:
         import sentry_sdk
     except ImportError:
         return False
-    sentry_sdk.init(dsn=effectif, send_default_pii=False)
+    # Pas de variables locales dans les traces : une opération bancaire, un
+    # nom ou un IBAN ne doivent pas partir chez Sentry (doc 15 §4.3).
+    sentry_sdk.init(dsn=effectif, send_default_pii=False, include_local_variables=False)
     return True
 
 

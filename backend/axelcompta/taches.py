@@ -33,7 +33,6 @@ from pathlib import Path
 
 from sqlalchemy.engine import Engine
 
-from axelcompta.api.observabilite import installer_sentry
 from axelcompta.api.routes import prechauffer_caches
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
@@ -51,6 +50,7 @@ from axelcompta.rapprochement_rollee_service import (
     rapprochement_actif,
 )
 from axelcompta.registres_officiels import relire_si_configure
+from axelcompta.surveillance import sentinelle_sentry
 from axelcompta.synchro_digifactory import ResultatDossier, synchroniser_portefeuille
 from axelcompta.tenants.avenants import programmer_bascules
 from axelcompta.tenants.avenants_postgres import PostgresAvenantRegimeRepository
@@ -277,13 +277,31 @@ def main() -> int:
     parseur.add_argument("--sans-synchro", action="store_true")
     args = parseur.parse_args()
 
-    if not args.sans_synchro:
-        assurer_modele()
+    # AXE-959 : Sentry dès le début, et un check-in au début et à la fin du
+    # passage. Un passage qui plante est signalé en erreur, puis relancé.
+    sentinelle = sentinelle_sentry()
+    passage = sentinelle.debut_taches()
     debut = datetime.now(UTC)
+    try:
+        bilan = passer(args.sans_synchro, debut)
+    except Exception as exc:
+        sentinelle.fin_taches(passage, True, [f"passage interrompu : {type(exc).__name__}: {exc}"])
+        raise
+    sentinelle.fin_taches(passage, bilan.echec, bilan.lignes)
+    print(f"[{debut.isoformat(timespec='seconds')}] tâches planifiées")
+    for ligne in bilan.lignes:
+        print(f"  {ligne}")
+    return 1 if bilan.echec else 0
+
+
+def passer(sans_synchro: bool, debut: datetime) -> BilanTaches:
+    """Un passage complet des tâches planifiées, dans l'ordre."""
+    if not sans_synchro:
+        assurer_modele()
     engine = engine_depuis_env()
     bilan = lancer_taches(
         PostgresDossierRepository(engine),
-        None if args.sans_synchro else (lambda d, s: synchroniser_portefeuille(engine, d, s)),
+        None if sans_synchro else (lambda d, s: synchroniser_portefeuille(engine, d, s)),
         lambda d: notifier_depuis_base(engine, d),
         lambda d: len(
             programmer_bascules(
@@ -317,7 +335,6 @@ def main() -> int:
     if debut.hour == HEURE_RATTRAPAGE_ROLLEE:
         bilan.lignes += _rollee(lambda: rattraper(suivi_postgres(engine)))
     if debut.hour == HEURE_CONTROLE_BALANCE:
-        installer_sentry()
         controler_balance(bilan, lambda: soldes_par_journal(engine), _alerter_sentry)
         bilan.lignes += mesurer_categorisation(
             lambda depuis: operations_suivies(engine, depuis), debut
@@ -326,10 +343,7 @@ def main() -> int:
             lambda: mesurer_llm(PostgresLotsLlm(engine).lister(debut_du_mois(debut)), debut)
         )
         _ecrire_metriques()
-    print(f"[{debut.isoformat(timespec='seconds')}] tâches planifiées")
-    for ligne in bilan.lignes:
-        print(f"  {ligne}")
-    return 1 if bilan.echec else 0
+    return bilan
 
 
 if __name__ == "__main__":
