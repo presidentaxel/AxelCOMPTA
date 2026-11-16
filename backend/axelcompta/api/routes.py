@@ -3001,12 +3001,21 @@ def mfa_requise(role: str | None, identite: IdentiteAuthentifiee | None) -> bool
     return role in ROLES_MFA_OBLIGATOIRE and identite is not None and identite.aal != "aal2"
 
 
+DETAIL_ACCES_RETIRE = "Accès retiré."
+
+
 def exiger_double_authentification(
     request: Request, identite: IdentiteDep, role: RoleAppelantDep
 ) -> None:
     """AXE-812 : appliqué à toute l'API. Un admin (ou un expert-comptable)
     connecté sans code n'atteint que `_ROUTES_SANS_MFA` : 403, et l'écran
-    l'envoie s'enrôler ou saisir son code."""
+    l'envoie s'enrôler ou saisir son code.
+
+    Un membre dont l'accès a été retiré reçoit 401, y compris sur ces routes :
+    son jeton Supabase est encore valide, et un 403 laisserait la session
+    ouverte dans le navigateur."""
+    if role == "retire":
+        raise HTTPException(status_code=401, detail=DETAIL_ACCES_RETIRE)
     if not mfa_requise(role, identite):
         return
     chemin = getattr(request.scope.get("route"), "path", request.url.path)
