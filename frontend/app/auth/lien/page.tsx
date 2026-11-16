@@ -17,30 +17,26 @@ import {
 import { connexionGestionnaire } from "@/lib/auth-gestionnaire";
 import {
   cheminApresChauffeur,
-  lireFragmentAuth,
+  lireLienCourant,
   ouvrirSessionDepuisJetons,
   pageInvitation,
   type FragmentAuth,
 } from "@/lib/auth-lien";
-import { coteDemandee, coteOuverte, type Cote } from "@/lib/cote-connexion";
-import { coteMemorisee } from "@/lib/destination-lien";
-import {
-  MESSAGE_ESPACE_CHAUFFEUR,
-  MESSAGE_ESPACE_GESTIONNAIRE,
-  MESSAGE_SANS_LIEN,
-} from "@/lib/messages-auth";
+import { coteOuverte, type Cote } from "@/lib/cote-connexion";
 import {
   INDICATION_MOT_DE_PASSE,
   LONGUEUR_MIN_MOT_DE_PASSE,
-  MESSAGE_LIEN_INCOMPLET,
-  messageParametresAuth,
+  MESSAGE_ESPACE_CHAUFFEUR,
+  MESSAGE_ESPACE_GESTIONNAIRE,
+  MESSAGE_SANS_LIEN,
   traduireExceptionAuth,
 } from "@/lib/messages-auth";
 
 type Etape = "lecture" | "mot_de_passe" | "email_confirme" | "erreur";
 
 /** Cible des liens Supabase : magique, réinitialisation, confirmation
- * d'adresse. Les jetons restent dans le fragment, jamais envoyés au serveur. */
+ * d'adresse. Le courriel pose `token_hash` dans l'adresse ; un fragment
+ * `#access_token` reste accepté pour un courriel déjà envoyé. */
 export default function LienAuthPage() {
   const router = useRouter();
   const idMotDePasse = useId();
@@ -54,54 +50,56 @@ export default function LienAuthPage() {
   const [cote, setCote] = useState<Cote | null>(null);
 
   useEffect(() => {
+    let ignore = false;
     // Le fragment `#access_token` n'existe que dans le navigateur.
-    /* eslint-disable react-hooks/set-state-in-effect */
-    try {
-      const recherche = new URLSearchParams(window.location.search);
-      const demandee = coteDemandee(recherche.toString()) ?? coteMemorisee();
-      setCote(demandee);
-      const messageRecherche = messageParametresAuth(recherche);
-      if (messageRecherche) throw new ErreurAuthChauffeur(messageRecherche);
-      const code = recherche.get("code");
-      if (code && !window.location.hash.includes("access_token=")) {
-        throw new ErreurAuthChauffeur(MESSAGE_LIEN_INCOMPLET);
+    void (async () => {
+      try {
+        const recuLien = await lireLienCourant();
+        if (ignore) return;
+        const recu = recuLien.fragment;
+        const demandee = recuLien.cote;
+        setCote(demandee);
+        if (recu.type === "invite" && pageInvitation(recu.accessToken) === "chauffeur") {
+          window.location.replace(
+            `/chauffeur/accepter-invitation${window.location.search}${window.location.hash}`,
+          );
+          return;
+        }
+        if (recu.type === "invite") {
+          setFragment(recu);
+          setPremiereConnexion(true);
+          setEtape("mot_de_passe");
+          return;
+        }
+        if (recu.type === "recovery") {
+          setFragment(recu);
+          setEtape("mot_de_passe");
+          return;
+        }
+        const chargeLien = decoderChargeUtileJwt(recu.accessToken);
+        const compatible =
+          demandee !== null && coteOuverte(chargeLien.app_metadata, demandee) !== "interdit";
+        const demandeeOuvrir = compatible ? demandee : null;
+        const chemin = ouvrirSessionDepuisJetons(
+          recu.accessToken,
+          recu.refreshToken,
+          demandeeOuvrir,
+        );
+        if (recu.type === "email_change") {
+          setDestination(chemin);
+          setEtape("email_confirme");
+          return;
+        }
+        router.replace(chemin);
+      } catch (exception) {
+        if (ignore) return;
+        setErreur(traduireExceptionAuth(exception));
+        setEtape("erreur");
       }
-      const recu = lireFragmentAuth(window.location.hash);
-      if (recu.type === "invite" && pageInvitation(recu.accessToken) === "chauffeur") {
-        window.location.replace(`/chauffeur/accepter-invitation${window.location.hash}`);
-        return;
-      }
-      if (recu.type === "invite") {
-        setFragment(recu);
-        setPremiereConnexion(true);
-        setEtape("mot_de_passe");
-        return;
-      }
-      if (recu.type === "recovery") {
-        setFragment(recu);
-        setEtape("mot_de_passe");
-        return;
-      }
-      const chargeLien = decoderChargeUtileJwt(recu.accessToken);
-      const compatible =
-        demandee !== null && coteOuverte(chargeLien.app_metadata, demandee) !== "interdit";
-      const demandeeOuvrir = compatible ? demandee : null;
-      const chemin = ouvrirSessionDepuisJetons(
-        recu.accessToken,
-        recu.refreshToken,
-        demandeeOuvrir,
-      );
-      if (recu.type === "email_change") {
-        setDestination(chemin);
-        setEtape("email_confirme");
-        return;
-      }
-      router.replace(chemin);
-    } catch (exception) {
-      setErreur(traduireExceptionAuth(exception));
-      setEtape("erreur");
-    }
-    /* eslint-enable react-hooks/set-state-in-effect */
+    })();
+    return () => {
+      ignore = true;
+    };
   }, [router]);
 
   async function valider(evenement: React.FormEvent) {

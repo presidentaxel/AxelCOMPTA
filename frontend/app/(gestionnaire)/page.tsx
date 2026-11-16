@@ -8,10 +8,11 @@ function texte(valeur: string | string[] | undefined): string | null {
   return null;
 }
 
-/** L'accueil envoie au portefeuille. Un retour Supabase (`?code=`, `?error=`)
- * va d'abord sur la page qui choisit le mot de passe : ces paramètres ne
- * survivraient pas au redirect nu. Le fragment `#access_token` reste, lui,
- * dans le navigateur et est repris par `RebondLienAuth`. */
+/** L'accueil envoie au portefeuille. Un retour Supabase (`?code=`,
+ * `?token_hash=`, `?error=`) va d'abord sur la page du lien : ces
+ * paramètres ne survivraient pas au redirect nu. Le fragment
+ * `#access_token` reste dans le navigateur et est repris par
+ * `RebondLienAuth`. */
 export default async function AccueilGestionnaire({
   searchParams,
 }: {
@@ -26,6 +27,7 @@ export default async function AccueilGestionnaire({
   const brut = recherche.toString();
   const lien =
     recherche.has("code") ||
+    recherche.has("token_hash") ||
     recherche.has("error") ||
     recherche.has("error_code") ||
     recherche.has("error_description");

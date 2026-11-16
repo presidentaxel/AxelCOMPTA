@@ -8,16 +8,11 @@ import { SuitesAuth } from "@/components/SuitesAuth";
 import { TitreEcran } from "@/components/TitreEcran";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  accepterInvitation,
-  definirMotDePasse,
-  ErreurAuthChauffeur,
-} from "@/lib/auth-chauffeur";
-import { lireFragmentAuth, pageInvitation } from "@/lib/auth-lien";
+import { accepterInvitation, definirMotDePasse } from "@/lib/auth-chauffeur";
+import { lireLienCourant, pageInvitation } from "@/lib/auth-lien";
 import {
   INDICATION_MOT_DE_PASSE,
   LONGUEUR_MIN_MOT_DE_PASSE,
-  messageParametresAuth,
   traduireExceptionAuth,
 } from "@/lib/messages-auth";
 
@@ -42,32 +37,39 @@ export default function AccepterInvitationPage() {
   const [enCours, setEnCours] = useState(false);
 
   useEffect(() => {
+    let ignore = false;
     // Le fragment `#access_token` n'existe que dans le navigateur.
-    /* eslint-disable react-hooks/set-state-in-effect */
-    const fragment = window.location.hash;
-    try {
-      const messageRecherche = messageParametresAuth(new URLSearchParams(window.location.search));
-      if (messageRecherche) throw new ErreurAuthChauffeur(messageRecherche);
-      const recu = lireFragmentAuth(fragment);
-      if (pageInvitation(recu.accessToken) === "gestionnaire") {
-        window.location.replace(`/auth/lien${fragment}`);
-        return;
-      }
-    } catch (exception) {
-      setErreur(traduireExceptionAuth(exception));
-      setEtape("erreur");
-      return;
-    }
-    accepterInvitation(fragment)
-      .then((session) => {
-        setDossierId(session.dossierId);
-        setEtape("definir_mot_de_passe");
-      })
-      .catch((exception) => {
+    void (async () => {
+      let fragment = window.location.hash;
+      try {
+        const recu = await lireLienCourant();
+        if (ignore) return;
+        fragment = window.location.hash;
+        if (pageInvitation(recu.fragment.accessToken) === "gestionnaire") {
+          window.location.replace(`/auth/lien${window.location.search}${fragment}`);
+          return;
+        }
+      } catch (exception) {
+        if (ignore) return;
         setErreur(traduireExceptionAuth(exception));
         setEtape("erreur");
-      });
-    /* eslint-enable react-hooks/set-state-in-effect */
+        return;
+      }
+      accepterInvitation(fragment)
+        .then((session) => {
+          if (ignore) return;
+          setDossierId(session.dossierId);
+          setEtape("definir_mot_de_passe");
+        })
+        .catch((exception) => {
+          if (ignore) return;
+          setErreur(traduireExceptionAuth(exception));
+          setEtape("erreur");
+        });
+    })();
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   async function valider(evenement: React.FormEvent) {
