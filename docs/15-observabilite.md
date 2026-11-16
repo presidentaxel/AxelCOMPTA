@@ -15,6 +15,15 @@
 > de lecture du front (AXE-843, `scripts/mesurer_performance.py`). Pas
 > encore : dashboards, alerting au-delà de Sentry, jauges par tenant,
 > mesure des temps réels en production.
+>
+> **Depuis le 2026-11-16 (AXE-959)** : le worker et les tâches planifiées
+> démarrent Sentry à chaque passage. Un job en échec part dans Sentry avec
+> son type. Les tâches font un check-in sur le moniteur Sentry Crons
+> `axelcompta-taches` (minute 7, UTC, 15 min de marge, 55 min au plus) :
+> Sentry alerte si un passage manque, déborde ou échoue, et un passage en
+> échec envoie son bilan. Aucune variable locale n'est envoyée dans les
+> traces (`include_local_variables=False`). Le moniteur se crée tout seul au
+> premier check-in ; l'alerte (e-mail, téléphone) se règle dans Sentry.
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-16
 

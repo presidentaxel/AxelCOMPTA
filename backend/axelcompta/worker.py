@@ -52,6 +52,7 @@ from axelcompta.rapprochement_rollee_service import (
     relever_portefeuille_postgres,
 )
 from axelcompta.registres_officiels import lecteur_depuis_env
+from axelcompta.surveillance import sentinelle_sentry
 from axelcompta.synchro_digifactory import (
     TYPE_DIGIFACTORY,
     ResultatDossier,
@@ -328,6 +329,7 @@ def dependances_reelles() -> Dependances:
 def main() -> int:
     """Une passe : toutes les demandes en attente, puis s'arrête (le
     planificateur relance chaque minute, sous `flock`)."""
+    sentinelle = sentinelle_sentry()
     assurer_modele()
     file = FilePostgres(engine_depuis_env())
     for identifiant in file.relacher_abandonnes():
@@ -339,6 +341,7 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001 — l'erreur est gardée et affichée
             file.echouer(job.id, f"{type(exc).__name__}: {exc}")
             print(f"[{job.id}] échec : {exc}", flush=True)
+            sentinelle.job_en_echec(exc, job.type, job.id)
         else:
             file.terminer(job.id, resultat)
             print(f"[{job.id}] {resultat}", flush=True)
