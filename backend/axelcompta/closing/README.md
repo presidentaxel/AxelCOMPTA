@@ -61,7 +61,9 @@ pivot de liasse (`LiassePivot`) avant rendu par `filings/`.
   valider (AXE-815).
 - **Manque pour la V1** : saisie guidée d'un bilan d'ouverture sans FEC,
   reprise des immobilisations à l'ouverture, rapprochement bancaire ligne à
-  ligne, lignes de détail des annexes 2054 à 2059 (AXE-484).
+  ligne. Annexes du réel normal (AXE-484, 16/11) : détail du 2054
+  (`liasse_2054.py`), 2058-C (`liasse_2058c.py`), 2059-A
+  (`liasse_2059a.py`) ; restent le 2057 et le PDF CERFA 2050 à 2059.
 
 ## Doc de référence
 
