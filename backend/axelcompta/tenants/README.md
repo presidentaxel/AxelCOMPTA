@@ -135,6 +135,13 @@ d'héritage implicite (doc 03 §3bis, doc 06 §7).
 - `fiches_import_depot.py` / `fiches_import_postgres.py` : tables
   `fiches_import` et `documents_import` (migration `b7f3e2a91c40`, RLS par
   portefeuille). Les documents sont gardés en base, 20 Mo au plus.
+- `fiches_import_listes.py` (pur, AXE-946) : associés (prénom, nom,
+  fonction, part du capital, total contrôlé) et comptes Rollee retenus,
+  rangés en JSON dans la fiche ; une ancienne saisie libre se lit vide.
+- AXE-946 : « SIREN ou SIRET » (un SIRET donne le SIREN) ; un SIREN saisi
+  relit les registres, qui remplacent ce qu'ils avaient rempli, jamais une
+  saisie. Chaque lecture ou écriture d'une fiche rend son instantané
+  (fiche, documents, dossier créé) en une connexion.
 - `registres.py` lit aussi au RNE la date de clôture (« 3112 ») et la date
   de première clôture.
 

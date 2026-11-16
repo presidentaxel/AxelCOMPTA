@@ -91,7 +91,7 @@ def test_chaque_categorie_dit_ce_qui_lui_manque() -> None:
     assert "Première année de l'option IR" in etats["fiscalite"].manquants
     assert etats["reprise"].manquants == ("FEC 2025", "Grand livre 2025")
     assert etats["documents"].manquants == ("Statuts", "RIB")
-    assert "SIREN" in etats["entreprise"].manquants
+    assert "SIREN ou SIRET" in etats["entreprise"].manquants
 
 
 def test_la_fiche_complete_devient_une_ligne_d_import_valide() -> None:
@@ -117,3 +117,12 @@ def test_la_fiche_complete_devient_une_ligne_d_import_valide() -> None:
     assert ligne.dossier is not None and ligne.erreurs == ()
     assert ligne.dossier.id == DossierId("DIGI_22755") == dossier_prevu(fiche)
     assert ligne.dossier.tva_recettes_regime == "assujetti_taux_reduit"
+
+
+def test_des_parts_qui_ne_font_pas_100_pourcent_sont_signalees() -> None:
+    fiche = _fiche(
+        email="k@x.fr",
+        associes='[{"nom": "Dupont", "fonction": "president", "pourcentage": "60"}]',
+    )
+    dirigeant = next(e for e in etat_sections(fiche, [], AUJOURD_HUI) if e.cle == "dirigeant")
+    assert dirigeant.manquants == ("Parts des associés : 60 % sur 100 %",)

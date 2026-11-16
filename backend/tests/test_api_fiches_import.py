@@ -165,3 +165,32 @@ def test_une_fiche_traitee_se_rouvre_pour_etre_modifiee() -> None:
 
     assert bloquee.status_code == 422 and "traitée" in bloquee.json()["detail"]
     assert rouverte.status_code == 200
+
+
+def test_saisir_un_siret_lance_seul_la_recherche_aux_registres() -> None:
+    """AXE-946 : « SIREN ou SIRET » ; la fiche se remplit sans autre clic."""
+    client, _file = _client()
+    fiche = _ouvrir(client, siren="")
+
+    reponse = client.patch(
+        f"/portefeuille/imports/{fiche['id']}",
+        json={"champs": {"siren": "552 100 554 00013"}},
+        headers=EN_TETE,
+    )
+
+    entreprise = {c["cle"]: c["valeur"] for c in _section(reponse.json(), "entreprise")["champs"]}
+    assert (entreprise["siren"], entreprise["siret"]) == (SIREN, "55210055400013")
+    assert entreprise["denomination"] == "MK DRIVING"
+    assert reponse.json()["registre_sources"] == ["insee", "rne"]
+
+
+def test_la_fiche_dit_quels_champs_viennent_encore_du_registre() -> None:
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    assert "denomination" in fiche["depuis_registre"]
+    modifiee = client.patch(
+        f"/portefeuille/imports/{fiche['id']}",
+        json={"champs": {"denomination": "MK DRIVING VTC"}},
+        headers=EN_TETE,
+    ).json()
+    assert "denomination" not in modifiee["depuis_registre"]

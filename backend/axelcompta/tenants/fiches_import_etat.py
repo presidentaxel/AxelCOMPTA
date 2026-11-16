@@ -24,6 +24,7 @@ from .fiches_import import (
     FicheImport,
     Section,
 )
+from .fiches_import_listes import lire_associes, total_parts
 from .import_dossiers import identifiant
 
 ANNEE_MIN_REPRISE = 2024
@@ -126,6 +127,11 @@ def _manquants_champs(section: Section, champs: Mapping[str, str]) -> list[str]:
     if section.cle == "fiscalite" and champs.get("regime_imposition") == "option_IR":
         if not champs.get("option_ir_debut"):
             manquants.append("Première année de l'option IR")
+    if section.cle == "dirigeant":
+        associes = lire_associes(champs.get("associes"))
+        total = total_parts(associes)
+        if any(a.pourcentage for a in associes) and total != 100:
+            manquants.append(f"Parts des associés : {total.normalize():f} % sur 100 %")
     return manquants
 
 

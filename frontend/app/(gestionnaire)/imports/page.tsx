@@ -16,6 +16,7 @@ import {
   badgeStatut,
   libelleStatut,
   nomChauffeur,
+  progression,
   type FicheImportResume,
   type StatutImport,
 } from "@/lib/fiches-import";
@@ -122,13 +123,13 @@ function NouvelImport({ onOuverte }: { onOuverte: (id: string) => void }) {
             <Input className="mt-1" value={nom} onChange={(e) => setNom(e.target.value)} />
           </label>
           <label className="text-sm text-ink">
-            SIREN (facultatif)
+            SIREN ou SIRET (facultatif)
             <Input
               className="mt-1"
               inputMode="numeric"
               value={siren}
               onChange={(e) => setSiren(e.target.value)}
-              placeholder="9 chiffres"
+              placeholder="9 ou 14 chiffres"
             />
           </label>
         </div>
@@ -169,8 +170,15 @@ function TableFiches({ fiches }: { fiches: FicheImportResume[] }) {
               <Badge variant={badgeStatut(fiche.statut)}>{libelleStatut(fiche.statut)}</Badge>
             </TableCell>
             <TableCell className="text-subtle">
-              {fiche.sections_completes}/{fiche.sections} catégories
-              {fiche.dossier_id && <span className="ml-2 text-xs text-muted">· chauffeur ajouté</span>}
+              <div className="flex items-center gap-2">
+                <div className="h-1.5 w-20 overflow-hidden rounded-full bg-surface-soft" aria-hidden>
+                  <div className="h-full rounded-full bg-ink" style={{ width: `${progression(fiche)}%` }} />
+                </div>
+                <span className="text-xs">
+                  {fiche.sections_completes}/{fiche.sections}
+                </span>
+              </div>
+              {fiche.dossier_id && <span className="text-xs text-muted">Chauffeur ajouté</span>}
             </TableCell>
             <TableCell className="text-subtle">
               {new Date(fiche.maj_le).toLocaleDateString("fr-FR")} · {fiche.maj_par}

@@ -71,6 +71,12 @@ toute autre vente.
   2024 et leurs pièces se calculent seuls. Statut à importer → en
   traitement → traitée ; les documents sont gardés chez nous. La fiche
   ajoute le chauffeur au portefeuille ; il est invité plus tard.
+- Fiche v2 (AXE-946) : plus rapide (une connexion par action, catégories
+  sans rechargement, enregistrement champ par champ), catégories à gauche,
+  « SIREN ou SIRET » avec recherche automatique, associés en lignes,
+  comptes Rollee cherchés seuls avec recherche manuelle en secours,
+  glisser-déposer des documents avec un type par fichier.
+- Accès d'un expert-comptable modifiables dans Équipe (AXE-945).
 - Suites : relier la banque et Rollee depuis la fiche, lire le FEC pour le
   report à nouveau (AXE-942) ; OCR des liasses (AXE-943).
 - Un admin déclaré expert-comptable garde ses droits d'admin (AXE-940).

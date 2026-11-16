@@ -20,7 +20,10 @@ export type ChampImport = {
     | "multi"
     | "montant"
     | "annee"
-    | "jour_mois";
+    | "jour_mois"
+    | "siret"
+    | "associes"
+    | "rollee";
   obligatoire: boolean;
   choix: ChoixImport[];
   aide: string;
@@ -78,6 +81,7 @@ export type FicheImport = FicheImportResume & {
   categories_documents: ChoixImport[];
   registre_lu_le: string | null;
   registre_sources: string[];
+  depuis_registre: string[];
   manque_pour_creer: string[];
   dossier_prevu: string | null;
   dossier_cree: boolean;
@@ -132,4 +136,68 @@ export function basculerChoix(valeur: string, cle: string): string {
   const choisis = valeur ? valeur.split(",") : [];
   const suivants = choisis.includes(cle) ? choisis.filter((c) => c !== cle) : [...choisis, cle];
   return suivants.join(",");
+}
+
+// --- AXE-946 ---------------------------------------------------------------
+
+export type Associe = { prenom: string; nom: string; fonction: string; pourcentage: string };
+export type CompteRolleeRetenu = { rollee_user_id: string; nom: string; plateformes: string[] };
+
+/** Une liste rangée en JSON ; une ancienne saisie libre se lit vide. */
+export function lireListe<T>(valeur: string): T[] {
+  try {
+    const donnees = JSON.parse(valeur || "[]") as unknown;
+    return Array.isArray(donnees) ? (donnees as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function totalParts(associes: Associe[]): number {
+  const total = associes.reduce((somme, a) => somme + (Number(a.pourcentage.replace(",", ".")) || 0), 0);
+  return Math.round(total * 100) / 100;
+}
+
+/** Le SIREN ou le SIRET saisi, sans espaces, s'il a la bonne longueur. */
+export function identifiantComplet(texte: string): string | null {
+  const chiffres = texte.replace(/[\s.]/g, "");
+  return /^\d{9}$|^\d{14}$/.test(chiffres) ? chiffres : null;
+}
+
+const MOTIFS_CATEGORIE: [RegExp, string][] = [
+  [/fec|ecritures|écritures/i, "fec"],
+  [/liasse|2033|2031|2065|2035|bilan/i, "liasse"],
+  [/balance/i, "balance"],
+  [/grand[ ._-]?livre|\bgl\b/i, "grand_livre"],
+  [/kbis|k-bis|extrait/i, "kbis"],
+  [/statut/i, "statuts"],
+  [/\brib\b|iban/i, "rib"],
+  [/lettre|mission|confr[eè]re/i, "lettre_comptable"],
+  [/relev[eé]|releve/i, "releve_bancaire"],
+];
+
+/** Le type d'un document deviné de son nom ; `repli` si rien ne parle. */
+export function devinerCategorie(nom: string, permises: string[], repli: string): string {
+  const trouve = MOTIFS_CATEGORIE.find(([motif, cle]) => permises.includes(cle) && motif.test(nom));
+  return trouve ? trouve[1] : repli;
+}
+
+/** L'exercice lu dans le nom (« liasse-2024.pdf »), s'il est proposé. */
+export function devinerExercice(nom: string, annees: number[]): number | null {
+  const lues = nom.match(/20\d\d/g) ?? [];
+  const annee = lues.map(Number).find((a) => annees.includes(a));
+  return annee ?? null;
+}
+
+export function progression(fiche: Pick<FicheImportResume, "sections_completes" | "sections">): number {
+  return fiche.sections === 0 ? 0 : Math.round((fiche.sections_completes / fiche.sections) * 100);
+}
+
+/** La valeur d'un champ, où qu'il soit dans la fiche ; « » s'il est vide. */
+export function valeurChamp(fiche: Pick<FicheImport, "sections_detail">, cle: string): string {
+  for (const section of fiche.sections_detail) {
+    const champ = section.champs.find((c) => c.cle === cle);
+    if (champ) return champ.valeur;
+  }
+  return "";
 }
