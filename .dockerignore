@@ -1,0 +1,13 @@
+# Contexte de l'image web (docker-compose.prod.yml). L'image API garde
+# backend/.dockerignore : son contexte reste ./backend.
+.git
+.github
+.env
+.env.*
+backend
+**/node_modules
+frontend/.next
+frontend/out
+frontend/playwright-report
+frontend/test-results
+_AUDIT_DONNEES
