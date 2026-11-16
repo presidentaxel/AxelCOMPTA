@@ -3,10 +3,12 @@ import test from "node:test";
 
 import {
   basculerExclusion,
+  compterParTag,
   gardeTag,
   ecrireFiltreTag,
   libelleTag,
   lireFiltreTag,
+  phraseEntreprises,
   SANS_TAG,
   TOUS_LES_TAGS,
   tagsPresents,
@@ -52,4 +54,12 @@ test("filtre de tag dans l'URL", () => {
   assert.equal(lireFiltreTag("?tag=chauffeur&x=1"), "chauffeur");
   assert.equal(ecrireFiltreTag("/expert", "?x=1", "chauffeur"), "/expert?x=1&tag=chauffeur");
   assert.equal(ecrireFiltreTag("/expert", "?tag=chauffeur", TOUS_LES_TAGS), "/expert");
+});
+
+test("nombre d'entreprises par tag", () => {
+  const nombres = compterParTag([{ tags: ["chauffeur"] }, { tags: ["chauffeur", "test"] }, { tags: [] }]);
+  assert.deepEqual(nombres, { chauffeur: 2, test: 1 });
+  assert.equal(phraseEntreprises(0), "Aucune entreprise");
+  assert.equal(phraseEntreprises(1), "1 entreprise");
+  assert.equal(phraseEntreprises(2), "2 entreprises");
 });

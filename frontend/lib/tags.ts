@@ -62,3 +62,18 @@ export function ecrireFiltreTag(chemin: string, recherche: string, tag: string):
   const requete = params.toString();
   return requete ? `${chemin}?${requete}` : chemin;
 }
+
+/** Nombre d'entreprises qui portent chaque tag. */
+export function compterParTag(dossiers: Pick<DossierAgregat, "tags">[]): Record<string, number> {
+  const nombres: Record<string, number> = {};
+  for (const dossier of dossiers) {
+    for (const tag of dossier.tags ?? []) nombres[tag] = (nombres[tag] ?? 0) + 1;
+  }
+  return nombres;
+}
+
+/** « Aucune entreprise », « 1 entreprise », « 3 entreprises ». */
+export function phraseEntreprises(nombre: number): string {
+  if (nombre === 0) return "Aucune entreprise";
+  return nombre === 1 ? "1 entreprise" : `${nombre} entreprises`;
+}
