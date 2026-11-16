@@ -8416,6 +8416,7 @@ EXTENSIONS_IMPORT = frozenset(
 )
 REFUS_IMPORT_LECTURE = "Votre rôle est en lecture seule : vous ne pouvez pas modifier un import."
 LireContactsDigifactory = Callable[[list[Branchement]], dict[str, dict[str, object]]]
+LirePremiereEcritureDigifactory = Callable[[list[Branchement], str], date | None]
 
 
 def get_fiches_import() -> FichesImportRepository:
@@ -8431,10 +8432,22 @@ def get_lire_contacts_digifactory() -> LireContactsDigifactory:
     return lambda branchements: asyncio.run(contacts_du_portefeuille(branchements))
 
 
+def get_lire_premiere_ecriture_digifactory() -> LirePremiereEcritureDigifactory:
+    """La plus ancienne opération d'un contact (remplacé en test)."""
+    from axelcompta.synchro_digifactory import premiere_ecriture_du_contact
+
+    return lambda branchements, contact: asyncio.run(
+        premiere_ecriture_du_contact(branchements, contact)
+    )
+
+
 FichesImportDep = Annotated[FichesImportRepository, Depends(get_fiches_import)]
 LireFicheOfficielleDep = Annotated[LireFicheOfficielle | None, Depends(get_lire_fiche_officielle)]
 LireContactsDigifactoryDep = Annotated[
     LireContactsDigifactory, Depends(get_lire_contacts_digifactory)
+]
+LirePremiereEcritureDigifactoryDep = Annotated[
+    LirePremiereEcritureDigifactory, Depends(get_lire_premiere_ecriture_digifactory)
 ]
 
 
@@ -8545,6 +8558,13 @@ class DigifactoryFicheVue(BaseModel):
 
     lu: bool  # False : Digifactory n'a pas répondu
     contacts: list[ContactDigifactoryVue]
+
+
+class HistoriqueDigifactoryVue(BaseModel):
+    """La première écriture bancaire du contact, pour l'historique à reprendre."""
+
+    lu: bool
+    debut: str | None
 
 
 def _resume_fiche(fiche: FicheImport, documents: list[DocumentImport]) -> FicheImportResumeVue:
@@ -8796,6 +8816,30 @@ def _enregistrer_route_digifactory_fiche(app: FastAPI) -> None:
             return DigifactoryFicheVue(lu=False, contacts=[])
         existants = {str(d.id) for d in dossiers.lister_par_tenant(tenant_id)}
         return DigifactoryFicheVue(lu=True, contacts=_contacts_de_la_fiche(fiche, brut, existants))
+
+    @app.get(
+        "/portefeuille/imports/{fiche_id}/digifactory/{contact_nr}/historique",
+        response_model=HistoriqueDigifactoryVue,
+    )
+    def historique_digifactory_fiche(
+        fiche_id: str,
+        contact_nr: str,
+        identite: IdentiteDep,
+        fiches: FichesImportDep,
+        branchements: BranchementsDep,
+        lire_premiere: LirePremiereEcritureDigifactoryDep,
+    ) -> HistoriqueDigifactoryVue:
+        """La date de la première écriture du contact, pour le champ banque."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        fiches.lire(tenant_id, fiche_id)
+        digifactory = [b for b in branchements.lister(tenant_id) if b.type == "digifactory"]
+        try:
+            debut = lire_premiere(digifactory, contact_nr)
+        except Exception:  # noqa: BLE001 — Digifactory injoignable : on le dit
+            return HistoriqueDigifactoryVue(lu=False, debut=None)
+        return HistoriqueDigifactoryVue(
+            lu=True, debut=debut.isoformat() if debut is not None else None
+        )
 
 
 def _document_accepte(fichier: UploadFile, contenu: bytes) -> None:

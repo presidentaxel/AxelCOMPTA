@@ -229,6 +229,7 @@ export type ContactDigifactory = {
   a_un_dossier: boolean;
 };
 export type DigifactoryFiche = { lu: boolean; contacts: ContactDigifactory[] };
+export type HistoriqueDigifactory = { lu: boolean; debut: string | null };
 
 export function libelleTraitement(statut: StatutDocument): string {
   if (statut === "traite") return "Lu automatiquement";
