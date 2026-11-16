@@ -73,6 +73,10 @@ class FicheOfficielle:
     cessee: bool | None = None
     date_creation: date | None = None
     code_naf: str | None = None
+    # RNE (AXE-941) : jour et mois de clôture de l'exercice social (« 31/12 »)
+    # et date de la première clôture.
+    cloture: str | None = None
+    premiere_cloture: date | None = None
 
 
 def _objet(valeur: object) -> Mapping[str, object]:
@@ -239,7 +243,20 @@ def fiche_rne(reponse: Mapping[str, object], siren: str, lu_le: date) -> FicheOf
         capital_cts=_capital_cts(description.get("montantCapital")),
         dirigeants=_dirigeants(pouvoirs),
         personnes=_personnes(pouvoirs),
+        cloture=_jour_mois(description.get("dateClotureExerciceSocial")),
+        premiere_cloture=_date(description.get("datePremiereCloture")),
     )
+
+
+def _jour_mois(valeur: object) -> str | None:
+    """« 3112 » (lu au RNE le 16/11) → « 31/12 »."""
+    texte = _texte(valeur)
+    if texte is None or len(texte) != 4 or not texte.isdigit():
+        return None
+    jour, mois = int(texte[:2]), int(texte[2:])
+    if not (1 <= mois <= 12 and 1 <= jour <= 31):
+        return None
+    return f"{texte[:2]}/{texte[2:]}"
 
 
 def combiner(insee: FicheOfficielle | None, rne: FicheOfficielle | None) -> FicheOfficielle | None:
@@ -258,6 +275,8 @@ def combiner(insee: FicheOfficielle | None, rne: FicheOfficielle | None) -> Fich
         capital_cts=rne.capital_cts,
         dirigeants=rne.dirigeants,
         personnes=rne.personnes or insee.personnes,
+        cloture=rne.cloture,
+        premiere_cloture=rne.premiere_cloture,
     )
 
 

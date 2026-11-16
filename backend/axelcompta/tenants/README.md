@@ -120,6 +120,24 @@ d'héritage implicite (doc 03 §3bis, doc 06 §7).
   Digifactory (doc 16 §9 point 5). Enregistrement idempotent, jamais de mise
   à jour silencieuse d'une config comptable.
 
+## Fiches d'import d'un chauffeur (AXE-941)
+
+- `fiches_import.py` (pur) : les catégories et leurs champs (entreprise,
+  dirigeant, fiscalité, reprise comptable, banque, plateformes, documents),
+  la validation de chaque champ, le statut (à importer, en traitement,
+  traitée), le préremplissage depuis l'INSEE et le RNE (jamais par-dessus
+  une saisie), et les documents (empreinte SHA-256).
+- `fiches_import_etat.py` (pur) : les exercices à reprendre depuis 2024,
+  d'après la date de création et la date de clôture, avec les pièces
+  attendues (liasse et FEC du dernier exercice clos, ou balance et grand
+  livre sans FEC) ; ce qui manque à chaque catégorie ; la fiche en ligne
+  d'import CSV (AXE-809) pour ajouter le chauffeur au portefeuille.
+- `fiches_import_depot.py` / `fiches_import_postgres.py` : tables
+  `fiches_import` et `documents_import` (migration `b7f3e2a91c40`, RLS par
+  portefeuille). Les documents sont gardés en base, 20 Mo au plus.
+- `registres.py` lit aussi au RNE la date de clôture (« 3112 ») et la date
+  de première clôture.
+
 ## Statuts
 
 - **Depuis le 2026-11-05** : plus aucun dossier de démo en base ; les

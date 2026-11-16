@@ -55,6 +55,10 @@ from axelcompta.tenants.branchements import Modification, modifier, nouveau
 from axelcompta.tenants.branchements_postgres import PostgresBranchements
 from axelcompta.tenants.exercices import ExerciceClos, ExerciceDejaClos
 from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
+from axelcompta.tenants.fiches_import import document_import, nouvelle_fiche
+from axelcompta.tenants.fiches_import import modifier as modifier_fiche
+from axelcompta.tenants.fiches_import_depot import FicheIntrouvable
+from axelcompta.tenants.fiches_import_postgres import PostgresFichesImport
 from axelcompta.tenants.journal_portefeuille_postgres import PostgresJournalPortefeuille
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.postgres import PostgresDossierRepository
@@ -866,3 +870,30 @@ def test_les_releves_de_plateformes_se_relisent_et_restent_au_dossier(
     assert relu.settlement == semaine and relu.etat == "reconcilie"
     with contexte_identite(dossier_id="sophie", tenant_id=None):
         assert web.lister(DossierId("karim")) == []
+
+
+def test_une_fiche_d_import_et_ses_documents_restent_dans_leur_portefeuille(
+    engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """Migration `b7f3e2a91c40` (AXE-941) : le portefeuille A ouvre une
+    fiche, la complète et y dépose un document ; B ne voit ni l'une ni
+    l'autre, et ne peut pas en ouvrir une au nom de A."""
+    le = datetime(2026, 11, 16, tzinfo=UTC)
+    web = PostgresFichesImport(engine_web)
+    fiche = nouvelle_fiche("fiche-a", TenantId("tenant-a"), "Dupont", "Karim", "", "b", le)
+    with contexte_identite(dossier_id=None, tenant_id="tenant-a"):
+        web.enregistrer(fiche)
+        web.enregistrer(modifier_fiche(fiche, {"email": "k@x.fr"}, "b", le))
+        document = document_import(
+            "doc-a", fiche, "kbis", None, "kbis.pdf", "application/pdf", b"%PDF", "b", le
+        )
+        web.deposer(document, b"%PDF")
+        relue = web.lire(TenantId("tenant-a"), "fiche-a")
+        assert (relue.statut, relue.champs["email"]) == ("en_traitement", "k@x.fr")
+        assert web.contenu(TenantId("tenant-a"), "doc-a") == (document, b"%PDF")
+    with contexte_identite(dossier_id=None, tenant_id="tenant-b"):
+        assert web.lister(TenantId("tenant-a")) == []
+        with pytest.raises(FicheIntrouvable):
+            web.contenu(TenantId("tenant-a"), "doc-a")
+        with pytest.raises((ProgrammingError, DBAPIError)):
+            web.enregistrer(dataclasses.replace(fiche, id="intrus"))

@@ -2,6 +2,7 @@
  * L'ordre est celui de la barre et du tiroir. */
 export const ENTREES_GESTIONNAIRE = [
   { href: "/portefeuille", libelle: "Entreprises" },
+  { href: "/imports", libelle: "Imports" },
   { href: "/expert", libelle: "Mode expert" },
   { href: "/connexions-bancaires", libelle: "Connexions bancaires" },
   { href: "/rappels", libelle: "Rappels" },

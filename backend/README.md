@@ -504,6 +504,14 @@ dernière étape. Dans l'ordre, pour une autre base :
        python scripts/reprendre_virements_internes.py --tenant TENANT              # simulation
        python scripts/reprendre_virements_internes.py --tenant TENANT --appliquer
 
+## Fiches d'import (AXE-941)
+
+Menu **Imports** du gestionnaire : une fiche par chauffeur à reprendre. Mise
+en route : `alembic upgrade head` (migration `b7f3e2a91c40`). Le
+préremplissage par le SIREN utilise `INSEE_API_KEY` et le compte RNE ;
+sans eux, tout se saisit à la main. « Ajouter le chauffeur au portefeuille »
+dépose un job `import_dossiers` : le worker doit tourner.
+
 ## Mettre en route Rollee après la PR 170 (AXE-922)
 
 Fait sur la base réelle le 14/11. Dans cet ordre, pour une autre base :

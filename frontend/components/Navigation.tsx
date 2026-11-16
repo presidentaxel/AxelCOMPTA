@@ -26,7 +26,7 @@ import { useDroitGestionnaire } from "@/lib/use-droit";
 
 /** Barre latérale du gestionnaire (DESIGN.md § Navigation et § Application
  * shell) : 256px, fond `canvas`, filet droit `border`, collée à la hauteur de
- * l'écran. La marque en haut, les sept entrées, la zone de compte en bas.
+ * l'écran. La marque en haut, les huit entrées, la zone de compte en bas.
  *
  * Responsive, en classes `lg:` seulement : à partir de 1024px la barre
  * latérale est fixe ; en dessous (≤ 1023px) elle devient une barre de 56px avec
@@ -109,7 +109,7 @@ export function Navigation({ alertes = {} }: { alertes?: Partial<Record<string, 
   );
 }
 
-/** Les sept entrées en colonne, avec le filet qui glisse de l'une à l'autre
+/** Les huit entrées en colonne, avec le filet qui glisse de l'une à l'autre
  * (la barre reste montée d'une page à l'autre) au lieu de réapparaître. */
 function ListeEntrees({
   chemin,

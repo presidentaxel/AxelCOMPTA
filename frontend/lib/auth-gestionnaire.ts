@@ -46,6 +46,7 @@ import type {
 
 import type { FicheAnnuaireRollee, FicheRollee, RolleePortefeuille } from "./liens-rollee";
 import type { AnalyseFec, OuvertureVue } from "./ouverture";
+import type { FicheImport, FicheImportResume, StatutImport } from "./fiches-import";
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
 export type SessionGestionnaire = {
@@ -1374,4 +1375,79 @@ export async function delierRollee(
   );
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
   return ((await reponse.json()) as { versements_contrepasses: number }).versements_contrepasses;
+}
+
+
+// --- Fiches d'import d'un chauffeur (AXE-941) -------------------------------
+
+async function ficheOuErreur(reponse: Response): Promise<FicheImport> {
+  if (reponse.status === 401) throw new ErreurAuthGestionnaire();
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as FicheImport;
+}
+
+function jsonImport(method: string, corps: unknown): RequestInit {
+  return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) };
+}
+
+export async function listerFichesImport(): Promise<FicheImportResume[]> {
+  const reponse = await requeteGestionnaire("/portefeuille/imports");
+  if (reponse.status === 401) throw new ErreurAuthGestionnaire();
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as FicheImportResume[];
+}
+
+/** Avec un SIREN, l'INSEE et le RNE préremplissent l'entreprise. */
+export async function ouvrirFicheImport(nom: string, prenom: string, siren: string): Promise<FicheImport> {
+  return ficheOuErreur(await requeteGestionnaire("/portefeuille/imports", jsonImport("POST", { nom, prenom, siren })));
+}
+
+export async function lireFicheImport(id: string): Promise<FicheImport> {
+  return ficheOuErreur(await requeteGestionnaire(`/portefeuille/imports/${id}`));
+}
+
+export async function completerFicheImport(id: string, champs: Record<string, string>): Promise<FicheImport> {
+  return ficheOuErreur(await requeteGestionnaire(`/portefeuille/imports/${id}`, jsonImport("PATCH", { champs })));
+}
+
+export async function relireRegistresImport(id: string): Promise<FicheImport> {
+  return ficheOuErreur(await requeteGestionnaire(`/portefeuille/imports/${id}/registres`, { method: "POST" }));
+}
+
+export async function changerStatutImport(id: string, statut: StatutImport): Promise<FicheImport> {
+  return ficheOuErreur(
+    await requeteGestionnaire(`/portefeuille/imports/${id}/statut`, jsonImport("POST", { statut })),
+  );
+}
+
+export async function deposerDocumentImport(
+  id: string,
+  fichier: File,
+  categorie: string,
+  exercice: number | null,
+): Promise<FicheImport> {
+  const corps = new FormData();
+  corps.append("fichier", fichier);
+  corps.append("categorie", categorie);
+  if (exercice !== null) corps.append("exercice", String(exercice));
+  return ficheOuErreur(
+    await requeteGestionnaire(`/portefeuille/imports/${id}/documents`, { method: "POST", body: corps }),
+  );
+}
+
+export async function telechargerDocumentImport(id: string, documentId: string): Promise<Blob> {
+  const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/documents/${documentId}`);
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return reponse.blob();
+}
+
+export async function retirerDocumentImport(id: string, documentId: string): Promise<FicheImport> {
+  return ficheOuErreur(
+    await requeteGestionnaire(`/portefeuille/imports/${id}/documents/${documentId}`, { method: "DELETE" }),
+  );
+}
+
+/** Ajoute le chauffeur au portefeuille ; le worker crée le dossier. */
+export async function creerChauffeurImport(id: string): Promise<FicheImport> {
+  return ficheOuErreur(await requeteGestionnaire(`/portefeuille/imports/${id}/chauffeur`, { method: "POST" }));
 }
