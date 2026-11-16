@@ -63,7 +63,6 @@ import {
 import {
   PastillesTags,
   PoseEnLot,
-  ReglageExclusions,
   TagsDuDossier,
 } from "@/components/TagsEntreprises";
 import { ComptesBancairesExpert } from "@/components/ComptesBancairesExpert";
@@ -284,16 +283,6 @@ export function EcranEntreprises() {
           </ul>
         </section>
       )}
-      {reglageTags && (
-        <ReglageExclusions
-          reglage={reglageTags}
-          ecriture={droit.ecriture}
-          onModifie={(reglage) => {
-            setReglageTags(reglage);
-            charger();
-          }}
-        />
-      )}
       {dossiers ? (
         <dl className="mt-8 flex flex-wrap gap-x-12 gap-y-4">
           <Total
@@ -403,6 +392,11 @@ export function EcranEntreprises() {
             ]}
             onChoisir={(valeur) => ecrire({ tag: valeur })}
           />
+        )}
+        {reglageTags && (
+          <Link href="/portefeuille/tags" className="text-sm whitespace-nowrap text-signal hover:underline">
+            Gérer les tags
+          </Link>
         )}
         <Filtre
           libelle="Tri"
