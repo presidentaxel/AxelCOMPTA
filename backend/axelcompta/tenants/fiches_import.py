@@ -27,6 +27,7 @@ from typing import Literal
 from axelcompta.core.errors import SaisieInvalide
 from axelcompta.core.ids import DossierId, TenantId
 
+from .fiches_import_calculs import appliquer_deductions
 from .fiches_import_listes import (
     FONCTIONS,
     associes_du_registre,
@@ -55,10 +56,6 @@ TypeChamp = Literal[
     "rollee",
 ]
 LONGUEUR_MAX = 2_000
-
-
-class FicheTraitee(SaisieInvalide):
-    """Une fiche traitée ne se modifie plus : la repasser en traitement."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,7 +210,7 @@ CATEGORIES_DOCUMENTS: dict[str, str] = {
     "releve_bancaire": "Relevé bancaire",
     "autre": "Autre document",
 }
-DOCUMENTS_ADMINISTRATIFS = ("kbis", "statuts", "rib")  # attendus ; la lettre est facultative
+StatutDocument = Literal["a_traiter", "traite", "illisible"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,6 +228,12 @@ class DocumentImport:
     empreinte: str  # SHA-256 du contenu
     depose_par: str
     depose_le: datetime
+    # AXE-947 : l'emplacement où il a été déposé (« reprise:liasse:2025 »),
+    # et ce qui en a été tiré : « traite » (lu automatiquement), « a_traiter »
+    # (à lire, OCR : AXE-943) ou « illisible », avec un résumé.
+    emplacement: str = ""
+    statut_traitement: StatutDocument = "a_traiter"
+    resume: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,6 +250,8 @@ class FicheImport:
     dossier_id: DossierId | None = None
     maj_par: str = ""
     maj_le: datetime | None = None
+    annulee_le: datetime | None = None  # AXE-947 : sortie de la liste
+    annulee_par: str = ""
 
 
 def nouvelle_fiche(
@@ -256,6 +261,7 @@ def nouvelle_fiche(
     if not nom and not prenom:
         raise SaisieInvalide("Indiquez au moins le nom ou le prénom du chauffeur.")
     champs = {k: v for k, v in valider({"nom": nom, "prenom": prenom, "siren": siren}).items() if v}
+    champs = appliquer_deductions({}, champs, le.date())
     return FicheImport(id_, tenant_id, nom, prenom, par, le, champs=champs, maj_par=par, maj_le=le)
 
 
@@ -366,24 +372,20 @@ def valider(saisie: Mapping[str, str]) -> dict[str, str]:
 
 
 def modifier(fiche: FicheImport, saisie: Mapping[str, str], par: str, le: datetime) -> FicheImport:
-    """Les champs saisis remplacent les anciens. Une fiche à importer passe
-    en traitement dès la première saisie."""
-    if fiche.statut == "traitee":
-        raise FicheTraitee("Cette fiche est traitée : repassez-la en traitement pour la modifier.")
+    """Les champs saisis remplacent les anciens ; ce qui s'en déduit (TVA,
+    exercice en cours) suit."""
     champs = {**fiche.champs, **valider(saisie)}
     champs = {k: v for k, v in champs.items() if v}
-    statut: Statut = "en_traitement" if fiche.statut == "a_importer" else fiche.statut
+    champs = appliquer_deductions(fiche.champs, champs, le.date())
     nom = champs.get("nom", fiche.nom)
     prenom = champs.get("prenom", fiche.prenom)
-    return replace(
-        fiche, champs=champs, statut=statut, nom=nom, prenom=prenom, maj_par=par, maj_le=le
-    )
+    return replace(fiche, champs=champs, nom=nom, prenom=prenom, maj_par=par, maj_le=le)
 
 
-def changer_statut(fiche: FicheImport, statut: str, par: str, le: datetime) -> FicheImport:
-    if statut not in STATUTS:
-        raise SaisieInvalide(f"Statut inconnu : {statut}.")
-    return replace(fiche, statut=statut, maj_par=par, maj_le=le)
+def annuler(fiche: FicheImport, par: str, le: datetime) -> FicheImport:
+    """L'import n'est plus voulu : la fiche sort de la liste (rien ne
+    s'efface en base)."""
+    return replace(fiche, annulee_le=le, annulee_par=par, maj_par=par, maj_le=le)
 
 
 def _euros(centimes: int) -> str:
@@ -422,13 +424,12 @@ def preremplir(
     """Les registres remplissent les champs vides, et remplacent ce qui venait
     de la lecture précédente (un SIREN corrigé) ; une saisie n'est jamais
     écrasée. La lecture est gardée avec la fiche."""
-    if fiche.statut == "traitee":
-        raise FicheTraitee("Cette fiche est traitée : repassez-la en traitement pour la modifier.")
     anciens = depuis_registre(fiche.registre) if fiche.registre else {}
     champs = dict(fiche.champs)
     for cle, valeur in depuis_registre(officielle).items():
         if not champs.get(cle) or champs[cle] == anciens.get(cle):
             champs[cle] = valeur
+    champs = appliquer_deductions(fiche.champs, champs, le.date())
     return replace(
         fiche,
         champs=champs,
@@ -440,20 +441,30 @@ def preremplir(
     )
 
 
+def lire_emplacement(emplacement: str) -> tuple[str, str, int | None]:
+    """« reprise:liasse:2025 » → (section, catégorie, exercice)."""
+    morceaux = emplacement.split(":")
+    if len(morceaux) not in (2, 3) or morceaux[0] not in {s.cle for s in SECTIONS}:
+        raise SaisieInvalide(f"Emplacement inconnu : {emplacement}.")
+    annee = morceaux[2] if len(morceaux) == 3 else ""
+    if annee and not annee.isdigit():
+        raise SaisieInvalide(f"Emplacement inconnu : {emplacement}.")
+    return morceaux[0], morceaux[1], int(annee) if annee else None
+
+
 def document_import(
     id_: str,
     fiche: FicheImport,
-    categorie: str,
-    exercice: int | None,
+    emplacement: str,
     nom_fichier: str,
     type_mime: str,
     contenu: bytes,
     par: str,
     le: datetime,
 ) -> DocumentImport:
-    """Un document déposé sur la fiche, avec l'empreinte de son contenu."""
-    if fiche.statut == "traitee":
-        raise FicheTraitee("Cette fiche est traitée : repassez-la en traitement pour la modifier.")
+    """Un document déposé à un emplacement de la fiche, avec l'empreinte de
+    son contenu."""
+    _section, categorie, exercice = lire_emplacement(emplacement)
     if categorie not in CATEGORIES_DOCUMENTS:
         raise SaisieInvalide(f"Catégorie de document inconnue : {categorie}.")
     if exercice is not None and not 2000 <= exercice <= 2100:
@@ -470,6 +481,7 @@ def document_import(
         empreinte=hashlib.sha256(contenu).hexdigest(),
         depose_par=par,
         depose_le=le,
+        emplacement=emplacement,
     )
 
 

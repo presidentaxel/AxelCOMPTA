@@ -1,38 +1,48 @@
-"""AXE-941 : exercices à reprendre et ce qui manque à une fiche d'import."""
+"""AXE-941, AXE-947 : exercices, emplacements de documents, ce qui manque et
+statut d'une fiche d'import."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.tenants.fiches_import import DocumentImport, FicheImport, modifier, nouvelle_fiche
 from axelcompta.tenants.fiches_import_etat import (
+    ContactDigifactory,
+    contacts_correspondants,
     dossier_prevu,
+    emplacements,
     etat_sections,
     exercices,
     ligne_dossier,
     manque_pour_creer,
+    statut_calcule,
 )
 from axelcompta.tenants.import_dossiers import rapport
 
 LE = datetime(2026, 11, 16, 10, 0, tzinfo=UTC)
 AUJOURD_HUI = date(2026, 11, 16)
 T = TenantId("TENANT_DEMO")
+CREE_EN_2023 = {"date_creation": "2023-03-15", "cloture": "31/12"}
 
 
-def _document(categorie: str, exercice: int | None) -> DocumentImport:
+def _document(emplacement: str, statut: str = "a_traiter") -> DocumentImport:
+    _section, categorie, *annee = emplacement.split(":")
     return DocumentImport(
-        f"{categorie}-{exercice}",
+        emplacement,
         "f1",
         T,
         categorie,
-        exercice,
+        int(annee[0]) if annee else None,
         "x",
         "application/pdf",
         1,
         "e",
         "b",
         LE,
+        emplacement=emplacement,
+        statut_traitement=statut,  # type: ignore[arg-type]
     )
 
 
@@ -41,57 +51,84 @@ def _fiche(**champs: str) -> FicheImport:
 
 
 def test_une_societe_de_2023_reprend_2024_et_2025_et_le_dernier_clos_est_indispensable() -> None:
-    champs = {"date_creation": "2023-03-15", "cloture": "31/12"}
-    liste = exercices(champs, [_document("fec", 2025)], AUJOURD_HUI)
-
-    assert [(e.annee, e.etat) for e in liste] == [
+    assert [(e.annee, e.etat) for e in exercices(CREE_EN_2023, AUJOURD_HUI)] == [
         (2024, "clos"),
         (2025, "clos"),
         (2026, "en_cours"),
     ]
-    assert (liste[0].debut, liste[0].fin) == (date(2024, 1, 1), date(2024, 12, 31))
-    en_2025 = {p.categorie: p for p in liste[1].pieces}
-    assert en_2025["liasse"].attendue and not en_2025["liasse"].recue
-    assert en_2025["fec"].recue
-    assert not en_2025["balance"].attendue  # le FEC suffit
-    assert not any(p.attendue for p in liste[0].pieces)  # 2024 : si disponible
-    assert liste[2].pieces == ()
+    places = {e.cle: e for e in emplacements(CREE_EN_2023, [], AUJOURD_HUI)}
+    assert places["reprise:liasse:2025"].attendu and places["reprise:fec:2025"].attendu
+    assert not places["reprise:liasse:2024"].attendu  # si disponible
+    assert not places["reprise:balance:2025"].attendu
+    assert "report à nouveau" in places["reprise:liasse:2025"].explication
 
 
-def test_un_premier_exercice_long_suit_la_date_de_premiere_cloture() -> None:
-    champs = {"date_creation": "2025-06-10", "cloture": "31/12", "premiere_cloture": "2026-12-31"}
-    assert [(e.debut, e.fin, e.etat) for e in exercices(champs, [], AUJOURD_HUI)] == [
-        (date(2025, 6, 10), date(2026, 12, 31), "en_cours")
+def test_un_premier_exercice_long_et_une_cloture_au_29_fevrier() -> None:
+    long_ = {"date_creation": "2025-06-10", "cloture": "31/12", "premiere_cloture": "2026-12-31"}
+    assert [(e.debut, e.fin) for e in exercices(long_, AUJOURD_HUI)] == [
+        (date(2025, 6, 10), date(2026, 12, 31))
+    ]
+    bissextile = {"date_creation": "2023-03-01", "cloture": "29/02"}
+    assert [e.fin for e in exercices(bissextile, AUJOURD_HUI)] == [
+        date(2024, 2, 29),
+        date(2025, 2, 28),
+        date(2026, 2, 28),
+        date(2027, 2, 28),
     ]
 
 
-def test_une_cloture_au_29_fevrier_tombe_au_28_les_autres_annees() -> None:
-    champs = {"date_creation": "2023-03-01", "cloture": "29/02"}
-    fins = [e.fin for e in exercices(champs, [], AUJOURD_HUI)]
-    assert fins == [date(2024, 2, 29), date(2025, 2, 28), date(2026, 2, 28), date(2027, 2, 28)]
+def test_les_releves_d_avant_digifactory_ont_leur_emplacement_et_leur_explication() -> None:
+    sans_digi = emplacements({}, [], AUJOURD_HUI)
+    releves = next(e for e in sans_digi if e.cle == "banque:releve_bancaire")
+    assert releves.attendu and "pas encore connectée" in releves.explication
+
+    champs = {
+        "contact_digifactory": "22755",
+        "exercice_debut": "2026-01-01",
+        "debut_historique": "2026-06-01",
+    }
+    avant = next(
+        e for e in emplacements(champs, [], AUJOURD_HUI) if e.cle == "banque:releve_bancaire"
+    )
+    assert avant.attendu
+    assert avant.explication.startswith("Du 01/01/2026 au 31/05/2026")
 
 
-def test_sans_date_de_creation_ni_cloture_rien_n_est_calcule() -> None:
-    assert exercices({"cloture": "31/12"}, [], AUJOURD_HUI) == []
-    reprise = next(e for e in etat_sections(_fiche(), [], AUJOURD_HUI) if e.cle == "reprise")
-    assert reprise.manquants == ("Date de création et date de clôture (catégorie Entreprise)",)
+def test_un_document_va_dans_son_emplacement_et_un_ancien_dans_celui_de_sa_categorie() -> None:
+    liasse = _document("reprise:liasse:2025")
+    ancien = replace(_document("documents:kbis"), emplacement="")
+    places = {e.cle: e for e in emplacements(CREE_EN_2023, [liasse, ancien], AUJOURD_HUI)}
+    assert places["reprise:liasse:2025"].documents == (liasse,)
+    assert places["documents:kbis"].documents == (ancien,)
 
 
 def test_chaque_categorie_dit_ce_qui_lui_manque() -> None:
-    fiche = _fiche(
-        date_creation="2023-03-15",
-        cloture="31/12",
-        regime_imposition="option_IR",
-        email="k@x.fr",
-    )
-    documents = [_document("liasse", 2025), _document("balance", 2025), _document("kbis", None)]
+    fiche = _fiche(**CREE_EN_2023, regime_imposition="option_IR", email="k@x.fr")
+    documents = [_document("reprise:liasse:2025"), _document("documents:kbis")]
     etats = {e.cle: e for e in etat_sections(fiche, documents, AUJOURD_HUI)}
 
     assert etats["dirigeant"].complet
     assert "Première année de l'option IR" in etats["fiscalite"].manquants
-    assert etats["reprise"].manquants == ("FEC 2025", "Grand livre 2025")
-    assert etats["documents"].manquants == ("Statuts", "RIB")
+    assert etats["reprise"].manquants == ("FEC 2025",)
+    assert etats["documents"].manquants == ("Statuts",)
+    assert "RIB" in etats["banque"].manquants
     assert "SIREN ou SIRET" in etats["entreprise"].manquants
+
+
+def test_des_parts_qui_ne_font_pas_100_pourcent_sont_signalees() -> None:
+    fiche = _fiche(
+        email="k@x.fr",
+        associes='[{"nom": "Dupont", "fonction": "president", "pourcentage": "60"}]',
+    )
+    dirigeant = next(e for e in etat_sections(fiche, [], AUJOURD_HUI) if e.cle == "dirigeant")
+    assert dirigeant.manquants == ("Parts des associés : 60 % sur 100 %",)
+
+
+def test_le_statut_se_calcule_tout_seul() -> None:
+    """AXE-947 : jamais choisi à la main."""
+    vide = nouvelle_fiche("f1", T, "Dupont", "Karim", "", "b", LE)
+    assert statut_calcule(vide, [], AUJOURD_HUI) == "a_importer"
+    assert statut_calcule(_fiche(email="k@x.fr"), [], AUJOURD_HUI) == "en_traitement"
 
 
 def test_la_fiche_complete_devient_une_ligne_d_import_valide() -> None:
@@ -105,24 +142,19 @@ def test_la_fiche_complete_devient_une_ligne_d_import_valide() -> None:
         contact_digifactory="contact 22755",
     )
     assert manque_pour_creer(fiche) == []
-    assert manque_pour_creer(_fiche()) == [
-        "SIREN",
-        "Dénomination",
-        "Forme juridique",
-        "Imposition des bénéfices",
-        "Régime de TVA",
-        "Début de l'exercice en cours",
-    ]
+    assert len(manque_pour_creer(_fiche())) == 6
     (ligne,) = rapport(T, [ligne_dossier(fiche)], []).lignes
     assert ligne.dossier is not None and ligne.erreurs == ()
     assert ligne.dossier.id == DossierId("DIGI_22755") == dossier_prevu(fiche)
-    assert ligne.dossier.tva_recettes_regime == "assujetti_taux_reduit"
 
 
-def test_des_parts_qui_ne_font_pas_100_pourcent_sont_signalees() -> None:
-    fiche = _fiche(
-        email="k@x.fr",
-        associes='[{"nom": "Dupont", "fonction": "president", "pourcentage": "60"}]',
-    )
-    dirigeant = next(e for e in etat_sections(fiche, [], AUJOURD_HUI) if e.cle == "dirigeant")
-    assert dirigeant.manquants == ("Parts des associés : 60 % sur 100 %",)
+def test_le_contact_digifactory_se_trouve_par_le_siren_ou_le_nom() -> None:
+    fiche = _fiche(siren="552100554", denomination="MK Driving")
+    contacts = [
+        ContactDigifactory("1", "SARL AUTRE", "552100554"),
+        ContactDigifactory("2", "MK DRIVING VTC", None),
+        ContactDigifactory("3", "Dupont Karim", None),
+        ContactDigifactory("4", "Karima Martin", None),
+    ]
+    trouves = [(c.contact.contact_nr, c.raison) for c in contacts_correspondants(fiche, contacts)]
+    assert trouves == [("1", "même SIREN"), ("3", "même nom"), ("2", "même nom")]

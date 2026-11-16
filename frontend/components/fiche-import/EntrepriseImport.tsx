@@ -71,7 +71,7 @@ export function EntrepriseImport({
       <div className="grid gap-5 sm:grid-cols-2">
         {autres.map((champ) => (
           <ChampAuto
-            key={`${champ.cle}:${champ.valeur}`}
+            key={champ.cle}
             champ={champ}
             modifiable={modifiable}
             duRegistre={fiche.depuis_registre.includes(champ.cle)}

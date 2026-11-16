@@ -8,8 +8,15 @@ from typing import Any, cast
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from axelcompta.api.routes import get_demandes_jobs, get_fiches_import, get_lire_fiche_officielle
+from axelcompta.api.routes import (
+    get_branchements,
+    get_demandes_jobs,
+    get_fiches_import,
+    get_lire_contacts_digifactory,
+    get_lire_fiche_officielle,
+)
 from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, FileMemoire
+from axelcompta.tenants.branchements import BranchementsMemoire
 from axelcompta.tenants.fiches_import_depot import FichesImportMemoire
 from axelcompta.tenants.registres import FicheOfficielle
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
@@ -40,6 +47,8 @@ def _client(role: str = "admin", registres: bool = True) -> tuple[TestClient, Fi
     app.dependency_overrides[get_demandes_jobs] = lambda: file
     lire = (lambda siren: OFFICIELLE if siren == SIREN else None) if registres else None
     app.dependency_overrides[get_lire_fiche_officielle] = lambda: lire
+    branchements = BranchementsMemoire()
+    app.dependency_overrides[get_branchements] = lambda: branchements
     return client, file
 
 
@@ -63,7 +72,7 @@ def test_ouvrir_une_fiche_avec_un_siren_preremplit_l_entreprise() -> None:
 
     entreprise = {c["cle"]: c["valeur"] for c in _section(fiche, "entreprise")["champs"]}
     assert (entreprise["denomination"], entreprise["cloture"]) == ("MK DRIVING", "31/12")
-    assert (fiche["statut"], fiche["registre_sources"]) == ("a_importer", ["insee", "rne"])
+    assert (fiche["statut"], fiche["registre_sources"]) == ("en_traitement", ["insee", "rne"])
     assert [e["annee"] for e in fiche["exercices"]] == [2024, 2025, 2026]
     liste = client.get("/portefeuille/imports", headers=EN_TETE).json()
     assert [(f["id"], f["denomination"]) for f in liste] == [(fiche["id"], "MK DRIVING")]
@@ -79,7 +88,7 @@ def test_completer_une_categorie_et_refuser_une_valeur_illisible() -> None:
     sans_siren = client.post(f"{route}/registres", headers=EN_TETE)
 
     assert complete.status_code == 200
-    assert complete.json()["statut"] == "en_traitement"
+    assert complete.json()["statut"] == "en_traitement"  # calculé
     assert illisible.status_code == 422 and "jour et mois" in illisible.json()["detail"]
     assert sans_siren.status_code == 503  # registres pas branchés
 
@@ -98,7 +107,11 @@ def test_un_lecteur_ne_modifie_pas_et_un_autre_portefeuille_ne_voit_rien() -> No
     assert refus.status_code == 403
 
 
-def test_deposer_relire_et_retirer_un_document() -> None:
+def _emplacement(fiche: dict[str, Any], cle: str) -> dict[str, Any]:
+    return dict(next(e for e in fiche["emplacements"] if e["cle"] == cle))
+
+
+def test_deposer_a_son_emplacement_relire_et_retirer() -> None:
     client, _file = _client()
     fiche = _ouvrir(client)
     route = f"/portefeuille/imports/{fiche['id']}/documents"
@@ -106,25 +119,45 @@ def test_deposer_relire_et_retirer_un_document() -> None:
     depot = client.post(
         route,
         files={"fichier": ("liasse-2025.pdf", b"%PDF-1.4", "application/pdf")},
-        data={"categorie": "liasse", "exercice": "2025"},
+        data={"emplacement": "reprise:liasse:2025"},
         headers=EN_TETE,
     )
     refuse = client.post(
         route,
         files={"fichier": ("virus.exe", b"MZ", "application/octet-stream")},
-        data={"categorie": "autre"},
+        data={"emplacement": "documents:autre"},
         headers=EN_TETE,
     )
-    (document,) = depot.json()["documents"]
+    (document,) = _emplacement(depot.json(), "reprise:liasse:2025")["documents"]
     relu = client.get(f"{route}/{document['id']}", headers=EN_TETE)
     retire = client.delete(f"{route}/{document['id']}", headers=EN_TETE)
 
-    assert depot.status_code == 200 and document["libelle"] == "Liasse fiscale"
-    piece = depot.json()["exercices"][1]["pieces"][0]
-    assert (piece["categorie"], piece["recue"]) == ("liasse", True)
+    assert depot.status_code == 200
+    assert (document["libelle"], document["statut_traitement"]) == ("Liasse fiscale", "a_traiter")
+    assert depot.json()["documents_a_lire"] == 1
     assert refuse.status_code == 422
     assert relu.content == b"%PDF-1.4"
-    assert retire.json()["documents"] == []
+    assert _emplacement(retire.json(), "reprise:liasse:2025")["documents"] == []
+
+
+def test_un_releve_qif_depose_est_lu_tout_de_suite() -> None:
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    depot = client.post(
+        f"/portefeuille/imports/{fiche['id']}/documents",
+        files={
+            "fichier": (
+                "releve.qif",
+                b"!Type:Bank\nD31/01/2026\nT-12,00\nPTotal\n^\n",
+                "text/plain",
+            )
+        },
+        data={"emplacement": "banque:releve_bancaire"},
+        headers=EN_TETE,
+    )
+    (document,) = _emplacement(depot.json(), "banque:releve_bancaire")["documents"]
+    assert document["statut_traitement"] == "traite"
+    assert document["resume"].startswith("QIF lu : 1 opérations")
 
 
 def test_creer_le_chauffeur_confie_le_dossier_au_worker() -> None:
@@ -153,18 +186,38 @@ def test_creer_le_chauffeur_confie_le_dossier_au_worker() -> None:
     assert job is not None and "MK DRIVING" in job.payload
 
 
-def test_une_fiche_traitee_se_rouvre_pour_etre_modifiee() -> None:
+def test_annuler_un_import_le_sort_de_la_liste() -> None:
     client, _file = _client()
     fiche = _ouvrir(client)
     route = f"/portefeuille/imports/{fiche['id']}"
 
-    client.post(f"{route}/statut", json={"statut": "traitee"}, headers=EN_TETE)
-    bloquee = client.patch(route, json={"champs": {"email": "k@x.fr"}}, headers=EN_TETE)
-    client.post(f"{route}/statut", json={"statut": "en_traitement"}, headers=EN_TETE)
-    rouverte = client.patch(route, json={"champs": {"email": "k@x.fr"}}, headers=EN_TETE)
+    annule = client.post(f"{route}/annuler", headers=EN_TETE)
 
-    assert bloquee.status_code == 422 and "traitée" in bloquee.json()["detail"]
-    assert rouverte.status_code == 200
+    assert annule.status_code == 204
+    assert client.get("/portefeuille/imports", headers=EN_TETE).json() == []
+    assert client.get(route, headers=EN_TETE).status_code == 404
+
+
+def test_le_contact_digifactory_de_la_personne_et_sinon_pas_connecte() -> None:
+    client, _file = _client()
+    app = cast(FastAPI, client.app)
+    contacts = {
+        "22755": {"companyName": "MK DRIVING", "siret": "55210055400013"},
+        "9": {"companyName": "AUTRE"},
+    }
+    app.dependency_overrides[get_lire_contacts_digifactory] = lambda: lambda _b: contacts
+    fiche = _ouvrir(client)
+    trouve = client.get(f"/portefeuille/imports/{fiche['id']}/digifactory", headers=EN_TETE).json()
+
+    def en_panne(_b: object) -> dict[str, dict[str, object]]:
+        raise RuntimeError("Digifactory injoignable")
+
+    app.dependency_overrides[get_lire_contacts_digifactory] = lambda: en_panne
+    panne = client.get(f"/portefeuille/imports/{fiche['id']}/digifactory", headers=EN_TETE).json()
+
+    assert trouve["lu"] is True
+    assert [(c["contact_nr"], c["a_un_dossier"]) for c in trouve["contacts"]] == [("22755", False)]
+    assert panne == {"lu": False, "contacts": []}
 
 
 def test_saisir_un_siret_lance_seul_la_recherche_aux_registres() -> None:

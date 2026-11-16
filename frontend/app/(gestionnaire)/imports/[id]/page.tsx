@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Check, Link2, LoaderCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Link2, LoaderCircle, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -9,19 +9,19 @@ import { Badge } from "@/components/Badge";
 import { SqueletteLignes } from "@/components/Squelette";
 import { AssociesImport } from "@/components/fiche-import/AssociesImport";
 import { ChampAuto, type Enregistrer } from "@/components/fiche-import/ChampAuto";
-import { DocumentsImport, PiecesAttendues } from "@/components/fiche-import/DocumentsImport";
+import { DigifactoryImport } from "@/components/fiche-import/DigifactoryImport";
+import { EmplacementsSection } from "@/components/fiche-import/DocumentsImport";
 import { EntrepriseImport } from "@/components/fiche-import/EntrepriseImport";
 import { RolleeImport } from "@/components/fiche-import/RolleeImport";
 import { Button } from "@/components/ui/button";
 import {
   ErreurAuthGestionnaire,
-  changerStatutImport,
+  annulerFicheImport,
   completerFicheImport,
   creerChauffeurImport,
   lireFicheImport,
 } from "@/lib/auth-gestionnaire";
 import {
-  STATUTS_IMPORT,
   badgeStatut,
   etatSection,
   libelleStatut,
@@ -30,17 +30,12 @@ import {
   type ChampImport,
   type FicheImport,
   type SectionImport,
-  type StatutImport,
+  valeurChamp,
 } from "@/lib/fiches-import";
 import { messageEchecChargement } from "@/lib/session";
 import { useDroitGestionnaire } from "@/lib/use-droit";
 
 const ENSEMBLE = "ensemble";
-const DOCUMENTS_PAR_SECTION: Record<string, string[]> = {
-  reprise: ["liasse", "fec", "balance", "grand_livre", "autre"],
-  banque: ["releve_bancaire", "rib", "autre"],
-  documents: ["kbis", "statuts", "rib", "lettre_comptable", "autre"],
-};
 
 /** AXE-941, AXE-946 : une fiche d'import. Les catégories à gauche, avec leur
  * état ; la catégorie ouverte à droite. Changer de catégorie ne recharge
@@ -88,14 +83,14 @@ export default function FicheImportPage() {
   if (erreur) return <p role="alert" className="text-sm text-danger">{erreur}</p>;
   if (fiche === null) return <SqueletteLignes nombre={6} className="h-16" />;
 
-  const modifiable = droit.ecriture && fiche.statut !== "traitee";
+  const modifiable = droit.ecriture;
   const section = fiche.sections_detail.find((s) => s.cle === actif) ?? null;
   return (
     <div className="space-y-6">
       <Link href="/imports" className="inline-flex items-center gap-1 text-sm text-subtle hover:text-ink">
         <ArrowLeft className="size-4" aria-hidden /> Imports
       </Link>
-      <EnTete fiche={fiche} ecriture={droit.ecriture} onFiche={setFiche} />
+      <EnTete fiche={fiche} ecriture={droit.ecriture} />
       <div className="grid gap-6 lg:grid-cols-[17rem_minmax(0,1fr)]">
         <Sommaire fiche={fiche} actif={actif} onOuvrir={ouvrir} />
         <div className="min-w-0 rounded-lg border border-border bg-canvas p-5 sm:p-6">
@@ -120,25 +115,17 @@ export default function FicheImportPage() {
   );
 }
 
-function EnTete({
-  fiche,
-  ecriture,
-  onFiche,
-}: {
-  fiche: FicheImport;
-  ecriture: boolean;
-  onFiche: (fiche: FicheImport) => void;
-}) {
+function EnTete({ fiche, ecriture }: { fiche: FicheImport; ecriture: boolean }) {
+  const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
 
-  async function changerStatut(statut: StatutImport) {
-    if (statut === fiche.statut) return;
-    const avant = fiche;
-    onFiche({ ...fiche, statut }); // tout de suite ; l'API confirme
+  async function annuler() {
+    const qui = nomChauffeur(fiche);
+    if (!window.confirm(`Annuler l'import de ${qui} ? La fiche sort de la liste des imports.`)) return;
     try {
-      onFiche(await changerStatutImport(fiche.id, statut));
+      await annulerFicheImport(fiche.id);
+      router.push("/imports");
     } catch (exception) {
-      onFiche(avant);
       setMessage(exception instanceof Error ? exception.message : "Erreur inattendue.");
     }
   }
@@ -155,26 +142,11 @@ function EnTete({
           <p className="mt-1 text-sm text-subtle">
             {fiche.denomination ?? "Entreprise à compléter"}
             {fiche.siren && ` · SIREN ${fiche.siren}`}
+            {fiche.documents_a_lire > 0 &&
+              ` · ${fiche.documents_a_lire} document${fiche.documents_a_lire > 1 ? "s" : ""} à lire`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {ecriture && (
-            <div className="flex rounded-md border border-border p-0.5" role="group" aria-label="Statut de la fiche">
-              {STATUTS_IMPORT.map((s) => (
-                <button
-                  key={s.cle}
-                  type="button"
-                  aria-pressed={fiche.statut === s.cle}
-                  onClick={() => void changerStatut(s.cle)}
-                  className={`rounded px-3 py-1 text-[13px] font-medium transition-colors ${
-                    fiche.statut === s.cle ? "bg-surface-soft text-ink" : "text-subtle hover:text-ink"
-                  }`}
-                >
-                  {s.libelle}
-                </button>
-              ))}
-            </div>
-          )}
           <Button
             size="sm"
             variant="ghost"
@@ -182,6 +154,11 @@ function EnTete({
           >
             <Link2 className="size-4" aria-hidden /> Copier le lien
           </Button>
+          {ecriture && (
+            <Button size="sm" variant="ghost" onClick={() => void annuler()}>
+              <Trash2 className="size-4" aria-hidden /> Annuler l&apos;import
+            </Button>
+          )}
         </div>
       </div>
       <div className="mt-5 flex items-center gap-3">
@@ -189,7 +166,7 @@ function EnTete({
           <div className="h-full rounded-full bg-ink transition-all duration-300" style={{ width: `${pourcent}%` }} />
         </div>
         <span className="text-xs text-subtle">
-          {fiche.sections_completes}/{fiche.sections} catégories complètes
+          {fiche.sections_completes}/{fiche.sections} catégories complètes · statut calculé seul
         </span>
       </div>
       {message && <p role="status" className="mt-2 text-sm text-subtle">{message}</p>}
@@ -359,7 +336,6 @@ function PanneauSection({
   onFiche: (fiche: FicheImport) => void;
   onSuivante: () => void;
 }) {
-  const documents = DOCUMENTS_PAR_SECTION[section.cle];
   return (
     <section className="space-y-6" aria-labelledby="titre-section">
       <div>
@@ -370,18 +346,9 @@ function PanneauSection({
           <Badge variant={section.complet ? "validated" : "pending"}>{etatSection(section)}</Badge>
         </div>
         <p className="mt-1 text-sm text-subtle">{section.description}</p>
-        {!modifiable && fiche.statut === "traitee" && (
-          <p className="mt-2 text-sm text-subtle">Fiche traitée : repassez-la en traitement pour la modifier.</p>
-        )}
       </div>
       <ContenuSection fiche={fiche} section={section} modifiable={modifiable} enregistrer={enregistrer} />
-      {section.cle === "reprise" && <PiecesAttendues fiche={fiche} />}
-      {documents && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-ink">Documents</h3>
-          <DocumentsImport fiche={fiche} modifiable={modifiable} categories={documents} onFiche={onFiche} />
-        </div>
-      )}
+      <EmplacementsSection fiche={fiche} section={section.cle} modifiable={modifiable} onFiche={onFiche} />
       {section.manquants.length > 0 && (
         <p className="text-sm text-subtle">
           Manque encore : <span className="text-ink">{section.manquants.join(", ")}</span>.
@@ -412,7 +379,7 @@ function ContenuSection({
   }
   const champ = (c: ChampImport) => {
     if (c.type === "associes") {
-      return <AssociesImport key={`${c.cle}:${c.valeur}`} champ={c} modifiable={modifiable} enregistrer={enregistrer} />;
+      return <AssociesImport key={c.cle} champ={c} modifiable={modifiable} enregistrer={enregistrer} />;
     }
     if (c.type === "rollee") {
       return (
@@ -428,7 +395,7 @@ function ContenuSection({
     }
     return (
       <ChampAuto
-        key={`${c.cle}:${c.valeur}`}
+        key={c.cle}
         champ={c}
         modifiable={modifiable}
         duRegistre={fiche.depuis_registre.includes(c.cle)}
@@ -437,5 +404,18 @@ function ContenuSection({
     );
   };
   if (section.champs.length === 0) return null;
-  return <div className="grid gap-5 sm:grid-cols-2">{section.champs.map(champ)}</div>;
+  return (
+    <div className="grid gap-5 sm:grid-cols-2">
+      {section.cle === "banque" && (
+        <DigifactoryImport
+          ficheId={fiche.id}
+          contactActuel={valeurChamp(fiche, "contact_digifactory")}
+          cle={[fiche.siren, fiche.denomination, fiche.nom, fiche.prenom].join("|")}
+          modifiable={modifiable}
+          enregistrer={enregistrer}
+        />
+      )}
+      {section.champs.map(champ)}
+    </div>
+  );
 }
