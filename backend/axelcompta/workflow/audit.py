@@ -32,6 +32,8 @@ ACTE_IDENTITE = "identite_saisie"
 ACTE_ECART_REGISTRE = "ecart_registre_tranche"
 # Bilan d'ouverture repris d'un FEC, par le dirigeant ou l'expert (AXE-804).
 ACTE_OUVERTURE_FEC = "ouverture_fec"
+# Semaine de plateforme écrite telle quelle ou écartée par l'expert (AXE-912).
+ACTE_SEMAINE_TRANCHEE = "semaine_plateforme_tranchee"
 
 
 def noter(
