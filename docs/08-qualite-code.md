@@ -94,8 +94,8 @@ Pipeline CI (GitHub Actions), ordre d'exécution :
 2. mypy --strict                              (types backend)
 3. tsc --noEmit + eslint                      (front)
 4. import-linter                              (frontières de modules)
-5. pytest : unit + propriétés                 (rapide, < 5 min)
-6. pytest : intégration (Postgres éphémère)   (transactions, RLS, migrations)
+5. pytest : unit + propriétés                 (rapide, plusieurs cœurs, en parallèle de 6)
+6. pytest : intégration (Postgres éphémère)   (transactions, RLS, migrations, un processus)
 7. Tests golden : FEC, liasses, templates d'écritures
 8. Couverture : ledger/closing/filings ≥ 95 %, global ≥ 85 % (seuils bloquants)
 9. Audit dépendances (pip-audit, npm audit) + scan secrets (gitleaks)
