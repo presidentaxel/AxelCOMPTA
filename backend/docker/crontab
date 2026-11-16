@@ -1,0 +1,4 @@
+# Une passe, puis le verrou ignore le déclenchement suivant si elle dure.
+* * * * * flock -n /tmp/axelcompta-worker python -m axelcompta.worker
+# Même minute que le poste de démo. Fuseau du conteneur : UTC.
+7 * * * * flock -n /tmp/axelcompta-taches python -m axelcompta.taches

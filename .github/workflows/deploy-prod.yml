@@ -1,0 +1,33 @@
+name: Déploiement production
+
+# La branche prod est la seule qui atteint le droplet. Tant que les secrets
+# DROPLET_HOST et DROPLET_SSH_KEY ne sont pas posés, le job s'arrête sans
+# rien envoyer.
+on:
+  push:
+    branches: [prod]
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: droplet
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Envoyer et relancer
+        env:
+          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER }}
+          DROPLET_PORT: ${{ secrets.DROPLET_PORT }}
+          DROPLET_SSH_KEY: ${{ secrets.DROPLET_SSH_KEY }}
+          DROPLET_KNOWN_HOSTS: ${{ secrets.DROPLET_KNOWN_HOSTS }}
+          DROPLET_DIR: ${{ secrets.DROPLET_DIR }}
+        run: bash deploy/depuis-ci.sh

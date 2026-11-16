@@ -1,0 +1,8 @@
+node_modules
+.next
+out
+dist-unit
+e2e
+playwright-report
+test-results
+*.md
