@@ -103,6 +103,14 @@ class PostgresFichesImport:
             par_fiche.setdefault(ligne.fiche_id, []).append(_document(ligne))
         return [(_fiche(f), par_fiche.get(f.id, [])) for f in fiches]
 
+    def toutes(self, tenant_id: TenantId) -> list[FicheImport]:
+        with self._engine.connect() as connexion:
+            appliquer_rls(connexion)
+            lignes = connexion.execute(
+                select(fiches_import).where(fiches_import.c.tenant_id == tenant_id)
+            ).all()
+        return [_fiche(ligne) for ligne in lignes]
+
     def lire(self, tenant_id: TenantId, fiche_id: str) -> FicheImport:
         with self._engine.connect() as connexion:
             appliquer_rls(connexion)

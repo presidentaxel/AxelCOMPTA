@@ -157,6 +157,13 @@ d'héritage implicite (doc 03 §3bis, doc 06 §7).
   ceux du dernier exercice déposé (« source » du report à nouveau). Un
   exercice dont la date est passée mais jamais déposé se coche « en retard »
   (champ `en_retard`) : on remonte à l'exercice d'avant.
+- AXE-952 : `fiches_import_dossiers.py` (pur) donne une fiche à chaque
+  dossier du portefeuille, préremplie de ce qu'on sait (dossier, identité,
+  comptes Rollee et bancaires, première opération) ; une fiche ouverte au
+  même SIREN est reprise, seuls ses champs vides se remplissent ; une fiche
+  annulée du dossier ne revient pas. Lancé par la synchro
+  (`axelcompta/fiches_import_portefeuille.py`), qui lit aussi l'INSEE et le
+  RNE une fois.
 - `registres.py` lit aussi au RNE la date de clôture (« 3112 ») et la date
   de première clôture.
 

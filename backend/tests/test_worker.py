@@ -202,3 +202,15 @@ def test_le_bouton_synchroniser_relit_aussi_rollee_apres_digifactory() -> None:
     resultat = executer_job(FileMemoire().demander(T, TYPE_SYNCHRO), deps, AUJOURD_HUI)
     assert ordre == ["rollee après 1 synchro(s)"]
     assert resultat.endswith("5 opérations reçues · Rollee relu pour 2 dossier(s)")
+
+
+def test_la_synchro_complete_aussi_les_fiches_d_import() -> None:
+    """AXE-952 : après Digifactory et Rollee, chaque dossier a sa fiche."""
+    deps, _dossiers, _contacts, _synchros = _deps()
+    deps = replace(
+        deps,
+        relever_rollee=lambda _t: "Rollee relu pour 1 dossier(s)",
+        completer_fiches=lambda _t: "15 fiches d'import créées",
+    )
+    resultat = executer_job(FileMemoire().demander(T, TYPE_SYNCHRO), deps, AUJOURD_HUI)
+    assert resultat.endswith("Rollee relu pour 1 dossier(s) · 15 fiches d'import créées")
