@@ -23,7 +23,7 @@ from axelcompta.tenants.fiches_import import (
     preremplir,
     valider,
 )
-from axelcompta.tenants.fiches_import_calculs import numero_tva
+from axelcompta.tenants.fiches_import_calculs import date_limite_liasse, numero_tva
 from axelcompta.tenants.registres import FicheOfficielle, PersonneOfficielle
 
 LE = datetime(2026, 11, 16, 10, 0, tzinfo=UTC)
@@ -181,3 +181,36 @@ def test_la_cle_de_tva_suit_la_formule_officielle() -> None:
     """Vérifié auprès de VIES le 16/11 : FR64 443061841 est valide."""
     assert numero_tva("443061841") == "FR64443061841"
     assert numero_tva("12345") is None
+
+
+def test_date_limite_de_la_liasse() -> None:
+    """AXE-950 : + 15 jours du dépôt en ligne."""
+    assert date_limite_liasse(date(2026, 9, 30)) == date(2027, 1, 15)
+    assert date_limite_liasse(date(2026, 6, 30)) == date(2026, 10, 15)
+    assert date_limite_liasse(date(2025, 12, 31)) == date(
+        2026, 5, 20
+    )  # 2e jour ouvré : mardi 5 mai
+
+
+def test_les_exercices_en_retard_se_rangent_en_annees() -> None:
+    assert valider({"en_retard": "2025, 2024,2025"}) == {"en_retard": "2024,2025"}
+    with pytest.raises(SaisieInvalide, match="des années"):
+        valider({"en_retard": "25"})
+
+
+def test_relire_les_registres_retire_un_associe_lu_en_double_avant() -> None:
+    """AXE-951 : une fiche préremplie avec la même personne deux fois (lecture
+    d'avant) n'en garde qu'une après relecture, si personne ne l'a modifiée."""
+    double = PersonneOfficielle("AGBO", "Toussaint W")
+    avant = dataclasses.replace(_officielle(), personnes=(double, double))
+    fiche = preremplir(_fiche(), avant, "b", LE)
+    assert len(json.loads(fiche.champs["associes"])) == 2
+
+    apres = dataclasses.replace(
+        _officielle(),
+        personnes=(
+            PersonneOfficielle("AGBO", "Toussaint W", prenom_usuel="Toussaint", roles=("73",)),
+        ),
+    )
+    (associe,) = json.loads(preremplir(fiche, apres, "b", LE).champs["associes"])
+    assert (associe["prenom"], associe["fonction"]) == ("Toussaint", "president")

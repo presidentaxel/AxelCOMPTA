@@ -39,7 +39,16 @@ export type SectionImport = {
   champs: ChampImport[];
 };
 
-export type ExerciceImport = { annee: number; debut: string; fin: string; etat: "clos" | "en_cours" };
+export type ExerciceImport = {
+  annee: number;
+  debut: string;
+  fin: string;
+  etat: "clos" | "en_cours";
+  /** AXE-950 : à déclarer par nous, source du report à nouveau, ou antérieur. */
+  role: "en_cours" | "a_declarer" | "source" | "anterieur";
+  echeance: string | null;
+  en_retard: boolean;
+};
 
 /** AXE-947 : ce qui a été tiré d'un document. */
 export type StatutDocument = "traite" | "a_traiter" | "illisible";
@@ -220,6 +229,7 @@ export type ContactDigifactory = {
   a_un_dossier: boolean;
 };
 export type DigifactoryFiche = { lu: boolean; contacts: ContactDigifactory[] };
+export type HistoriqueDigifactory = { lu: boolean; debut: string | null };
 
 export function libelleTraitement(statut: StatutDocument): string {
   if (statut === "traite") return "Lu automatiquement";
@@ -241,4 +251,26 @@ export function parExercice(emplacements: EmplacementImport[]): [number | null, 
     groupes.set(annee, [...(groupes.get(annee) ?? []), e]);
   }
   return [...groupes.entries()].sort(([a], [b]) => (b ?? -1) - (a ?? -1));
+}
+
+/** AXE-950 : ce qu'est l'exercice pour la reprise, en une phrase. */
+export function phraseExercice(e: ExerciceImport): string {
+  const echeance = e.echeance ? new Date(e.echeance).toLocaleDateString("fr-FR") : "";
+  if (e.role === "en_cours") return "En cours : la banque et Rollee le rempliront.";
+  if (e.role === "a_declarer") {
+    return e.en_retard
+      ? `Jamais déposé (date limite dépassée le ${echeance}) : à déclarer par nous, en retard.`
+      : `À déclarer par nous : liasse avant le ${echeance}.`;
+  }
+  if (e.role === "source") return "Déjà déposé : sa liasse et son FEC donnent le report à nouveau.";
+  return "Déjà déposé : documents utiles s'ils sont disponibles.";
+}
+
+/** Le bouton « Pas déposée (en retard) » n'a de sens qu'une fois la date limite passée. */
+export function retardPossible(e: ExerciceImport): boolean {
+  return e.en_retard || e.role === "source" || e.role === "anterieur";
+}
+
+export function basculerRetard(enRetard: string, annee: number): string {
+  return basculerChoix(enRetard, String(annee)).split(",").filter(Boolean).sort().join(",");
 }

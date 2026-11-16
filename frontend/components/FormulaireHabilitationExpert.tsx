@@ -38,7 +38,7 @@ export function ExpertsDeclares({ admin }: { admin: boolean }) {
   const noms = useMemo(() => new Map(dossiers.map((d) => [d.dossier_id, d.nom])), [dossiers]);
 
   return (
-    <section className="mt-10 space-y-4" aria-labelledby="titre-experts">
+    <section className="space-y-4" aria-labelledby="titre-experts">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 id="titre-experts" className="text-base font-semibold text-ink">

@@ -53,6 +53,10 @@ class PersonneOfficielle:
     code_postal: str = ""
     commune: str = ""
     pays: str = "France"
+    # AXE-951 : le premier prénom tel que le RNE le donne (« Marie Claire »
+    # reste entier), et les codes de rôle réunis d'une même personne.
+    prenom_usuel: str = ""
+    roles: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,48 +167,59 @@ def _prenoms(valeur: object) -> str:
     return _texte(valeur) or ""
 
 
+def _liste(valeur: object) -> Sequence[object]:
+    return valeur if isinstance(valeur, Sequence) and not isinstance(valeur, str) else ()
+
+
+def _premier_prenom(valeur: object) -> str:
+    prenoms = _liste(valeur)
+    return (_texte(prenoms[0]) if prenoms else _texte(valeur)) or ""
+
+
 def _personnes(pouvoirs: object) -> tuple[PersonneOfficielle, ...]:
-    """Les personnes physiques du RNE. Une entreprise au capital, une date
-    incomplète ou une rue non publiée ne deviennent pas une saisie."""
-    trouvees = []
-    for pouvoir in (
-        pouvoirs if isinstance(pouvoirs, Sequence) and not isinstance(pouvoirs, str) else ()
-    ):
-        if _texte(_objet(pouvoir).get("typeDePersonne")) == "ENTREPRISE":
+    """Les personnes physiques du RNE, une fois chacune (AXE-951) : le RNE
+    répète une personne dans plusieurs « pouvoirs » (même rôle, ou plusieurs
+    rôles) ; on les réunit par nom, premier prénom et date de naissance,
+    rôles compris. Un pouvoir inactif (ancien dirigeant), une entreprise au
+    capital, une date incomplète ou une rue non publiée ne deviennent pas
+    une saisie."""
+    trouvees: dict[tuple[str, str, str], PersonneOfficielle] = {}
+    for pouvoir in _liste(pouvoirs):
+        objet = _objet(pouvoir)
+        if _texte(objet.get("typeDePersonne")) == "ENTREPRISE" or objet.get("actif") is False:
             continue
         personne = _objet(_chemin(pouvoir, "individu", "descriptionPersonne"))
         nom = _texte(personne.get("nom"))
         if nom is None:
             continue
+        prenoms = _prenoms(personne.get("prenoms"))
+        # Nom, premier prénom et naissance : les autres prénoms varient
+        # d'une saisie à l'autre au RNE (vu le 16/11 : une lettre de moins).
+        premier = _premier_prenom(personne.get("prenoms"))
+        cle = (_normal(nom), _normal(premier), _texte(personne.get("dateDeNaissance")) or "")
+        role = _texte(objet.get("roleEntreprise"))
+        deja = trouvees.get(cle)
+        if deja is not None:
+            if role and role not in deja.roles:
+                trouvees[cle] = replace(deja, roles=(*deja.roles, role))
+            continue
         domicile = _objet(_chemin(pouvoir, "individu", "adresseDomicile"))
-        trouvees.append(
-            PersonneOfficielle(
-                nom=nom,
-                prenoms=_prenoms(personne.get("prenoms")),
-                code_postal=_texte(domicile.get("codePostal")) or "",
-                commune=_texte(domicile.get("commune")) or "",
-                pays=_texte(domicile.get("pays")) or "France",
-            )
+        trouvees[cle] = PersonneOfficielle(
+            nom=nom,
+            prenoms=prenoms,
+            code_postal=_texte(domicile.get("codePostal")) or "",
+            commune=_texte(domicile.get("commune")) or "",
+            pays=_texte(domicile.get("pays")) or "France",
+            prenom_usuel=premier,
+            roles=(role,) if role else (),
         )
-    return tuple(trouvees)
+    return tuple(trouvees.values())
 
 
-def _dirigeants(pouvoirs: object) -> tuple[str, ...]:
-    noms = []
-    for pouvoir in (
-        pouvoirs if isinstance(pouvoirs, Sequence) and not isinstance(pouvoirs, str) else ()
-    ):
-        personne = _objet(_chemin(pouvoir, "individu", "descriptionPersonne"))
-        nom = _texte(personne.get("nom"))
-        prenoms = personne.get("prenoms")
-        premier = (
-            _texte(prenoms[0])
-            if isinstance(prenoms, Sequence) and not isinstance(prenoms, str) and prenoms
-            else _texte(prenoms)
-        )
-        if nom:
-            noms.append(" ".join(p for p in (premier, nom) if p))
-    return tuple(noms)
+def _dirigeants(personnes: Sequence[PersonneOfficielle]) -> tuple[str, ...]:
+    return tuple(
+        " ".join(p for p in (personne.prenom_usuel, personne.nom) if p) for personne in personnes
+    )
 
 
 def fiche_rne(reponse: Mapping[str, object], siren: str, lu_le: date) -> FicheOfficielle | None:
@@ -225,7 +240,7 @@ def fiche_rne(reponse: Mapping[str, object], siren: str, lu_le: date) -> FicheOf
     elif forme in _UNIPERSONNELLE:
         forme = None  # le RNE ne lève pas l'ambiguïté : on ne compare pas
     adresse = _objet(_chemin(morale, "adresseEntreprise", "adresse"))
-    pouvoirs = _chemin(morale, "composition", "pouvoirs")
+    personnes = _personnes(_chemin(morale, "composition", "pouvoirs"))
     return FicheOfficielle(
         siren=siren,
         lu_le=lu_le,
@@ -241,8 +256,8 @@ def fiche_rne(reponse: Mapping[str, object], siren: str, lu_le: date) -> FicheOf
             adresse.get("commune"),
         ),
         capital_cts=_capital_cts(description.get("montantCapital")),
-        dirigeants=_dirigeants(pouvoirs),
-        personnes=_personnes(pouvoirs),
+        dirigeants=_dirigeants(personnes),
+        personnes=personnes,
         cloture=_jour_mois(description.get("dateClotureExerciceSocial")),
         premiere_cloture=_date(description.get("datePremiereCloture")),
     )

@@ -12,7 +12,7 @@ import { demanderReinitialisation, envoyerLienMagique } from "@/lib/auth-chauffe
 import type { Cote } from "@/lib/cote-connexion";
 import { prendreMessageConnexion } from "@/lib/message-connexion";
 import { traduireExceptionAuth } from "@/lib/messages-auth";
-import { sessionAExpire } from "@/lib/session";
+import { MESSAGE_ACCES_RETIRE, sessionAExpire } from "@/lib/session";
 
 type Mode = "mot_de_passe" | "lien" | "oubli";
 
@@ -50,6 +50,8 @@ export function FormulaireConnexion({
     const refus = prendreMessageConnexion();
     if (refus) {
       setInfo(refus);
+    } else if (recherche.get("session") === "retire") {
+      setInfo(MESSAGE_ACCES_RETIRE);
     } else if (sessionAExpire(window.location.search)) {
       setInfo("Votre session a expiré. Reconnectez-vous pour reprendre où vous en étiez.");
     }

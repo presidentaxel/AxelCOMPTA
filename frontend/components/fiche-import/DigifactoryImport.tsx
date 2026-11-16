@@ -4,7 +4,7 @@ import { Check, LoaderCircle, Unplug } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { chercherDigifactoryImport } from "@/lib/auth-gestionnaire";
+import { chercherDigifactoryImport, historiqueDigifactoryImport } from "@/lib/auth-gestionnaire";
 import type { DigifactoryFiche } from "@/lib/fiches-import";
 
 import type { Enregistrer } from "./ChampAuto";
@@ -12,21 +12,34 @@ import type { Enregistrer } from "./ChampAuto";
 /** AXE-947 : comme la synchro, la fiche cherche le contact Digifactory de la
  * personne (SIREN, entreprise, nom et prénom). Rien trouvé : la banque n'est
  * pas encore connectée. Relier = garder son numéro sur la fiche. */
+function dateFrancaise(iso: string): string {
+  const [annee, mois, jour] = iso.split("-").map(Number);
+  return new Date(annee, mois - 1, jour).toLocaleDateString("fr-FR", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
 export function DigifactoryImport({
   ficheId,
   contactActuel,
+  historiqueActuel,
   cle,
   modifiable,
   enregistrer,
 }: {
   ficheId: string;
   contactActuel: string;
+  historiqueActuel: string;
   cle: string; // relance la recherche quand le nom ou le SIREN change
   modifiable: boolean;
   enregistrer: Enregistrer;
 }) {
   const [resultat, setResultat] = useState<{ cle: string; vue: DigifactoryFiche } | null>(null);
   const [choisi, setChoisi] = useState(contactActuel);
+  const [debut, setDebut] = useState<string | null>(null);
+  const [historiqueLu, setHistoriqueLu] = useState<boolean | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
 
   useEffect(() => {
@@ -39,6 +52,25 @@ export function DigifactoryImport({
     };
   }, [ficheId, cle]);
 
+  useEffect(() => {
+    if (!choisi) return;
+    let actif = true;
+    historiqueDigifactoryImport(ficheId, choisi)
+      .then(async (vue) => {
+        if (!actif) return;
+        setHistoriqueLu(vue.lu);
+        setDebut(vue.debut);
+        // Un champ déjà rempli reste : relier un autre contact le remplace.
+        if (modifiable && vue.lu && vue.debut && !historiqueActuel) {
+          await enregistrer({ debut_historique: vue.debut });
+        }
+      })
+      .catch(() => actif && setHistoriqueLu(false));
+    return () => {
+      actif = false;
+    };
+  }, [choisi, enregistrer, ficheId, historiqueActuel, modifiable]);
+
   async function relier(contactNr: string) {
     const avant = choisi;
     setChoisi(contactNr); // tout de suite ; l'API confirme
@@ -48,6 +80,15 @@ export function DigifactoryImport({
     } catch (exception) {
       setChoisi(avant);
       setErreur(exception instanceof Error ? exception.message : "Erreur inattendue.");
+      return;
+    }
+    try {
+      const vue = await historiqueDigifactoryImport(ficheId, contactNr);
+      setHistoriqueLu(vue.lu);
+      setDebut(vue.debut);
+      if (vue.lu && vue.debut) await enregistrer({ debut_historique: vue.debut });
+    } catch {
+      setHistoriqueLu(false);
     }
   }
 
@@ -89,6 +130,15 @@ export function DigifactoryImport({
             );
           })}
         </ul>
+      )}
+      {debut && (
+        <p className="text-sm text-subtle">Première écriture Digifactory : {dateFrancaise(debut)}.</p>
+      )}
+      {historiqueLu && !debut && (
+        <p className="text-sm text-subtle">Aucune écriture Digifactory pour ce contact.</p>
+      )}
+      {historiqueLu === false && (
+        <p className="text-sm text-subtle">Digifactory n&apos;a pas donné la première écriture.</p>
       )}
       {erreur && <p role="alert" className="text-sm text-danger">{erreur}</p>}
     </div>

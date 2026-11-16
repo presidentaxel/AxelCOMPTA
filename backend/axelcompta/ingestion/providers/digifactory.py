@@ -282,6 +282,17 @@ def parser_lot(
     )
 
 
+def premiere_ecriture(payload: PayloadTransactions | list[Any]) -> date | None:
+    """La date d'opération la plus ancienne encore comptée.
+
+    Les lignes `deleted` ou `future` ne comptent pas : elles ne sont pas
+    dans l'historique bancaire que Digifactory a vraiment remonté."""
+    lot = parser_lot(payload, DossierId("historique"))
+    if not lot.transactions:
+        return None
+    return min(transaction.date for transaction in lot.transactions)
+
+
 def parser_transactions(
     payload: PayloadTransactions,
     dossier_id: DossierId,

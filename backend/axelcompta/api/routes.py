@@ -2405,7 +2405,8 @@ def _configurer_cors(app: FastAPI) -> None:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origines_autorisees(),
-        # DELETE : suppression d'une règle de rappel, d'un membre, d'une invitation.
+        # DELETE : retirer un document, un membre, une invitation, une règle
+        # de rappel (AXE-948 : sans lui, le navigateur bloquait ces appels).
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["*"],
         # Lu par le front pour enregistrer un fichier sous le nom choisi par
@@ -3000,12 +3001,21 @@ def mfa_requise(role: str | None, identite: IdentiteAuthentifiee | None) -> bool
     return role in ROLES_MFA_OBLIGATOIRE and identite is not None and identite.aal != "aal2"
 
 
+DETAIL_ACCES_RETIRE = "Accès retiré."
+
+
 def exiger_double_authentification(
     request: Request, identite: IdentiteDep, role: RoleAppelantDep
 ) -> None:
     """AXE-812 : appliqué à toute l'API. Un admin (ou un expert-comptable)
     connecté sans code n'atteint que `_ROUTES_SANS_MFA` : 403, et l'écran
-    l'envoie s'enrôler ou saisir son code."""
+    l'envoie s'enrôler ou saisir son code.
+
+    Un membre dont l'accès a été retiré reçoit 401, y compris sur ces routes :
+    son jeton Supabase est encore valide, et un 403 laisserait la session
+    ouverte dans le navigateur."""
+    if role == "retire":
+        raise HTTPException(status_code=401, detail=DETAIL_ACCES_RETIRE)
     if not mfa_requise(role, identite):
         return
     chemin = getattr(request.scope.get("route"), "path", request.url.path)
@@ -8406,6 +8416,7 @@ EXTENSIONS_IMPORT = frozenset(
 )
 REFUS_IMPORT_LECTURE = "Votre rôle est en lecture seule : vous ne pouvez pas modifier un import."
 LireContactsDigifactory = Callable[[list[Branchement]], dict[str, dict[str, object]]]
+LirePremiereEcritureDigifactory = Callable[[list[Branchement], str], date | None]
 
 
 def get_fiches_import() -> FichesImportRepository:
@@ -8421,10 +8432,22 @@ def get_lire_contacts_digifactory() -> LireContactsDigifactory:
     return lambda branchements: asyncio.run(contacts_du_portefeuille(branchements))
 
 
+def get_lire_premiere_ecriture_digifactory() -> LirePremiereEcritureDigifactory:
+    """La plus ancienne opération d'un contact (remplacé en test)."""
+    from axelcompta.synchro_digifactory import premiere_ecriture_du_contact
+
+    return lambda branchements, contact: asyncio.run(
+        premiere_ecriture_du_contact(branchements, contact)
+    )
+
+
 FichesImportDep = Annotated[FichesImportRepository, Depends(get_fiches_import)]
 LireFicheOfficielleDep = Annotated[LireFicheOfficielle | None, Depends(get_lire_fiche_officielle)]
 LireContactsDigifactoryDep = Annotated[
     LireContactsDigifactory, Depends(get_lire_contacts_digifactory)
+]
+LirePremiereEcritureDigifactoryDep = Annotated[
+    LirePremiereEcritureDigifactory, Depends(get_lire_premiere_ecriture_digifactory)
 ]
 
 
@@ -8456,7 +8479,10 @@ class ExerciceImportVue(BaseModel):
     annee: int
     debut: str
     fin: str
-    etat: str
+    etat: str  # clos | en_cours
+    role: str  # en_cours | a_declarer | source | anterieur (AXE-950)
+    echeance: str | None  # date limite de dépôt de sa liasse
+    en_retard: bool
 
 
 class DocumentImportVue(BaseModel):
@@ -8534,6 +8560,13 @@ class DigifactoryFicheVue(BaseModel):
     contacts: list[ContactDigifactoryVue]
 
 
+class HistoriqueDigifactoryVue(BaseModel):
+    """La première écriture bancaire du contact, pour l'historique à reprendre."""
+
+    lu: bool
+    debut: str | None
+
+
 def _resume_fiche(fiche: FicheImport, documents: list[DocumentImport]) -> FicheImportResumeVue:
     aujourd_hui = date.today()
     etats = etat_sections(fiche, documents, aujourd_hui)
@@ -8603,7 +8636,13 @@ def _fiche_vue(instantane: Instantane) -> FicheImportVue:
         sections_detail=_sections_vue(fiche, documents),
         exercices=[
             ExerciceImportVue(
-                annee=e.annee, debut=e.debut.isoformat(), fin=e.fin.isoformat(), etat=e.etat
+                annee=e.annee,
+                debut=e.debut.isoformat(),
+                fin=e.fin.isoformat(),
+                etat=e.etat,
+                role=e.role,
+                echeance=e.echeance.isoformat() if e.echeance else None,
+                en_retard=e.en_retard,
             )
             for e in exercices_import(fiche.champs, aujourd_hui)
         ],
@@ -8706,7 +8745,9 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
         avant = fiches.lire(tenant_id, fiche_id)
         fiche = modifier_fiche(avant, entree.champs, identite.email, datetime.now(UTC))
-        if fiche.champs.get("siren") != avant.champs.get("siren"):
+        # Un SIREN envoyé, même inchangé, demande de relire les registres
+        # (bouton « Relire les registres », AXE-951).
+        if "siren" in entree.champs or fiche.champs.get("siren") != avant.champs.get("siren"):
             fiche = _lire_registres(fiche, lire, identite.email)
         return _fiche_vue(fiches.enregistrer(fiche))
 
@@ -8775,6 +8816,30 @@ def _enregistrer_route_digifactory_fiche(app: FastAPI) -> None:
             return DigifactoryFicheVue(lu=False, contacts=[])
         existants = {str(d.id) for d in dossiers.lister_par_tenant(tenant_id)}
         return DigifactoryFicheVue(lu=True, contacts=_contacts_de_la_fiche(fiche, brut, existants))
+
+    @app.get(
+        "/portefeuille/imports/{fiche_id}/digifactory/{contact_nr}/historique",
+        response_model=HistoriqueDigifactoryVue,
+    )
+    def historique_digifactory_fiche(
+        fiche_id: str,
+        contact_nr: str,
+        identite: IdentiteDep,
+        fiches: FichesImportDep,
+        branchements: BranchementsDep,
+        lire_premiere: LirePremiereEcritureDigifactoryDep,
+    ) -> HistoriqueDigifactoryVue:
+        """La date de la première écriture du contact, pour le champ banque."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        fiches.lire(tenant_id, fiche_id)
+        digifactory = [b for b in branchements.lister(tenant_id) if b.type == "digifactory"]
+        try:
+            debut = lire_premiere(digifactory, contact_nr)
+        except Exception:  # noqa: BLE001 — Digifactory injoignable : on le dit
+            return HistoriqueDigifactoryVue(lu=False, debut=None)
+        return HistoriqueDigifactoryVue(
+            lu=True, debut=debut.isoformat() if debut is not None else None
+        )
 
 
 def _document_accepte(fichier: UploadFile, contenu: bytes) -> None:

@@ -54,6 +54,7 @@ TypeChamp = Literal[
     "siret",
     "associes",
     "rollee",
+    "annees",
 ]
 LONGUEUR_MAX = 2_000
 
@@ -159,6 +160,9 @@ SECTIONS: tuple[Section, ...] = (
             Champ(
                 "emprunts", "Emprunts en cours", "long", aide="Banque, capital restant, échéances."
             ),
+            # AXE-950 : exercices dont la date limite est passée mais dont la
+            # liasse n'a jamais été déposée. Rendu sur chaque exercice.
+            Champ("en_retard", "Exercices non déposés (en retard)", "annees"),
             Champ(
                 "ancien_comptable",
                 "Ancien expert-comptable",
@@ -172,7 +176,12 @@ SECTIONS: tuple[Section, ...] = (
         "Le contact Digifactory (Bridge) qui remonte les comptes du chauffeur.",
         (
             Champ("contact_digifactory", "Numéro de contact Digifactory", obligatoire=True),
-            Champ("debut_historique", "Début de l'historique bancaire", "date"),
+            Champ(
+                "debut_historique",
+                "Début de l'historique bancaire",
+                "date",
+                aide="Date de la première écriture que Digifactory a pour ce chauffeur.",
+            ),
             Champ(
                 "comptes_bancaires",
                 "Comptes bancaires",
@@ -323,6 +332,13 @@ def _identifiant(champ: Champ, texte: str) -> str:
     raise SaisieInvalide(f"{champ.libelle} invalide : {attendu}.")
 
 
+def _annees(texte: str, libelle: str) -> str:
+    annees = [a.strip() for a in texte.split(",") if a.strip()]
+    if not all(re.fullmatch(r"(19|20)\d\d", a) for a in annees):
+        raise SaisieInvalide(f"{libelle} : des années, par exemple 2025.")
+    return ",".join(sorted(set(annees)))
+
+
 def _controle(motif: str, message: str) -> Callable[[Champ, str], str]:
     def ranger(champ: Champ, texte: str) -> str:
         if not re.fullmatch(motif, texte):
@@ -345,6 +361,7 @@ _RANGEMENTS: dict[str, Callable[[Champ, str], str]] = {
     "montant": lambda c, texte: _montant(texte, c.libelle),
     "date": lambda c, texte: _date(texte, c.libelle),
     "jour_mois": lambda c, texte: _jour_mois(texte, c.libelle),
+    "annees": lambda c, texte: _annees(texte, c.libelle),
 }
 
 
@@ -409,11 +426,13 @@ def depuis_registre(officielle: FicheOfficielle) -> dict[str, str]:
     }
     if officielle.personnes:
         valeurs["nom"] = officielle.personnes[0].nom
-        valeurs["prenom"] = officielle.personnes[0].prenoms.split(" ")[0]
+        premier = officielle.personnes[0]
+        valeurs["prenom"] = premier.prenom_usuel or premier.prenoms.split(" ")[0]
     if valeurs["forme_juridique"] not in {cle for cle, _ in FORMES}:
         valeurs["forme_juridique"] = ""
     valeurs["associes"] = associes_du_registre(
-        [(p.nom, p.prenoms) for p in officielle.personnes], officielle.forme_juridique
+        [(p.nom, p.prenom_usuel or p.prenoms.split(" ")[0], p.roles) for p in officielle.personnes],
+        officielle.forme_juridique,
     )
     return {k: v for k, v in valeurs.items() if v}
 

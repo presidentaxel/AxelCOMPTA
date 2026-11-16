@@ -14,6 +14,7 @@ from axelcompta.api.routes import (
     get_fiches_import,
     get_lire_contacts_digifactory,
     get_lire_fiche_officielle,
+    get_lire_premiere_ecriture_digifactory,
 )
 from axelcompta.jobs.file import TYPE_IMPORT_DOSSIERS, FileMemoire
 from axelcompta.tenants.branchements import BranchementsMemoire
@@ -220,6 +221,27 @@ def test_le_contact_digifactory_de_la_personne_et_sinon_pas_connecte() -> None:
     assert panne == {"lu": False, "contacts": []}
 
 
+def test_l_historique_bancaire_est_la_premiere_ecriture_digifactory() -> None:
+    client, _file = _client()
+    app = cast(FastAPI, client.app)
+    app.dependency_overrides[get_lire_premiere_ecriture_digifactory] = lambda: (
+        lambda _branchements, contact: date(2024, 3, 2) if contact == "22755" else None
+    )
+    fiche = _ouvrir(client)
+    route = f"/portefeuille/imports/{fiche['id']}/digifactory/22755/historique"
+
+    trouve = client.get(route, headers=EN_TETE)
+
+    def en_panne(_branchements: object, _contact: str) -> date:
+        raise RuntimeError("Digifactory injoignable")
+
+    app.dependency_overrides[get_lire_premiere_ecriture_digifactory] = lambda: en_panne
+    panne = client.get(route, headers=EN_TETE)
+
+    assert trouve.json() == {"lu": True, "debut": "2024-03-02"}
+    assert panne.json() == {"lu": False, "debut": None}
+
+
 def test_saisir_un_siret_lance_seul_la_recherche_aux_registres() -> None:
     """AXE-946 : « SIREN ou SIRET » ; la fiche se remplit sans autre clic."""
     client, _file = _client()
@@ -247,3 +269,32 @@ def test_la_fiche_dit_quels_champs_viennent_encore_du_registre() -> None:
         headers=EN_TETE,
     ).json()
     assert "denomination" not in modifiee["depuis_registre"]
+
+
+def test_le_navigateur_peut_supprimer() -> None:
+    """AXE-948 : le contrôle préalable (CORS) acceptait GET, POST, PUT et
+    PATCH, pas DELETE ; retirer un document échouait avant même l'appel."""
+    client, _file = _client()
+    for methode in ("DELETE", "PATCH"):
+        reponse = client.options(
+            "/portefeuille/imports/f/documents/d",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": methode,
+            },
+        )
+        assert reponse.status_code == 200, methode
+        assert methode in reponse.headers["access-control-allow-methods"]
+
+
+def test_renvoyer_le_meme_siren_relit_les_registres() -> None:
+    """AXE-951 : « Relire les registres » renvoie le SIREN inchangé."""
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    route = f"/portefeuille/imports/{fiche['id']}"
+    client.patch(route, json={"champs": {"denomination": ""}}, headers=EN_TETE)
+
+    relue = client.patch(route, json={"champs": {"siren": SIREN}}, headers=EN_TETE).json()
+
+    entreprise = {c["cle"]: c["valeur"] for c in _section(relue, "entreprise")["champs"]}
+    assert entreprise["denomination"] == "MK DRIVING"
