@@ -8457,7 +8457,10 @@ class ExerciceImportVue(BaseModel):
     annee: int
     debut: str
     fin: str
-    etat: str
+    etat: str  # clos | en_cours
+    role: str  # en_cours | a_declarer | source | anterieur (AXE-950)
+    echeance: str | None  # date limite de dépôt de sa liasse
+    en_retard: bool
 
 
 class DocumentImportVue(BaseModel):
@@ -8604,7 +8607,13 @@ def _fiche_vue(instantane: Instantane) -> FicheImportVue:
         sections_detail=_sections_vue(fiche, documents),
         exercices=[
             ExerciceImportVue(
-                annee=e.annee, debut=e.debut.isoformat(), fin=e.fin.isoformat(), etat=e.etat
+                annee=e.annee,
+                debut=e.debut.isoformat(),
+                fin=e.fin.isoformat(),
+                etat=e.etat,
+                role=e.role,
+                echeance=e.echeance.isoformat() if e.echeance else None,
+                en_retard=e.en_retard,
             )
             for e in exercices_import(fiche.champs, aujourd_hui)
         ],

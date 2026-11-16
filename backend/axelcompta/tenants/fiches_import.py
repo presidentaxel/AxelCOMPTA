@@ -54,6 +54,7 @@ TypeChamp = Literal[
     "siret",
     "associes",
     "rollee",
+    "annees",
 ]
 LONGUEUR_MAX = 2_000
 
@@ -159,6 +160,9 @@ SECTIONS: tuple[Section, ...] = (
             Champ(
                 "emprunts", "Emprunts en cours", "long", aide="Banque, capital restant, échéances."
             ),
+            # AXE-950 : exercices dont la date limite est passée mais dont la
+            # liasse n'a jamais été déposée. Rendu sur chaque exercice.
+            Champ("en_retard", "Exercices non déposés (en retard)", "annees"),
             Champ(
                 "ancien_comptable",
                 "Ancien expert-comptable",
@@ -323,6 +327,13 @@ def _identifiant(champ: Champ, texte: str) -> str:
     raise SaisieInvalide(f"{champ.libelle} invalide : {attendu}.")
 
 
+def _annees(texte: str, libelle: str) -> str:
+    annees = [a.strip() for a in texte.split(",") if a.strip()]
+    if not all(re.fullmatch(r"(19|20)\d\d", a) for a in annees):
+        raise SaisieInvalide(f"{libelle} : des années, par exemple 2025.")
+    return ",".join(sorted(set(annees)))
+
+
 def _controle(motif: str, message: str) -> Callable[[Champ, str], str]:
     def ranger(champ: Champ, texte: str) -> str:
         if not re.fullmatch(motif, texte):
@@ -345,6 +356,7 @@ _RANGEMENTS: dict[str, Callable[[Champ, str], str]] = {
     "montant": lambda c, texte: _montant(texte, c.libelle),
     "date": lambda c, texte: _date(texte, c.libelle),
     "jour_mois": lambda c, texte: _jour_mois(texte, c.libelle),
+    "annees": lambda c, texte: _annees(texte, c.libelle),
 }
 
 

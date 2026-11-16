@@ -23,7 +23,7 @@ from axelcompta.tenants.fiches_import import (
     preremplir,
     valider,
 )
-from axelcompta.tenants.fiches_import_calculs import numero_tva
+from axelcompta.tenants.fiches_import_calculs import date_limite_liasse, numero_tva
 from axelcompta.tenants.registres import FicheOfficielle, PersonneOfficielle
 
 LE = datetime(2026, 11, 16, 10, 0, tzinfo=UTC)
@@ -181,6 +181,21 @@ def test_la_cle_de_tva_suit_la_formule_officielle() -> None:
     """Vérifié auprès de VIES le 16/11 : FR64 443061841 est valide."""
     assert numero_tva("443061841") == "FR64443061841"
     assert numero_tva("12345") is None
+
+
+def test_date_limite_de_la_liasse() -> None:
+    """AXE-950 : + 15 jours du dépôt en ligne."""
+    assert date_limite_liasse(date(2026, 9, 30)) == date(2027, 1, 15)
+    assert date_limite_liasse(date(2026, 6, 30)) == date(2026, 10, 15)
+    assert date_limite_liasse(date(2025, 12, 31)) == date(
+        2026, 5, 20
+    )  # 2e jour ouvré : mardi 5 mai
+
+
+def test_les_exercices_en_retard_se_rangent_en_annees() -> None:
+    assert valider({"en_retard": "2025, 2024,2025"}) == {"en_retard": "2024,2025"}
+    with pytest.raises(SaisieInvalide, match="des années"):
+        valider({"en_retard": "25"})
 
 
 def test_relire_les_registres_retire_un_associe_lu_en_double_avant() -> None:
