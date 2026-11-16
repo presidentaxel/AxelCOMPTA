@@ -394,6 +394,7 @@ from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
 from axelcompta.workflow.expert import preparer_imputation
 from axelcompta.workflow.expert_comptable import (
     ROLE_EXPERT,
+    ROLES_EXPERT,
     TEXTE_ENGAGEMENT,
     VERSION_ENGAGEMENT,
     DecisionExpert,
@@ -404,6 +405,7 @@ from axelcompta.workflow.expert_comptable import (
     exiger_dossier,
     expert_actif,
     motif_valide,
+    role_de_l_expert,
     verifier_engagement,
 )
 from axelcompta.workflow.expert_comptable_postgres import PostgresExpertRepository
@@ -2905,6 +2907,11 @@ class RappelVue(BaseModel):
 def _role_membre(tenant_id: TenantId, email: str) -> str:
     """Sans ligne, le compte déjà là est admin : les premiers gestionnaires
     existaient avant la table des droits."""
+    return _role_ecrit(tenant_id, email) or "admin"
+
+
+def _role_ecrit(tenant_id: TenantId, email: str) -> str | None:
+    """Le rôle de `droits_membre`, `None` sans ligne."""
     with _engine().connect() as connexion:
         appliquer_rls(connexion)
         ligne = connexion.execute(
@@ -2913,7 +2920,7 @@ def _role_membre(tenant_id: TenantId, email: str) -> str:
                 droits_membre.c.email == email.lower(),
             )
         ).first()
-    return ligne.role if ligne else "admin"
+    return str(ligne.role) if ligne else None
 
 
 def _statut_membre(comptes: CompteRepository, tenant_id: str, email: str) -> str:
@@ -3007,6 +3014,15 @@ def get_ecrire_role() -> Callable[[TenantId, str, str], None]:
 
 
 EcrireRoleDep = Annotated[Callable[[TenantId, str, str], None], Depends(get_ecrire_role)]
+
+
+def get_lire_role() -> Callable[[TenantId, str], str | None]:
+    """Dépendance : le rôle écrit d'un membre, `None` sans ligne (Postgres).
+    La suite rapide la remplace pour ne pas ouvrir de base."""
+    return _role_ecrit
+
+
+LireRoleDep = Annotated[Callable[[TenantId, str], str | None], Depends(get_lire_role)]
 
 
 def _rappel_vue(ligne: Row[Any]) -> RappelVue:
@@ -8588,6 +8604,21 @@ def _champs_obligatoires(entree: HabilitationEntree) -> None:
         )
 
 
+def _role_avant_habilitation(
+    email: str,
+    appelant: IdentiteAuthentifiee,
+    role_appelant: str,
+    lire_role: Callable[[TenantId, str], str | None],
+    deja_membre: bool,
+    tenant_id: TenantId,
+) -> str | None:
+    """Le rôle du futur expert avant sa déclaration. Un compte sans ligne de
+    droits, déjà membre, est admin (comme `_role_membre`)."""
+    if email == appelant.email.lower():
+        return role_appelant
+    return lire_role(tenant_id, email) or ("admin" if deja_membre else None)
+
+
 def _enregistrer_routes_expert_comptable(app: FastAPI) -> None:
     """AXE-800 : un admin habilite l'expert ; l'expert accepte l'engagement."""
 
@@ -8600,6 +8631,7 @@ def _enregistrer_routes_expert_comptable(app: FastAPI) -> None:
         comptes: ComptesDep,
         experts: ExpertsDep,
         ecrire_role: EcrireRoleDep,
+        lire_role: LireRoleDep,
     ) -> HabilitationVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         if role != "admin":
@@ -8610,9 +8642,13 @@ def _enregistrer_routes_expert_comptable(app: FastAPI) -> None:
         if not set(couverts) <= du_portefeuille:
             raise HTTPException(status_code=404, detail="Un dossier n'est pas du portefeuille.")
         email = entree.email.strip().lower()
-        ecrire_role(tenant_id, email, ROLE_EXPERT)
-        if all(m.email.lower() != email for m in comptes.membres(str(tenant_id))):
-            comptes.inviter_membre(str(tenant_id), email, ROLE_EXPERT)
+        deja_membre = any(m.email.lower() == email for m in comptes.membres(str(tenant_id)))
+        avant = _role_avant_habilitation(email, identite, role, lire_role, deja_membre, tenant_id)
+        nouveau = role_de_l_expert(avant)
+        if nouveau is not None:
+            ecrire_role(tenant_id, email, nouveau)
+        if not deja_membre:
+            comptes.inviter_membre(str(tenant_id), email, nouveau or ROLE_EXPERT)
         habilitation = Habilitation(
             tenant_id=tenant_id,
             email=email,
@@ -8655,7 +8691,7 @@ def _enregistrer_routes_engagement(app: FastAPI) -> None:
         """Le texte est gardé mot pour mot, avec la date et l'adresse."""
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         habilitation = experts.habilitation(tenant_id, identite.email)
-        if role != ROLE_EXPERT or habilitation is None:
+        if role not in ROLES_EXPERT or habilitation is None:
             raise HTTPException(status_code=403, detail="Réservé à l'expert-comptable habilité.")
         verifier_engagement(entree.texte, entree.version)
         adresse = request.client.host if request.client else "?"

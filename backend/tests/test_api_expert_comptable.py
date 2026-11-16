@@ -8,7 +8,13 @@ from typing import Any, cast
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from axelcompta.api.routes import get_experts, get_services_rollee, get_settlements
+from axelcompta.api.routes import (
+    get_ecrire_role,
+    get_experts,
+    get_lire_role,
+    get_services_rollee,
+    get_settlements,
+)
 from axelcompta.core.ids import DossierId
 from axelcompta.ingestion.comptes_rollee import ComptesRolleeMemoire
 from axelcompta.ingestion.settlements_plateforme import SettlementsMemoire
@@ -173,6 +179,62 @@ def test_un_admin_habilite_l_expert_sur_des_dossiers_de_son_portefeuille() -> No
     assert reponse.status_code == 200, reponse.text
     assert reponse.json()["email"] == "expert@cabinet.fr"
     assert (inconnu.status_code, incomplet.status_code, membre.status_code) == (404, 422, 403)
+
+
+CORPS_EXPERT = {
+    "nom": "Claire Expert",
+    "cabinet": "Cabinet Exemple",
+    "numero_ordre": "13-000001",
+    "lettre_mission": "LM-2026-01",
+    "date_lettre": date(2026, 1, 1).isoformat(),
+    "dossiers": ["DEMO_sophie"],
+}
+
+
+def _admin_qui_note_les_roles(roles: dict[str, str]) -> tuple[TestClient, list[str]]:
+    client = _client_et_stubs(role="admin")[0]
+    ecrits: list[str] = []
+    app = cast(FastAPI, client.app)
+    app.dependency_overrides[get_ecrire_role] = lambda: (
+        lambda _tenant, email, role: ecrits.append(f"{email}:{role}")
+    )
+    app.dependency_overrides[get_lire_role] = lambda: lambda _tenant, email: roles.get(email)
+    return client, ecrits
+
+
+def test_un_admin_qui_se_declare_expert_garde_ses_droits_et_ouvre_le_mode_expert() -> None:
+    """AXE-940 : déclaré expert, l'admin restait `expert_comptable` et ne
+    pouvait plus inviter personne."""
+    client, ecrits = _admin_qui_note_les_roles({})
+    corps = {**CORPS_EXPERT, "email": "gestionnaire@example.com"}
+
+    assert client.post("/portefeuille/experts", json=corps, headers=EN_TETE).status_code == 200
+    assert client.get("/expert/file", headers=EN_TETE).status_code == 403  # pas encore engagé
+    engage = client.post(
+        "/expert/engagement",
+        json={"version": VERSION_ENGAGEMENT, "texte": TEXTE_ENGAGEMENT},
+        headers=EN_TETE,
+    )
+
+    assert ecrits == []
+    assert engage.status_code == 200
+    assert client.get("/expert/file", headers=EN_TETE).status_code == 200
+
+
+def test_declarer_expert_un_autre_admin_ne_change_pas_son_role_un_membre_si() -> None:
+    client, ecrits = _admin_qui_note_les_roles(
+        {"associe@cabinet.fr": "admin", "salarie@cabinet.fr": "membre"}
+    )
+    for email in ("associe@cabinet.fr", "salarie@cabinet.fr", "nouveau@cabinet.fr"):
+        reponse = client.post(
+            "/portefeuille/experts", json={**CORPS_EXPERT, "email": email}, headers=EN_TETE
+        )
+        assert reponse.status_code == 200, reponse.text
+
+    assert ecrits == [
+        f"salarie@cabinet.fr:{ROLE_EXPERT}",
+        f"nouveau@cabinet.fr:{ROLE_EXPERT}",
+    ]
 
 
 def test_un_taux_choisi_separe_la_tva_et_un_taux_inconnu_est_refuse() -> None:

@@ -8,7 +8,8 @@ personne qui change une écriture en prenne la charge, de façon prouvable :
 * **habilitation** : un admin du portefeuille déclare l'expert (nom,
   cabinet, inscription à l'Ordre, lettre de mission et dossiers couverts).
   Déclaratif (pas d'API publique de l'Ordre), tracé, jamais modifié : une
-  nouvelle habilitation remplace la précédente ;
+  nouvelle habilitation remplace la précédente. Un admin peut être
+  lui-même l'expert : il garde son rôle d'admin (AXE-940) ;
 * **engagement** : l'expert accepte un texte versionné, gardé mot pour mot
   avec la date et l'adresse IP. Sans lui, le rôle ne s'active pas ;
 * **décision** : chaque imputation, annulation ou qualification d'anomalie
@@ -31,6 +32,10 @@ from axelcompta.ledger.models import Ecriture
 from axelcompta.ledger.service import LedgerService
 
 ROLE_EXPERT = "expert_comptable"
+ROLE_ADMIN = "admin"
+# AXE-940 : un admin déclaré expert garde ses droits d'admin. Le mode expert
+# s'ouvre à ces deux rôles, toujours avec habilitation et engagement.
+ROLES_EXPERT = frozenset({ROLE_EXPERT, ROLE_ADMIN})
 
 # Texte à faire relire par un juriste avant le pilote (AXE-813). Toute
 # modification change la version : chaque expert l'accepte à nouveau.
@@ -132,7 +137,7 @@ def expert_actif(
 ) -> ExpertActif:
     """Lève `ExpertNonHabilite` avec la raison, dans l'ordre où l'expert la
     lèvera : rôle, habilitation, engagement à la version en vigueur."""
-    if role != ROLE_EXPERT:
+    if role not in ROLES_EXPERT:
         raise ExpertNonHabilite(
             "Réservé à l'expert-comptable du portefeuille : le gestionnaire voit les agrégats."
         )
@@ -141,6 +146,12 @@ def expert_actif(
     if engagement is None or engagement.version != VERSION_ENGAGEMENT:
         raise ExpertNonHabilite("Acceptez l'engagement de responsabilité pour continuer.")
     return ExpertActif(habilitation, engagement)
+
+
+def role_de_l_expert(role_actuel: str | None) -> str | None:
+    """Le rôle à écrire pour un membre qu'on déclare expert ; `None` s'il
+    garde le sien. Un admin reste admin (AXE-940)."""
+    return None if role_actuel == ROLE_ADMIN else ROLE_EXPERT
 
 
 def exiger_dossier(actif: ExpertActif, dossier_id: DossierId) -> None:
