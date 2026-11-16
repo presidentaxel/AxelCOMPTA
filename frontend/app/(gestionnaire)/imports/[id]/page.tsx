@@ -416,6 +416,7 @@ function ContenuSection({
         <DigifactoryImport
           ficheId={fiche.id}
           contactActuel={valeurChamp(fiche, "contact_digifactory")}
+          historiqueActuel={valeurChamp(fiche, "debut_historique")}
           cle={[fiche.siren, fiche.denomination, fiche.nom, fiche.prenom].join("|")}
           modifiable={modifiable}
           enregistrer={enregistrer}

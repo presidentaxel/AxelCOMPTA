@@ -46,7 +46,11 @@ from axelcompta.ingestion.consentement import (
 from axelcompta.ingestion.consentement_postgres import PostgresConsentementRepository
 from axelcompta.ingestion.journal import JournalIngestion
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
-from axelcompta.ingestion.providers.digifactory import DigifactoryHttpClient, DigifactoryProvider
+from axelcompta.ingestion.providers.digifactory import (
+    DigifactoryHttpClient,
+    DigifactoryProvider,
+    premiere_ecriture,
+)
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
 from axelcompta.modeles_distants import assurer_modele
@@ -195,6 +199,36 @@ def repartir_par_branchement(
             connus[branchement.id] = branchement
         groupes.setdefault(branchement.id if branchement else None, []).append(dossier)
     return [(connus.get(cle or ""), tuple(groupe)) for cle, groupe in groupes.items()]
+
+
+async def premiere_ecriture_du_contact(
+    branchements: list[Branchement], contact_nr: str
+) -> date | None:
+    """La plus ancienne opération du contact, sur les branchements actifs.
+
+    Un branchement qui ne répond pas laisse la place au suivant. Aucun n'a
+    répondu : l'erreur remonte, pour dire que Digifactory est injoignable."""
+    actifs = sorted((b for b in branchements if b.actif), key=lambda b: not b.par_defaut)
+    sources: list[Branchement | None] = list(actifs) or [None]
+    trouvees: list[date] = []
+    lu = False
+    derniere: Exception | None = None
+    for branchement in sources:
+        client = client_digifactory(branchement)
+        try:
+            payload = await client.transactions(contact_nr)
+        except Exception as erreur:  # noqa: BLE001 — un branchement muet n'arrête pas les autres
+            derniere = erreur
+            continue
+        finally:
+            await client.aclose()
+        lu = True
+        date_ = premiere_ecriture(payload)
+        if date_ is not None:
+            trouvees.append(date_)
+    if not lu and derniere is not None:
+        raise derniere
+    return min(trouvees) if trouvees else None
 
 
 def client_digifactory(branchement: Branchement | None) -> DigifactoryHttpClient:
