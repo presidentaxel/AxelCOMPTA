@@ -37,8 +37,11 @@
 >   d'audit.
 > - Textes juridiques rédigés d'après les services branchés, dont l'annexe
 >   de sous-traitance art. 28 (AXE-859, [juridique/](juridique/README.md)).
-> - Pas fait : sauvegardes avec restauration testée et hébergement
->   de production (AXE-811), relecture juriste, acceptation tracée et DPA
+> - Production hébergée depuis le 16/11 sur un droplet (HTTPS par Caddy,
+>   CORS limité à l'adresse publique du front, AXE-427, AXE-948).
+>   L'hébergeur applicatif reste à reporter dans les textes juridiques.
+> - Pas fait : sauvegardes avec restauration testée (AXE-811), relecture
+>   juriste, acceptation tracée et DPA
 >   signé (AXE-813), offboarding (export et purge d'un tenant, doc 14 :
 >   aucun ticket). Les nouveaux sous-traitants (Rollee, Anthropic, INSEE,
 >   INPI) sont à reporter dans les textes avant le pilote.
