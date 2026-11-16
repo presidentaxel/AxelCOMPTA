@@ -6,8 +6,12 @@ import {
   basculerChoix,
   champsModifies,
   etatSection,
+  basculerRetard,
   libelleTraitement,
   parExercice,
+  phraseExercice,
+  retardPossible,
+  type ExerciceImport,
   type EmplacementImport,
   libelleStatut,
   nomChauffeur,
@@ -108,4 +112,21 @@ test("les emplacements se rangent par exercice, le plus récent d'abord", () => 
     ],
   );
   assert.equal(libelleTraitement("traite"), "Lu automatiquement");
+});
+
+test("chaque exercice dit son rôle pour la reprise, et le retard se coche", () => {
+  const e: ExerciceImport = {
+    annee: 2026,
+    debut: "2025-10-01",
+    fin: "2026-09-30",
+    etat: "clos",
+    role: "a_declarer",
+    echeance: "2027-01-15",
+    en_retard: false,
+  };
+  assert.equal(phraseExercice(e), "À déclarer par nous : liasse avant le 15/01/2027.");
+  assert.equal(retardPossible(e), false);
+  assert.equal(retardPossible({ ...e, role: "source" }), true);
+  assert.equal(basculerRetard("", 2025), "2025");
+  assert.equal(basculerRetard("2024,2025", 2025), "2024");
 });

@@ -11,11 +11,16 @@ import {
   telechargerDocumentImport,
 } from "@/lib/auth-gestionnaire";
 import {
+  basculerRetard,
   libelleTraitement,
   parExercice,
+  phraseExercice,
+  retardPossible,
   taille,
+  valeurChamp,
   type DocumentImport,
   type EmplacementImport,
+  type ExerciceImport,
   type FicheImport,
 } from "@/lib/fiches-import";
 
@@ -29,28 +34,93 @@ export function EmplacementsSection({
   section,
   modifiable,
   onFiche,
+  enregistrer,
 }: {
   fiche: FicheImport;
   section: string;
   modifiable: boolean;
   onFiche: (fiche: FicheImport) => void;
+  enregistrer: (champs: Record<string, string>) => Promise<void>;
 }) {
   const siens = fiche.emplacements.filter((e) => e.section === section);
   if (siens.length === 0) return null;
+  const groupes = new Map(parExercice(siens));
+  const grille = (liste: EmplacementImport[]) => (
+    <div className="grid gap-3 md:grid-cols-2">
+      {liste.map((e) => (
+        <CarteEmplacement key={e.cle} fiche={fiche} emplacement={e} modifiable={modifiable} onFiche={onFiche} />
+      ))}
+    </div>
+  );
+  if (section !== "reprise") return grille(siens);
+  const exercices = [...fiche.exercices].sort((a, b) => b.annee - a.annee);
   return (
     <div className="space-y-6">
-      {parExercice(siens).map(([annee, liste]) => (
-        <div key={annee ?? "autres"} className="space-y-3">
-          {section === "reprise" && (
-            <h3 className="text-sm font-semibold text-ink">{annee ? `Exercice ${annee}` : "Autres documents"}</h3>
-          )}
-          <div className="grid gap-3 md:grid-cols-2">
-            {liste.map((e) => (
-              <CarteEmplacement key={e.cle} fiche={fiche} emplacement={e} modifiable={modifiable} onFiche={onFiche} />
-            ))}
-          </div>
+      {exercices.map((e) => (
+        <div key={e.annee} className="space-y-3">
+          <EnTeteExercice
+            exercice={e}
+            enRetard={valeurChamp(fiche, "en_retard")}
+            modifiable={modifiable}
+            enregistrer={enregistrer}
+          />
+          {grille(groupes.get(e.annee) ?? [])}
         </div>
       ))}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-ink">Autres documents</h3>
+        {grille(groupes.get(null) ?? [])}
+      </div>
+    </div>
+  );
+}
+
+/** AXE-950 : l'exercice, son rôle pour la reprise et, une fois la date
+ * limite passée, « Pas déposée (en retard) ». */
+function EnTeteExercice({
+  exercice,
+  enRetard,
+  modifiable,
+  enregistrer,
+}: {
+  exercice: ExerciceImport;
+  enRetard: string;
+  modifiable: boolean;
+  enregistrer: (champs: Record<string, string>) => Promise<void>;
+}) {
+  const [envoi, setEnvoi] = useState(false);
+  const du = new Date(exercice.debut).toLocaleDateString("fr-FR");
+  const au = new Date(exercice.fin).toLocaleDateString("fr-FR");
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-2">
+      <div>
+        <h3 className="text-sm font-semibold text-ink">
+          Exercice {exercice.annee}{" "}
+          <span className="font-normal text-subtle">
+            du {du} au {au}
+          </span>
+        </h3>
+        <p className="mt-0.5 text-xs text-subtle">{phraseExercice(exercice)}</p>
+      </div>
+      {modifiable && retardPossible(exercice) && (
+        <Button
+          size="sm"
+          variant={exercice.en_retard ? "secondary" : "ghost"}
+          aria-pressed={exercice.en_retard}
+          disabled={envoi}
+          onClick={async () => {
+            setEnvoi(true);
+            try {
+              await enregistrer({ en_retard: basculerRetard(enRetard, exercice.annee) });
+            } finally {
+              setEnvoi(false);
+            }
+          }}
+        >
+          {envoi && <LoaderCircle className="size-3.5 animate-spin" aria-hidden />}
+          {exercice.en_retard ? "Pas déposée (en retard)" : "Liasse pas déposée ?"}
+        </Button>
+      )}
     </div>
   );
 }

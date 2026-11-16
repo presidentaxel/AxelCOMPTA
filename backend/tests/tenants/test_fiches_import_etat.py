@@ -158,3 +158,42 @@ def test_le_contact_digifactory_se_trouve_par_le_siren_ou_le_nom() -> None:
     ]
     trouves = [(c.contact.contact_nr, c.raison) for c in contacts_correspondants(fiche, contacts)]
     assert trouves == [("1", "même SIREN"), ("3", "même nom"), ("2", "même nom")]
+
+
+CLOTURE_30_09 = {"date_creation": "2022-10-01", "cloture": "30/09"}
+
+
+def test_un_exercice_dont_la_liasse_n_est_pas_due_est_a_declarer_par_nous() -> None:
+    """AXE-950, cas de Louis le 16/11 : clôture au 30/09/2026, liasse due le
+    15/01/2027. On la déclare ; on récupère celle du 30/09/2025."""
+    roles = {e.annee: (e.role, e.echeance) for e in exercices(CLOTURE_30_09, AUJOURD_HUI)}
+    assert roles[2026] == ("a_declarer", date(2027, 1, 15))
+    assert roles[2025] == ("source", date(2026, 1, 15))
+    assert roles[2024][0] == "anterieur"
+    assert roles[2027][0] == "en_cours"
+
+    places = {e.cle: e for e in emplacements(CLOTURE_30_09, [], AUJOURD_HUI)}
+    assert "reprise:liasse:2026" not in places
+    assert not places["reprise:fec:2026"].attendu  # écritures déjà saisies, si elles existent
+    assert places["reprise:liasse:2025"].attendu and places["reprise:fec:2025"].attendu
+    assert "pour déclarer l'exercice 2026" in places["reprise:liasse:2025"].explication
+
+
+def test_une_liasse_jamais_deposee_fait_remonter_a_l_exercice_d_avant() -> None:
+    en_retard = {**CLOTURE_30_09, "en_retard": "2025"}
+    roles = {e.annee: (e.role, e.en_retard) for e in exercices(en_retard, AUJOURD_HUI)}
+    assert roles[2025] == ("a_declarer", True)
+    assert roles[2024] == ("source", False)
+    fiche = _fiche(**en_retard)
+    reprise = next(e for e in etat_sections(fiche, [], AUJOURD_HUI) if e.cle == "reprise")
+    assert reprise.manquants == ("Liasse fiscale 2024", "FEC 2024")
+
+
+def test_une_societe_dont_aucun_exercice_n_est_encore_du_n_a_rien_a_fournir() -> None:
+    jeune = {
+        "date_creation": "2025-10-01",
+        "cloture": "30/09",
+    }  # premier exercice clos le 30/09/2026
+    assert [e.role for e in exercices(jeune, AUJOURD_HUI)] == ["a_declarer", "en_cours"]
+    reprise = next(e for e in etat_sections(_fiche(**jeune), [], AUJOURD_HUI) if e.cle == "reprise")
+    assert reprise.complet

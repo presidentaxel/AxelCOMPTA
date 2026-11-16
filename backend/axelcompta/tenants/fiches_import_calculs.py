@@ -42,6 +42,29 @@ def bornes(champs: Mapping[str, str], aujourd_hui: date) -> list[tuple[date, dat
     return resultat
 
 
+def _fin_de_mois(annee: int, mois: int) -> date:
+    return date(annee, mois, calendar.monthrange(annee, mois)[1])
+
+
+def date_limite_liasse(fin: date) -> date:
+    """Date limite de dépôt de la liasse d'un exercice clos le `fin`, avec
+    le délai supplémentaire de 15 jours du dépôt en ligne (AXE-950) :
+    - clôture au 31/12 : deuxième jour ouvré après le 1er mai, + 15 jours ;
+    - autre clôture : fin du troisième mois qui suit, + 15 jours (30/09 →
+      15/01).
+    Indicative : un jour férié de mai peut la décaler d'un jour."""
+    if (fin.month, fin.day) == (12, 31):
+        jour, ouvres = date(fin.year + 1, 5, 1), 0
+        while ouvres < 2:
+            jour += timedelta(days=1)
+            if jour.weekday() < 5 and jour != date(fin.year + 1, 5, 8):
+                ouvres += 1
+        return jour + timedelta(days=15)
+    mois = fin.month + 3
+    annee = fin.year + (mois - 1) // 12
+    return _fin_de_mois(annee, (mois - 1) % 12 + 1) + timedelta(days=15)
+
+
 def numero_tva(siren: str) -> str | None:
     if len(siren) != 9 or not siren.isdigit():
         return None
