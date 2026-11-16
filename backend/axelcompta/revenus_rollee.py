@@ -71,7 +71,12 @@ from axelcompta.plateformes_rollee import (
     branchement_du_dossier,
     client_du_branchement,
 )
-from axelcompta.revenus_semaines import Contexte, rapprocher_semaines
+from axelcompta.revenus_semaines import (
+    Contexte,
+    Decision,
+    rapprocher_semaines,
+    trancher_semaine,
+)
 from axelcompta.tenants.branchements import Branchement
 from axelcompta.tenants.models import Dossier
 from axelcompta.workflow.reclassement import projeter
@@ -458,3 +463,35 @@ def _ventiler(
         f"{sum(1 for s in stockes_finaux if s.etat == 'a_verifier')} à vérifier, "
         f"{nb_rejets} en quarantaine"
     )
+
+
+def trancher_semaine_dossier(
+    settlements: SettlementsRepository,
+    ledger: LedgerService,
+    dossier: Dossier,
+    semaine: tuple[str, date],
+    decision: Decision,
+    motif: str,
+) -> str:
+    """AXE-912 : l'expert écrit une semaine « à vérifier » telle quelle, ou
+    en écarte les jours. Les écritures passent d'abord : un refus du grand
+    livre laisse les jours dans leur état."""
+    contexte = Contexte(dossier, tuple(ledger.periodes_closes(dossier.id)), datetime.now(UTC))
+    passage = trancher_semaine(
+        settlements.lister(dossier.id),
+        ledger.grand_livre(dossier.id),
+        contexte,
+        semaine,
+        decision,
+        motif,
+    )
+    for od in passage.ecritures:
+        ledger.enregistrer(od)
+    settlements.enregistrer(passage.stockes)
+    plateforme, lundi_ = semaine
+    quoi = (
+        f"{len(passage.ecritures)} écriture(s)"
+        if decision == "ecrire"
+        else f"{len(passage.stockes)} jour(s) écarté(s)"
+    )
+    return f"{plateforme.capitalize()}, semaine du {lundi_:%d/%m/%Y} : {quoi}"

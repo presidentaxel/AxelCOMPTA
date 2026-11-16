@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date
+from dataclasses import replace
+from datetime import UTC, date, datetime
 from typing import Any, cast
 
 from fastapi import FastAPI
@@ -11,20 +12,23 @@ from fastapi.testclient import TestClient
 from axelcompta.api.routes import (
     get_ecrire_role,
     get_experts,
+    get_journal_acces,
     get_lire_role,
     get_services_rollee,
     get_settlements,
 )
 from axelcompta.core.ids import DossierId
 from axelcompta.ingestion.comptes_rollee import ComptesRolleeMemoire
-from axelcompta.ingestion.settlements_plateforme import SettlementsMemoire
+from axelcompta.ingestion.settlements_plateforme import SettlementsMemoire, fusionner
 from axelcompta.plateformes_rollee import ServicesRollee
+from axelcompta.workflow.audit import ACTE_SEMAINE_TRANCHEE
 from axelcompta.workflow.expert_comptable import (
     ROLE_EXPERT,
     TEXTE_ENGAGEMENT,
     VERSION_ENGAGEMENT,
     ExpertMemoire,
 )
+from axelcompta.workflow.journal_acces import JournalAccesMemoire
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client_et_stubs,
     _client_expert,
@@ -34,6 +38,7 @@ from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _jwks_factice,
     _ledger_calcule_une_seule_fois,
 )
+from tests.test_revenus_rollee import JOUR
 
 EN_TETE = _en_tete_gestionnaire()
 
@@ -360,3 +365,54 @@ def test_l_equipe_voit_les_experts_declares_et_un_admin_modifie_leurs_dossiers()
     ]
     assert (apres["dossiers"], apres["engagement_accepte"]) == (["DEMO_karim"], True)
     assert client.get("/expert/file", headers=EN_TETE).status_code == 200
+
+
+def _jour_de_sophie() -> tuple[SettlementsMemoire, str]:
+    """Un jour Uber de Sophie (semaine du 05/10/2026) qui attend une décision."""
+    jour = replace(JOUR, dossier_id=DossierId("DEMO_sophie"))
+    stocke = fusionner(None, "acc-uber", jour, datetime(2026, 11, 20, tzinfo=UTC))
+    assert stocke is not None
+    settlements = SettlementsMemoire()
+    settlements.enregistrer([replace(stocke, etat="a_verifier", motif="semaine du 05/10 : écart")])
+    return settlements, stocke.id
+
+
+def _decider_semaine(client: TestClient, decision: str, motif: str) -> Any:
+    return client.post(
+        "/expert/dossiers/DEMO_sophie/rapprochements/decision",
+        json={"plateforme": "uber", "lundi": "2026-10-05", "decision": decision, "motif": motif},
+        headers=EN_TETE,
+    )
+
+
+def test_l_expert_ecarte_une_semaine_a_verifier_et_c_est_trace() -> None:
+    """AXE-912 : la semaine sort de « à vérifier », le motif va au journal."""
+    client = _client_expert()
+    app = cast(FastAPI, client.app)
+    settlements, identifiant = _jour_de_sophie()
+    app.dependency_overrides[get_settlements] = lambda: settlements
+    reponse = _decider_semaine(client, "ecarter", "Jours du compte de flotte")
+    assert reponse.status_code == 200, reponse.text
+    assert "1 jour(s) écarté(s)" in reponse.json()["resume"]
+    assert settlements.stockes[identifiant].etat == "delie"
+    journal: JournalAccesMemoire = app.dependency_overrides[get_journal_acces]()
+    assert [a.type_acte for _d, a in journal.actes] == [ACTE_SEMAINE_TRANCHEE]
+
+
+def test_une_decision_de_semaine_demande_un_motif_et_un_expert() -> None:
+    client = _client_expert()
+    settlements, identifiant = _jour_de_sophie()
+    cast(FastAPI, client.app).dependency_overrides[get_settlements] = lambda: settlements
+    assert _decider_semaine(client, "ecarter", " ").status_code in (400, 422)
+    admin = _client_et_stubs(role="admin")[0]
+    cast(FastAPI, admin.app).dependency_overrides[get_settlements] = lambda: settlements
+    assert _decider_semaine(admin, "ecarter", "Jours du compte de flotte").status_code == 403
+    assert settlements.stockes[identifiant].etat == "a_verifier"
+
+
+def test_une_semaine_sans_rien_a_trancher_est_refusee() -> None:
+    client = _client_expert()
+    cast(FastAPI, client.app).dependency_overrides[get_settlements] = lambda: SettlementsMemoire()
+    reponse = _decider_semaine(client, "ecrire", "Écart accepté")
+    assert 400 <= reponse.status_code < 500
+    assert "Rien à trancher" in reponse.json()["detail"]

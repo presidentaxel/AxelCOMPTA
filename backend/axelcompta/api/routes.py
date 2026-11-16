@@ -277,7 +277,7 @@ from axelcompta.rapprochement_rollee_service import (
     rapprocher_dossier,
     retenir_avancement,
 )
-from axelcompta.revenus_rollee import delier_revenus
+from axelcompta.revenus_rollee import delier_revenus, trancher_semaine_dossier
 from axelcompta.revenus_semaines import comparaison, debut_banque
 from axelcompta.tenants.affectations import AffectationRepository
 from axelcompta.tenants.affectations_postgres import PostgresAffectationRepository
@@ -391,7 +391,7 @@ from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.tester_branchement import tester as tester_branchement
 from axelcompta.traitement_documents_import import traiter as traiter_document_import
 from axelcompta.webhooks_rollee import preparer as preparer_webhook
-from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT
+from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT, ACTE_SEMAINE_TRANCHEE
 from axelcompta.workflow.avis_etages import avis_etages, proposition_affichee
 from axelcompta.workflow.budget_llm import debut_du_mois, libelles_du_mois, llm_actif
 from axelcompta.workflow.classees import (
@@ -6644,7 +6644,53 @@ def lire_manques_rapprochement_expert(
     )
 
 
+class DecisionSemaineEntree(BaseModel):
+    plateforme: str
+    lundi: date
+    decision: Literal["ecrire", "ecarter"]
+    motif: str
+
+
+class DecisionSemaineVue(BaseModel):
+    resume: str
+
+
+def trancher_semaine_expert(
+    corps: DecisionSemaineEntree,
+    dossier: DossierExpertDep,
+    base: LedgerBaseDep,
+    settlements: SettlementsDep,
+    journal: JournalAccesDep,
+    identite: IdentiteDep,
+) -> DecisionSemaineVue:
+    """AXE-912 : une semaine Rollee « à vérifier » en sort par la décision de
+    l'expert habilité : écrite telle quelle (l'écart reste sur la créance de
+    la plateforme) ou écartée. Le motif est obligatoire et tracé."""
+    _tenant, identite_verifiee = _verifier_acces_gestionnaire(identite)
+    motif = motif_valide(corps.motif)
+    resume = trancher_semaine_dossier(
+        settlements,
+        base,
+        dossier,
+        (corps.plateforme, corps.lundi),
+        corps.decision,
+        motif,
+    )
+    journal.noter(
+        dossier.id,
+        ACTE_SEMAINE_TRANCHEE,
+        f"{corps.decision} {corps.plateforme} {corps.lundi.isoformat()} : {motif}"[:300],
+        identite_verifiee.user_id,
+        datetime.now(UTC),
+    )
+    return DecisionSemaineVue(resume=resume)
+
+
 def _enregistrer_routes_expert_lignes(app: FastAPI) -> None:
+    app.post(
+        "/expert/dossiers/{dossier_id}/rapprochements/decision",
+        response_model=DecisionSemaineVue,
+    )(trancher_semaine_expert)
     app.post("/expert/taux", status_code=204)(poser_taux_expert)
     app.get(
         "/expert/dossiers/{dossier_id}/rapprochements/manques",
