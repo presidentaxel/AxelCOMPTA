@@ -421,11 +421,13 @@ def depuis_registre(officielle: FicheOfficielle) -> dict[str, str]:
     }
     if officielle.personnes:
         valeurs["nom"] = officielle.personnes[0].nom
-        valeurs["prenom"] = officielle.personnes[0].prenoms.split(" ")[0]
+        premier = officielle.personnes[0]
+        valeurs["prenom"] = premier.prenom_usuel or premier.prenoms.split(" ")[0]
     if valeurs["forme_juridique"] not in {cle for cle, _ in FORMES}:
         valeurs["forme_juridique"] = ""
     valeurs["associes"] = associes_du_registre(
-        [(p.nom, p.prenoms) for p in officielle.personnes], officielle.forme_juridique
+        [(p.nom, p.prenom_usuel or p.prenoms.split(" ")[0], p.roles) for p in officielle.personnes],
+        officielle.forme_juridique,
     )
     return {k: v for k, v in valeurs.items() if v}
 

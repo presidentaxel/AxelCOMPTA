@@ -122,12 +122,20 @@ def ranger_comptes_rollee(texte: str) -> str:
     )
 
 
-def associes_du_registre(personnes: list[tuple[str, str]], forme: str | None) -> str:
-    """Les dirigeants lus au RNE, en associés à compléter (fonction d'après la
-    forme, part inconnue)."""
-    fonction = {"SASU": "president", "SAS": "president", "EURL": "gerant", "SARL": "gerant"}
-    lignes = [
-        Associe(prenom.split(" ")[0], nom, fonction.get(forme or "", "dirigeant"), "")
-        for nom, prenom in personnes
-    ]
+# Codes de rôle du RNE vérifiés sur de vraies réponses (AXE-951) ; les
+# autres ne sont pas devinés : la fonction suit alors la forme.
+ROLES_RNE = {"73": "president"}
+FONCTION_PAR_FORME = {"SASU": "president", "SAS": "president", "EURL": "gerant", "SARL": "gerant"}
+
+
+def associes_du_registre(
+    personnes: list[tuple[str, str, tuple[str, ...]]], forme: str | None
+) -> str:
+    """Les dirigeants lus au RNE (nom, premier prénom, codes de rôle), une
+    ligne chacun, en associés à compléter (part inconnue)."""
+    lignes = []
+    for nom, prenom, roles in personnes:
+        connues = [ROLES_RNE[r] for r in roles if r in ROLES_RNE]
+        fonction = connues[0] if connues else FONCTION_PAR_FORME.get(forme or "", "dirigeant")
+        lignes.append(Associe(prenom, nom, fonction, ""))
     return json.dumps([asdict(a) for a in lignes], ensure_ascii=False) if lignes else ""
