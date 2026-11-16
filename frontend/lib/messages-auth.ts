@@ -23,6 +23,11 @@ export const MESSAGE_IDENTIFIANTS =
 export const MESSAGE_LIEN_EXPIRE =
   "Ce lien a expiré ou a déjà été ouvert. Demandez un nouveau lien, ou réinitialisez votre mot de passe.";
 
+/** AXE-961 : Supabase exige la double authentification (`aal2`) pour
+ * changer le mot de passe d'un compte qui l'a activée. */
+export const MESSAGE_CODE_REQUIS =
+  "Votre compte est protégé par la double authentification : saisissez le code à 6 chiffres de votre application pour changer de mot de passe.";
+
 export const MESSAGE_INVITATION =
   "Cette invitation a expiré ou a déjà été ouverte. Connectez-vous si vous avez un mot de passe, sinon demandez à votre gestionnaire de la renvoyer.";
 
@@ -81,6 +86,7 @@ const PAR_CODE: Record<string, string> = {
   access_denied: MESSAGE_LIEN_EXPIRE,
   bad_code_verifier: MESSAGE_LIEN_EXPIRE,
   bad_jwt: MESSAGE_LIEN_EXPIRE,
+  insufficient_aal: MESSAGE_CODE_REQUIS,
   invite_not_found: MESSAGE_INVITATION,
   over_request_rate_limit: MESSAGE_TROP_DE_TENTATIVES,
   over_email_send_rate_limit: MESSAGE_TROP_D_EMAILS,
