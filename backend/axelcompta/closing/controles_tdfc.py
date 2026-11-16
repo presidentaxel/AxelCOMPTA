@@ -188,6 +188,40 @@ def _controler_2054(cases: dict[str, int], erreurs: list[str]) -> None:
         )
 
 
+def _controler_2054_detail(cases: dict[str, int], erreurs: list[str]) -> None:
+    """AXE-484 : les lignes corporelles font le total III, et les totaux
+    I à IV le total général, à l'ouverture comme à la clôture."""
+    if "2054.0L" not in cases:
+        return
+    corporelles = ("KG", "KJ", "KM", "KP", "KS", "KV", "KY", "LB", "LE", "LH", "LK")
+    if "2054.LN" in cases:
+        _noter(
+            erreurs,
+            _euros(cases, "2054.LN") == sum(_euros(cases, f"2054.{c}") for c in corporelles),
+            "2054 : le total III n'est pas la somme des immobilisations corporelles",
+        )
+    for total, parts in (
+        ("0G", ("CZ", "KD", "LN", "LQ")),
+        ("0L", ("D0", "LW", "NH", "NK")),
+    ):
+        if any(f"2054.{p}" in cases for p in parts):
+            _noter(
+                erreurs,
+                _euros(cases, f"2054.{total}") == sum(_euros(cases, f"2054.{p}") for p in parts),
+                f"2054 : le total général {total} n'est pas la somme des totaux I à IV",
+            )
+
+
+def _controler_2058c(cases: dict[str, int], erreurs: list[str]) -> None:
+    if "2058C.0F" not in cases:
+        return
+    _noter(
+        erreurs,
+        _euros(cases, "2058C.0F") == _euros(cases, "2058C.ZH"),
+        "2058-C : le total des origines n'est pas celui des affectations",
+    )
+
+
 def _controler_2055(cases: dict[str, int], erreurs: list[str]) -> None:
     if "2055.0R" not in cases:
         return
@@ -281,6 +315,8 @@ def controler_liasse(liasse: LiassePivot) -> None:
     _controler_2050(liasse.cases, erreurs)
     _controler_2052(liasse.cases, erreurs)
     _controler_2054(liasse.cases, erreurs)
+    _controler_2054_detail(liasse.cases, erreurs)
+    _controler_2058c(liasse.cases, erreurs)
     _controler_2055(liasse.cases, erreurs)
     _controler_2056(liasse.cases, erreurs)
     _controler_2058(liasse.cases, erreurs)
