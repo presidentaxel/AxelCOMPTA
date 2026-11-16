@@ -8,7 +8,7 @@ dépend que de core, le worker reçoit les handlers.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 TYPE_SYNCHRO = "synchro_digifactory"
@@ -32,6 +32,14 @@ TYPES = frozenset(
     }
 )
 TENTATIVES_MAX = 3
+# AXE-958 : un job `en_cours` depuis plus longtemps a perdu son worker
+# (conteneur remplacé au déploiement, processus tué). Le plus long observé
+# en production : une synchro de 15 minutes.
+DELAI_ABANDON = timedelta(hours=2)
+ERREUR_ABANDON = (
+    "Abandonné : le worker s'est arrêté pendant le travail (redéploiement ?). "
+    "Relancé automatiquement s'il reste des essais."
+)
 
 
 class TypeInconnu(ValueError):
@@ -54,6 +62,8 @@ class Job:
     derniere_erreur: str | None = None
     cree_le: datetime | None = None
     termine_le: datetime | None = None
+    # AXE-958 : heure de prise par le worker.
+    pris_le: datetime | None = None
 
     @property
     def actif(self) -> bool:
@@ -90,7 +100,7 @@ class FileMemoire:
         self._jobs[identifiant] = job
         return job
 
-    def prendre(self, worker: str) -> Job | None:
+    def prendre(self, worker: str, maintenant: datetime | None = None) -> Job | None:
         candidats = [job for job in self._jobs.values() if job.statut == "en_attente"]
         if not candidats:
             return None
@@ -100,6 +110,7 @@ class FileMemoire:
             statut="en_cours",
             verrou_par=worker,
             tentatives=choisi.tentatives + 1,
+            pris_le=maintenant or datetime.now(UTC),
         )
         self._jobs[pris.id] = pris
         return pris
@@ -117,6 +128,20 @@ class FileMemoire:
         )
         statut = "echec" if actuel.tentatives >= TENTATIVES_MAX or doublon else "en_attente"
         self._jobs[identifiant] = replace(actuel, statut=statut, verrou_par=None)
+
+    def relacher_abandonnes(
+        self, maintenant: datetime, delai: timedelta = DELAI_ABANDON
+    ) -> list[str]:
+        """AXE-958 : comme `FilePostgres.relacher_abandonnes`."""
+        abandonnes = [
+            job.id
+            for job in self._jobs.values()
+            if job.statut == "en_cours"
+            and (job.pris_le or job.cree_le or maintenant) < maintenant - delai
+        ]
+        for identifiant in abandonnes:
+            self.echouer(identifiant)
+        return abandonnes
 
     def lire(self, identifiant: str) -> Job:
         return self._jobs[identifiant]
