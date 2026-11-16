@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any
@@ -142,6 +142,27 @@ class SupabaseConfig:
 
 _PAR_PAGE = 200
 _PAGES_MAX = 50
+_CHEMIN_INVITATION_MEMBRE = "/auth/lien"
+_CHEMIN_INVITATION_CHAUFFEUR = "/chauffeur/accepter-invitation"
+
+
+def url_retour_invitation(chemin: str, environ: Mapping[str, str] | None = None) -> str | None:
+    """Page où le lien d'invitation dépose la personne, pour qu'elle choisisse
+    un mot de passe. Sans `AXELCOMPTA_URL_APP`, Supabase retombe sur son
+    Site URL."""
+    source = os.environ if environ is None else environ
+    base = source.get("AXELCOMPTA_URL_APP", "").strip().rstrip("/")
+    if not base:
+        return None
+    return f"{base}{chemin}"
+
+
+def _corps_invitation(email: str, chemin: str) -> dict[str, str]:
+    corps = {"email": email}
+    retour = url_retour_invitation(chemin)
+    if retour is not None:
+        corps["redirect_to"] = retour
+    return corps
 
 
 class SupabaseCompteRepository(CompteRepository):
@@ -160,7 +181,9 @@ class SupabaseCompteRepository(CompteRepository):
     ) -> Invitation:
         if verifier_existant and self.statut(dossier_id) is not None:
             raise CompteDejaInviteError(f"dossier déjà invité : {dossier_id}")
-        reponse = self._client.post("/invite", json={"email": email})
+        reponse = self._client.post(
+            "/invite", json=_corps_invitation(email, _CHEMIN_INVITATION_CHAUFFEUR)
+        )
         reponse.raise_for_status()
         # Le lien au dossier va dans `app_metadata`, écrit ici côté serveur
         # (clé service role) : `user_metadata`, que l'invité pourrait
@@ -210,7 +233,9 @@ class SupabaseCompteRepository(CompteRepository):
             (u.get("email") or "").lower() == email.lower() for u in self._tous_les_utilisateurs()
         ):
             raise CompteDejaInviteError(f"un compte existe déjà : {email}")
-        reponse = self._client.post("/invite", json={"email": email})
+        reponse = self._client.post(
+            "/invite", json=_corps_invitation(email, _CHEMIN_INVITATION_MEMBRE)
+        )
         reponse.raise_for_status()
         utilisateur_id = reponse.json()["id"]
         lien = self._client.put(
