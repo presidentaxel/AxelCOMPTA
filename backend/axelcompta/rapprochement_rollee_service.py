@@ -1064,10 +1064,10 @@ def relever_portefeuille_postgres(engine: Engine, tenant_id: TenantId) -> str:
 
 
 def relever_portefeuille(liens: Sequence[Lien], relever: Callable[[str], str]) -> str:
-    """Bouton « Synchroniser » du portefeuille : relit les plateformes et les
-    revenus Rollee de chaque dossier relié, l'un après l'autre (jamais deux
-    lectures Rollee en même temps). Un dossier en erreur n'arrête pas les
-    autres."""
+    """Bouton « Synchroniser » : relit les plateformes et les revenus récents
+    de chaque dossier relié, l'un après l'autre (jamais deux lectures Rollee
+    en même temps). L'historique complet est le rattrapage de 4 h. Un dossier
+    en erreur n'arrête pas les autres."""
     relus, erreurs = 0, 0
     for ident in sorted({str(lien.dossier_id) for lien in liens}):
         try:

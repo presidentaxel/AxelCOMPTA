@@ -5,7 +5,14 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from axelcompta.jobs.executer import executer
-from axelcompta.jobs.file import TYPE_RAPPROCHEMENT_ROLLEE, TYPE_SYNCHRO, FileMemoire, TypeInconnu
+from axelcompta.jobs.file import (
+    TYPE_RAPPROCHEMENT_ROLLEE,
+    TYPE_SYNCHRO,
+    FileMemoire,
+    Job,
+    TypeInconnu,
+    deja_couvert,
+)
 from axelcompta.jobs.postgres import REQUETE_PRENDRE
 from axelcompta.tenants.roles import peut
 from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_CONSULTATION, ACTE_EXPORT
@@ -149,3 +156,15 @@ def test_un_job_abandonne_dont_la_demande_attend_deja_passe_en_echec() -> None:
     file.deposer("k", "ten", TYPE_SYNCHRO, "{}")
     file.relacher_abandonnes(MIDI + timedelta(hours=3))
     assert (file.lire("j").statut, file.lire("k").statut) == ("echec", "en_attente")
+
+
+def test_un_rapprochement_recent_ou_en_cours_n_est_pas_relance() -> None:
+    maintenant = datetime(2026, 11, 16, 12, tzinfo=UTC)
+    fini = Job(
+        "j", "ten", TYPE_RAPPROCHEMENT_ROLLEE, "{}", 10, "fait", 1, None, 1, termine_le=maintenant
+    )
+    assert deja_couvert(fini, maintenant + timedelta(minutes=9))
+    assert not deja_couvert(fini, maintenant + timedelta(minutes=10))
+    en_cours = Job("k", "ten", TYPE_RAPPROCHEMENT_ROLLEE, "{}", 10, "en_cours", 1, "worker", 2)
+    assert deja_couvert(en_cours, maintenant + timedelta(hours=1))
+    assert not deja_couvert(None, maintenant)

@@ -378,7 +378,14 @@ async def synchroniser_dossier(
     curseur = None if a_relire else journal.curseur(dossier.id, source_nom)
     lot = await source.lire_lot(dossier, curseur)
     _archiver_lot(dossier, source_nom, journal, lot)
-    comptabilisees = {e.id: e for e in ledger.grand_livre(dossier.id)}
+    # Un lot vide (le cas horaire, rien de nouveau) ne relit pas le grand livre.
+    # Dès qu'une ligne arrive, on le relit en entier : une modification doit
+    # aussi trouver les reclassements et la ventilation accrochés à l'écriture.
+    comptabilisees = (
+        {e.id: e for e in ledger.grand_livre(dossier.id)}
+        if lot.transactions or lot.supprimees
+        else {}
+    )
     compteurs = _traiter_transactions(
         dossier,
         source_nom,

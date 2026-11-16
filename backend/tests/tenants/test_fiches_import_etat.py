@@ -17,9 +17,11 @@ from axelcompta.tenants.fiches_import_etat import (
     exercices,
     ligne_dossier,
     manque_pour_creer,
+    relier_au_portefeuille,
     statut_calcule,
 )
 from axelcompta.tenants.import_dossiers import rapport
+from axelcompta.tenants.models import Dossier
 
 LE = datetime(2026, 11, 16, 10, 0, tzinfo=UTC)
 AUJOURD_HUI = date(2026, 11, 16)
@@ -197,3 +199,20 @@ def test_une_societe_dont_aucun_exercice_n_est_encore_du_n_a_rien_a_fournir() ->
     assert [e.role for e in exercices(jeune, AUJOURD_HUI)] == ["a_declarer", "en_cours"]
     reprise = next(e for e in etat_sections(_fiche(**jeune), [], AUJOURD_HUI) if e.cle == "reprise")
     assert reprise.complet
+
+
+def test_le_meme_siren_relie_la_fiche_sans_creer_un_second_dossier() -> None:
+    deja = Dossier(
+        id=DossierId("DIGI_10"),
+        tenant_id=T,
+        forme_juridique="SASU",
+        regime_imposition="IS",
+        regime_tva="reel_normal",
+        nom="MK DRIVING",
+        tva_recettes_regime="assujetti_taux_reduit",
+        exercice_debut=date(2026, 1, 1),
+        siren="552100554",
+    )
+    fiche = _fiche(siren="552100554", denomination="MK DRIVING")
+    reliee, a_creer, erreurs = relier_au_portefeuille(fiche, (deja,))
+    assert (reliee.dossier_id, a_creer, erreurs) == (DossierId("DIGI_10"), None, ())

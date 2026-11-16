@@ -184,6 +184,21 @@ def test_les_caches_sont_prechauffes_avant_les_notifications() -> None:
     assert "A caches : 1 dossiers recalculés" in bilan.lignes
 
 
+def test_chaque_passage_complete_les_fiches_d_import() -> None:
+    vus: list[str] = []
+
+    def completer(tenant_id: TenantId) -> str:
+        vus.append(str(tenant_id))
+        return "1 fiche d'import créée"
+
+    bilan = lancer_taches(
+        _depot(("a1", "A", None)), None, _notifier_tout, completer_fiches=completer
+    )
+
+    assert vus == ["A"]
+    assert "A 1 fiche d'import créée" in bilan.lignes
+
+
 def test_un_echec_de_prechauffage_ne_bloque_rien() -> None:
     def planter(dossiers: tuple[Dossier, ...]) -> int:
         raise ConnectionError("base")
