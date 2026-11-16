@@ -4127,16 +4127,79 @@ def _enregistrer_routes_comptes_bancaires(app: FastAPI) -> None:
         (personnel). Retenu après coup, son passé arrive à la synchro
         suivante. Un compte qui a déjà des écritures ne s'écarte pas."""
         identite = _verifier_acces_dossier(dossier.id, identite)
-        ecritures = ledger.grand_livre(dossier.id)
-        try:
-            if not corps.retenu:
-                verifier_ecartable(_ecritures_sur_le_compte(ecritures, compte))
-            comptes.decider(dossier.id, compte, corps.retenu, identite.user_id, datetime.now(UTC))
-        except CompteInconnu as erreur:
-            raise HTTPException(status_code=404, detail=str(erreur)) from erreur
-        except CompteDejaComptabilise as erreur:
-            raise HTTPException(status_code=409, detail=str(erreur)) from erreur
+        return _decider_compte(
+            dossier.id,
+            compte,
+            corps.retenu,
+            identite.user_id,
+            ledger.grand_livre(dossier.id),
+            comptes,
+        )
+
+    _enregistrer_routes_comptes_bancaires_expert(app)
+
+
+def _decider_compte(
+    dossier_id: DossierId,
+    compte: str,
+    retenu: bool,
+    par: UserId,
+    ecritures: tuple[Ecriture, ...],
+    comptes: CompteBancaireRepository,
+) -> list[CompteBancaireVue]:
+    """AXE-729 : retient ou écarte un compte. Un compte qui a déjà des
+    écritures ne s'écarte pas (409) ; un compte inconnu répond 404."""
+    try:
+        if not retenu:
+            verifier_ecartable(_ecritures_sur_le_compte(ecritures, compte))
+        comptes.decider(dossier_id, compte, retenu, par, datetime.now(UTC))
+    except CompteInconnu as erreur:
+        raise HTTPException(status_code=404, detail=str(erreur)) from erreur
+    except CompteDejaComptabilise as erreur:
+        raise HTTPException(status_code=409, detail=str(erreur)) from erreur
+    return vues_comptes_bancaires(comptes.lister(dossier_id), ecritures)
+
+
+def _enregistrer_routes_comptes_bancaires_expert(app: FastAPI) -> None:
+    """AXE-956 : l'expert-comptable habilité fait le choix du dirigeant."""
+
+    @app.get(
+        "/expert/dossiers/{dossier_id}/comptes-bancaires",
+        response_model=list[CompteBancaireVue],
+    )
+    def lister_comptes_bancaires_expert(
+        dossier: DossierExpertDep,
+        base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        comptes: ComptesBancairesDep,
+    ) -> list[CompteBancaireVue]:
+        """AXE-956 : l'expert-comptable habilité sur le dossier voit ses
+        comptes, comme le dirigeant. Le gestionnaire non expert n'y a pas
+        accès (doc 19 §2.4)."""
+        ecritures = _ledger_avec_decisions(dossier, base, decisions).grand_livre(dossier.id)
         return vues_comptes_bancaires(comptes.lister(dossier.id), ecritures)
+
+    @app.post(
+        "/expert/dossiers/{dossier_id}/comptes-bancaires/{compte}/decision",
+        response_model=list[CompteBancaireVue],
+    )
+    def decider_compte_bancaire_expert(
+        compte: str,
+        corps: DecisionCompteEntree,
+        dossier: DossierExpertDep,
+        base: LedgerBaseDep,
+        decisions: DecisionsDep,
+        comptes: ComptesBancairesDep,
+        identite: IdentiteDep,
+    ) -> list[CompteBancaireVue]:
+        """AXE-956 : l'expert retient ou écarte un compte à la place du
+        dirigeant, avec les mêmes règles (AXE-729). Le choix est tracé au
+        journal d'audit à son nom : il en porte la responsabilité (AXE-800)."""
+        _tenant, identite_verifiee = _verifier_acces_gestionnaire(identite)
+        ecritures = _ledger_avec_decisions(dossier, base, decisions).grand_livre(dossier.id)
+        return _decider_compte(
+            dossier.id, compte, corps.retenu, identite_verifiee.user_id, ecritures, comptes
+        )
 
 
 def _ecritures_sur_le_compte(ecritures: tuple[Ecriture, ...], compte: str) -> int:

@@ -9,6 +9,7 @@ from httpx import Response
 
 from axelcompta.api.routes import (
     get_comptes_bancaires,
+    get_experts,
     get_ledger,
     get_notifications,
     libelles_banques,
@@ -24,11 +25,13 @@ from axelcompta.ingestion.comptes_bancaires import (
 )
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.ledger.service import LedgerService
+from axelcompta.workflow.expert_comptable import ROLE_EXPERT
 from axelcompta.workflow.notifications import notifier_comptes_a_choisir
 from tests.test_demo_api import (  # noqa: F401 — fixtures autouse réutilisées
     _client_et_stubs,
     _en_tete,
     _en_tete_gestionnaire,
+    _expert_habilite,
     _jwks_factice,
     _ledger_calcule_une_seule_fois,
 )
@@ -211,3 +214,82 @@ def test_la_cloche_du_chauffeur_dit_combien_de_comptes_attendent() -> None:
     _decider(client, "5122", False)
     messages = [n["message"] for n in client.get(url, headers=_en_tete("DEMO_karim")).json()]
     assert not any("attend votre choix" in m for m in messages)
+
+
+def _client_expert_pro_et_perso(
+    role: str = ROLE_EXPERT,
+) -> tuple[TestClient, CompteBancaireMemoire]:
+    """Même dossier que `_client_pro_et_perso`, vu depuis le portefeuille."""
+    client = _client_et_stubs(role=role)[0]
+    overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
+    comptes: CompteBancaireMemoire = overrides[get_comptes_bancaires]()
+    releves = [CompteReleve("pro", "Compte PRO", 2_500), CompteReleve("perso", "Livret", 90_000)]
+    relever_comptes(comptes, KARIM, releves, LE)
+    comptes.decider(KARIM, "5121", True, UserId("karim"), LE)
+    overrides[get_ledger]().enregistrer(_ecriture("DEMO_karim:ventile", "5121", 2_500))
+    return client, comptes
+
+
+def _decider_expert(client: TestClient, compte: str, retenu: bool) -> Response:
+    reponse: Response = client.post(
+        f"/expert/dossiers/DEMO_karim/comptes-bancaires/{compte}/decision",
+        json={"retenu": retenu},
+        headers=_en_tete_gestionnaire(),
+    )
+    return reponse
+
+
+def test_l_expert_voit_les_comptes_du_dossier() -> None:
+    """AXE-956 : l'expert habilité voit nom et état de chaque compte."""
+    client, _ = _client_expert_pro_et_perso()
+    reponse = client.get(
+        "/expert/dossiers/DEMO_karim/comptes-bancaires", headers=_en_tete_gestionnaire()
+    )
+    assert reponse.status_code == 200
+    par_compte = {c["compte"]: c for c in reponse.json()}
+    assert (par_compte["5121"]["retenu"], par_compte["5122"]["retenu"]) == (True, None)
+    assert par_compte["5122"]["nom"] == "Livret"
+
+
+def test_l_expert_retient_un_compte_a_la_place_du_dirigeant() -> None:
+    client, comptes = _client_expert_pro_et_perso()
+    reponse = _decider_expert(client, "5122", True)
+    assert reponse.status_code == 200
+    livret = next(c for c in comptes.lister(KARIM) if c.compte_comptable == "5122")
+    assert (livret.retenu, livret.a_relire) == (True, True)
+    # Tracé au nom de l'expert, pas du dirigeant.
+    assert comptes.decisions[-1][1:4] == ("5122", True, UserId("gestionnaire-1"))
+    apres = client.get("/dossiers", headers=_en_tete_gestionnaire()).json()
+    assert {d["dossier_id"]: d["comptes_a_choisir"] for d in apres}["DEMO_karim"] == 0
+
+
+def test_l_expert_ecarte_un_compte_personnel() -> None:
+    client, comptes = _client_expert_pro_et_perso()
+    assert _decider_expert(client, "5122", False).status_code == 200
+    assert comptes.decisions[-1][1:3] == ("5122", False)
+
+
+def test_l_expert_n_ecarte_pas_un_compte_deja_comptabilise() -> None:
+    client, _ = _client_expert_pro_et_perso()
+    reponse = _decider_expert(client, "5121", False)
+    assert reponse.status_code == 409
+    assert "déjà dans la comptabilité" in reponse.json()["detail"]
+
+
+def test_le_gestionnaire_non_expert_ne_decide_pas() -> None:
+    client, comptes = _client_expert_pro_et_perso(role="admin")
+    lecture = client.get(
+        "/expert/dossiers/DEMO_karim/comptes-bancaires", headers=_en_tete_gestionnaire()
+    )
+    assert lecture.status_code == 403
+    assert _decider_expert(client, "5122", True).status_code == 403
+    assert [d[1] for d in comptes.decisions] == ["5121"]
+
+
+def test_l_expert_hors_lettre_de_mission_ne_decide_pas() -> None:
+    client, comptes = _client_expert_pro_et_perso()
+    experts = client.app.dependency_overrides[get_experts]()  # type: ignore[attr-defined]
+    experts.habilitations.clear()
+    _expert_habilite(experts, dossiers=(DossierId("DEMO_sophie"),))
+    assert _decider_expert(client, "5122", True).status_code == 403
+    assert [d[1] for d in comptes.decisions] == ["5121"]
