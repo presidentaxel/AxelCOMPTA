@@ -65,6 +65,7 @@ import {
   PoseEnLot,
   TagsDuDossier,
 } from "@/components/TagsEntreprises";
+import { ComptesBancairesExpert } from "@/components/ComptesBancairesExpert";
 
 const COMPTES_A_CHOISIR = "a_choisir";
 // AXE-911 : filtre sur l'état du lien Rollee de chaque entreprise.
@@ -648,6 +649,13 @@ export function EcranEntreprises() {
                 )}
               </dl>
             </section>
+
+            <ComptesBancairesExpert
+              key={choisi.dossier_id}
+              dossierId={choisi.dossier_id}
+              phraseAttente={phraseComptesAChoisir(choisi)}
+              onDecide={charger}
+            />
 
             {reglageTags && (
               <div className="mt-5 border-t border-border pt-4">
