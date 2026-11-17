@@ -280,23 +280,50 @@ def _reprise(
     return emplacements
 
 
-def _releves(champs: Mapping[str, str]) -> Emplacement:
+def debut_a_couvrir(champs: Mapping[str, str], aujourd_hui: date) -> date | None:
+    """AXE-971 : depuis quand la banque doit être complète. Le début du plus
+    ancien exercice que nous tenons : à déclarer par nous, ou en cours. Sans
+    dates d'exercice, le début de l'exercice en cours saisi."""
+    tenus = [
+        e.debut for e in exercices(champs, aujourd_hui) if e.role in ("a_declarer", "en_cours")
+    ]
+    if tenus:
+        return min(tenus)
+    debut = champs.get("exercice_debut")
+    return date.fromisoformat(debut) if debut else None
+
+
+def _releves(champs: Mapping[str, str], aujourd_hui: date) -> Emplacement:
+    """AXE-971 : les relevés sont obligatoires tant que la banque connectée ne
+    couvre pas tout depuis `debut_a_couvrir` ; facultatifs seulement quand
+    Digifactory remonte toute la période."""
     cle, libelle = "banque:releve_bancaire", "Relevés bancaires"
-    debut, historique = champs.get("exercice_debut"), champs.get("debut_historique")
+    debut = debut_a_couvrir(champs, aujourd_hui)
+    depuis = f"du {_jj(debut)} à aujourd'hui" if debut else "de l'exercice en cours"
+    historique = champs.get("debut_historique")
     if not champs.get("contact_digifactory"):
         explication = (
-            "La banque n'est pas encore connectée à Digifactory : relevés de "
-            "l'exercice en cours, en PDF, QIF ou CSV."
+            f"La banque n'est pas encore connectée à Digifactory : relevés {depuis}, "
+            "en PDF, QIF ou CSV."
         )
         return Emplacement(cle, "banque", "releve_bancaire", None, libelle, explication, True)
-    if debut and historique and historique > debut:
-        veille = date.fromisoformat(historique) - timedelta(days=1)
+    if not historique:
         explication = (
-            f"Du {_jj(date.fromisoformat(debut))} au {_jj(veille)} : avant l'historique "
-            "Digifactory. En PDF, QIF ou CSV."
+            f"L'historique Digifactory n'est pas encore connu : relevés {depuis}, "
+            "en PDF, QIF ou CSV, sauf si Digifactory remonte tout."
         )
         return Emplacement(cle, "banque", "releve_bancaire", None, libelle, explication, True)
-    explication = "Digifactory couvre l'exercice en cours : seulement si des mois manquent."
+    premier = date.fromisoformat(historique)
+    if debut and premier > debut:
+        veille = premier - timedelta(days=1)
+        explication = (
+            f"Du {_jj(debut)} au {_jj(veille)} : avant l'historique Digifactory, "
+            "indispensable pour tenir les comptes. En PDF, QIF ou CSV."
+        )
+        return Emplacement(cle, "banque", "releve_bancaire", None, libelle, explication, True)
+    explication = (
+        f"Digifactory remonte tout depuis le {_jj(premier)} : seulement si des mois manquent."
+    )
     return Emplacement(cle, "banque", "releve_bancaire", None, libelle, explication, False)
 
 
@@ -305,7 +332,7 @@ def _vides(
 ) -> list[Emplacement]:
     return [
         *_reprise(champs, aujourd_hui, documents),
-        _releves(champs),
+        _releves(champs, aujourd_hui),
         Emplacement("banque:rib", "banque", "rib", None, "RIB", "Du compte professionnel.", True),
         Emplacement(
             "documents:kbis", "documents", "kbis", None, "Kbis", "Extrait de moins de 3 mois.", True

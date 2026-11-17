@@ -6,6 +6,7 @@ import {
   deplacerDocument,
   documentsVisibles,
   lireAnnee,
+  phraseDepot,
   badgeStatut,
   basculerChoix,
   champsModifies,
@@ -243,4 +244,12 @@ test("AXE-970 : une carte qui reçoit une archive replie ses pièces", () => {
   assert.deepEqual(documentsVisibles(pieces, false), { visibles: [0, 1, 2, 3, 4], caches: 3 });
   assert.deepEqual(documentsVisibles(pieces, true), { visibles: pieces, caches: 0 });
   assert.deepEqual(documentsVisibles([1, 2], false), { visibles: [1, 2], caches: 0 });
+});
+
+test("AXE-971 : après un dépôt, les doublons écartés sont nommés", () => {
+  assert.equal(phraseDepot(3, []), "3 fichier(s) déposé(s), rangés par catégorie.");
+  assert.equal(
+    phraseDepot(1, ["a.pdf", "b.pdf", "c.pdf", "d.pdf"]),
+    "1 fichier(s) déposé(s), rangés par catégorie. 4 déjà sur la fiche, écarté(s) : a.pdf, b.pdf, c.pdf….",
+  );
 });

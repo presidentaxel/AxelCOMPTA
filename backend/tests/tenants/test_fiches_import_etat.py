@@ -290,3 +290,38 @@ def test_un_document_reclasse_change_de_place_dans_le_bucket() -> None:
     deplace = deplacer(bucket, replace(document, categorie="liasse", exercice=2021))
     assert deplace.cle_stockage == "T/imports/f/2021/liasse/dddddddddddd-x.pdf"
     assert bucket.objets == {deplace.cle_stockage: b"%"}
+
+
+def test_les_releves_restent_obligatoires_tant_que_l_exercice_a_declarer_n_est_pas_couvert() -> (
+    None
+):
+    """AXE-971, KERFICE : Digifactory couvre l'exercice en cours (ouvert le
+    01/10/2026) mais pas celui clos le 30/09/2026, à déclarer par nous."""
+    champs = {
+        "date_creation": "2022-01-03",
+        "cloture": "30/09",
+        "contact_digifactory": "24951",
+        "debut_historique": "2026-08-20",
+        "exercice_debut": "2026-10-01",
+    }
+    aujourd_hui = date(2026, 11, 17)
+    releves = next(
+        e for e in emplacements(champs, [], aujourd_hui) if e.cle == "banque:releve_bancaire"
+    )
+    assert releves.attendu
+    assert releves.explication.startswith("Du 01/10/2025 au 19/08/2026")
+
+    couvert = {**champs, "debut_historique": "2025-09-01"}
+    facultatif = next(
+        e for e in emplacements(couvert, [], aujourd_hui) if e.cle == "banque:releve_bancaire"
+    )
+    assert not facultatif.attendu
+    assert facultatif.explication.startswith("Digifactory remonte tout depuis le 01/09/2025")
+
+    sans_historique = {k: v for k, v in champs.items() if k != "debut_historique"}
+    inconnu = next(
+        e
+        for e in emplacements(sans_historique, [], aujourd_hui)
+        if e.cle == "banque:releve_bancaire"
+    )
+    assert inconnu.attendu and "du 01/10/2025 à aujourd'hui" in inconnu.explication
