@@ -10,12 +10,12 @@ import {
   compteurFile,
   questionsRestantes,
   ticketsSeuls,
-} from "@/app/chauffeur/file-a-traiter";
+} from "@/app/dossier/file-a-traiter";
 import {
   useDecisionDifferee,
   type DecisionEnAttente,
-} from "@/app/chauffeur/use-decision-differee";
-import { useDossierChauffeur, useOperationsChauffeur } from "@/app/chauffeur/use-dossier";
+} from "@/app/dossier/use-decision-differee";
+import { useDossierChauffeur, useOperationsChauffeur } from "@/app/dossier/use-dossier";
 import { ConfirmationEntreprise } from "@/components/ConfirmationEntreprise";
 import { EcartsRegistre } from "@/components/EcartsRegistre";
 import { ConfirmationGroupee } from "@/components/ConfirmationGroupee";

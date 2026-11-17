@@ -125,7 +125,7 @@ async function ouvrir(page: Page, operations: Operation[], decisions: { url: str
     }
     await route.fulfill({ json: [] });
   });
-  await page.goto("/chauffeur/DEMO_sophie");
+  await page.goto("/dossier/DEMO_sophie");
   await expect(page.getByRole("heading", { name: "Sophie Martin" })).toBeVisible();
 }
 

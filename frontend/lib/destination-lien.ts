@@ -93,7 +93,7 @@ function chargeUtile(jeton: string): Record<string, unknown> | null {
 }
 
 function pageCourante(chemin: string): boolean {
-  return chemin === "/auth/lien" || chemin.startsWith("/chauffeur/accepter-invitation");
+  return chemin === "/auth/lien" || chemin.startsWith("/dossier/accepter-invitation");
 }
 
 /** Page qui doit recevoir le lien. `null` : rien à reprendre, ou la page
@@ -114,7 +114,7 @@ export function destinationLienAuth(
   if (recu.get("type") === "invite" && jeton) {
     const charge = chargeUtile(jeton);
     if (charge && coteOuverte(charge.app_metadata, null) === "chauffeur") {
-      return `/chauffeur/accepter-invitation${fragment}`;
+      return `/dossier/accepter-invitation${fragment}`;
     }
   }
   return `/auth/lien${coteDansRecherche(recherche)}${fragment}`;

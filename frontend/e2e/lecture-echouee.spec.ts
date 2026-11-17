@@ -209,7 +209,7 @@ test("un GET en échec puis un ajout n'envoie aucun PUT", async ({ page }) => {
     notifications: "vide",
     paie: false,
   };
-  await ouvrir(page, "/chauffeur/DEMO_sophie/exercice", etat, puts);
+  await ouvrir(page, "/dossier/DEMO_sophie/exercice", etat, puts);
   const zone = zoneProvisions(page);
   await expect(zone.getByRole("alert")).toContainText("Lecture des provisions impossible.");
   const reessayer = zone.getByRole("button", { name: "Réessayer" });
@@ -245,7 +245,7 @@ test("une liste vide reste saisissable", async ({ page }) => {
   const puts: unknown[] = [];
   await ouvrir(
     page,
-    "/chauffeur/DEMO_sophie/exercice",
+    "/dossier/DEMO_sophie/exercice",
     {
       provisions: "vide",
       cloture: "pas-termine",
@@ -290,7 +290,7 @@ test("après une relecture, l'ajout conserve les provisions déjà saisies", asy
     notifications: "vide",
     paie: false,
   };
-  await ouvrir(page, "/chauffeur/DEMO_sophie/exercice", etat, puts);
+  await ouvrir(page, "/dossier/DEMO_sophie/exercice", etat, puts);
   const zone = zoneProvisions(page);
   await expect(zone.getByRole("alert")).toContainText("Lecture des provisions impossible.");
   etat.provisions = "assurance";
@@ -322,7 +322,7 @@ test("retirer une provision enregistre la liste sans elle", async ({ page }) => 
   const puts: unknown[] = [];
   await ouvrir(
     page,
-    "/chauffeur/DEMO_sophie/exercice",
+    "/dossier/DEMO_sophie/exercice",
     {
       provisions: "assurance",
       cloture: "pas-termine",
@@ -357,7 +357,7 @@ test("dividendes, paie, clôture et cloche montrent l'échec de lecture", async 
   const puts: unknown[] = [];
   await ouvrir(
     page,
-    "/chauffeur/DEMO_sophie/exercice",
+    "/dossier/DEMO_sophie/exercice",
     {
       provisions: "echec",
       cloture: "echec",
@@ -410,7 +410,7 @@ test("dividendes, paie, clôture et cloche montrent l'échec de lecture", async 
     fullPage: false,
   });
 
-  await page.goto("/chauffeur/DEMO_sophie/resultat");
+  await page.goto("/dossier/DEMO_sophie/resultat");
   await expect(page.getByRole("heading", { name: "Mes dividendes" })).toBeVisible();
   await expect(page.getByText("Lecture des dividendes impossible.")).toBeVisible();
   await expect(page.getByRole("button", { name: "J'ai versé mes dividendes" })).toHaveCount(0);

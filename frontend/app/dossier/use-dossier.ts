@@ -23,7 +23,7 @@ function sessionOuvreLeDossier(dossierId: string, router: ReturnType<typeof useR
   if (session === null) {
     const retour = `${window.location.pathname}${window.location.search}`;
     const parametres = new URLSearchParams({ retour });
-    router.replace(`/chauffeur/login?${parametres.toString()}`);
+    router.replace(`/dossier/login?${parametres.toString()}`);
     return false;
   }
   if (session.lecteurTest) {
@@ -33,7 +33,7 @@ function sessionOuvreLeDossier(dossierId: string, router: ReturnType<typeof useR
     return true;
   }
   if (session.dossierId !== dossierId) {
-    router.replace(`/chauffeur/${session.dossierId}`);
+    router.replace(`/dossier/${session.dossierId}`);
     return false;
   }
   return true;
