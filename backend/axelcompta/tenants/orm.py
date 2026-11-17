@@ -430,7 +430,8 @@ fiches_import = Table(
     Column("annulee_le", DateTime(timezone=True), nullable=True),
     Column("annulee_par", String, nullable=True),
     CheckConstraint(
-        "statut IN ('a_importer', 'en_traitement', 'traitee')", name="fiches_import_statut"
+        "statut IN ('a_importer', 'en_traitement', 'traitee', 'ignore')",
+        name="fiches_import_statut",
     ),
 )
 

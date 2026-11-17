@@ -327,7 +327,9 @@ from axelcompta.tenants.fiches_import import (
 )
 from axelcompta.tenants.fiches_import import SECTIONS as SECTIONS_IMPORT
 from axelcompta.tenants.fiches_import import annuler as annuler_fiche
+from axelcompta.tenants.fiches_import import ignorer as ignorer_fiche
 from axelcompta.tenants.fiches_import import modifier as modifier_fiche
+from axelcompta.tenants.fiches_import import reprendre as reprendre_fiche
 from axelcompta.tenants.fiches_import_depot import FichesImportRepository, Instantane
 from axelcompta.tenants.fiches_import_etat import (
     ContactDigifactory,
@@ -8630,7 +8632,7 @@ class FicheImportResumeVue(BaseModel):
     prenom: str
     denomination: str | None
     siren: str | None
-    statut: str  # calculé : a_importer | en_traitement | traitee
+    statut: str  # a_importer | en_traitement | traitee | ignore
     sections_completes: int
     sections: int
     documents_a_lire: int
@@ -9078,11 +9080,37 @@ def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:
         return _fiche_vue(fiches.enregistrer(fiche))
 
 
+def _enregistrer_routes_fiches_import_decision(app: FastAPI) -> None:
+    """Ignorer une fiche, ou la remettre dans le calcul du statut."""
+
+    @app.post("/portefeuille/imports/{fiche_id}/ignorer", response_model=FicheImportVue)
+    def ignorer_import(
+        fiche_id: str, identite: IdentiteDep, role: RoleMembreDep, fiches: FichesImportDep
+    ) -> FicheImportVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        fiche = fiches.lire(tenant_id, fiche_id)
+        ignoree = ignorer_fiche(fiche, identite.email, datetime.now(UTC))
+        return _fiche_vue(fiches.enregistrer(ignoree))
+
+    @app.post("/portefeuille/imports/{fiche_id}/reprendre", response_model=FicheImportVue)
+    def reprendre_import(
+        fiche_id: str, identite: IdentiteDep, role: RoleMembreDep, fiches: FichesImportDep
+    ) -> FicheImportVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        fiche = fiches.lire(tenant_id, fiche_id)
+        return _fiche_vue(
+            fiches.enregistrer(reprendre_fiche(fiche, identite.email, datetime.now(UTC)))
+        )
+
+
 def _enregistrer_routes_imports(app: FastAPI) -> None:
     """Import CSV des dossiers (AXE-809) et fiches d'import (AXE-941)."""
     _enregistrer_routes_import_dossiers(app)
     _enregistrer_routes_fiches_import(app)
     _enregistrer_routes_fiches_import_saisie(app)
+    _enregistrer_routes_fiches_import_decision(app)
     _enregistrer_route_digifactory_fiche(app)
     _enregistrer_routes_documents_import(app)
     _enregistrer_route_retrait_document_import(app)

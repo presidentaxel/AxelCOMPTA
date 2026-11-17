@@ -1490,6 +1490,11 @@ export async function relireRegistresImport(id: string): Promise<FicheImport> {
   return ficheOuErreur(await requeteGestionnaire(`/portefeuille/imports/${id}/registres`, { method: "POST" }));
 }
 
+/** Passe la fiche en Ignoré, ou la remet dans le calcul du statut. */
+export async function deciderFicheImport(id: string, decision: "ignorer" | "reprendre"): Promise<FicheImport> {
+  return ficheOuErreur(await requeteGestionnaire(`/portefeuille/imports/${id}/${decision}`, { method: "POST" }));
+}
+
 /** AXE-947 : l'import n'est plus voulu ; la fiche sort de la liste. */
 export async function annulerFicheImport(id: string): Promise<void> {
   const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/annuler`, { method: "POST" });
