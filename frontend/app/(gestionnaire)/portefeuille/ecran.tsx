@@ -5,7 +5,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Aide, pourquoiEnvoi } from "@/components/Aide";
-import { Badge } from "@/components/Badge";
 import { useCanauxEnvoi } from "@/lib/use-canaux-envoi";
 import { IntegrationsDossier } from "@/components/IntegrationsDossier";
 import { SuiviEnvois } from "@/components/SuiviEnvois";
@@ -51,14 +50,7 @@ import {
   gardeEtape,
   rangEtape,
 } from "@/lib/filtres-portefeuille";
-import {
-  badgeStatut,
-  fichesActives,
-  fichesSansDossier,
-  libelleStatut,
-  nomChauffeur,
-  type FicheImportResume,
-} from "@/lib/fiches-import";
+import { fichesActives, libelleStatut, type FicheImportResume } from "@/lib/fiches-import";
 import { formatDate, formatMontant } from "@/lib/format";
 import { gardeTag, libelleTag, SANS_TAG, TOUS_LES_TAGS, totauxPortefeuille } from "@/lib/tags";
 import type { DossierAgregat, ReglageTags } from "@/lib/types";
@@ -256,10 +248,6 @@ export function EcranEntreprises() {
     }
     return parDossier;
   }, [fiches]);
-  const enImport = useMemo(
-    () => fichesSansDossier(fichesActives(fiches), dossiers ?? []),
-    [fiches, dossiers],
-  );
   const ficheChoisie = choisi ? fichesParDossier.get(choisi.dossier_id) : undefined;
 
   return (
@@ -281,25 +269,6 @@ export function EcranEntreprises() {
           </Link>
         )}
       </div>
-      {enImport.length > 0 && (
-        <section className="mt-6 rounded-md border border-border bg-canvas p-4" aria-labelledby="titre-en-import">
-          <h2 id="titre-en-import" className="text-sm font-semibold text-ink">En cours d&apos;import</h2>
-          <p className="mt-1 text-sm text-subtle">
-            Ces entreprises sont aussi dans Imports. Elles rejoignent la liste dès que les informations
-            obligatoires sont là.
-          </p>
-          <ul className="mt-3">
-            {enImport.map((fiche) => (
-              <li key={fiche.id} className="flex items-center justify-between gap-3 border-b border-hairline py-2">
-                <Link href={`/imports/${fiche.id}`} className="text-sm font-medium text-signal hover:underline">
-                  {nomChauffeur(fiche)}
-                </Link>
-                <Badge variant={badgeStatut(fiche.statut)}>{libelleStatut(fiche.statut)}</Badge>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
       {retires.length > 0 && (
         <section className="mt-6 rounded-md border border-border bg-canvas p-4">
           <h2 className="text-sm font-semibold text-ink">Retirées de la liste</h2>
@@ -588,7 +557,7 @@ export function EcranEntreprises() {
           );
         })}
       </ul>
-      {dossiers && dossiers.length === 0 && enImport.length === 0 && (
+      {dossiers && dossiers.length === 0 && (
         <p className="py-10 text-sm text-subtle">Aucune entreprise dans ce portefeuille.</p>
       )}
       {dossiers && dossiers.length > 0 && visibles.length === 0 && (
