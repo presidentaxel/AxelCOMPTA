@@ -3,7 +3,7 @@
 Monolithe modulaire Python (FastAPI / SQLAlchemy / Postgres), découpage complet
 défini en [doc 03 §3](../docs/03-architecture.md#3--découpage-en-modules-monolithe-modulaire).
 
-> **État au 2026-11-13** : l'état du projet est tenu dans le
+> **État au 2026-11-17** : l'état du projet est tenu dans le
 > [doc 12](../docs/12-roadmap-todo.md) ; la carte des modules dans le
 > [doc 18](../docs/18-organisation-code.md). L'API se lance avec
 > `uvicorn axelcompta.api.app:app` (section « Lancer l'API de démo »).
@@ -247,8 +247,13 @@ tout de suite avec `--recalculer --tout`.
 ### Tâches planifiées (cron)
 
 `python -m axelcompta.taches` enchaîne, pour chaque portefeuille, la synchro
-Digifactory (sautée si aucun dossier n'a de `contact_nr`) puis les
-notifications. `scripts/taches_planifiees.sh` l'enveloppe pour un
+Digifactory (sautée si aucun dossier n'a de `contact_nr`), les fiches
+d'import complétées, les virements internes repris sur tout le grand livre
+(AXE-968 : deux jambes encore au 471 qui se répondent passent au 580),
+les bascules d'exercice et les caches ; puis l'IA, les rappels, les
+nouveaux contacts, les registres et Rollee. Un dossier exclu par un tag
+(AXE-829) est sauté. Chaque étape qui échoue est notée au bilan sans
+arrêter le passage. `scripts/taches_planifiees.sh` l'enveloppe pour un
 planificateur : charge le `.env` racine s'il existe, empêche deux passages
 simultanés (`flock`), écrit dans `_demo_output/journaux/taches.log`
 (`AXELCOMPTA_JOURNAUX` pour changer). Installé sur le poste de démo le
@@ -374,6 +379,11 @@ En production (depuis le 16/11), ce crontab n'est plus à poser : le
 conteneur `worker` lance le worker chaque minute et les tâches chaque heure
 (`backend/docker/crontab`, `supercronic`). Voir « Déployer la production ».
 
+À chaque passage, le worker relâche d'abord les jobs pris depuis plus de
+2 h (`DELAI_ABANDON`, colonne `jobs.pris_le`, AXE-958) : un job abandonné
+par un redéploiement repart s'il lui reste des essais, sinon il passe en
+échec. Un job en échec n'alerte Sentry qu'au dernier essai (#219).
+
 ## Mettre en route les tickets du 05 au 10/11 sur une base existante
 
 Le code mergé ne suffit pas : sur la base réelle, il faut aussi (suivi dans
@@ -462,8 +472,11 @@ cache d'un dossier à la main (démo d'AXE-888, plafond `--plafond-usd`).
 ## Rollee (AXE-818 à 821, 911, 917 à 934)
 
 - `plateformes_rollee.py` : le chauffeur relie ses plateformes (Rollee
-  Connect) ; traitement des jobs `rollee` déposés par les webhooks. Un
-  compte au nom d'un autre chauffeur n'est pas stocké (AXE-923).
+  Connect) ; traitement des jobs `rollee` déposés par les webhooks,
+  regroupés par dossier (AXE-966) : chaque dossier est relu une fois par
+  lot, et les users inconnus passent en un seul `rapprocher_inconnus`,
+  limité aux flottes de leurs webhooks. Un compte au nom d'un autre
+  chauffeur n'est pas stocké (AXE-923).
 - `revenus_rollee.py` : jours Rollee → `settlements_plateforme` →
   semaines rapprochées (`ingestion/semaines_plateforme.py`) → écritures
   (`revenus_semaines.py`, `ingestion/ecritures_semaines.py`). Seules les
@@ -476,6 +489,12 @@ cache d'un dossier à la main (démo d'AXE-888, plafond `--plafond-usd`).
 - Mode expert : `explication_semaines.py` (une semaine expliquée) et
   `manques_rollee.py` (ce qui manque pour tout rapprocher), routes
   `GET /expert/dossiers/{id}/rapprochements` et `…/rapprochements/manques`.
+  `POST …/rapprochements/decision` tranche une semaine « à vérifier »
+  (`trancher_semaine`, « ecrire » ou « ecarter », motif obligatoire,
+  AXE-912).
+- Le bouton Synchroniser relit Rollee sur les deux dernières semaines
+  déjà gardées (`RECOUVREMENT`) ; l'historique complet reste le passage
+  de 4 h (#212).
 - **Jamais deux lectures Rollee en même temps** : passer par la file de
   jobs (`synchro_digifactory` ou `rapprochement_rollee`), que le worker
   traite une à une.
@@ -503,8 +522,11 @@ dernière étape. Dans l'ordre, pour une autre base :
    AXE-931 écrirait de nouvelles semaines sur les anciens comptes.
 4. Redémarrer API et worker, puis **Synchroniser** : Rollee est relu pour
    chaque dossier relié, sur tout l'historique.
-5. Reprise des virements entre enveloppes en 580 (AXE-930 ; 484 OD
-   simulées, **pas encore appliquée** sur la base réelle) :
+5. Reprise des virements entre enveloppes en 580 (AXE-930). **Plus à
+   lancer à la main depuis AXE-968** : l'étape horaire le fait, pour les
+   opérations encore au 471. Le script reste pour déplacer une opération
+   déjà classée ailleurs (par exemple en 645) ; il saute les dossiers
+   exclus par un tag :
 
        python scripts/reprendre_virements_internes.py --tenant TENANT              # simulation
        python scripts/reprendre_virements_internes.py --tenant TENANT --appliquer
@@ -550,7 +572,48 @@ reste sur Supabase.
   Le DNS A de ce nom pointe déjà vers le droplet. Sans ces URL, le lien
   d'invitation est refusé.
 - Modèles des e-mails d'authentification Supabase : `deploy/emails/`.
+- **Lancer une reprise** : depuis #225, les scripts sont dans l'image.
+  Toujours en simulation d'abord, puis `--appliquer` après accord :
+
+      cd /opt/axelcompta
+      docker compose -f docker-compose.prod.yml exec worker python scripts/<script>.py --tenant TENANT
+
+- **Une PR mergée directement sur `prod`** (page publique, #217) doit être
+  remergée dans `main` avant la promotion suivante. Sinon la promotion
+  peut amener deux têtes Alembic (une migration de chaque côté, sur la
+  même révision) : le déploiement s'arrête aux migrations. Vérifier avec
+  `alembic heads` sur le résultat de la fusion.
 - Reste (AXE-811) : restauration chronométrée des sauvegardes et runbook.
+
+## Mettre en route les tickets du 16 au 17/11 (PR #202 à #227)
+
+1. Remettre `main` et `prod` d'accord : merger `prod` dans `main`, puis
+   faire suivre `e1c8a4f72b09` (fiche ignorée) après `b6e2f9a4c715`
+   (demandes d'échange). La base réelle est à `b6e2f9a4c715` ; la
+   contrainte d'`e1c8a4f72b09` y est déjà posée, la rejouer est sans
+   effet. `d4b7e9a2c361` (`jobs.pris_le`) est déjà passée.
+2. Dans `/opt/axelcompta/.env` : `AXELCOMPTA_URL_DOSSIER` (porte des
+   dossiers, plus haut) et `AXELCOMPTA_SLACK_DEMANDES_WEBHOOK` (demandes
+   d'échange). `DIGIFACTORY_TOKEN` et `DIGIFACTORY_BASE_URL` ne sont plus
+   lus : le jeton vient du branchement d'Intégrations (#226).
+3. Promouvoir `main` vers `prod`. Au premier passage horaire, la ligne
+   « virements internes : N paire(s) au 580 » apparaît au journal du
+   worker, puis plus rien s'il n'y a rien de nouveau.
+4. Une fois, ventiler l'historique sur les sous-comptes 512x (AXE-832).
+   Sans elle, deux virements entre comptes aux libellés différents ne se
+   reconnaissent pas. Lent, plus de 5 minutes :
+
+       docker compose -f docker-compose.prod.yml exec worker python scripts/ventiler_comptes_bancaires.py --tenant TENANT              # simulation
+       docker compose -f docker-compose.prod.yml exec worker python scripts/ventiler_comptes_bancaires.py --tenant TENANT --appliquer
+
+   La simulation n'écrit plus rien en base (avant #225, elle créait les
+   fiches des comptes qu'elle découvrait).
+5. Supabase Auth : supprimer les comptes des accès gestionnaire retirés
+   avant #223 ; republier `deploy/emails/` (#208).
+6. Sentry : brancher une alerte sur le moniteur `axelcompta-taches`.
+7. Poste de développement : copier `.env.dev.example` en `.env.dev`
+   (`ENV=dev` coupe Sentry ; une ligne décommentée remplace celle de
+   `.env`).
 
 ## Mettre en route Rollee après la PR 170 (AXE-922)
 

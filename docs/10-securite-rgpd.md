@@ -1,6 +1,6 @@
 # 10 — Sécurité, RGPD et protection des données
 
-> **État au 2026-11-16** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-17** (ajouté ; le reste du doc décrit la cible) :
 > - Fait : RLS par dossier sur les tables, pseudonymisation obligatoire
 >   avant tout LLM avec tests de fuite (AXE-436), journal d'audit
 >   append-only des décisions et signatures, Sentry seulement si un DSN est
@@ -40,6 +40,16 @@
 > - Production hébergée depuis le 16/11 sur un droplet (HTTPS par Caddy,
 >   CORS limité à l'adresse publique du front, AXE-427, AXE-948).
 >   L'hébergeur applicatif reste à reporter dans les textes juridiques.
+> - Retirer un accès gestionnaire supprime aussi son compte Supabase Auth
+>   (AXE-967, 17/11) ; un compte dirigeant du même e-mail n'est pas touché.
+>   Les accès retirés avant ce correctif restent à supprimer à la main.
+> - Réinitialiser son mot de passe avec la double authentification active
+>   demande le code TOTP (session `aal2`, AXE-961).
+> - Sentry : aucune variable locale dans les traces
+>   (`include_local_variables=False`, AXE-959), et `ENV=dev` le coupe sur
+>   un poste de développement.
+> - Le jeton Digifactory ne se lit plus dans l'environnement, seulement
+>   dans le branchement chiffré (#226).
 > - Pas fait : sauvegardes avec restauration testée (AXE-811), relecture
 >   juriste, acceptation tracée et DPA
 >   signé (AXE-813), offboarding (export et purge d'un tenant, doc 14 :

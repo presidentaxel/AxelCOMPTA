@@ -1,6 +1,6 @@
 # 11 — UX / UI : interface B2B
 
-> **État au 2026-11-16** (ajouté ; le reste du doc décrit la cible
+> **État au 2026-11-17** (ajouté ; le reste du doc décrit la cible
 > d'origine) : l'hypothèse « le chauffeur ne voit que la page de signature »
 > est caduque (doc 19). Écrans réels :
 > - Chauffeur (mobile) : Activité, À traiter (avec les versements de
@@ -30,8 +30,18 @@
 >   d'ouverture, AXE-800, AXE-823, AXE-804 ; depuis AXE-925 : comptes et
 >   entreprises cherchables, recherche dans la file, ticket, taux de TVA,
 >   « Rapprochements Rollee » par semaine ; « Ce qui manque pour tout
->   rapprocher », AXE-934) et Anomalies (historique,
+>   rapprocher », AXE-934 ; « Écrire telle quelle » ou « Écarter ces
+>   jours » sur une semaine à vérifier, AXE-912) et Anomalies (historique,
 >   opérations bancaires à revoir, AXE-814 et AXE-424).
+> - Depuis le 16-17/11 côté gestionnaire : **Imports** (fiches d'import,
+>   AXE-941 ; catégorie Ignoré ; comptes bancaires Pro ou Perso) remplace
+>   le bloc « Nouveaux chauffeurs Digifactory » d'Entreprises ; la page
+>   **Entreprises › Tags** porte les exclusions (AXE-957) ; la fiche d'une
+>   entreprise a une section « Comptes bancaires » où l'expert habilité
+>   retient ou écarte un compte (AXE-956).
+> - Portes (AXE-965, sur `main`) : `compta.axelproject.fr` sert la page
+>   publique et le gestionnaire, `app-compta.axelproject.fr` la personne
+>   qui a un dossier (chemins `/dossier/…`, doc 19).
 > - Écran « Double authentification » à la connexion (AXE-812) ; bandeau
 >   « Mode test, lecture seule » du compte de test (AXE-822) ; textes
 >   juridiques publics sur `/legal/…` (AXE-859).

@@ -1,6 +1,6 @@
 # 03 — Architecture technique
 
-> **État au 2026-11-13** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-17** (ajouté ; le reste du doc décrit la cible) :
 > - Modules ajoutés au découpage : `pseudonymize/` (seule porte vers un LLM)
 >   et `jobs/` (file Postgres, ADR-002). Carte à jour dans le
 >   [doc 18](18-organisation-code.md).
@@ -17,7 +17,17 @@
 >   (jeton `aal2`, AXE-812). Le TOTP maison (`tenants/mfa.py`) est retiré.
 > - Un worker (`axelcompta.worker`) exécute la file de jobs Postgres :
 >   import des dossiers, « Synchroniser », rappels, événements Rollee
->   (AXE-809, AXE-845, AXE-808, AXE-820).
+>   (AXE-809, AXE-845, AXE-808, AXE-820). Un job pris depuis plus de 2 h
+>   est relâché (AXE-958). Les événements Rollee sont traités par dossier
+>   (AXE-966).
+> - Tâches horaires (`taches.py`), dans l'ordre : synchro de chaque
+>   portefeuille, fiches d'import complétées, virements internes repris
+>   sur tout le grand livre (AXE-968, sur `main`), bascules d'exercice,
+>   caches, puis LLM, rappels, nouveaux contacts, registres et carte
+>   Rollee. À 4 h : liens et relecture Rollee, rattrapage des webhooks ;
+>   à 3 h : balance et mesures. Les étapes par dossier respectent les
+>   exclusions par tag (AXE-829). Sentry Crons surveille le passage
+>   (AXE-959).
 > - Intégrations externes en **branchements** par portefeuille, plusieurs
 >   par type, identifiants chiffrés (AXE-872) : mail, SMS, Digifactory,
 >   Rollee. Seule route publique sans compte : `POST /webhooks/rollee/{id}`,
@@ -34,7 +44,9 @@
 >   Un push sur la branche `prod` déploie, migrations d'abord (AXE-427).
 >   Le §8 et le §9 (OVH en production) ne sont donc pas suivis pour le
 >   calcul ; décision à écrire dans ADR-003, avec la restauration
->   chronométrée (AXE-811).
+>   chronométrée (AXE-811). Sur `main` depuis le 17/11 : Caddy sert deux
+>   noms vers le même front, `compta.axelproject.fr` (page publique et
+>   gestionnaire) et `app-compta.axelproject.fr` (dossiers, AXE-965).
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-09-24
 

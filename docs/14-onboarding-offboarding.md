@@ -1,6 +1,6 @@
 # 14 — Onboarding et offboarding des tenants
 
-> **État au 2026-11-16** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-17** (ajouté ; le reste du doc décrit la cible) :
 > - Fait : invitations en masse, renvoi et annulation (AXE-702) ; écran des
 >   connexions bancaires Digifactory et relances dans la cloche.
 > - Fait : création des dossiers en masse depuis un CSV (« ; » ou « , »,
@@ -15,11 +15,19 @@
 >   l'attendent (AXE-730). Il saisit siège, capital et associés dans « Ma
 >   société » (AXE-846). Les écarts avec l'INSEE et le RNE s'affichent dans
 >   Entreprises et attendent son choix (AXE-849).
-> - Fait : les nouveaux contacts Digifactory sont proposés dans
->   Entreprises (Ajouter, Ignorer), bouton « Synchroniser » (AXE-845) ;
->   tags d'entreprises, dont « chauffeur » d'après le NAF, et exclusion des
->   traitements (AXE-829) ; comptes bancaires retenus ou écartés par le
->   dirigeant (AXE-729, AXE-851).
+> - Fait : bouton « Synchroniser » (AXE-845) ; tags d'entreprises, dont
+>   « chauffeur » d'après le NAF, et exclusion des traitements (AXE-829),
+>   réglée sur la page Entreprises › Tags (AXE-957) ; comptes bancaires
+>   retenus ou écartés par le dirigeant (AXE-729, AXE-851) ou, depuis le
+>   16/11, par l'expert-comptable habilité depuis la fiche de l'entreprise
+>   (AXE-956).
+> - Fait : fiches d'import (menu **Imports**, AXE-941 et suites). Depuis
+>   le 17/11, un contact Digifactory sans entreprise ouvre une fiche
+>   d'import à la synchro, au lieu d'être proposé dans Entreprises. Une
+>   fiche crée le dossier dès que ses champs obligatoires sont remplis, ou
+>   se relie au dossier du même SIREN (#212). Une fiche s'**ignore** et se
+>   remet (catégorie Ignoré, #224). Section Banque : les comptes remontés
+>   par Digifactory, chacun marqué **Pro** ou **Perso** (#227).
 > - Fait : intégrations du portefeuille en branchements, plusieurs par type
 >   (AXE-872). Le chauffeur relie Uber et Bolt via Rollee Connect (AXE-819),
 >   relancé tant qu'il ne l'a pas fait (AXE-890) ; un user Rollee existant
