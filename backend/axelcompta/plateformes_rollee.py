@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any, Literal, Protocol
@@ -289,7 +289,11 @@ class Suivi:
     # Rattrapage de 4 h : tout l'historique, pas la fenêtre de deux semaines.
     relever_historique: ReleverRevenus | None = None
     # AXE-911 : un webhook d'un user Rollee inconnu lance son rapprochement.
-    rapprocher_inconnu: Callable[[TenantId, str], Awaitable[str]] | None = None
+    # AXE-966 : tous les inconnus d'un lot passent ensemble ; pour chacun,
+    # les flottes (branchements) d'où viennent ses webhooks.
+    rapprocher_inconnus: (
+        Callable[[TenantId, Mapping[str, Collection[str]]], Awaitable[str]] | None
+    ) = None
 
 
 async def _suivre_dossier(
@@ -316,34 +320,93 @@ async def _suivre_dossier(
     return f"{dossier.id} : {len(comptes)} compte(s), {len(perdus)} à reconnecter"
 
 
-async def _un_evenement(suivi: Suivi, evenement: EvenementRollee) -> str:
+@dataclass
+class _Lot:
+    """Les événements d'un lot, regroupés : un dossier n'est relu qu'une
+    fois, et les users inconnus passent ensemble (AXE-966)."""
+
+    dossiers: dict[DossierId, Dossier] = field(default_factory=dict)
+    avec_donnees: set[DossierId] = field(default_factory=set)
+    inconnus: dict[str, set[str]] = field(default_factory=dict)
+    # Pour chaque événement : ce qui le concerne, dans l'ordre de ses users.
+    cibles: dict[str, list[str]] = field(default_factory=dict)
+    textes: dict[str, str] = field(default_factory=dict)
+
+
+_INCONNUS = "inconnus"
+
+
+def _regrouper(suivi: Suivi, evenements: Sequence[EvenementRollee]) -> _Lot:
+    lot = _Lot()
+    for evenement in evenements:
+        if evenement.type not in TYPES_COMPTES | TYPES_DONNEES:
+            lot.cibles[evenement.id] = []
+            continue
+        cibles: list[str] = []
+        for user in evenement.users:
+            dossier_id = suivi.services.comptes.dossier_du_user(user)
+            dossier = suivi.dossiers.obtenir(dossier_id) if dossier_id else None
+            if dossier is None or dossier.tenant_id != evenement.tenant_id:
+                if suivi.rapprocher_inconnus is None:
+                    cle = f"user:{user}"
+                    lot.textes[cle] = f"user {user} inconnu"
+                else:
+                    cle = _INCONNUS
+                    lot.inconnus.setdefault(user, set()).add(evenement.branchement_id)
+            else:
+                cle = f"dossier:{dossier.id}"
+                lot.dossiers.setdefault(dossier.id, dossier)
+                if evenement.type in TYPES_DONNEES:
+                    lot.avec_donnees.add(dossier.id)
+            if cle not in cibles:
+                cibles.append(cle)
+        lot.cibles[evenement.id] = cibles
+    return lot
+
+
+async def _traiter_lot(suivi: Suivi, tenant_id: TenantId, lot: _Lot) -> None:
+    """Chaque dossier une fois, revenus compris si un de ses événements
+    porte des données ; puis les inconnus en un seul rapprochement. Une
+    erreur reste à ce qu'elle touche."""
+    for dossier_id, dossier in lot.dossiers.items():
+        try:
+            texte = await _suivre_dossier(suivi, dossier, dossier_id in lot.avec_donnees)
+        except Exception as exc:  # noqa: BLE001 — un dossier en échec ne bloque pas les autres
+            texte = f"erreur : {type(exc).__name__} : {exc}"
+        lot.textes[f"dossier:{dossier_id}"] = texte
+    if lot.inconnus and suivi.rapprocher_inconnus is not None:
+        try:
+            texte = await suivi.rapprocher_inconnus(tenant_id, lot.inconnus)
+        except Exception as exc:  # noqa: BLE001
+            texte = f"erreur : {type(exc).__name__} : {exc}"
+        lot.textes[_INCONNUS] = texte
+
+
+def _resultat(evenement: EvenementRollee, lot: _Lot) -> str:
     if evenement.type not in TYPES_COMPTES | TYPES_DONNEES:
         METRIQUES.incrementer("rollee_evenement_inconnu", type=evenement.type)
         return f"ignoré ({evenement.type})"
-    morceaux = []
-    for user in evenement.users:
-        dossier_id = suivi.services.comptes.dossier_du_user(user)
-        dossier = suivi.dossiers.obtenir(dossier_id) if dossier_id else None
-        if dossier is None or dossier.tenant_id != evenement.tenant_id:
-            if suivi.rapprocher_inconnu is not None:
-                morceaux.append(await suivi.rapprocher_inconnu(evenement.tenant_id, user))
-            else:
-                morceaux.append(f"user {user} inconnu")
-            continue
-        morceaux.append(await _suivre_dossier(suivi, dossier, evenement.type in TYPES_DONNEES))
-    return " ; ".join(morceaux) or "aucun user"
+    morceaux = [lot.textes.get(cle, "non traité") for cle in lot.cibles[evenement.id]]
+    resultat = " ; ".join(morceaux) or "aucun user"
+    if resultat.startswith("erreur :"):
+        METRIQUES.incrementer("rollee_evenement_echec", type=evenement.type)
+    return resultat
 
 
 def traiter_evenements(suivi: Suivi, tenant_id: TenantId, limite: int = 200) -> str:
     """Job `rollee` de la file : chaque webhook gardé est traité une fois.
-    Une erreur est notée sur l'événement ; le rattrapage du lendemain repasse."""
+    Les événements du lot sont regroupés (AXE-966) : Rollee envoie souvent
+    des dizaines de webhooks pour le même user, et chacun relisait tout.
+    Une erreur est notée sur les événements qu'elle touche ; le rattrapage
+    repasse."""
+    evenements = suivi.evenements.a_traiter(tenant_id, limite)
+    if not evenements:
+        return resume([])
+    lot = _regrouper(suivi, evenements)
+    asyncio.run(_traiter_lot(suivi, tenant_id, lot))
     traites = []
-    for evenement in suivi.evenements.a_traiter(tenant_id, limite):
-        try:
-            resultat = asyncio.run(_un_evenement(suivi, evenement))
-        except Exception as exc:  # noqa: BLE001 — un événement en échec ne bloque pas les autres
-            METRIQUES.incrementer("rollee_evenement_echec", type=evenement.type)
-            resultat = f"erreur : {type(exc).__name__} : {exc}"
+    for evenement in evenements:
+        resultat = _resultat(evenement, lot)
         suivi.evenements.marquer_traite(evenement.id, resultat, suivi.services.maintenant())
         traites.append(resultat)
     return resume(traites)
@@ -380,7 +443,7 @@ def suivi_postgres(engine: Engine) -> Suivi:
         )
 
     # Import différé : `revenus_rollee` s'appuie sur ce module (AXE-821).
-    from axelcompta.rapprochement_rollee_service import rapprocher_inconnu
+    from axelcompta.rapprochement_rollee_service import rapprocher_inconnus
     from axelcompta.revenus_rollee import depots_postgres, relever_revenus
 
     services = ServicesRollee(PostgresBranchements(engine), PostgresComptesRollee(engine))
@@ -394,7 +457,7 @@ def suivi_postgres(engine: Engine) -> Suivi:
         relever_historique=lambda d: relever_revenus(
             services, depots, d, date.today(), complet=True
         ),
-        rapprocher_inconnu=lambda tenant_id, user: rapprocher_inconnu(engine, tenant_id, user),
+        rapprocher_inconnus=lambda tenant_id, users: rapprocher_inconnus(engine, tenant_id, users),
     )
 
 

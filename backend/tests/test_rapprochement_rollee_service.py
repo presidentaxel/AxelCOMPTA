@@ -30,6 +30,7 @@ from axelcompta.rapprochement_rollee_service import (
     phrase_lecture,
     phrase_rapprochement,
     rapprocher_dossier,
+    rapprocher_inconnus_avec,
     relever_portefeuille,
 )
 from axelcompta.tenants.branchements import BranchementsMemoire, nouveau
@@ -386,3 +387,44 @@ def test_le_portefeuille_relit_chaque_dossier_relie_une_fois_meme_en_erreur() ->
 
     assert relever_portefeuille(liens, relever) == "Rollee relu pour 1 dossier(s), 1 en erreur"
     assert relus == ["d1", "d2"]
+
+
+def test_les_inconnus_d_un_lot_passent_ensemble_sur_leurs_seules_flottes() -> None:
+    """AXE-966 : un seul passage pour tous les users inconnus du lot, et
+    seule la flotte d'où viennent leurs webhooks est listée."""
+
+    class Comptee(FauxRollee):
+        async def utilisateurs(self) -> list[dict[str, Any]]:
+            self.appels.append("liste")
+            return await super().utilisateurs()
+
+    rollee = Comptee()
+    depots = _depots(rollee)
+    autre = nouveau(
+        [], T, "rollee", "rollee", "Autre flotte", {"jeton": "k", "environnement": "production"}
+    )
+    depots.services.branchements.enregistrer([autre], "admin", LE)
+    premiere = next(b.id for b in depots.services.branchements.lister(T) if b.id != autre.id)
+
+    texte = asyncio.run(
+        rapprocher_inconnus_avec(depots, T, {"u-iban": {premiere}, "u-nom": {premiere}}, False, LE)
+    )
+
+    assert rollee.appels.count("liste") == 1  # une flotte, une fois, pour les deux users
+    assert set(depots.cartes.lire(T, premiere)) == {"u-iban", "u-nom"}
+    assert list(depots.cartes.lire(T, autre.id)) == []
+    assert "Rollee prod" in texte and "Autre flotte" not in texte
+
+
+def test_un_inconnu_deja_a_choisir_n_est_pas_relu(monkeypatch: pytest.MonkeyPatch) -> None:
+    rollee = FauxRollee()
+    depots = _depots(rollee)
+    branchement = depots.services.branchements.lister(T)[0].id
+
+    class Attend:
+        rollee_user_id = "u-nom"
+
+    monkeypatch.setattr(depots.liens, "a_choisir", lambda _t: [Attend()])
+    texte = asyncio.run(rapprocher_inconnus_avec(depots, T, {"u-nom": {branchement}}, True, LE))
+    assert rollee.appels == []
+    assert texte == "1 user(s) inconnu(s) déjà à choisir"
