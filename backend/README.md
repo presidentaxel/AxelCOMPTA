@@ -549,6 +549,11 @@ intacte et chaque fichier qu'elle contient devient un document de
 l'exercice (zips imbriqués compris, 5 000 fichiers et 1 Go déplié au plus).
 Un FEC est lu : période, SIREN, clôture, résultat et solde de chaque
 compte, gardés dans `documents_import.donnees` pour la reprise.
+Un fichier dont le contenu est déjà sur la fiche (même empreinte) n'est
+pas redéposé, seul ou sorti d'une archive déposée par-dessus (AXE-971).
+Les relevés bancaires sont **obligatoires** tant que Digifactory ne couvre
+pas tout depuis le début du plus ancien exercice que nous tenons (à
+déclarer, ou en cours) ; facultatifs ensuite.
 
 Les contenus vivent dans le bucket S3 privé `DOCUMENTS_BUCKET` (`documents`
 par défaut, mêmes identifiants que le stockage des modèles), rangés par

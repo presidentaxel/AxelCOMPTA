@@ -378,8 +378,8 @@ def _archive_2019() -> bytes:
     tampon = io.BytesIO()
     with zipfile.ZipFile(tampon, "w") as archive:
         archive.writestr("55210055400010FEC20191231.csv", FEC_2019)
-        archive.writestr("Grand Livre.pdf", b"%PDF-1.4")
-        archive.writestr("Encaissements de Vente/ENC-001.pdf", b"%PDF-1.4")
+        archive.writestr("Grand Livre.pdf", b"%PDF-1.4 grand livre")
+        archive.writestr("Encaissements de Vente/ENC-001.pdf", b"%PDF-1.4 ENC-001")
         archive.writestr("META-INF/signature.pkcs7", b"sig")
     return tampon.getvalue()
 
@@ -389,7 +389,10 @@ def _deposer_2019(client: TestClient, fiche: dict[str, Any]) -> Any:
         f"/portefeuille/imports/{fiche['id']}/exercices/2019/documents",
         files=[
             ("fichiers", ("archive-2019.zip", _archive_2019(), "application/zip")),
-            ("fichiers", ("Synthèse de la déclaration tva.pdf", b"%PDF-1.4", "application/pdf")),
+            (
+                "fichiers",
+                ("Synthèse de la déclaration tva.pdf", b"%PDF-1.4 tva", "application/pdf"),
+            ),
         ],
         headers=EN_TETE,
     )
@@ -456,3 +459,16 @@ def test_un_lecteur_ne_depose_rien_sur_un_exercice() -> None:
         headers=EN_TETE,
     )
     assert reponse.status_code == 403
+
+
+def test_une_archive_redeposee_est_refusee_comme_doublon() -> None:
+    """AXE-971 : la même archive une seconde fois : rien n'est ajouté (409)."""
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    premier = _deposer_2019(client, fiche)
+    second = _deposer_2019(client, fiche)
+    assert premier.json()["doublons_ecartes"] == []
+    assert second.status_code == 409
+    assert second.json()["detail"].startswith("Déjà sur la fiche : archive-2019.zip")
+    tous = client.get(f"/portefeuille/imports/{fiche['id']}", headers=EN_TETE).json()
+    assert sum(len(e["documents"]) for e in tous["emplacements"]) == 5

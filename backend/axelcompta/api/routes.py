@@ -175,7 +175,11 @@ from axelcompta.core.libelles import categorie_du_suffixe, sans_categorie
 from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
 from axelcompta.core.rls import appliquer_rls, contexte_identite
 from axelcompta.depot_documents_import import Fichier as FichierImport
-from axelcompta.depot_documents_import import depot_sur_emplacement, depot_sur_exercice
+from axelcompta.depot_documents_import import (
+    depot_sur_emplacement,
+    depot_sur_exercice,
+    sans_doublons,
+)
 from axelcompta.documents.justificatifs import JustificatifRepository
 from axelcompta.documents.postgres import PostgresJustificatifRepository
 from axelcompta.exercices import (
@@ -8752,6 +8756,8 @@ class FicheImportResumeVue(BaseModel):
 
 
 class FicheImportVue(FicheImportResumeVue):
+    # AXE-971 : les fichiers d'un dépôt écartés parce que déjà sur la fiche.
+    doublons_ecartes: list[str] = []
     sections_detail: list[SectionImportVue]
     exercices: list[ExerciceImportVue]
     emplacements: list[EmplacementVue]
@@ -9172,10 +9178,10 @@ def _enregistrer_routes_documents_import(app: FastAPI) -> None:
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
-        fiche = fiches.lire(tenant_id, fiche_id)
+        avant = fiches.instantane(tenant_id, fiche_id)
         lu = await _fichier_lu(fichier)
-        lot = depot_sur_emplacement(fiche, emplacement, lu, identite.email, datetime.now(UTC))
-        return _fiche_vue(fiches.deposer_lot(lot))
+        lot = depot_sur_emplacement(avant.fiche, emplacement, lu, identite.email, datetime.now(UTC))
+        return _deposer_sans_doublons(fiches, avant, lot)
 
     @app.get("/portefeuille/imports/{fiche_id}/documents/{document_id}")
     def lire_document_import(
@@ -9186,6 +9192,23 @@ def _enregistrer_routes_documents_import(app: FastAPI) -> None:
         if document.fiche_id != fiche_id:
             raise HTTPException(status_code=404, detail="Document introuvable.")
         return _fichier(contenu, document.type_mime, document.nom_fichier)
+
+
+def _deposer_sans_doublons(
+    fiches: FichesImportRepository, avant: Instantane, lot: list[tuple[DocumentImport, bytes]]
+) -> FicheImportVue:
+    """AXE-971 : un contenu déjà sur la fiche n'est pas déposé une seconde
+    fois. Tout le dépôt déjà présent : 409, avec les noms."""
+    gardes, ecartes = sans_doublons(lot, {d.empreinte for d in avant.documents})
+    if not gardes:
+        raise HTTPException(
+            status_code=409,
+            detail="Déjà sur la fiche : "
+            + ", ".join(ecartes[:5])
+            + (f" et {len(ecartes) - 5} autre(s)." if len(ecartes) > 5 else "."),
+        )
+    vue = _fiche_vue(fiches.deposer_lot(gardes))
+    return vue.model_copy(update={"doublons_ecartes": ecartes})
 
 
 async def _fichier_lu(fichier: UploadFile) -> FichierImport:
@@ -9229,9 +9252,9 @@ def _enregistrer_routes_exercices_import(app: FastAPI) -> None:
             identite.email,
             maintenant,
         )
-        fiches.enregistrer(fiche)
-        lot = depot_sur_exercice(fiche, annee, lus, identite.email, maintenant)
-        return _fiche_vue(fiches.deposer_lot(lot))
+        avant = fiches.enregistrer(fiche)
+        lot = depot_sur_exercice(avant.fiche, annee, lus, identite.email, maintenant)
+        return _deposer_sans_doublons(fiches, avant, lot)
 
     @app.patch(
         "/portefeuille/imports/{fiche_id}/documents/{document_id}",

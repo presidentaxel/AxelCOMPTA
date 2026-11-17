@@ -11,6 +11,10 @@ AXE-970).
   fiche, sorti d'elle (`origine_id`) : l'archive OneUp d'un exercice donne
   son FEC, son grand livre, ses comptes annuels et ses pièces.
 
+- AXE-971 : un fichier dont le contenu est déjà sur la fiche (même
+  empreinte) n'est pas ajouté une seconde fois, qu'il vienne seul ou d'une
+  archive déposée par-dessus (`sans_doublons`).
+
 Chaque document est lu tout de suite s'il se lit (FEC, QIF). Composition
 root (doc 18) : rien n'est écrit ici, la route passe le lot au dépôt.
 """
@@ -19,7 +23,7 @@ from __future__ import annotations
 
 import mimetypes
 import uuid
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
@@ -133,3 +137,42 @@ def depot_sur_exercice(
         emplacement = _emplacement_classe(categorie, annee, "reprise")
         lot += _un_fichier(fiche, emplacement, fichier, par, le)
     return lot
+
+
+def sans_doublons(lot: Lot, deja: Collection[str]) -> tuple[Lot, list[str]]:
+    """AXE-971 : le lot sans ce qui est déjà sur la fiche (`deja` : les
+    empreintes de ses documents) ni ce qui revient deux fois dans le dépôt.
+    Une archive déjà déposée est écartée avec tout ce qui en sort ; une
+    archive nouvelle garde ses fichiers nouveaux, et son résumé compte ce
+    qui a été écarté. Rend aussi les noms écartés, pour l'écran."""
+    vues = set(deja)
+    gardes: Lot = []
+    ecartes: list[str] = []
+    archives_ecartees: set[str] = set()
+    for document, contenu in lot:
+        if document.origine_id in archives_ecartees:
+            continue
+        if document.empreinte in vues:
+            ecartes.append(Path(document.nom_fichier).name)
+            if document.categorie == "archive" or document.origine_id is None:
+                archives_ecartees.add(document.id)
+            continue
+        vues.add(document.empreinte)
+        gardes.append((document, contenu))
+    return [_recompter(d, c, gardes, lot) for d, c in gardes], ecartes
+
+
+def _recompter(
+    document: DocumentImport, contenu: bytes, gardes: Lot, lot: Lot
+) -> tuple[DocumentImport, bytes]:
+    """Le résumé d'une archive dit combien de ses fichiers sont rangés, et
+    combien étaient déjà sur la fiche."""
+    if document.statut_traitement != "traite" or not any(
+        d.origine_id == document.id for d, _ in lot
+    ):
+        return document, contenu
+    ranges = sum(1 for d, _ in gardes if d.origine_id == document.id)
+    ecartes = sum(1 for d, _ in lot if d.origine_id == document.id) - ranges
+    resume = f"Archive gardée intacte : {ranges} fichier(s) rangé(s) à part"
+    resume += f", {ecartes} déjà sur la fiche." if ecartes else "."
+    return replace(document, resume=resume), contenu

@@ -19,6 +19,7 @@ import {
   deplacerDocument,
   documentsVisibles,
   lireAnnee,
+  phraseDepot,
   basculerRetard,
   libelleTraitement,
   parExercice,
@@ -218,8 +219,9 @@ function DepotExercice({
     if (fichiers.length === 0) return;
     setEtat({ envoi: true, message: `Envoi de ${fichiers.length} fichier(s)…`, erreur: false });
     try {
-      onFiche(await deposerDocumentsExercice(fiche.id, annee, fichiers));
-      setEtat({ envoi: false, message: `${fichiers.length} fichier(s) rangé(s).`, erreur: false });
+      const apres = await deposerDocumentsExercice(fiche.id, annee, fichiers);
+      onFiche(apres);
+      setEtat({ envoi: false, message: phraseDepot(fichiers.length, apres.doublons_ecartes ?? []), erreur: false });
     } catch (exception) {
       const message = exception instanceof Error ? exception.message : "Erreur inattendue.";
       setEtat({ envoi: false, message, erreur: true });

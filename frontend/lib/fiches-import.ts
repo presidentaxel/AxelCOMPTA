@@ -95,6 +95,8 @@ export type FicheImportResume = {
 };
 
 export type FicheImport = FicheImportResume & {
+  /** AXE-971 : fichiers du dernier dépôt écartés, déjà sur la fiche. */
+  doublons_ecartes?: string[];
   sections_detail: SectionImport[];
   exercices: ExerciceImport[];
   emplacements: EmplacementImport[];
@@ -491,4 +493,13 @@ export function ajouterAnnee(liste: string, annee: number): string {
 export function documentsVisibles<T>(documents: T[], tout: boolean, max = 5): { visibles: T[]; caches: number } {
   if (tout || documents.length <= max) return { visibles: documents, caches: 0 };
   return { visibles: documents.slice(0, max), caches: documents.length - max };
+}
+
+/** AXE-971 : ce que dit l'écran après un dépôt sur un exercice. */
+export function phraseDepot(envoyes: number, doublons: string[]): string {
+  // Une archive compte pour un envoi, ses fichiers écartés en plus.
+  const ranges = `${envoyes} fichier(s) déposé(s), rangés par catégorie.`;
+  if (doublons.length === 0) return ranges;
+  const noms = doublons.slice(0, 3).join(", ") + (doublons.length > 3 ? "…" : "");
+  return `${ranges} ${doublons.length} déjà sur la fiche, écarté(s) : ${noms}.`;
 }
