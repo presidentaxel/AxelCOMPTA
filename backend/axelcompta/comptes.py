@@ -94,6 +94,11 @@ class CompteRepository(ABC):
         """Ouvre un compte gestionnaire sur la même organisation."""
         raise NotImplementedError
 
+    def retirer_membre(self, tenant_id: str, email: str) -> None:
+        """Supprime le compte Auth du gestionnaire. Déjà absent : rien.
+        Un compte chauffeur, sans ce `tenant_id`, n'est pas touché."""
+        raise NotImplementedError
+
     def renvoyer(self, dossier_id: DossierId) -> Invitation:
         """Renvoie l'invitation tant que le compte n'est pas ouvert."""
         raise NotImplementedError
@@ -244,6 +249,21 @@ class SupabaseCompteRepository(CompteRepository):
             json={"app_metadata": {"tenant_id": tenant_id, "role": role}},
         )
         lien.raise_for_status()
+
+    def retirer_membre(self, tenant_id: str, email: str) -> None:
+        membre = next(
+            (
+                utilisateur
+                for utilisateur in self._tous_les_utilisateurs()
+                if (utilisateur.get("email") or "").lower() == email.lower()
+                and str((utilisateur.get("app_metadata") or {}).get("tenant_id") or "") == tenant_id
+            ),
+            None,
+        )
+        if membre is None:
+            return
+        reponse = self._client.delete(f"/admin/users/{membre['id']}")
+        reponse.raise_for_status()
 
     def renvoyer(self, dossier_id: DossierId) -> Invitation:
         utilisateur = self._utilisateur_du_dossier(dossier_id)

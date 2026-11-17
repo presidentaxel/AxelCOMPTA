@@ -51,6 +51,13 @@ class InMemoryCompteRepository(CompteRepository):
             raise CompteDejaInviteError(f"un compte existe déjà : {email}")
         self._membres.setdefault(tenant_id, {})[propre] = False
 
+    def retirer_membre(self, tenant_id: str, email: str) -> None:
+        propre = email.strip().lower()
+        du_tenant = self._membres.get(tenant_id, {})
+        for connu in [adresse for adresse in du_tenant if adresse.lower() == propre]:
+            del du_tenant[connu]
+            self.facteurs_mfa.pop((tenant_id, connu), None)
+
     def renvoyer(self, dossier_id: DossierId) -> Invitation:
         invitation = self._invitations.get(dossier_id)
         if invitation is None:
