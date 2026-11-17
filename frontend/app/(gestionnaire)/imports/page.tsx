@@ -7,7 +7,6 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/Badge";
 import { SqueletteLignes } from "@/components/Squelette";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ErreurAuthGestionnaire, deciderFicheImport, listerFichesImport, ouvrirFicheImport } from "@/lib/auth-gestionnaire";
@@ -126,8 +125,7 @@ function NouvelImport({ onOuverte }: { onOuverte: (id: string) => void }) {
   }
 
   return (
-    <Card>
-      <form onSubmit={ouvrir} aria-labelledby="titre-nouvel-import" className="space-y-3">
+    <form onSubmit={ouvrir} aria-labelledby="titre-nouvel-import" className="space-y-3 border-y border-border py-4">
         <p id="titre-nouvel-import" className="text-sm font-medium text-ink">
           Nouvel import
         </p>
@@ -155,8 +153,7 @@ function NouvelImport({ onOuverte }: { onOuverte: (id: string) => void }) {
         <Button type="submit" disabled={envoi || (!nom.trim() && !prenom.trim())}>
           {envoi ? "Ouverture…" : "Ouvrir la fiche"}
         </Button>
-      </form>
-    </Card>
+    </form>
   );
 }
 

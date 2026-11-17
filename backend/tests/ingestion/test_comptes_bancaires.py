@@ -8,10 +8,12 @@ from axelcompta.core.ids import DossierId
 from axelcompta.ingestion.comptes_bancaires import (
     NOMBRE_MAX_COMPTES,
     CompteBancaireMemoire,
+    CompteDigifactory,
     CompteReleve,
     TropDeComptesBancaires,
     compte_comptable_suivant,
     compte_de,
+    comptes_digifactory,
     comptes_releves,
     nombre_a_choisir,
     relever_comptes,
@@ -77,6 +79,32 @@ def test_le_releve_digifactory_donne_nom_et_solde() -> None:
 @pytest.mark.parametrize("payload", [None, "texte", 3, [1, "a"], {"a": None}])
 def test_un_releve_illisible_ne_donne_aucun_compte(payload: object) -> None:
     assert comptes_releves(payload) == ()
+
+
+def test_la_fiche_lit_banque_iban_et_indication_professionnelle() -> None:
+    payload = {
+        "b": {
+            "id": "b",
+            "name": " Livret ",
+            "iban": "fr76 3000 6000 0112 3456 7890 189",
+            "pro": False,
+            "item": {"provider": {"name": " Bourso "}},
+        },
+        "a": {
+            "id": 12,
+            "name": "Compte courant",
+            "pro": 1,
+            "item": {"provider": {"name": "Qonto"}},
+        },
+        "vide": {"name": "ignoré"},
+    }
+    assert comptes_digifactory(payload) == (
+        CompteDigifactory("b", "Livret", "Bourso", "FR7630006000011234567890189", False),
+        CompteDigifactory("12", "Compte courant", "Qonto", "", True),
+    )
+    assert comptes_digifactory([{"id": "x"}]) == (
+        CompteDigifactory("x", "Compte sans nom", "", "", None),
+    )
 
 
 def test_le_releve_accepte_une_liste() -> None:

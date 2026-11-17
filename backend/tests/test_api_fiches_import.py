@@ -13,11 +13,13 @@ from axelcompta.api.routes import (
     get_demandes_jobs,
     get_dossiers,
     get_fiches_import,
+    get_lire_comptes_digifactory,
     get_lire_contacts_digifactory,
     get_lire_fiche_officielle,
     get_lire_premiere_ecriture_digifactory,
 )
 from axelcompta.core.ids import DossierId
+from axelcompta.ingestion.comptes_bancaires import CompteDigifactory
 from axelcompta.jobs.file import FileMemoire
 from axelcompta.tenants.branchements import BranchementsMemoire
 from axelcompta.tenants.fiches_import_depot import FichesImportMemoire
@@ -264,6 +266,41 @@ def test_l_historique_bancaire_est_la_premiere_ecriture_digifactory() -> None:
 
     assert trouve.json() == {"lu": True, "debut": "2024-03-02"}
     assert panne.json() == {"lu": False, "debut": None}
+
+
+def test_les_comptes_digifactory_se_lisent_pour_choisir_pro_ou_perso() -> None:
+    client, _file = _client()
+    app = cast(FastAPI, client.app)
+    courant = CompteDigifactory(
+        "12", "Compte courant", "Qonto", "FR7630006000011234567890189", True
+    )
+    app.dependency_overrides[get_lire_comptes_digifactory] = lambda: (
+        lambda _branchements, contact: (courant,) if contact == "22755" else ()
+    )
+    fiche = _ouvrir(client)
+    route = f"/portefeuille/imports/{fiche['id']}/digifactory/22755/comptes"
+
+    trouve = client.get(route, headers=EN_TETE)
+
+    def en_panne(_branchements: object, _contact: str) -> tuple[CompteDigifactory, ...]:
+        raise RuntimeError("Digifactory injoignable")
+
+    app.dependency_overrides[get_lire_comptes_digifactory] = lambda: en_panne
+    panne = client.get(route, headers=EN_TETE)
+
+    assert trouve.json() == {
+        "lu": True,
+        "comptes": [
+            {
+                "id": "12",
+                "nom": "Compte courant",
+                "banque": "Qonto",
+                "iban": "FR7630006000011234567890189",
+                "professionnel": True,
+            }
+        ],
+    }
+    assert panne.json() == {"lu": False, "comptes": []}
 
 
 def test_saisir_un_siret_lance_seul_la_recherche_aux_registres() -> None:

@@ -47,7 +47,13 @@ import type {
 
 import type { FicheAnnuaireRollee, FicheRollee, RolleePortefeuille } from "./liens-rollee";
 import type { AnalyseFec, OuvertureVue } from "./ouverture";
-import type { DigifactoryFiche, FicheImport, FicheImportResume, HistoriqueDigifactory } from "./fiches-import";
+import type {
+  ComptesDigifactory,
+  DigifactoryFiche,
+  FicheImport,
+  FicheImportResume,
+  HistoriqueDigifactory,
+} from "./fiches-import";
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
 export type SessionGestionnaire = {
@@ -1506,6 +1512,18 @@ export async function chercherDigifactoryImport(id: string): Promise<Digifactory
   const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/digifactory`);
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
   return (await reponse.json()) as DigifactoryFiche;
+}
+
+/** Les comptes bancaires du contact Digifactory, pour choisir pro ou perso. */
+export async function comptesDigifactoryImport(
+  id: string,
+  contactNr: string,
+): Promise<ComptesDigifactory> {
+  const reponse = await requeteGestionnaire(
+    `/portefeuille/imports/${id}/digifactory/${encodeURIComponent(contactNr)}/comptes`,
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as ComptesDigifactory;
 }
 
 /** Date de la première écriture Digifactory du contact, pour l'historique bancaire. */

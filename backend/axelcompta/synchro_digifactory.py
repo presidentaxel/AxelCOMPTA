@@ -32,6 +32,8 @@ from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.ingestion.comptes_bancaires import (
     CompteBancaireRepository,
+    CompteDigifactory,
+    comptes_digifactory,
     comptes_releves,
     relever_comptes,
 )
@@ -226,6 +228,36 @@ async def premiere_ecriture_du_contact(
     if not lu and derniere is not None:
         raise derniere
     return min(trouvees) if trouvees else None
+
+
+async def comptes_du_contact(
+    branchements: list[Branchement], contact_nr: str
+) -> tuple[CompteDigifactory, ...]:
+    """Les comptes du contact, sur les branchements actifs.
+
+    Un branchement muet laisse la place au suivant. Aucun n'a répondu :
+    l'erreur remonte, pour dire que Digifactory est injoignable."""
+    actifs = sorted((b for b in branchements if b.actif), key=lambda b: not b.par_defaut)
+    if not actifs:
+        raise RuntimeError(SANS_JETON)
+    trouves: dict[str, CompteDigifactory] = {}
+    lu = False
+    derniere: Exception | None = None
+    for branchement in actifs:
+        client = client_digifactory(branchement)
+        try:
+            payload = await client.accounts(contact_nr)
+        except Exception as erreur:  # noqa: BLE001 — un branchement muet n'arrête pas les autres
+            derniere = erreur
+            continue
+        finally:
+            await client.aclose()
+        lu = True
+        for compte in comptes_digifactory(payload):
+            trouves.setdefault(compte.identifiant, compte)
+    if not lu and derniere is not None:
+        raise derniere
+    return tuple(sorted(trouves.values(), key=lambda c: (c.banque, c.nom, c.identifiant)))
 
 
 def client_digifactory(branchement: Branchement | None) -> DigifactoryHttpClient:

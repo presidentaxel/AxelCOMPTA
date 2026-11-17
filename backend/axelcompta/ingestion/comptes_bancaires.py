@@ -182,15 +182,8 @@ def comptes_releves(payload: object) -> tuple[CompteReleve, ...]:
     """Comptes d'une réponse `GET /accounts` Digifactory : un dict
     `{accountId: compte}` (vérifié le 2026-11-05) ou une liste. Un compte
     sans `id` est ignoré ; un solde illisible devient `None`, jamais 0."""
-    valeurs: Iterable[object]
-    if isinstance(payload, Mapping):
-        valeurs = payload.values()
-    elif isinstance(payload, list):
-        valeurs = payload
-    else:
-        return ()
     releves: list[CompteReleve] = []
-    for valeur in valeurs:
+    for valeur in _valeurs_comptes(payload):
         if not isinstance(valeur, Mapping) or valeur.get("id") in (None, ""):
             continue
         nom = valeur.get("name")
@@ -202,6 +195,76 @@ def comptes_releves(payload: object) -> tuple[CompteReleve, ...]:
             )
         )
     return tuple(releves)
+
+
+@dataclass(frozen=True, slots=True)
+class CompteDigifactory:
+    """Un compte tel que la fiche d'import le montre, pour choisir pro ou perso."""
+
+    identifiant: str
+    nom: str
+    banque: str
+    iban: str
+    professionnel: bool | None  # l'indication Digifactory, pas le choix de la fiche
+
+
+def comptes_digifactory(payload: object) -> tuple[CompteDigifactory, ...]:
+    """Même réponse `GET /accounts`, lue pour la fiche : nom, banque, IBAN
+    et l'indication professionnelle. Un compte sans `id` est ignoré."""
+    vus = {
+        compte.identifiant: compte
+        for valeur in _valeurs_comptes(payload)
+        if (compte := _compte_digifactory(valeur)) is not None
+    }
+    return tuple(sorted(vus.values(), key=lambda c: (c.banque, c.nom, c.identifiant)))
+
+
+def _valeurs_comptes(payload: object) -> Iterable[object]:
+    if isinstance(payload, Mapping):
+        return payload.values()
+    if isinstance(payload, list):
+        return payload
+    return ()
+
+
+def _compte_digifactory(valeur: object) -> CompteDigifactory | None:
+    if not isinstance(valeur, Mapping) or valeur.get("id") in (None, ""):
+        return None
+    nom = valeur.get("name")
+    return CompteDigifactory(
+        identifiant=str(valeur["id"]).strip(),
+        nom=str(nom).strip() if isinstance(nom, str) and nom.strip() else "Compte sans nom",
+        banque=_banque_du_compte(valeur),
+        iban=_iban(valeur.get("iban")),
+        professionnel=_professionnel(valeur.get("pro")),
+    )
+
+
+def _banque_du_compte(valeur: Mapping[object, object]) -> str:
+    item = valeur.get("item")
+    if not isinstance(item, Mapping):
+        return ""
+    provider = item.get("provider")
+    if not isinstance(provider, Mapping):
+        return ""
+    nom = provider.get("name")
+    return nom.strip() if isinstance(nom, str) else ""
+
+
+def _iban(valeur: object) -> str:
+    if not isinstance(valeur, str):
+        return ""
+    return "".join(valeur.split()).upper()
+
+
+def _professionnel(valeur: object) -> bool | None:
+    if isinstance(valeur, bool):
+        return valeur
+    if valeur in (0, 1):
+        return bool(valeur)
+    if isinstance(valeur, str) and valeur.strip().lower() in {"true", "false", "1", "0"}:
+        return valeur.strip().lower() in {"true", "1"}
+    return None
 
 
 def _centimes(valeur: object) -> int | None:
