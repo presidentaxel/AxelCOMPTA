@@ -1,7 +1,8 @@
 """Origines du navigateur autorisées à appeler l'API.
 
 Le poste de développement reste dans la liste. En production,
-``AXELCOMPTA_URL_APP`` (adresse publique du front) et
+``AXELCOMPTA_URL_APP`` (vitrine et gestionnaire),
+``AXELCOMPTA_URL_DOSSIER`` (porte d'un dossier, AXE-965) et
 ``AXELCOMPTA_ORIGINES`` (autres origines, séparées par des virgules)
 s'y ajoutent. Une origine est le schéma et l'hôte : le chemin est ignoré.
 """
@@ -21,6 +22,7 @@ def origines_autorisees(environ: Mapping[str, str] | None = None) -> list[str]:
     brutes = (
         *_ORIGINES_DEV,
         source.get("AXELCOMPTA_URL_APP", ""),
+        source.get("AXELCOMPTA_URL_DOSSIER", ""),
         *source.get("AXELCOMPTA_ORIGINES", "").split(","),
     )
     vues: list[str] = []

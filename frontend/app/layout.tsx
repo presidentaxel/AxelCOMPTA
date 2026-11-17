@@ -30,7 +30,7 @@ export const viewport: Viewport = {
 // Habillage volontairement neutre ici (doc 19 §7 : « même socle, deux
 // habillages ») — la barre de navigation gestionnaire vit dans
 // `app/(gestionnaire)/layout.tsx`, l'habillage chauffeur dans
-// `app/chauffeur/layout.tsx`. Rien de commun aux deux rôles à part la
+// `app/dossier/layout.tsx`. Rien de commun aux deux rôles à part la
 // police et le fond.
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

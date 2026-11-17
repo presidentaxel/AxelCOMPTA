@@ -14,9 +14,9 @@ test("le jeton dit chauffeur, compte de test, ou rien", () => {
 });
 
 test("le compte de test choisit son dossier avant d'entrer", () => {
-  assert.equal(cheminDuDossier({ dossierId: "", lecteurTest: true }), "/chauffeur/test");
-  assert.equal(cheminDuDossier({ dossierId: "DIGI_1", lecteurTest: true }), "/chauffeur/DIGI_1");
-  assert.equal(cheminDuDossier({ dossierId: "DIGI_2" }), "/chauffeur/DIGI_2");
+  assert.equal(cheminDuDossier({ dossierId: "", lecteurTest: true }), "/dossier/test");
+  assert.equal(cheminDuDossier({ dossierId: "DIGI_1", lecteurTest: true }), "/dossier/DIGI_1");
+  assert.equal(cheminDuDossier({ dossierId: "DIGI_2" }), "/dossier/DIGI_2");
 });
 
 test("X-Dossier n'est envoyé que par le compte de test", () => {

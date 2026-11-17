@@ -539,6 +539,15 @@ reste sur Supabase.
   Déploiement de `.env.example`, même clé Fernet que la base en service,
   propriétaire `deploy`, mode 600) et autoriser
   `https://<front>/auth/lien` dans Supabase.
+- **Porte d'un dossier (AXE-965)** : Caddy sert aussi
+  `app-compta.axelproject.fr`, vers le même front. Avant de promouvoir
+  cette livraison, poser dans le `.env` du droplet
+  `AXELCOMPTA_URL_DOSSIER=https://app-compta.axelproject.fr` (invitations,
+  rappels, CORS). Dans Supabase, autoriser
+  `https://app-compta.axelproject.fr/auth/lien` et
+  `https://app-compta.axelproject.fr/dossier/accepter-invitation`.
+  Le DNS A de ce nom pointe déjà vers le droplet. Sans ces URL, le lien
+  d'invitation est refusé.
 - Modèles des e-mails d'authentification Supabase : `deploy/emails/`.
 - Reste (AXE-811) : restauration chronométrée des sauvegardes et runbook.
 

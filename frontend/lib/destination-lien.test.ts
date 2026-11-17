@@ -29,7 +29,7 @@ test("le côté demandé dans l'adresse est conservé", () => {
 test("la page du lien ne se renvoie pas vers la connexion", () => {
   assert.equal(destinationLienAuth("/auth/lien", "", FRAGMENT_RECOVERY), null);
   assert.deepEqual(repriseLienAuth("/auth/lien", "", FRAGMENT_RECOVERY), { action: "rester" });
-  assert.deepEqual(repriseLienAuth("/chauffeur/accepter-invitation", "", FRAGMENT_RECOVERY), {
+  assert.deepEqual(repriseLienAuth("/dossier/accepter-invitation", "", FRAGMENT_RECOVERY), {
     action: "rester",
   });
 });
@@ -38,7 +38,7 @@ test("une invitation chauffeur va choisir son mot de passe sur sa page", () => {
   const fragment = `#access_token=${jeton({ app_metadata: { dossier_id: "d1" } })}&refresh_token=r&type=invite`;
   assert.equal(
     destinationLienAuth("/", "", fragment),
-    `/chauffeur/accepter-invitation${fragment}`,
+    `/dossier/accepter-invitation${fragment}`,
   );
 });
 

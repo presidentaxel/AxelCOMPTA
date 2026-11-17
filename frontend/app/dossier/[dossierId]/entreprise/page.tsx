@@ -107,7 +107,7 @@ function Saisie({
           Ma société
         </h1>
         <p className="mt-2 text-sm text-ink">C&apos;est enregistré. Votre bilan peut être préparé.</p>
-        <Link href={`/chauffeur/${dossierId}`} className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-primary">
+        <Link href={`/dossier/${dossierId}`} className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-primary">
           Revenir à l&apos;accueil
         </Link>
       </section>

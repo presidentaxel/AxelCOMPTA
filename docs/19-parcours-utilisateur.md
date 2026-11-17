@@ -1,12 +1,20 @@
 # 19 — Parcours utilisateur : gestionnaire et chauffeur
 
-> Statut : brouillon à valider — Dernière mise à jour : 2026-11-13 (Rollee et IA vus par le gestionnaire, §2.4).
+> Statut : brouillon à valider — Dernière mise à jour : 2026-11-17 (portes, ci-dessous).
 > Né d'une discussion Louis / Claude Code le 2026-09-06 : décision de
 > cadrer et documenter l'accès chauffeur en libre-service **avant** tout
 > code, conformément à ce que prévoyait déjà [doc 12 §2.7](12-roadmap-todo.md).
 > Ce doc complète [doc 11](11-ux-ui.md) et [doc 14](14-onboarding-offboarding.md)
 > — il ne les remplace pas, mais **corrige une hypothèse fausse qu'ils
 > partageaient tous les deux jusqu'ici** (§2.1 ci-dessous).
+>
+> **Portes (AXE-965, 2026-11-17).** `compta.axelproject.fr` : la vitrine et
+> le gestionnaire. `app-compta.axelproject.fr` : la personne qui a un
+> dossier. Sur ce nom, `/` ouvre la connexion ou le dossier déjà ouvert,
+> jamais la vitrine. Les chemins sont `/dossier/…`. Une ancienne adresse
+> `/chauffeur/…` redirige vers la nouvelle. Les invitations et les rappels
+> du dirigeant partent sur `app-compta`. « Chauffeur » reste un mot du pack
+> VTC : il n'est ni une adresse, ni un nom de domaine.
 >
 > **Révision structurante du 2026-09-11 (Louis)** : nos deux catégories de
 > client ne sont pas au même niveau. Le **client interface** — celui qui

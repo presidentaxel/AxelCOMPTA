@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
 
-import { useDossierChauffeur, type Bloc } from "@/app/chauffeur/use-dossier";
+import { useDossierChauffeur, type Bloc } from "@/app/dossier/use-dossier";
 import { Aide } from "@/components/Aide";
 import { Button } from "@/components/ui/button";
 import { DividendesSection } from "@/components/DividendesSection";
@@ -68,7 +68,7 @@ export default function ResultatChauffeurPage({
 
   const retour = (
     <Link
-      href={`/chauffeur/${dossierId}/exercice`}
+      href={`/dossier/${dossierId}/exercice`}
       className="inline-flex min-h-11 items-center text-sm text-subtle underline"
     >
       Retour à l&apos;exercice

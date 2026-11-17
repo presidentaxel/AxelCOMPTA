@@ -16,7 +16,7 @@ import { clavierOuvert, insetClavier } from "@/lib/clavier-viewport";
 
 /** Pages d'entrée : pas de navigation, même si une session traîne encore
  * dans le navigateur. */
-const PAGES_PUBLIQUES = new Set(["/chauffeur/login", "/chauffeur/accepter-invitation"]);
+const PAGES_PUBLIQUES = new Set(["/dossier/login", "/dossier/accepter-invitation"]);
 
 /** Colonne unique de 600 px (DESIGN.md § Espace chauffeur), centrée sur un
  * grand écran. En-tête, bandeau, contenu et barre du bas partagent la même
@@ -138,10 +138,10 @@ function BandeauCompteDeTest({ session, chemin }: { session: SessionChauffeur; c
 }
 
 function Barre({ dossierId, chemin }: { dossierId: string; chemin: string }) {
-  const activite = `/chauffeur/${dossierId}`;
-  const exercice = `/chauffeur/${dossierId}/exercice`;
-  const resultat = `/chauffeur/${dossierId}/resultat`;
-  const compte = "/chauffeur/compte";
+  const activite = `/dossier/${dossierId}`;
+  const exercice = `/dossier/${dossierId}/exercice`;
+  const resultat = `/dossier/${dossierId}/resultat`;
+  const compte = "/dossier/compte";
   const [requeteActivite, setRequeteActivite] = useState("");
 
   useEffect(() => {
