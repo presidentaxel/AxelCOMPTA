@@ -444,12 +444,16 @@ def statut_calcule(
     return "traitee" if complete and lisibles else "en_traitement"
 
 
+# Même point de départ qu'un contact Digifactory : l'imposition et la TVA
+# se complètent ensuite, le dossier existe déjà.
+_REGIME_DEFAUT = "IS"
+_TVA_DEFAUT = "reel_normal"
+A_CONFIRMER_IMPOSITION = "imposition"
+
 POUR_CREER = (
     ("siren", "SIREN"),
     ("denomination", "Dénomination"),
     ("forme_juridique", "Forme juridique"),
-    ("regime_imposition", "Imposition des bénéfices"),
-    ("regime_tva", "Régime de TVA"),
     ("exercice_debut", "Début de l'exercice en cours"),
 )
 
@@ -460,18 +464,25 @@ def manque_pour_creer(fiche: FicheImport) -> list[str]:
     return [libelle for cle, libelle in POUR_CREER if not fiche.champs.get(cle)]
 
 
+def _regime_suppose(fiche: FicheImport) -> bool:
+    return not fiche.champs.get("regime_imposition") or not fiche.champs.get("regime_tva")
+
+
 def ligne_dossier(fiche: FicheImport) -> dict[str, str]:
-    """La fiche en ligne d'import (AXE-809) : même validation, même création."""
+    """La fiche en ligne d'import (AXE-809) : même validation, même création.
+    Sans imposition ni TVA, le dossier part à l'IS au réel normal, comme un
+    contact Digifactory, et cette hypothèse reste à confirmer."""
     champs = fiche.champs
     contact = "".join(c for c in champs.get("contact_digifactory", "") if c.isdigit())
+    regime_tva = champs.get("regime_tva") or _TVA_DEFAUT
     return {
         "siren": champs.get("siren", ""),
         "nom": champs.get("denomination", ""),
         "forme_juridique": champs.get("forme_juridique", ""),
-        "regime_imposition": champs.get("regime_imposition", ""),
-        "regime_tva": champs.get("regime_tva", ""),
+        "regime_imposition": champs.get("regime_imposition") or _REGIME_DEFAUT,
+        "regime_tva": regime_tva,
         "tva_recettes_regime": (
-            "franchise" if champs.get("regime_tva") == "franchise" else "assujetti_taux_reduit"
+            "franchise" if regime_tva == "franchise" else "assujetti_taux_reduit"
         ),
         "exercice_debut": champs.get("exercice_debut", ""),
         "exercice_fin": champs.get("exercice_fin", ""),
@@ -490,7 +501,7 @@ def relier_au_portefeuille(
     relie sans créer un second dossier. Une fiche incomplète sans dossier
     déjà là reste dans Imports. Rien n'est écrit.
     """
-    if fiche.annulee_le is not None:
+    if fiche.annulee_le is not None or fiche.statut == "ignore":
         return fiche, None, ()
     presents = [d for d in dossiers if d.retire_le is None]
     deja = {d.id for d in presents}
@@ -506,7 +517,12 @@ def relier_au_portefeuille(
     ligne = ligne_dossier(fiche)
     (resultat,) = rapport(fiche.tenant_id, [ligne], deja).lignes
     if resultat.dossier is not None:
-        return replace(fiche, dossier_id=resultat.dossier.id), resultat.dossier, ()
+        dossier = resultat.dossier
+        if _regime_suppose(fiche):
+            dossier = replace(
+                dossier, a_confirmer=(*dossier.a_confirmer, A_CONFIRMER_IMPOSITION)
+            )
+        return replace(fiche, dossier_id=dossier.id), dossier, ()
     prevu = identifiant(ligne["siren"], ligne["contact_digifactory"])
     if prevu in deja:
         return replace(fiche, dossier_id=prevu), None, ()

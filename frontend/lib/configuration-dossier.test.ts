@@ -17,4 +17,8 @@ test("un ou deux éléments à confirmer", () => {
     phraseAConfirmer(["exercice", "forme_juridique"]),
     "Premier exercice et forme juridique à confirmer par le dirigeant.",
   );
+  assert.equal(
+    phraseAConfirmer(["imposition"]),
+    "Imposition et TVA à confirmer par le dirigeant.",
+  );
 });

@@ -22,6 +22,7 @@ import {
   lirePortefeuilleSession,
   listerDossiers,
   listerFichesImport,
+  relierFichesImport,
   listerDossiersRetires,
   listerRegles,
   lireTags,
@@ -50,14 +51,7 @@ import {
   gardeEtape,
   rangEtape,
 } from "@/lib/filtres-portefeuille";
-import {
-  dossiersIgnores,
-  fichesActives,
-  fichesSansDossier,
-  libelleStatut,
-  nomEntreprise,
-  type FicheImportResume,
-} from "@/lib/fiches-import";
+import { dossiersIgnores, fichesActives, libelleStatut, type FicheImportResume } from "@/lib/fiches-import";
 import { formatDate, formatMontant } from "@/lib/format";
 import { gardeTag, libelleTag, SANS_TAG, TOUS_LES_TAGS, totauxPortefeuille } from "@/lib/tags";
 import type { DossierAgregat, ReglageTags } from "@/lib/types";
@@ -83,14 +77,6 @@ type FiltreCompte = "tous" | "sans_compte" | "invite" | "ouvert";
 type FiltreResultat = "tous" | "negatif" | "positif";
 
 const PAR_PAGE = 25;
-
-type LigneEntreprise =
-  | { type: "dossier"; dossier: DossierAgregat }
-  | { type: "fiche"; fiche: FicheImportResume };
-
-function nomLigne(ligne: LigneEntreprise): string {
-  return ligne.type === "dossier" ? ligne.dossier.nom : nomEntreprise(ligne.fiche);
-}
 
 export function EcranEntreprises() {
   const router = useRouter();
@@ -125,8 +111,15 @@ export function EcranEntreprises() {
   const [fiches, setFiches] = useState<FicheImportResume[]>([]);
 
   const charger = useCallback(() => {
-    listerDossiers()
-      .then(setDossiers)
+    relierFichesImport()
+      .catch((exception) => {
+        if (exception instanceof ErreurAuthGestionnaire) throw exception;
+      })
+      .then(() => Promise.all([listerDossiers(), listerFichesImport()]))
+      .then(([liste, importees]) => {
+        setDossiers(liste);
+        setFiches(importees);
+      })
       .catch((exception) => {
         if (exception instanceof ErreurAuthGestionnaire) {
           router.replace("/connexion");
@@ -186,10 +179,6 @@ export function EcranEntreprises() {
     }
     return parDossier;
   }, [fiches]);
-  const fichesSeules = useMemo(
-    () => fichesSansDossier(fichesActives(fiches), presents),
-    [fiches, presents],
-  );
   const formes = useMemo(
     () => [...new Set(presents.map((dossier) => dossier.forme_juridique))].sort(),
     [presents],
@@ -233,56 +222,17 @@ export function EcranEntreprises() {
       if (!aiguille) return true;
       return `${dossier.nom} ${dossier.plateformes.join(" ")}`.toLowerCase().includes(aiguille);
     });
-    const filtreDossier =
-      compte !== "tous" ||
-      resultat !== "tous" ||
-      forme !== "toutes" ||
-      tva !== "toutes" ||
-      etape !== "toutes" ||
-      banque !== "toutes" ||
-      filtreRollee !== "tous" ||
-      tag !== TOUS_LES_TAGS;
-    const fichesFiltres = filtreDossier
-      ? []
-      : fichesSeules.filter((fiche) => {
-          if (!aiguille) return true;
-          const texte = `${nomEntreprise(fiche)} ${fiche.prenom} ${fiche.nom} ${fiche.siren ?? ""}`;
-          return texte.toLowerCase().includes(aiguille);
-        });
-    const ensemble: LigneEntreprise[] = [
-      ...dossiersFiltres.map((dossier): LigneEntreprise => ({ type: "dossier", dossier })),
-      ...fichesFiltres.map((fiche): LigneEntreprise => ({ type: "fiche", fiche })),
-    ];
-    return ensemble.sort((a, b) => {
-      if ((tri === "resultat" || tri === "etape") && a.type !== b.type) {
-        return a.type === "dossier" ? -1 : 1;
-      }
-      if (tri === "resultat" && a.type === "dossier" && b.type === "dossier") {
-        return a.dossier.resultat_cts - b.dossier.resultat_cts;
-      }
-      if (tri === "etape" && a.type === "dossier" && b.type === "dossier") {
+    return dossiersFiltres.sort((a, b) => {
+      if (tri === "resultat") return a.resultat_cts - b.resultat_cts;
+      if (tri === "etape") {
         return (
-          rangEtape(a.dossier.etape_courante, a.dossier.statut_invitation === "actif") -
-          rangEtape(b.dossier.etape_courante, b.dossier.statut_invitation === "actif")
+          rangEtape(a.etape_courante, a.statut_invitation === "actif") -
+          rangEtape(b.etape_courante, b.statut_invitation === "actif")
         );
       }
-      return nomLigne(a).localeCompare(nomLigne(b), "fr");
+      return a.nom.localeCompare(b.nom, "fr");
     });
-  }, [
-    banque,
-    compte,
-    etape,
-    fichesSeules,
-    filtreRollee,
-    forme,
-    presents,
-    recherche,
-    resultat,
-    rollee,
-    tag,
-    tri,
-    tva,
-  ]);
+  }, [banque, compte, etape, filtreRollee, forme, presents, recherche, resultat, rollee, tag, tri, tva]);
 
   const bandeau = useMemo(() => bandeauComptesAChoisir(presents), [presents]);
   const pages = Math.max(1, Math.ceil(lignes.length / PAR_PAGE));
@@ -301,24 +251,14 @@ export function EcranEntreprises() {
     tri !== "nom";
 
   // Les entreprises qu'un tag sort des compteurs restent listées, grisées.
-  // Les fiches sans dossier comptent aussi : ce sont les mêmes entreprises qu'Imports.
   const totaux = useMemo(
-    () =>
-      totauxPortefeuille(
-        lignes.flatMap((ligne) =>
-          ligne.type === "dossier"
-            ? [{ ...ligne.dossier, exclu_compteurs: ligne.dossier.exclu_compteurs ?? false }]
-            : [],
-        ),
-      ),
+    () => totauxPortefeuille(lignes.map((dossier) => ({ ...dossier, exclu_compteurs: dossier.exclu_compteurs ?? false }))),
     [lignes],
   );
-  const fichesDansLaVue = lignes.filter((ligne) => ligne.type === "fiche").length;
   const comptees = useMemo(
-    () => presents.filter((dossier) => !dossier.exclu_compteurs).length + fichesSeules.length,
-    [fichesSeules, presents],
+    () => presents.filter((dossier) => !dossier.exclu_compteurs).length,
+    [presents],
   );
-  const nombreVue = totaux.nombre + fichesDansLaVue;
 
   const choisi = presents.find((dossier) => dossier.dossier_id === selection) ?? null;
   const ficheChoisie = choisi ? fichesParDossier.get(choisi.dossier_id) : undefined;
@@ -377,7 +317,7 @@ export function EcranEntreprises() {
         <dl className="mt-8 flex flex-wrap gap-x-12 gap-y-4">
           <Total
             libelle="Entreprises"
-            valeur={nombreVue === comptees ? String(nombreVue) : `${nombreVue} sur ${comptees}`}
+            valeur={totaux.nombre === comptees ? String(totaux.nombre) : `${totaux.nombre} sur ${comptees}`}
           />
           <Total libelle="Sans compte" valeur={String(totaux.sansCompte)} />
           <Total libelle="Résultat" valeur={formatMontant(totaux.resultat)} montant={totaux.resultat} />
@@ -535,25 +475,7 @@ export function EcranEntreprises() {
         />
       )}
       <ul className="mt-4">
-        {tranche.map((ligne) => {
-          if (ligne.type === "fiche") {
-            const fiche = ligne.fiche;
-            return (
-              <li key={fiche.id} className="flex items-start gap-2 border-b border-hairline">
-                {droit.ecriture && reglageTags && <span className="mt-4 ml-1 inline-block w-4 shrink-0" aria-hidden />}
-                <Link
-                  href={`/imports/${fiche.id}`}
-                  className="flex w-full items-baseline justify-between gap-6 rounded-md px-3 py-2 hover:bg-surface-soft"
-                >
-                  <span className="min-w-0 truncate text-sm font-semibold text-ink">{nomEntreprise(fiche)}</span>
-                  <span className="shrink-0 text-sm font-medium text-signal">
-                    Import · {libelleStatut(fiche.statut)}
-                  </span>
-                </Link>
-              </li>
-            );
-          }
-          const dossier = ligne.dossier;
+        {tranche.map((dossier) => {
           const bloque = etapeBloquante(dossier.etape_courante, dossier.statut_invitation === "actif");
           const fiche = fichesParDossier.get(dossier.dossier_id);
           return (
@@ -648,10 +570,10 @@ export function EcranEntreprises() {
           );
         })}
       </ul>
-      {dossiers && presents.length === 0 && fichesSeules.length === 0 && (
+      {dossiers && presents.length === 0 && (
         <p className="py-10 text-sm text-subtle">Aucune entreprise dans ce portefeuille.</p>
       )}
-      {dossiers && (presents.length > 0 || fichesSeules.length > 0) && lignes.length === 0 && (
+      {dossiers && presents.length > 0 && lignes.length === 0 && (
         <p className="py-10 text-sm text-subtle">Aucune entreprise pour ces filtres.</p>
       )}
       {pages > 1 && (
