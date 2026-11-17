@@ -345,6 +345,8 @@ def etat_sections(
 def statut_calcule(
     fiche: FicheImport, documents: Sequence[DocumentImport], aujourd_hui: date
 ) -> Statut:
+    if fiche.statut == "ignore":
+        return "ignore"
     if not documents and set(fiche.champs) <= CHAMPS_DE_DEPART:
         return "a_importer"
     complete = all(e.complet for e in etat_sections(fiche, documents, aujourd_hui))

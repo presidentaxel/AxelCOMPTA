@@ -12,15 +12,19 @@ import pytest
 from axelcompta.core.errors import SaisieInvalide
 from axelcompta.core.identite import Adresse
 from axelcompta.core.ids import TenantId
+from axelcompta.tenants.contacts_proposes import PropositionStockee
 from axelcompta.tenants.fiches_import import (
     SECTIONS,
     FicheImport,
     annuler,
     depuis_registre,
     document_import,
+    fiches_des_contacts,
+    ignorer,
     modifier,
     nouvelle_fiche,
     preremplir,
+    reprendre,
     valider,
 )
 from axelcompta.tenants.fiches_import_calculs import date_limite_liasse, numero_tva
@@ -214,3 +218,28 @@ def test_relire_les_registres_retire_un_associe_lu_en_double_avant() -> None:
     )
     (associe,) = json.loads(preremplir(fiche, apres, "b", LE).champs["associes"])
     assert (associe["prenom"], associe["fonction"]) == ("Toussaint", "president")
+
+
+def _contact(numero: str, nom: str) -> PropositionStockee:
+    return PropositionStockee(
+        numero, nom, "552100554", "SAS", date(2026, 1, 1), "49.32Z", (), False, LE
+    )
+
+
+def test_un_contact_sans_dossier_ouvre_une_fiche_sauf_s_il_en_a_deja() -> None:
+    deja = fiches_des_contacts([_contact("12", "CAM TRANSPORTS")], {}, [], T, LE)
+    ouvertes = fiches_des_contacts(
+        [_contact("11", "MONE TRANSPORT"), _contact("12", "CAM TRANSPORTS")],
+        {"11": "ignorer"},
+        deja,
+        T,
+        LE,
+    )
+    assert len(ouvertes) == 1
+    assert (ouvertes[0].id, ouvertes[0].statut, ouvertes[0].champs["denomination"]) == (
+        "contact-11",
+        "ignore",
+        "MONE TRANSPORT",
+    )
+    remise = reprendre(ignorer(deja[0], "louis", LE), "louis", LE)
+    assert remise.statut == "a_importer"

@@ -10,10 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ErreurAuthGestionnaire, listerFichesImport, ouvrirFicheImport } from "@/lib/auth-gestionnaire";
+import { ErreurAuthGestionnaire, deciderFicheImport, listerFichesImport, ouvrirFicheImport } from "@/lib/auth-gestionnaire";
 import {
   STATUTS_IMPORT,
   badgeStatut,
+  fichesActives,
   libelleStatut,
   nomChauffeur,
   progression,
@@ -44,8 +45,23 @@ export default function ImportsPage() {
       });
   }, [router]);
 
-  const visibles = (fiches ?? []).filter((f) => filtre === "toutes" || f.statut === filtre);
+  const toutes = fichesActives(fiches ?? []);
+  const visibles = filtre === "toutes" ? toutes : (fiches ?? []).filter((f) => f.statut === filtre);
   const nombre = (statut: StatutImport) => (fiches ?? []).filter((f) => f.statut === statut).length;
+
+  async function decider(id: string, decision: "ignorer" | "reprendre") {
+    setErreur(null);
+    try {
+      const suivante = await deciderFicheImport(id, decision);
+      setFiches((actuelles) =>
+        (actuelles ?? []).map((fiche) =>
+          fiche.id === id ? { ...fiche, statut: suivante.statut, maj_le: suivante.maj_le, maj_par: suivante.maj_par } : fiche,
+        ),
+      );
+    } catch (exception) {
+      setErreur(exception instanceof Error ? exception.message : "Erreur inattendue.");
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -61,7 +77,7 @@ export default function ImportsPage() {
 
       <div className="flex flex-wrap gap-2" role="group" aria-label="Filtrer par statut">
         <BoutonFiltre actif={filtre === "toutes"} onClick={() => setFiltre("toutes")}>
-          Toutes ({fiches?.length ?? 0})
+          Toutes ({fiches === null ? 0 : toutes.length})
         </BoutonFiltre>
         {STATUTS_IMPORT.map((s) => (
           <BoutonFiltre key={s.cle} actif={filtre === s.cle} onClick={() => setFiltre(s.cle)}>
@@ -75,7 +91,9 @@ export default function ImportsPage() {
       {fiches !== null && visibles.length === 0 && (
         <p className="text-sm text-subtle">Aucune fiche {filtre === "toutes" ? "pour l'instant" : "avec ce statut"}.</p>
       )}
-      {visibles.length > 0 && <TableFiches fiches={visibles} />}
+      {visibles.length > 0 && (
+        <TableFiches fiches={visibles} ecriture={droit.ecriture} onDecider={(id, decision) => void decider(id, decision)} />
+      )}
     </div>
   );
 }
@@ -142,7 +160,15 @@ function NouvelImport({ onOuverte }: { onOuverte: (id: string) => void }) {
   );
 }
 
-function TableFiches({ fiches }: { fiches: FicheImportResume[] }) {
+function TableFiches({
+  fiches,
+  ecriture,
+  onDecider,
+}: {
+  fiches: FicheImportResume[];
+  ecriture: boolean;
+  onDecider: (id: string, decision: "ignorer" | "reprendre") => void;
+}) {
   return (
     <Table>
       <TableHeader>
@@ -152,6 +178,7 @@ function TableFiches({ fiches }: { fiches: FicheImportResume[] }) {
           <TableHead>Statut</TableHead>
           <TableHead>Avancement</TableHead>
           <TableHead>Dernière modification</TableHead>
+          {ecriture && <TableHead className="text-right"> </TableHead>}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -183,6 +210,19 @@ function TableFiches({ fiches }: { fiches: FicheImportResume[] }) {
             <TableCell className="text-subtle">
               {new Date(fiche.maj_le).toLocaleDateString("fr-FR")} · {fiche.maj_par}
             </TableCell>
+            {ecriture && (
+              <TableCell className="text-right">
+                {fiche.statut === "ignore" ? (
+                  <Button type="button" variant="secondary" size="sm" onClick={() => onDecider(fiche.id, "reprendre")}>
+                    Remettre
+                  </Button>
+                ) : (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => onDecider(fiche.id, "ignorer")}>
+                    Ignorer
+                  </Button>
+                )}
+              </TableCell>
+            )}
           </TableRow>
         ))}
       </TableBody>

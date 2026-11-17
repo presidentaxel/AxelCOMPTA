@@ -7,9 +7,11 @@ l'entreprise et le dirigeant depuis l'INSEE et le RNE ; la personne qui
 importe complète le reste et dépose les documents.
 
 La fiche vit dans le portefeuille du gestionnaire qui l'a ouverte. Son
-statut va de « à importer » à « traitée » ; elle reste modifiable tant
-qu'elle n'est pas traitée. « Créer le chauffeur » ajoute le dossier dans ce
-portefeuille, par le même chemin que l'import CSV (AXE-809).
+statut va de « à importer » à « traitée », calculé tout seul ; « ignorée »
+est le seul choix à la main : la fiche sort alors de Toutes et
+d'Entreprises, et « reprendre » la remet dans le calcul. « Créer le
+chauffeur » ajoute le dossier dans ce portefeuille, par le même chemin
+que l'import CSV (AXE-809).
 
 Rien n'est lu automatiquement dans les documents (OCR : AXE-943).
 """
@@ -18,7 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -27,6 +29,7 @@ from typing import Literal
 from axelcompta.core.errors import SaisieInvalide
 from axelcompta.core.ids import DossierId, TenantId
 
+from .contacts_proposes import PropositionStockee
 from .fiches_import_calculs import appliquer_deductions
 from .fiches_import_listes import (
     FONCTIONS,
@@ -37,8 +40,8 @@ from .fiches_import_listes import (
 from .import_dossiers import siren_valide
 from .registres import FicheOfficielle
 
-Statut = Literal["a_importer", "en_traitement", "traitee"]
-STATUTS: tuple[Statut, ...] = ("a_importer", "en_traitement", "traitee")
+Statut = Literal["a_importer", "en_traitement", "traitee", "ignore"]
+STATUTS: tuple[Statut, ...] = ("a_importer", "en_traitement", "traitee", "ignore")
 TypeChamp = Literal[
     "texte",
     "long",
@@ -403,6 +406,82 @@ def annuler(fiche: FicheImport, par: str, le: datetime) -> FicheImport:
     """L'import n'est plus voulu : la fiche sort de la liste (rien ne
     s'efface en base)."""
     return replace(fiche, annulee_le=le, annulee_par=par, maj_par=par, maj_le=le)
+
+
+def ignorer(fiche: FicheImport, par: str, le: datetime) -> FicheImport:
+    """La fiche passe en Ignoré : plus dans Toutes, plus dans Entreprises."""
+    return replace(fiche, statut="ignore", maj_par=par, maj_le=le)
+
+
+def reprendre(fiche: FicheImport, par: str, le: datetime) -> FicheImport:
+    """Remet la fiche dans le calcul (à importer, en traitement ou traitée)."""
+    return replace(fiche, statut="a_importer", maj_par=par, maj_le=le)
+
+
+def _chiffres(texte: str) -> str:
+    return "".join(c for c in texte if c.isdigit())
+
+
+def _contacts_en_fiche(existantes: Sequence[FicheImport]) -> set[str]:
+    connus = set()
+    for fiche in existantes:
+        if fiche.id.startswith("contact-"):
+            connus.add(fiche.id.removeprefix("contact-"))
+        numero = _chiffres(fiche.champs.get("contact_digifactory", ""))
+        if numero:
+            connus.add(numero)
+    return connus
+
+
+def fiche_de_contact(
+    proposition: PropositionStockee, tenant_id: TenantId, le: datetime, ignoree: bool
+) -> FicheImport:
+    """Une fiche d'import pour un contact Digifactory qui n'a pas de dossier."""
+    formes = {cle for cle, _libelle in FORMES}
+    champs = {"contact_digifactory": proposition.contact_nr, "denomination": proposition.nom}
+    if proposition.siren:
+        champs["siren"] = proposition.siren
+    if proposition.forme in formes:
+        champs["forme_juridique"] = proposition.forme
+    if proposition.code_naf:
+        champs["code_naf"] = proposition.code_naf
+    if proposition.exercice_debut is not None:
+        champs["exercice_debut"] = proposition.exercice_debut.isoformat()
+    return FicheImport(
+        id=f"contact-{proposition.contact_nr}",
+        tenant_id=tenant_id,
+        nom=proposition.nom,
+        prenom="",
+        cree_par="synchro",
+        cree_le=le,
+        statut="ignore" if ignoree else "a_importer",
+        champs=appliquer_deductions({}, champs, le.date()),
+        maj_par="synchro",
+        maj_le=le,
+    )
+
+
+def fiches_des_contacts(
+    propositions: Sequence[PropositionStockee],
+    decisions: Mapping[str, str],
+    existantes: Sequence[FicheImport],
+    tenant_id: TenantId,
+    le: datetime,
+) -> list[FicheImport]:
+    """Les fiches à ouvrir. Un contact déjà sur une fiche (même annulée)
+    n'en ouvre pas une seconde. « ignorer » l'ouvre directement en Ignoré."""
+    connus = _contacts_en_fiche(existantes)
+    ouvertes = []
+    for proposition in propositions:
+        if proposition.contact_nr in connus:
+            continue
+        connus.add(proposition.contact_nr)
+        ouvertes.append(
+            fiche_de_contact(
+                proposition, tenant_id, le, decisions.get(proposition.contact_nr) == "ignorer"
+            )
+        )
+    return ouvertes
 
 
 def _euros(centimes: int) -> str:
