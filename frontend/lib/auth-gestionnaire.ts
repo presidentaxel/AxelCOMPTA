@@ -531,6 +531,29 @@ export async function lireRapprochementsExpert(dossierId: string): Promise<Semai
   return (await reponse.json()) as SemaineRapprochement[];
 }
 
+/** AXE-912 : l'expert écrit une semaine « à vérifier » telle quelle (l'écart
+ * reste dû par la plateforme) ou en écarte les jours. Motif obligatoire. */
+export async function trancherSemaineExpert(
+  dossierId: string,
+  entree: { plateforme: string; lundi: string; decision: "ecrire" | "ecarter"; motif: string },
+): Promise<string> {
+  const reponse = await requeteGestionnaire(`/expert/dossiers/${dossierId}/rapprochements/decision`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entree),
+  });
+  if (reponse.status === 401) {
+    throw new ErreurAuthGestionnaire();
+  }
+  if (reponse.status === 403) {
+    await refusExpert(reponse);
+  }
+  if (!reponse.ok) {
+    throw erreurApi(await lireCorps(reponse), reponse);
+  }
+  return ((await reponse.json()) as { resume: string }).resume;
+}
+
 /** AXE-934 : ce qui empêche de rapprocher Rollee et la banque de cette
  * entreprise (compte à reconnecter, banque absente, plateforme non reliée…). */
 export async function lireManquesRapprochementExpert(dossierId: string): Promise<string[]> {

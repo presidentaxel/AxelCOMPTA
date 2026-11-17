@@ -450,16 +450,20 @@ d'avancement du projet publié (le précédent datait du 06/10).
   l'estimation entre dans la liasse, le FEC et l'aperçu de clôture
   (`provisions_cloture`). Le moteur ne décide jamais seul d'une provision.
 - FEC : validateur A.47 A-1 (colonnes, dates, équilibre). Il reste un
-  fichier texte, affiché « FEC » à l'écran. Toujours pas passé dans Test
-  Compta Demat (outil Windows de la DGFiP).
+  fichier texte, affiché « FEC » à l'écran. **Passé dans Test Compta Demat**
+  (outil Windows de la DGFiP) avec nos FEC de test : le format est bon
+  (confirmé par Louis le 16/11).
 - Une case à zéro reste vide sur les formulaires et les exports ; le FEC
   garde `0,00`.
 - Bilan simplifié équilibré avec le capital (101x) et les immobilisations
   (2x) (AXE-421).
 - Amendes : le calcul était déjà juste (CGI art. 39-2), verrouillé par un
   test (AXE-559).
-- Reste sur AXE-484 (priorité basse) : lignes de détail du 2054, 2057,
-  2058-C, 2059, Test Compta Demat.
+- AXE-484 (16/11) : détail du 2054 par catégorie, 2058-C (affectation du
+  résultat, engagements de LOA en YQ) et 2059-A (plus et moins-values
+  depuis le registre), codes relevés sur le formulaire officiel 2026.
+  Restent : 2057 (pas de date d'échéance dans les écritures), J7 (prix de
+  revient des biens en LOA, pas saisi) et le PDF CERFA du réel normal.
 
 **Modules V1 posés (23-25/10)**
 - `anomaly/` (AXE-437) : profil par dossier et détecteurs V1 (personnel,
@@ -546,6 +550,14 @@ sans Rollee. Les cinq tickets Rollee sont faits depuis le 12/11 (PR #132 à
 
 ### En cours (16/11)
 
+- Page publique et demandes d'échange (AXE-949), en trois PR sur la branche
+  `arthurreichard/axe-949-landing-axelcompta-page-publique` : l'API
+  `POST /demandes-echange` (table `demandes_echange`, notification Slack,
+  module `prospection/`), la vitrine sur `/` avec son formulaire et ses cinq
+  textes juridiques, puis la confidentialité mise à jour. Restent : un
+  webhook Slack à poser dans le `.env` de la prod, la relecture du texte par
+  Louis, la durée de conservation des demandes (blanc dans la
+  confidentialité), et l'analytics si Louis le veut (hors AXE-949).
 - Pilote Rollee sur la prod : une synchro complète (bouton
   **Synchroniser**) avec le code du 16/11, pour stocker Heetch, Allocab et
   Free Now, récupérer les jours mis de côté avant la lecture jour par jour
@@ -607,7 +619,8 @@ AXE-424, et tout le cœur VTC ci-dessus. Reste, dans l'ordre :
   (ancien J1) en est toujours à 7/500.
 - AXE-833 : reprendre les mois d'avant la connexion Digifactory.
 - AXE-433 : connexion bancaire directe par le chauffeur (basse priorité).
-- AXE-484 : annexes 2054 à 2059 en détail et Test Compta Demat (basse).
+- PDF CERFA du réel normal (2050 à 2059) et 2057 : suites d'AXE-484
+  (basse priorité, la 2033 reste la liasse des chauffeurs).
 - AXE-765 : connecter Qonto et un accès dédié pour le bot Finance & Admin.
 - AXE-920 : dividendes, « date dans le futur » entre minuit et 1 h (date
   UTC au lieu de Paris) ; un test échoue sur `main` à cette heure-là.
@@ -767,7 +780,7 @@ la phase suivante avec des invariants non tenus.
 - [ ] Spike Bridge sandbox direct : connexion, récupération transactions, webhooks — piste parallèle non bloquante, après stabilisation du canal Digifactory (doc 16 §8).
 - [x] Spike baseline ML : TF-IDF + régression logistique sur le même échantillon — **fait (2026-09-02)**, 79,5% d'exactitude sur dossiers jamais vus (`_AUDIT_DONNEES/rapport_audit_dataset.md` §6). **Écart avec ADR-007 tranché (2026-09-21)** : le 94,4% venait du token compte PCG, absent à l'inférence (mesure refaite : 96,3% avec le token, 79,5% sans). ADR-007 amendé, chiffre de référence 79,5%. Reste ouverte la vraie mesure de précision, qui dépend des 500 lignes relues (§0.2). Le spike d'origine n'est plus dans le repo, donc le classement sentence-transformers/CamemBERT est invérifiable ; volet embeddings non fait, à rouvrir seulement si les 500 lignes montrent une précision insuffisante.
 - [ ] Spike OCR : 30 tickets réels dans Tesseract vs PaddleOCR vs Vision LLM (ADR-005).
-- [ ] Spike FEC : générer un FEC minimal et le passer dans « Test Compta Demat ».
+- [x] Spike FEC : générer un FEC minimal et le passer dans « Test Compta Demat ». **Fait** : nos FEC de test passent (16/11).
 - [ ] Maquettes Figma des 3 écrans clés (doc 11 §3) + retours de 2 utilisateurs cibles.
 
 **Critère de sortie Phase 0** : dataset audité, baseline ML mesurée, Digifactory
@@ -976,7 +989,7 @@ zéro fuite au test de pseudonymisation.
 
 - [ ] Checklist de clôture automatisée (doc 06 §5) : CCA/FNP assistées, cadrage TVA, dotations, réintégrations fiscales (plafonds VP, LOA), IS.
 - [ ] **Liasse pivot** case-par-case alignée dictionnaire TDFC, formulaires sélectionnés par le statut du dossier : 2065 + 2050/2033 (IS) et 2031 + annexes (option IR) + contrôles de cohérence inter-cases. **Avancé le 2026-09-23 (doc 17 §15)** : 2065 + 2033-A à G complets pour l'IS au régime simplifié, cases indexées par le code officiel, sans relecture d'expert-comptable (décision démo). **2031 + 2031-bis faits le 2026-09-26** pour la colonne à l'IR (EURL, SARL de famille, option 239 bis AB), 2033 jointe, pas d'IS ni de 2065 ; la colonne `societe_ir` de la matrice passe opérationnelle, et l'écran Exercice propose la 2065 ou la 2031 et masque le dépôt au greffe selon la matrice. **EI au réel opérationnelle le 2026-09-26** : 2031 + 2033, apport et prélèvements au compte de l'exploitant (108, capital individuel en 2033-A ligne 120), ni associés (2031-bis cadre E) ni composition du capital (2033-F), pas de dépôt au greffe ; dossier de référence `tests/closing/test_reference_ei_reel.py`. **Réel normal et contrôles faits les 14-15/10 (AXE-438)** : contrôles inter-cases avant livraison, 2050/2051, 2052/2053 et totaux 2054, 2055, 2056, 2058-A, 2058-B repris des chiffres de la 2033, sans PDF ni lignes de détail. Restent (AXE-484) : lignes de détail du 2054, 2057, 2058-C, 2059, PDF CERFA du réel normal.
-- [ ] Renderers : FEC final (CI « Test Compta Demat »), PDF liasse fidèle CERFA, balance/GL/journaux exports, CA3 pré-remplie (CA12 en lecture d'historique seulement, doc 02 §7bis). **Avancé le 2026-09-23** : FEC conforme au texte de l'A.47 A-1 (pas encore passé dans Test Compta Demat), PDF 2065 + 2033 sur les formulaires officiels 2026, grand livre et balance en PDF. **Le 2026-10-14** : CA3 calculée dans le pivot, validateur FEC A.47 A-1 (ce n'est pas Test Compta Demat). Le FEC reste un fichier texte (AXE-422). Cases à zéro laissées vides sauf dans le FEC (AXE-557).
+- [ ] Renderers : FEC final (CI « Test Compta Demat »), PDF liasse fidèle CERFA, balance/GL/journaux exports, CA3 pré-remplie (CA12 en lecture d'historique seulement, doc 02 §7bis). **Avancé le 2026-09-23** : FEC conforme au texte de l'A.47 A-1 (passé dans Test Compta Demat depuis, avec nos FEC de test, 16/11), PDF 2065 + 2033 sur les formulaires officiels 2026, grand livre et balance en PDF. **Le 2026-10-14** : CA3 calculée dans le pivot, validateur FEC A.47 A-1 (ce n'est pas Test Compta Demat). Le FEC reste un fichier texte (AXE-422). Cases à zéro laissées vides sauf dans le FEC (AXE-557).
 - [ ] Dossier de dépôt comptes annuels (Guichet Unique INPI) — génération, dépôt manuel documenté.
 - [ ] Dossiers de référence supplémentaires (EURL avec LOA, EURL option IR clôturée, dossier traversant la **fin d'option IR** : exercice N en IR → N+1 en IS) en golden tests — un par colonne opérationnelle de la matrice doc 06 §7.
 - [ ] Circuit de validation/relecture interne (statuts, verrous, doc 02 §2.3 — l'humain valide, c'est journalisé).

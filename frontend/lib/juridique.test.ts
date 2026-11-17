@@ -56,6 +56,13 @@ test("titres, paragraphes sur plusieurs lignes, listes, citation, tableau", () =
   assert.equal(tableau?.type === "tableau" && tableau.lignes[0]?.[1]?.[0]?.type, "gras");
 });
 
+test("un texte aux fins de ligne Windows se lit comme un texte Unix", () => {
+  const unix = "# Titre\n\nUne phrase.\n\n- un\n- deux\n";
+  const windows = unix.replace(/\n/gu, "\r\n");
+  assert.deepEqual(lireTexte(windows), lireTexte(unix));
+  assert.equal(lireTexte(windows)[0]?.type, "titre");
+});
+
 // Critères d'AXE-859, vérifiés sur les textes eux-mêmes : si un service
 // change dans le code, ce test oblige à revoir les textes.
 const DOSSIER = join(process.cwd(), "..", "docs", "juridique");
@@ -81,6 +88,17 @@ test("le fournisseur d'IA n'est cité que dans la confidentialité, pseudonymisa
     .map(lire)
     .join("\n");
   assert.doesNotMatch(autres, /\b(LLM|Claude|Gemini|OpenAI|GPT|Mistral|Anthropic)\b/u);
+});
+
+test("la confidentialité décrit les demandes d'échange de la page publique et Slack", () => {
+  // AXE-949 : le formulaire de la page publique recueille des données
+  // personnelles et les poste sur Slack. Retirer l'un des deux sans toucher
+  // au texte fait échouer ce test.
+  const confidentialite = lire("confidentialite");
+  assert.match(confidentialite, /Demandes d'échange \(page publique/u);
+  const tableau = confidentialite.split("\n").filter((ligne) => ligne.startsWith("|"));
+  assert.ok(tableau.some((ligne) => /Slack/u.test(ligne) && /demande d'échange/u.test(ligne)));
+  assert.ok(tableau.some((ligne) => /^\| Demandes d'échange \|/u.test(ligne)));
 });
 
 test("les plateformes passent par Rollee, cité comme service", () => {

@@ -121,6 +121,15 @@ export function badgeStatut(statut: StatutImport): "missing" | "pending" | "vali
 }
 
 /** « Karim Dupont », ou l'entreprise si le chauffeur n'a pas de nom. */
+/** Fiches pas encore visibles comme entreprise du portefeuille. */
+export function fichesSansDossier<T extends { dossier_id: string | null }>(
+  fiches: T[],
+  dossiers: { dossier_id: string }[],
+): T[] {
+  const presentes = new Set(dossiers.map((dossier) => dossier.dossier_id));
+  return fiches.filter((fiche) => fiche.dossier_id === null || !presentes.has(fiche.dossier_id));
+}
+
 export function nomChauffeur(fiche: Pick<FicheImportResume, "nom" | "prenom" | "denomination">): string {
   const nom = [fiche.prenom, fiche.nom].filter(Boolean).join(" ");
   return nom || fiche.denomination || "Chauffeur sans nom";

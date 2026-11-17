@@ -16,6 +16,13 @@ import {
 } from "@/lib/auth-chauffeur";
 import { connexionGestionnaire } from "@/lib/auth-gestionnaire";
 import {
+  codeNormalise,
+  facteurVerifie,
+  lireFacteurs,
+  verifierCode,
+  type Facteur,
+} from "@/lib/mfa";
+import {
   cheminApresChauffeur,
   lireLienCourant,
   ouvrirSessionDepuisJetons,
@@ -26,6 +33,7 @@ import { coteOuverte, type Cote } from "@/lib/cote-connexion";
 import {
   INDICATION_MOT_DE_PASSE,
   LONGUEUR_MIN_MOT_DE_PASSE,
+  MESSAGE_CODE_REQUIS,
   MESSAGE_ESPACE_CHAUFFEUR,
   MESSAGE_ESPACE_GESTIONNAIRE,
   MESSAGE_SANS_LIEN,
@@ -42,12 +50,16 @@ export default function LienAuthPage() {
   const idMotDePasse = useId();
   const [etape, setEtape] = useState<Etape>("lecture");
   const [fragment, setFragment] = useState<FragmentAuth | null>(null);
-  const [destination, setDestination] = useState("/");
+  const [destination, setDestination] = useState("/portefeuille");
   const [motDePasse, setMotDePasse] = useState("");
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [premiereConnexion, setPremiereConnexion] = useState(false);
   const [cote, setCote] = useState<Cote | null>(null);
+  // AXE-961 : avec la double authentification, Supabase exige le code avant
+  // de changer le mot de passe (session `aal2`).
+  const [facteur, setFacteur] = useState<Facteur | null>(null);
+  const [code, setCode] = useState("");
 
   useEffect(() => {
     let ignore = false;
@@ -72,6 +84,11 @@ export default function LienAuthPage() {
           return;
         }
         if (recu.type === "recovery") {
+          const verifie = await lireFacteurs(recu.accessToken)
+            .then(facteurVerifie)
+            .catch(() => null);
+          if (ignore) return;
+          setFacteur(verifie);
           setFragment(recu);
           setEtape("mot_de_passe");
           return;
@@ -108,8 +125,11 @@ export default function LienAuthPage() {
     setEnCours(true);
     setErreur(null);
     try {
-      await definirMotDePasseAvecJeton(fragment.accessToken, motDePasse);
-      const charge = decoderChargeUtileJwt(fragment.accessToken);
+      const jeton = facteur
+        ? await jetonAvecCode(fragment.accessToken, facteur, code)
+        : fragment.accessToken;
+      await definirMotDePasseAvecJeton(jeton, motDePasse);
+      const charge = decoderChargeUtileJwt(jeton);
       const email = typeof charge.email === "string" ? charge.email : "";
       const demandee = cote && coteOuverte(charge.app_metadata, cote) !== "interdit" ? cote : null;
       const decision = coteOuverte(charge.app_metadata, demandee);
@@ -118,7 +138,7 @@ export default function LienAuthPage() {
         router.replace(cheminApresChauffeur(session.accessToken, session));
       } else if (decision === "gestionnaire") {
         await connexionGestionnaire(email, motDePasse);
-        router.replace("/");
+        router.replace("/portefeuille");
       } else {
         throw new ErreurAuthChauffeur(
           decision === "interdit"
@@ -196,6 +216,27 @@ export default function LienAuthPage() {
             aria-invalid={erreur ? true : undefined}
           />
         </div>
+        {facteur && (
+          <div className="space-y-1.5">
+            <label htmlFor={`${idMotDePasse}-code`} className="block text-sm font-medium text-ink">
+              Code de double authentification
+            </label>
+            <p className="text-sm text-subtle">
+              Les 6 chiffres affichés dans votre application d&apos;authentification.
+            </p>
+            <Input
+              id={`${idMotDePasse}-code`}
+              name="one-time-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              uiSize="lg"
+              value={code}
+              onChange={(evenement) => setCode(evenement.target.value)}
+              required
+              disabled={enCours}
+            />
+          </div>
+        )}
         {erreur && (
           <MessageAcces ton="erreur" id={idErreur}>
             {erreur}
@@ -207,4 +248,18 @@ export default function LienAuthPage() {
       </form>
     </div>
   );
+}
+
+/** AXE-961 : le code de l'application donne une session `aal2`, seule
+ * autorisée à changer le mot de passe d'un compte en double authentification. */
+async function jetonAvecCode(accessToken: string, facteur: Facteur, saisie: string): Promise<string> {
+  const code = codeNormalise(saisie);
+  if (!code) throw new ErreurAuthChauffeur(MESSAGE_CODE_REQUIS);
+  try {
+    return (await verifierCode(accessToken, facteur.id, code)).accessToken;
+  } catch (exception) {
+    throw new ErreurAuthChauffeur(
+      exception instanceof Error ? exception.message : MESSAGE_CODE_REQUIS,
+    );
+  }
 }

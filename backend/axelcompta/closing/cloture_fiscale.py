@@ -46,6 +46,8 @@ from .liasse_2054 import immobilisations_2054
 from .liasse_2055 import amortissements_2055
 from .liasse_2056 import provisions_2056
 from .liasse_2058 import deficits_2058, resultat_2058
+from .liasse_2058c import affectation_2058c, credit_bail_2058c
+from .liasse_2059a import plus_values_2059a
 from .loa import ecritures_loa, engagement_restant, prefixe_loa
 from .models import LiassePivot, ParametresCloture
 from .provisions import ecritures_provisions, prefixe_provisions
@@ -160,8 +162,10 @@ def _liasse_reel_normal(
     m: Mouvements,
     fiscal: dict[str, int],
     parametres: ParametresCloture,
+    ecritures: tuple[Ecriture, ...] = (),
 ) -> dict[str, int]:
-    """Annexes 2050 à 2058-B dont les totaux sont ceux de la 2033."""
+    """Annexes 2050 à 2059-A : totaux repris de la 2033, détail du 2054,
+    affectation (2058-C) et plus-values (2059-A) quand elles existent."""
     exploitation, suite = compte_2052(balance)
     immos = immobilisations_2033c(m)
     releve = releve_2033d(balance_avant, m, fiscal, parametres.deficits_anterieurs)
@@ -174,6 +178,17 @@ def _liasse_reel_normal(
         | _prefixer("2056", provisions_2056(m))
         | _prefixer("2058A", resultat_2058(fiscal))
         | _prefixer("2058B", deficits_2058(releve))
+        | _prefixer("2058C", affectation_2058c(ecritures, m))
+        | _prefixer("2058C", credit_bail_2058c(parametres.contrats_loa, parametres.exercice_fin))
+        | _prefixer(
+            "2059A",
+            plus_values_2059a(
+                parametres.immobilisations,
+                parametres.exercice_debut,
+                parametres.exercice_fin,
+                parametres.soumis_is,
+            ),
+        )
     )
 
 
@@ -226,7 +241,9 @@ def cloturer_fiscalement(
         f"CA3.{cle}": montant for cle, montant in declaration_ca3(soldes(hors_liquidations)).items()
     }
     if parametres.regime_liasse == "2050":
-        cases |= _liasse_reel_normal(balance, balance_avant, resultat, m, fiscal, parametres)
+        cases |= _liasse_reel_normal(
+            balance, balance_avant, resultat, m, fiscal, parametres, completes
+        )
     elif parametres.regime_liasse != "2033":
         raise DomaineError(f"régime de liasse inconnu : {parametres.regime_liasse}")
     liasse = LiassePivot(

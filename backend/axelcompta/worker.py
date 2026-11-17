@@ -183,9 +183,9 @@ def detecter_portefeuilles(deps: Dependances, aujourd_hui: date) -> list[str]:
 def synchroniser_portefeuille_suivi(
     tenant_id: TenantId, deps: Dependances, aujourd_hui: date
 ) -> str:
-    """Digifactory (contacts, dossiers, opérations), puis Rollee pour chaque
-    dossier relié : les revenus se rapprochent des virements qui viennent
-    d'arriver. Le résumé s'affiche sous le bouton."""
+    """Digifactory (contacts, dossiers, opérations), puis Rollee sur la
+    fenêtre récente de chaque dossier relié. Le grand passage Rollee (tout
+    l'historique) reste au cron de 4 h. Le résumé s'affiche sous le bouton."""
     contacts = deps.lire_contacts(tenant_id)
     crees = creer_les_acceptes(tenant_id, contacts, deps, aujourd_hui)
     propositions = detecter(tenant_id, contacts, deps, aujourd_hui)
@@ -196,7 +196,6 @@ def synchroniser_portefeuille_suivi(
     )
     rollee = deps.relever_rollee(tenant_id) if deps.relever_rollee is not None else None
     fiches = deps.completer_fiches(tenant_id) if deps.completer_fiches is not None else None
-    deps.prechauffer(tous)
     texte = resume(len(crees), propositions, resultats)
     return " · ".join(m for m in (texte, rollee, fiches) if m)
 
@@ -258,7 +257,12 @@ def _dossier_demande(job: Job) -> str | None:
 
 def executer_job(job: Job, deps: Dependances, aujourd_hui: date) -> str:
     if job.type == TYPE_IMPORT_DOSSIERS:
-        return importer_dossiers(job, deps.dossiers)
+        texte = importer_dossiers(job, deps.dossiers)
+        if deps.completer_fiches is not None:
+            suite = deps.completer_fiches(TenantId(job.tenant_id))
+            if suite:
+                texte = f"{texte} · {suite}"
+        return texte
     if job.type == TYPE_RAPPELS and deps.envoyer_rappels is not None:
         return resume_envois(deps.envoyer_rappels())
     if job.type == TYPE_ROLLEE and deps.traiter_rollee is not None:

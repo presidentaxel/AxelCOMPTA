@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -142,11 +142,15 @@ def test_un_virement_d_un_exercice_clos_n_est_pas_ventile() -> None:
     assert resultat.ecritures == []
 
 
+_FENETRES: list[date] = []
+
+
 class _Client:
     """AXE-924 : deux jours Uber, plus une semaine et une période « custom »
     que Rollee renvoie aussi et qui sont ignorées."""
 
     async def revenus(self, account_id: str, depuis: date, jusqua: date) -> dict[str, Any]:
+        _FENETRES.append(depuis)
         jour = {"time_period_type": "daily", "currency": "EUR", "cash_earnings": 0}
         return {
             "data": [
@@ -228,6 +232,8 @@ def test_de_bout_en_bout_le_ca_et_la_tva_sont_justes_et_rejouer_ne_cree_rien() -
     assert (-solde("6222"), -solde("44566"), -solde("627")) == (160_00, 32_00, 99)
     assert solde("4671") == 0 and solde("471") == 0  # créance soldée, plus rien à classer
     assert "1 semaine(s) rapprochée(s), 0 à vérifier, 0 jour(s) en quarantaine" in resume
+    assert _FENETRES[0] == date(2020, 1, 1)
+    assert _FENETRES[1] == date(2026, 10, 6) - timedelta(days=14)
     assert {s.etat for s in depots.settlements.lister(D)} == {"reconcilie"}
     assert not journal.lister_quarantaine(D)
 

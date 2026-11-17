@@ -94,9 +94,9 @@ export default function DoubleAuthentificationPage() {
       }
       const retour = cheminDeRetour(
         window.location.search,
-        cote === "chauffeur" ? "/chauffeur/test" : "/",
+        cote === "chauffeur" ? "/chauffeur/test" : "/portefeuille",
       );
-      router.replace(retour === "/securite" || retour.startsWith("/securite?") ? "/" : retour);
+      router.replace(retour === "/securite" || retour.startsWith("/securite?") ? "/portefeuille" : retour);
     } catch (exception) {
       setRefus(messageErreurMfa(exception, "verification"));
     } finally {

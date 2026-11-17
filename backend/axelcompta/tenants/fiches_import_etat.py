@@ -31,7 +31,8 @@ from .fiches_import import (
 )
 from .fiches_import_calculs import bornes, date_limite_liasse
 from .fiches_import_listes import lire_associes, total_parts
-from .import_dossiers import identifiant
+from .import_dossiers import identifiant, rapport
+from .models import Dossier
 
 ANNEE_MIN_REPRISE = 2024
 SECTION_PAR_CATEGORIE = {
@@ -385,6 +386,39 @@ def ligne_dossier(fiche: FicheImport) -> dict[str, str]:
         "option_ir_debut": champs.get("option_ir_debut", ""),
         "contact_digifactory": contact,
     }
+
+
+def relier_au_portefeuille(
+    fiche: FicheImport, dossiers: Sequence[Dossier]
+) -> tuple[FicheImport, Dossier | None, tuple[str, ...]]:
+    """La fiche reliée au dossier du portefeuille, le dossier à créer, et
+    ce qui empêche encore de le créer.
+
+    Une fiche annulée reste seule. Le même SIREN, ou le même identifiant,
+    relie sans créer un second dossier. Une fiche incomplète sans dossier
+    déjà là reste dans Imports. Rien n'est écrit.
+    """
+    if fiche.annulee_le is not None:
+        return fiche, None, ()
+    presents = [d for d in dossiers if d.retire_le is None]
+    deja = {d.id for d in presents}
+    if fiche.dossier_id is not None and fiche.dossier_id in deja:
+        return fiche, None, ()
+    siren = fiche.champs.get("siren")
+    meme = next((d for d in presents if siren and d.siren == siren), None)
+    if meme is not None:
+        return replace(fiche, dossier_id=meme.id), None, ()
+    manque = manque_pour_creer(fiche)
+    if manque:
+        return fiche, None, tuple(manque)
+    ligne = ligne_dossier(fiche)
+    (resultat,) = rapport(fiche.tenant_id, [ligne], deja).lignes
+    if resultat.dossier is not None:
+        return replace(fiche, dossier_id=resultat.dossier.id), resultat.dossier, ()
+    prevu = identifiant(ligne["siren"], ligne["contact_digifactory"])
+    if prevu in deja:
+        return replace(fiche, dossier_id=prevu), None, ()
+    return fiche, None, resultat.erreurs
 
 
 def dossier_prevu(fiche: FicheImport) -> str:

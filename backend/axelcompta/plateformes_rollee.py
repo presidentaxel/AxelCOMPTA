@@ -286,11 +286,15 @@ class Suivi:
     dossiers: DossierRepository
     notifier: Notifier
     relever_revenus: ReleverRevenus | None = None  # AXE-821
+    # Rattrapage de 4 h : tout l'historique, pas la fenêtre de deux semaines.
+    relever_historique: ReleverRevenus | None = None
     # AXE-911 : un webhook d'un user Rollee inconnu lance son rapprochement.
     rapprocher_inconnu: Callable[[TenantId, str], Awaitable[str]] | None = None
 
 
-async def _suivre_dossier(suivi: Suivi, dossier: Dossier, donnees: bool) -> str:
+async def _suivre_dossier(
+    suivi: Suivi, dossier: Dossier, donnees: bool, complet: bool = False
+) -> str:
     """Relit les comptes ; prévient le chauffeur d'une plateforme perdue ;
     relève les revenus si des données sont prêtes."""
     avant = {c.account_id: c.etat for c in suivi.services.comptes.comptes(dossier.id)}
@@ -302,8 +306,13 @@ async def _suivre_dossier(suivi: Suivi, dossier: Dossier, donnees: bool) -> str:
     ]
     if perdus:
         suivi.notifier(dossier.id)
-    if donnees and suivi.relever_revenus is not None:
-        return await suivi.relever_revenus(dossier)
+    relever = (
+        suivi.relever_historique
+        if complet and suivi.relever_historique is not None
+        else suivi.relever_revenus
+    )
+    if donnees and relever is not None:
+        return await relever(dossier)
     return f"{dossier.id} : {len(comptes)} compte(s), {len(perdus)} à reconnecter"
 
 
@@ -349,7 +358,7 @@ def rattraper(suivi: Suivi) -> list[str]:
         if dossier is None:
             continue
         try:
-            lignes.append(asyncio.run(_suivre_dossier(suivi, dossier, donnees=True)))
+            lignes.append(asyncio.run(_suivre_dossier(suivi, dossier, donnees=True, complet=True)))
         except Exception as exc:  # noqa: BLE001 — un dossier en échec ne bloque pas les autres
             lignes.append(f"{dossier_id} : ECHEC {type(exc).__name__} : {exc}")
     return lignes
@@ -382,6 +391,9 @@ def suivi_postgres(engine: Engine) -> Suivi:
         dossiers=PostgresDossierRepository(engine),
         notifier=notifier,
         relever_revenus=lambda d: relever_revenus(services, depots, d, date.today()),
+        relever_historique=lambda d: relever_revenus(
+            services, depots, d, date.today(), complet=True
+        ),
         rapprocher_inconnu=lambda tenant_id, user: rapprocher_inconnu(engine, tenant_id, user),
     )
 

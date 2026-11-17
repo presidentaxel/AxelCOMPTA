@@ -42,7 +42,17 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol, cast
 
 import httpx
-from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, Response, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -239,6 +249,7 @@ from axelcompta.jobs.file import (
     TYPE_SYNCHRO,
     DemandesDeJobs,
     Job,
+    deja_couvert,
 )
 from axelcompta.jobs.postgres import FilePostgres
 from axelcompta.ledger.banque import (
@@ -270,6 +281,12 @@ from axelcompta.plateformes_rollee import (
     recevoir,
     relire_comptes,
 )
+from axelcompta.prospection.models import DemandeEchange, TropDeDemandes
+from axelcompta.prospection.postgres import PostgresDemandes
+from axelcompta.prospection.repository import DemandesRepository
+from axelcompta.prospection.service import notifier as notifier_equipe
+from axelcompta.prospection.service import recevoir as recevoir_demande
+from axelcompta.prospection.slack import Notifieur, notifieur_depuis_env
 from axelcompta.rapprochement_rollee_service import (
     avancement_dossier,
     depots_postgres,
@@ -277,7 +294,7 @@ from axelcompta.rapprochement_rollee_service import (
     rapprocher_dossier,
     retenir_avancement,
 )
-from axelcompta.revenus_rollee import delier_revenus
+from axelcompta.revenus_rollee import delier_revenus, trancher_semaine_dossier
 from axelcompta.revenus_semaines import comparaison, debut_banque
 from axelcompta.tenants.affectations import AffectationRepository
 from axelcompta.tenants.affectations_postgres import PostgresAffectationRepository
@@ -334,8 +351,8 @@ from axelcompta.tenants.fiches_import_etat import (
     contacts_correspondants,
     dossier_prevu,
     etat_sections,
-    ligne_dossier,
     manque_pour_creer,
+    relier_au_portefeuille,
     statut_calcule,
 )
 from axelcompta.tenants.fiches_import_etat import emplacements as emplacements_import
@@ -391,7 +408,7 @@ from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.tester_branchement import tester as tester_branchement
 from axelcompta.traitement_documents_import import traiter as traiter_document_import
 from axelcompta.webhooks_rollee import preparer as preparer_webhook
-from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT
+from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT, ACTE_SEMAINE_TRANCHEE
 from axelcompta.workflow.avis_etages import avis_etages, proposition_affichee
 from axelcompta.workflow.budget_llm import debut_du_mois, libelles_du_mois, llm_actif
 from axelcompta.workflow.classees import (
@@ -6644,7 +6661,53 @@ def lire_manques_rapprochement_expert(
     )
 
 
+class DecisionSemaineEntree(BaseModel):
+    plateforme: str
+    lundi: date
+    decision: Literal["ecrire", "ecarter"]
+    motif: str
+
+
+class DecisionSemaineVue(BaseModel):
+    resume: str
+
+
+def trancher_semaine_expert(
+    corps: DecisionSemaineEntree,
+    dossier: DossierExpertDep,
+    base: LedgerBaseDep,
+    settlements: SettlementsDep,
+    journal: JournalAccesDep,
+    identite: IdentiteDep,
+) -> DecisionSemaineVue:
+    """AXE-912 : une semaine Rollee « à vérifier » en sort par la décision de
+    l'expert habilité : écrite telle quelle (l'écart reste sur la créance de
+    la plateforme) ou écartée. Le motif est obligatoire et tracé."""
+    _tenant, identite_verifiee = _verifier_acces_gestionnaire(identite)
+    motif = motif_valide(corps.motif)
+    resume = trancher_semaine_dossier(
+        settlements,
+        base,
+        dossier,
+        (corps.plateforme, corps.lundi),
+        corps.decision,
+        motif,
+    )
+    journal.noter(
+        dossier.id,
+        ACTE_SEMAINE_TRANCHEE,
+        f"{corps.decision} {corps.plateforme} {corps.lundi.isoformat()} : {motif}"[:300],
+        identite_verifiee.user_id,
+        datetime.now(UTC),
+    )
+    return DecisionSemaineVue(resume=resume)
+
+
 def _enregistrer_routes_expert_lignes(app: FastAPI) -> None:
+    app.post(
+        "/expert/dossiers/{dossier_id}/rapprochements/decision",
+        response_model=DecisionSemaineVue,
+    )(trancher_semaine_expert)
     app.post("/expert/taux", status_code=204)(poser_taux_expert)
     app.get(
         "/expert/dossiers/{dossier_id}/rapprochements/manques",
@@ -8233,6 +8296,9 @@ def _enregistrer_routes_rollee_carte(app: FastAPI) -> None:
     ) -> SynchronisationVue | None:
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, "La lecture seule ne lance pas de rapprochement.")
+        dernier = demandes.dernier(tenant_id, TYPE_RAPPROCHEMENT_ROLLEE)
+        if deja_couvert(dernier, datetime.now(UTC)):
+            return _synchronisation_vue(dernier)
         return _synchronisation_vue(demandes.demander(tenant_id, TYPE_RAPPROCHEMENT_ROLLEE))
 
     @app.get("/portefeuille/rollee/rapprochement", response_model=SynchronisationVue | None)
@@ -8281,6 +8347,7 @@ def _enregistrer_routes_integrations(app: FastAPI) -> None:
     _enregistrer_route_fiche_webhook(app)
     _enregistrer_routes_branchements_dossier(app)
     _enregistrer_routes_envoi(app)
+    _enregistrer_routes_prospection(app)
     _enregistrer_routes_plateformes(app)
     _enregistrer_route_webhook_rollee(app)
     _enregistrer_route_versements(app)
@@ -8328,6 +8395,77 @@ def _enregistrer_routes_envoi(app: FastAPI) -> None:
         envois.desinscrire(DossierId(d), c)
         canal = "par e-mail" if c == "mail" else "par SMS"
         return DesinscriptionVue(message=f"Vous ne recevrez plus de rappels {canal}.")
+
+
+class DemandeEchangeEntree(BaseModel):
+    """Le formulaire de la page publique (AXE-949). Les longueurs fines sont
+    vérifiées par le domaine, en français ; ces plafonds ne servent qu'à
+    refuser un corps démesuré. `site_web` est un champ piège : invisible pour
+    une personne, rempli par un robot."""
+
+    nom: str = Field(max_length=2000)
+    email: str = Field(max_length=2000)
+    organisation: str = Field(max_length=2000)
+    role: str = Field(max_length=50)
+    message: str | None = Field(default=None, max_length=10000)
+    site_web: str = Field(default="", max_length=2000)
+
+
+class DemandeEchangeVue(BaseModel):
+    message: str
+
+
+def get_demandes_echange() -> DemandesRepository:
+    """Demandes d'échange de la page publique (AXE-949)."""
+    return PostgresDemandes(_engine())
+
+
+DemandesEchangeDep = Annotated[DemandesRepository, Depends(get_demandes_echange)]
+
+
+def get_notifieur_demandes() -> Notifieur | None:
+    """Le webhook Slack de l'équipe ; `None` s'il n'est pas posé."""
+    return notifieur_depuis_env()
+
+
+NotifieurDemandesDep = Annotated[Notifieur | None, Depends(get_notifieur_demandes)]
+
+
+def _recevoir_la_demande(
+    entree: DemandeEchangeEntree, depot: DemandesRepository, maintenant: datetime
+) -> DemandeEchange | None:
+    try:
+        return recevoir_demande(
+            depot,
+            id=str(uuid.uuid4()),
+            nom=entree.nom,
+            email=entree.email,
+            organisation=entree.organisation,
+            role=entree.role,
+            message=entree.message,
+            piege=entree.site_web,
+            maintenant=maintenant,
+        )
+    except TropDeDemandes as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+
+
+def _enregistrer_routes_prospection(app: FastAPI) -> None:
+    @app.post("/demandes-echange", status_code=201, response_model=DemandeEchangeVue)
+    def demander_un_echange(
+        entree: DemandeEchangeEntree,
+        taches: BackgroundTasks,
+        depot: DemandesEchangeDep,
+        notifieur: NotifieurDemandesDep,
+    ) -> DemandeEchangeVue:
+        """Page publique, sans compte (AXE-949). La demande est enregistrée
+        dans la requête ; l'équipe est prévenue après la réponse, et une panne
+        de Slack ne la perd pas (tâches planifiées)."""
+        maintenant = datetime.now(UTC)
+        demande = _recevoir_la_demande(entree, depot, maintenant)
+        if demande is not None:
+            taches.add_task(notifier_equipe, depot, notifieur, demande, maintenant)
+        return DemandeEchangeVue(message="Merci, nous revenons vers vous par e-mail.")
 
 
 class NouveauChauffeurVue(BaseModel):
@@ -8729,6 +8867,18 @@ def _fiche_vue(instantane: Instantane) -> FicheImportVue:
     )
 
 
+def _poser_dossier(
+    fiche: FicheImport, dossiers: DossierRepository
+) -> tuple[FicheImport, tuple[str, ...]]:
+    """Crée le dossier dès que la fiche a de quoi exister au portefeuille,
+    et la relie. Une fiche incomplète revient telle quelle, avec ce qui manque."""
+    existants = dossiers.lister_par_tenant(fiche.tenant_id)
+    reliee, a_creer, erreurs = relier_au_portefeuille(fiche, existants)
+    if a_creer is not None:
+        dossiers.enregistrer_lot((a_creer,))
+    return reliee, erreurs
+
+
 def _lire_registres(fiche: FicheImport, lire: LireFicheOfficielle | None, par: str) -> FicheImport:
     """Préremplit depuis l'INSEE et le RNE si un SIREN est connu et les
     registres branchés ; sinon la fiche ne change pas."""
@@ -8756,9 +8906,11 @@ def _enregistrer_routes_fiches_import(app: FastAPI) -> None:
         role: RoleMembreDep,
         fiches: FichesImportDep,
         lire: LireFicheOfficielleDep,
+        dossiers: DossiersDep,
     ) -> FicheImportVue:
         """Nom et prénom du chauffeur ; avec un SIREN ou un SIRET, l'INSEE et
-        le RNE préremplissent l'entreprise et le dirigeant."""
+        le RNE préremplissent l'entreprise et le dirigeant. Dès que la fiche
+        peut être une entreprise, elle l'est aussi au portefeuille."""
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
         fiche = nouvelle_fiche(
@@ -8771,6 +8923,7 @@ def _enregistrer_routes_fiches_import(app: FastAPI) -> None:
             datetime.now(UTC),
         )
         fiche = _lire_registres(fiche, lire, identite.email)
+        fiche, _erreurs = _poser_dossier(fiche, dossiers)
         return _fiche_vue(fiches.enregistrer(fiche))
 
     @app.get("/portefeuille/imports/{fiche_id}", response_model=FicheImportVue)
@@ -8803,6 +8956,7 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         role: RoleMembreDep,
         fiches: FichesImportDep,
         lire: LireFicheOfficielleDep,
+        dossiers: DossiersDep,
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
@@ -8812,6 +8966,7 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         # (bouton « Relire les registres », AXE-951).
         if "siren" in entree.champs or fiche.champs.get("siren") != avant.champs.get("siren"):
             fiche = _lire_registres(fiche, lire, identite.email)
+        fiche, _erreurs = _poser_dossier(fiche, dossiers)
         return _fiche_vue(fiches.enregistrer(fiche))
 
     @app.post("/portefeuille/imports/{fiche_id}/registres", response_model=FicheImportVue)
@@ -8982,7 +9137,8 @@ def _enregistrer_route_retrait_document_import(app: FastAPI) -> None:
 
 def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:
     """AXE-941 : la fiche ajoute le chauffeur au portefeuille, par le même
-    chemin que l'import CSV (AXE-809) : validée ici, créée par le worker."""
+    chemin que l'import CSV (AXE-809). La création est immédiate : l'entreprise
+    est dans les deux listes dès que les champs obligatoires sont là."""
 
     @app.post("/portefeuille/imports/{fiche_id}/chauffeur", response_model=FicheImportVue)
     def creer_chauffeur_importe(
@@ -8991,23 +9147,19 @@ def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:
         role: RoleMembreDep,
         fiches: FichesImportDep,
         dossiers: DossiersDep,
-        demandes: DemandesJobsDep,
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
         fiche = fiches.lire(tenant_id, fiche_id)
-        manque = manque_pour_creer(fiche)
-        if manque:
-            raise HTTPException(status_code=422, detail=f"À compléter : {', '.join(manque)}.")
-        ligne = ligne_dossier(fiche)
-        existants = [d.id for d in dossiers.lister_par_tenant(tenant_id)]
-        (resultat,) = rapport_import(tenant_id, [ligne], existants).lignes
-        if resultat.dossier is None:
-            raise HTTPException(status_code=422, detail=" ".join(resultat.erreurs))
-        demandes.demander(str(tenant_id), TYPE_IMPORT_DOSSIERS, json.dumps({"lignes": [ligne]}))
-        fiche = dataclasses.replace(
-            fiche, dossier_id=resultat.dossier.id, maj_par=identite.email, maj_le=datetime.now(UTC)
-        )
+        fiche = dataclasses.replace(fiche, maj_par=identite.email, maj_le=datetime.now(UTC))
+        fiche, erreurs = _poser_dossier(fiche, dossiers)
+        if erreurs:
+            detail = (
+                f"À compléter : {', '.join(erreurs)}."
+                if manque_pour_creer(fiche)
+                else " ".join(erreurs)
+            )
+            raise HTTPException(status_code=422, detail=detail)
         return _fiche_vue(fiches.enregistrer(fiche))
 
 

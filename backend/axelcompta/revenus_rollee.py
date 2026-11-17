@@ -4,9 +4,10 @@ C'est ce qui rend le chiffre d'affaires et la TVA justes. Composition root
 (doc 18), appelé quand Rollee dit que des données sont prêtes (webhook,
 AXE-820) et au rattrapage quotidien.
 
-1. Chaque compte relié et connecté du dossier : ses revenus depuis le
-   dernier relevé gardé (ou depuis le début de l'exercice). Une période qui
-   ne tient pas (brut − frais ≠ versé…) part en quarantaine avec sa raison.
+1. Chaque compte relié et connecté du dossier : ses revenus sur les deux
+   dernières semaines déjà gardées (tout l'historique au rattrapage de 4 h,
+   ou tant qu'aucun relevé n'est gardé). Une période qui ne tient pas
+   (brut − frais ≠ versé…) part en quarantaine avec sa raison.
 2. Chaque période est gardée une fois (`settlements_plateforme`) ; une
    période déjà ventilée qui change chez Rollee passe « à vérifier ».
 3. Une période **terminée** est rapprochée du virement en banque (montant au
@@ -71,7 +72,12 @@ from axelcompta.plateformes_rollee import (
     branchement_du_dossier,
     client_du_branchement,
 )
-from axelcompta.revenus_semaines import Contexte, rapprocher_semaines
+from axelcompta.revenus_semaines import (
+    Contexte,
+    Decision,
+    rapprocher_semaines,
+    trancher_semaine,
+)
 from axelcompta.tenants.branchements import Branchement
 from axelcompta.tenants.models import Dossier
 from axelcompta.workflow.reclassement import projeter
@@ -329,26 +335,34 @@ async def _lire(
     return lus, rejets
 
 
-# AXE-928 : tout l'historique Rollee est lu, pour le comparer à la banque
-# (et servir de rapport sur les années passées) ; seules les semaines
-# couvertes par la banque sont écrites.
+# AXE-928 : le rattrapage de 4 h relit tout l'historique, pour comparer à la
+# banque (et servir de rapport sur les années passées) ; seules les semaines
+# couvertes par la banque sont écrites. Le bouton et les webhooks ne
+# redemandent que les deux dernières semaines déjà gardées.
 DEBUT_HISTORIQUE = date(2020, 1, 1)
+RECOUVREMENT = timedelta(days=14)
 
 
-def _depuis(dossier: Dossier, stockes: Sequence[SettlementStocke]) -> date:
-    """Tout l'historique est relu à chaque passage (un appel par compte) :
-    un jour écarté par une ancienne règle, ou complété tard par Rollee,
-    revient ainsi dans sa semaine (AXE-924)."""
-    del dossier, stockes
-    return DEBUT_HISTORIQUE
+def _depuis(stockes: Sequence[SettlementStocke], complet: bool) -> date:
+    """Fenêtre demandée à Rollee. `complet` : depuis 2020. Sinon, quatorze
+    jours avant la période la plus récente déjà gardée, pour qu'une semaine
+    complétée tard revienne ; sans rien de gardé, tout l'historique une fois."""
+    if complet or not stockes:
+        return DEBUT_HISTORIQUE
+    dernier = max(stocke.settlement.period_end for stocke in stockes)
+    return max(DEBUT_HISTORIQUE, dernier - RECOUVREMENT)
 
 
 async def relever_revenus(
-    services: ServicesRollee, depots: DepotsRevenus, dossier: Dossier, aujourd_hui: date
+    services: ServicesRollee,
+    depots: DepotsRevenus,
+    dossier: Dossier,
+    aujourd_hui: date,
+    complet: bool = False,
 ) -> str:
     connus = {s.id: s for s in depots.settlements.lister(dossier.id)}
     lus, rejets = await _lire(
-        services, dossier, _depuis(dossier, list(connus.values())), aujourd_hui
+        services, dossier, _depuis(list(connus.values()), complet), aujourd_hui
     )
     for rejet in rejets:
         depots.journal.mettre_en_quarantaine(
@@ -458,3 +472,35 @@ def _ventiler(
         f"{sum(1 for s in stockes_finaux if s.etat == 'a_verifier')} à vérifier, "
         f"{nb_rejets} en quarantaine"
     )
+
+
+def trancher_semaine_dossier(
+    settlements: SettlementsRepository,
+    ledger: LedgerService,
+    dossier: Dossier,
+    semaine: tuple[str, date],
+    decision: Decision,
+    motif: str,
+) -> str:
+    """AXE-912 : l'expert écrit une semaine « à vérifier » telle quelle, ou
+    en écarte les jours. Les écritures passent d'abord : un refus du grand
+    livre laisse les jours dans leur état."""
+    contexte = Contexte(dossier, tuple(ledger.periodes_closes(dossier.id)), datetime.now(UTC))
+    passage = trancher_semaine(
+        settlements.lister(dossier.id),
+        ledger.grand_livre(dossier.id),
+        contexte,
+        semaine,
+        decision,
+        motif,
+    )
+    for od in passage.ecritures:
+        ledger.enregistrer(od)
+    settlements.enregistrer(passage.stockes)
+    plateforme, lundi_ = semaine
+    quoi = (
+        f"{len(passage.ecritures)} écriture(s)"
+        if decision == "ecrire"
+        else f"{len(passage.stockes)} jour(s) écarté(s)"
+    )
+    return f"{plateforme.capitalize()}, semaine du {lundi_:%d/%m/%Y} : {quoi}"

@@ -37,19 +37,25 @@ from axelcompta.api.routes import prechauffer_caches
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.core.metriques import METRIQUES
+from axelcompta.fiches_import_portefeuille import (
+    completer_fiches as completer_fiches_portefeuille,
+)
 from axelcompta.ledger.balance import SoldeJournal, ecarts
 from axelcompta.ledger.repository import soldes_par_journal
 from axelcompta.llm_synchro import mesurer_llm, passer_llm
 from axelcompta.modeles_distants import assurer_modele
 from axelcompta.notifier import notifier_depuis_base
 from axelcompta.plateformes_rollee import rattraper, suivi_postgres
+from axelcompta.prospection.postgres import PostgresDemandes
+from axelcompta.prospection.service import relancer
+from axelcompta.prospection.slack import notifieur_depuis_env
 from axelcompta.rappels import envoyer, planifier
 from axelcompta.rapprochement_rollee_service import (
     entretenir_cartes,
     passer_tous,
     rapprochement_actif,
 )
-from axelcompta.registres_officiels import relire_si_configure
+from axelcompta.registres_officiels import lecteur_depuis_env, relire_si_configure
 from axelcompta.surveillance import sentinelle_sentry
 from axelcompta.synchro_digifactory import ResultatDossier, synchroniser_portefeuille
 from axelcompta.tenants.avenants import programmer_bascules
@@ -75,6 +81,8 @@ ProgrammerBascules = Callable[[tuple[Dossier, ...]], int]
 Perimetre = Callable[[TenantId], EtatTags]
 # Renvoie le nombre de dossiers recalculés (agrégats, file expert).
 Prechauffer = Callable[[tuple[Dossier, ...]], int]
+# Résumé des fiches d'import créées ou complétées pour un portefeuille.
+CompleterFiches = Callable[[TenantId], str]
 
 
 @dataclass
@@ -90,6 +98,7 @@ def lancer_taches(
     programmer_bascules: ProgrammerBascules | None = None,
     perimetre: Perimetre | None = None,
     prechauffer: Prechauffer | None = None,
+    completer_fiches: CompleterFiches | None = None,
 ) -> BilanTaches:
     """`synchroniser` à None saute la synchro (`--sans-synchro`). Un
     portefeuille sans aucun contact Digifactory n'appelle pas Digifactory.
@@ -103,6 +112,8 @@ def lancer_taches(
         etat = perimetre(tenant.id) if perimetre is not None else SANS_TAGS
         if synchroniser is not None:
             _synchroniser(bilan, tenant.id, dossiers, etat, synchroniser)
+        if completer_fiches is not None:
+            _completer_fiches(bilan, tenant.id, completer_fiches)
         if programmer_bascules is not None:
             _programmer_bascules(bilan, tenant.id, dossiers, programmer_bascules)
         if prechauffer is not None:
@@ -132,6 +143,18 @@ def _synchroniser(
     bilan.lignes.append(
         f"{tenant_id} synchro : {len(resultats) - len(erreurs)} ok, {len(erreurs)} en échec"
     )
+
+
+def _completer_fiches(bilan: BilanTaches, tenant_id: TenantId, completer: CompleterFiches) -> None:
+    """Une fiche pour chaque dossier, pour que ce qui manque se voie dans Imports."""
+    try:
+        ligne = completer(tenant_id)
+    except Exception as exc:  # noqa: BLE001 — une étape n'arrête pas les autres
+        bilan.echec = True
+        bilan.lignes.append(f"{tenant_id} fiches d'import : échec ({type(exc).__name__})")
+        return
+    if ligne:
+        bilan.lignes.append(f"{tenant_id} {ligne}")
 
 
 def _programmer_bascules(
@@ -263,6 +286,15 @@ def _rappels(engine: Engine, maintenant: datetime) -> list[str]:
     return [f"rappels : {crees} créé(s) ; {resume_envois(bilan)}"]
 
 
+def _demandes_echange(engine: Engine, maintenant: datetime) -> list[str]:
+    """AXE-949 : les demandes d'échange dont l'équipe n'a pas été prévenue.
+    Un échec est dit, il n'arrête pas les autres tâches."""
+    try:
+        return [relancer(PostgresDemandes(engine), notifieur_depuis_env(), maintenant)]
+    except Exception as exc:  # noqa: BLE001 — la passe suivante réessaiera
+        return [f"demandes d'échange : échec ({type(exc).__name__})"]
+
+
 def _rollee(rattraper_rollee: Callable[[], list[str]]) -> list[str]:
     """AXE-820 : chaque dossier relié à Rollee est relu, webhook ou pas."""
     try:
@@ -312,9 +344,11 @@ def passer(sans_synchro: bool, debut: datetime) -> BilanTaches:
         ),
         lambda tenant_id: etat_du_portefeuille(PostgresTagsRepository(engine), tenant_id),
         lambda d: prechauffer_caches(engine, d),
+        lambda tenant_id: completer_fiches_portefeuille(engine, tenant_id, lecteur_depuis_env()),
     )
     bilan.lignes += _llm(lambda: passer_llm(engine, debut))
     bilan.lignes += _rappels(engine, debut)
+    bilan.lignes += _demandes_echange(engine, debut)
     try:
         bilan.lignes += detecter_portefeuilles(dependances_reelles(), debut.date())
     except Exception as exc:  # noqa: BLE001 — la détection n'arrête pas le passage
