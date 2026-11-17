@@ -1,6 +1,6 @@
 # 12 — Roadmap et TODO maître
 
-> Statut : brouillon à valider. Dernière mise à jour : 2026-11-16.
+> Statut : brouillon à valider. Dernière mise à jour : 2026-11-17.
 > **Seule source de l'état du projet dans le repo** (fait, en cours, prévu).
 > Le suivi au jour le jour est dans Linear, projet
 > [Axel Compta — V1 prod](https://linear.app/axel-project/project/axel-compta-v1-prod-api-ingestion-fiabilite-899778ce7b41)
@@ -16,9 +16,33 @@
 > #3 à #39) est archivé tel quel dans
 > [archive/12-recalage-2026-09.md](archive/12-recalage-2026-09.md).
 
-## État au 2026-11-16 (à lire avant tout le reste)
+## État au 2026-11-17 (à lire avant tout le reste)
 
-**En une phrase :** du 13 au 16/11, 16 PR (#166 à #185) ont fait tourner
+**Le 17/11 en bref** (détail dans « Fait du 16/11 au soir au 17/11 ») :
+26 PR de plus (#202 à #227). La production est surveillée par Sentry
+(passages manqués, jobs en échec) et relâche seule un job abandonné par
+un redéploiement. Les webhooks Rollee sont traités par chauffeur : un job
+dure de 10 à 80 s au lieu de 24 à 65 min. L'expert-comptable débloque une
+semaine Rollee « à vérifier » et retient ou écarte un compte bancaire. La
+page publique est en ligne (AXE-949). Les virements internes sont
+reconnus à chaque passage horaire, même quand les deux jambes arrivent à
+des synchros différentes (AXE-968). Les fiches d'import s'ignorent, et
+chaque compte d'une fiche se marque pro ou perso.
+
+**⚠️ `main` et `prod` ont divergé.** `prod` est à la PR #221 (tout `main`
+jusqu'à #220). #222 à #227 sont sur `main` seulement. À l'inverse, la page
+publique (AXE-949, #214 à #218) a été mergée directement sur `prod` et
+n'est pas sur `main` : module `prospection/`, migration `b6e2f9a4c715`,
+textes juridiques et docs. Les deux branches ont chacune une migration qui
+suit `d4b7e9a2c361` : `b6e2f9a4c715` sur `prod`, `e1c8a4f72b09` sur
+`main`. Promouvoir `main` tel quel donnerait **deux têtes Alembic** : le
+déploiement s'arrêterait aux migrations (l'API en service n'est pas
+arrêtée). Avant la prochaine promotion : merger `prod` dans `main`, puis
+faire suivre `e1c8a4f72b09` après `b6e2f9a4c715`. La contrainte
+d'`e1c8a4f72b09` est déjà posée à la main en prod (#224), donc la rejouer
+est sans effet.
+
+**En une phrase (16/11) :** du 13 au 16/11, 16 PR (#166 à #185) ont fait tourner
 Rollee sur la base réelle. Le pilote a montré que le modèle « une période
 Rollee = un virement » ne tenait pas. Les recettes des plateformes sont
 maintenant rapprochées de la banque **semaine par semaine**, et écrites
@@ -48,17 +72,21 @@ envoie le code, passe les migrations, puis remplace les conteneurs ; si
 les migrations échouent, l'API en service n'est pas arrêtée. Premier
 déploiement vert le 16/11 à 15:54 : `https://api.axelproject.fr/sante`
 répond `{"statut":"ok"}`, le front est sur `https://compta.axelproject.fr`.
-La PR #200 (AXE-952) est sur `main`, pas encore sur `prod`. Reste
-d'AXE-811 : ADR-003 en « décidé », restauration chronométrée, runbook.
-Mode d'emploi : [backend/README.md](../backend/README.md), « Déployer la
-production ».
+Trois promotions de `main` vers `prod` depuis : #207 et #209 le 16/11,
+#221 le 17/11 (jusqu'à #220). Reste d'AXE-811 : ADR-003 en « décidé »,
+restauration chronométrée, runbook. Mode d'emploi :
+[backend/README.md](../backend/README.md), « Déployer la production ».
 
-**La base réelle est à jour du code au 16/11** (migration `c8a4f1d2e7b5`,
-fiches d'import ; depuis le 16/11, le déploiement de `prod` passe les
-migrations lui-même). Le pilote tourne sur la prod depuis le 14/11, avec
-l'accord de Louis : chaque écriture en simulation d'abord, puis appliquée
-après son OK. Reste à appliquer : la reprise des virements internes
-(AXE-930, 484 OD simulées). Hors Rollee, AXE-842 (clés INSEE/RNE, S3,
+**La base réelle est à jour de `prod` au 17/11** (migration `b6e2f9a4c715`,
+demandes d'échange ; le déploiement de `prod` passe les migrations
+lui-même). La contrainte d'`e1c8a4f72b09` (fiche d'import « ignorée »,
+#224) est déjà posée à la main, sans avancer le numéro Alembic. Le pilote
+tourne sur la prod depuis le 14/11, avec l'accord de Louis : chaque
+écriture en simulation d'abord, puis appliquée après son OK. La reprise
+des virements internes ne se lance plus à la main : l'étape horaire
+d'AXE-968 l'écrira au premier passage après la promotion de #225. Reste
+à lancer une fois : la ventilation de l'historique sur les 512x
+(AXE-832). Hors Rollee, AXE-842 (clés INSEE/RNE, S3,
 Anthropic, reprises du 10 au 13/11) et AXE-850 (écritures restées au 471)
 restent ouverts. Le crontab d'AXE-842 n'attend plus le poste de Louis : le
 worker et les tâches tournent sur le droplet. Mode d'emploi :
@@ -78,8 +106,110 @@ du 13 au 16/11 ».
 - La commission Uber vaut 0 chez Rollee : le CA Uber est pris après
   commission tant que Rollee ne la donne pas (question à Rollee, AXE-939).
 
+**Vu sur la prod (lecture seule, 17/11)** :
+- MK DRIVING (DIGI_22755), août à octobre : 261 opérations restaient au
+  471. 173 sont des virements entre ses 5 comptes (AXE-968), 39 sa
+  rémunération (4 830 €), 15 des virements Uber, 34 d'autres dépenses
+  (4 111 €).
+- Ces 15 Uber : les semaines de juin au 03/08 sont versées sur un compte
+  que Digifactory ne transmet pas (la banque ne montre Uber qu'à partir du
+  05/08). La semaine du 19/10 a 2,00 € versés en trop. L'expert peut
+  écrire ces semaines telles quelles (AXE-912) ; imputer un petit écart
+  pour solder le 467x est AXE-969.
+- Simulations du 17/11 (rien d'écrit) : virements internes, 106 paires
+  (212 OD) sur MK DRIVING ; ventilation 512 → 512x, 560 reclassements
+  sur MK DRIVING et 292 sur B'CARS. SERENITY GROUPE et SERENITY
+  INVESTISSEMENT portent le tag « société du gestionnaire » : ni l'étape
+  horaire ni les scripts ne les touchent.
+- Une simulation de ventilation avait créé 12 fiches de comptes bancaires
+  (SERENITY GROUPE et SERENITY INVESTISSEMENT). Le script est corrigé
+  (#225), et les 12 fiches ont été supprimées le 17/11 avec l'accord de
+  Louis.
+
 Client de référence V1 : Serenity Gestion, installé étape par étape avant
 toute autre vente.
+
+### Fait du 16/11 au soir au 17/11 (PR #202 à #227)
+
+**Production et exploitation**
+- Un job abandonné par son worker (redéploiement pendant une synchro) est
+  relâché après 2 h : il repart s'il lui reste des essais, sinon il passe
+  en échec avec son motif (AXE-958, #204, migration `d4b7e9a2c361`,
+  colonne `jobs.pris_le`).
+- Sentry surveille le worker et les tâches (AXE-959, #205) : un job en
+  échec part avec son type, et le moniteur Sentry Crons
+  `axelcompta-taches` alerte si un passage manque, déborde ou échoue.
+  Un job qui sera retenté ne prévient plus : l'alerte part au dernier
+  essai. Sur un poste, `ENV=dev` dans `.env.dev` coupe Sentry (#219).
+- Webhooks Rollee traités par chauffeur, pas par événement (AXE-966,
+  #220). Les chauffeurs inconnus d'un lot passent en un seul
+  rapprochement, limité aux flottes d'où viennent leurs webhooks. La nuit
+  du 16/11, ces jobs duraient de 24 à 65 min ; après la livraison, de
+  10 à 80 s.
+- Synchros allégées (#212) : le bouton Synchroniser relit Rollee sur les
+  deux dernières semaines (l'historique reste le passage de 4 h). Un lot
+  bancaire vide ne recharge plus le grand livre. Un rapprochement Rollee
+  en cours ou fini depuis moins de 10 min n'est pas relancé.
+- Le jeton et l'adresse Digifactory ne se lisent plus dans
+  l'environnement, seulement dans le branchement d'Intégrations (#226).
+  `.env.example` et `.env.dev.example` sont allégés.
+
+**Page publique (AXE-949, #214 à #218, mergée sur `prod` par #217)**
+- `https://compta.axelproject.fr` sert une vitrine lisible sans compte,
+  avec le formulaire « Demander un échange de 20 min » et les cinq textes
+  juridiques. La demande est gardée en base (`demandes_echange`) puis
+  annoncée sur Slack. Confidentialité mise à jour (Slack sous-traitant).
+- Sur `prod` seulement (voir l'encadré ⚠️ plus haut). Le webhook Slack
+  (`AXELCOMPTA_SLACK_DEMANDES_WEBHOOK`) n'est pas encore posé sur le
+  droplet : les demandes sont gardées, personne n'est prévenu (AXE-962).
+
+**Accès et authentification**
+- Un lien de réinitialisation ou d'invitation tombé sur l'accueil ouvre le
+  choix du mot de passe (#206). Un lien de connexion ouvre le côté qui l'a
+  demandé, gestionnaire ou dossier, et le jeton n'est échangé qu'à
+  l'ouverture de la page : un filtre de messagerie ne le consomme plus
+  (#208, modèles de `deploy/emails/` à republier dans Supabase).
+- Réinitialiser son mot de passe avec la double authentification active :
+  la page demande aussi le code à 6 chiffres (AXE-961, #213).
+- La porte d'un dossier est `app-compta.axelproject.fr`, chemins
+  `/dossier/…` ; une ancienne adresse `/chauffeur/…` redirige (AXE-965,
+  #222). Sur `main`, pas encore sur `prod`.
+- Retirer un accès gestionnaire supprime aussi son compte Supabase Auth
+  (AXE-967, #223). Les accès retirés avant ce correctif sont à supprimer à
+  la main.
+
+**Comptabilité et rapprochements**
+- L'expert débloque une semaine Rollee « à vérifier » (AXE-912, #210) :
+  « Écrire telle quelle » (l'écart reste dû sur le 467x de la plateforme)
+  ou « Écarter ces jours », avec un motif obligatoire tracé au journal
+  d'audit. Le 16/11, 1 114 jours attendaient, sur 4 dossiers.
+- L'expert-comptable retient ou écarte un compte bancaire depuis la fiche
+  de l'entreprise (AXE-956, #202), avec les règles du dirigeant (AXE-729).
+- Annexes du réel normal (AXE-484, #211) : détail du 2054, 2058-C et
+  2059-A. Voir « Fait du 2026-09-27 au 2026-11-05 ».
+- Virements internes reconnus d'une synchro à l'autre (AXE-968, #225) :
+  une étape des tâches horaires relit tout le grand livre. Deux opérations
+  encore au 471 qui se répondent (montant opposé, à un jour près, même
+  libellé ou deux comptes différents du dossier) passent au 580. Elle ne
+  touche jamais une opération classée par un humain, ni un dossier exclu
+  par un tag. Les scripts de reprise sont maintenant dans l'image Docker.
+  Sur `main`, pas encore sur `prod`.
+
+**Portefeuille et fiches d'import**
+- Les tags et leurs exclusions ont leur page, Entreprises › Tags (AXE-957,
+  #203).
+- Une entreprise arrivée de Digifactory reçoit sa fiche d'import à chaque
+  passage horaire. Une fiche crée le dossier dès que les champs
+  obligatoires sont remplis, ou se relie au dossier du même SIREN (#212).
+- Le bloc « Nouveaux chauffeurs Digifactory » quitte Entreprises : un
+  contact sans entreprise ouvre une fiche d'import. Imports gagne la
+  catégorie **Ignoré**, avec Ignorer et Remettre (#224, migration
+  `e1c8a4f72b09`). Une fiche ignorée n'apparaît ni dans Toutes ni dans
+  Entreprises. Un dossier déjà créé reste protégé par ses tags (AXE-829).
+- Section Banque d'une fiche d'import : les comptes remontés par
+  Digifactory, chacun marqué **Pro** ou **Perso** (#227).
+- Ouvertes : retirer « En cours d'import » du portefeuille (#228), bordures
+  de la fiche d'import (#229).
 
 ### Fait le 2026-11-16 (PR #186 à #200)
 
@@ -548,8 +678,20 @@ Les relevés CSV (AXE-801) restent la source de secours pour un chauffeur
 sans Rollee. Les cinq tickets Rollee sont faits depuis le 12/11 (PR #132 à
 #136).
 
-### En cours (16/11)
+### En cours (17/11)
 
+- Remettre `main` et `prod` d'accord (encadré ⚠️ en tête), puis promouvoir
+  #222 à #227. Au premier passage horaire qui suit, l'étape d'AXE-968
+  écrit les virements internes de tout l'historique (MK DRIVING : 212 OD
+  en simulation). À surveiller dans le journal du worker : « virements
+  internes : N paire(s) au 580 ».
+- Ventiler l'historique sur les 512x (AXE-832), une fois, après la
+  promotion : simulation, puis `--appliquer` avec l'accord de Louis. Sans
+  elle, deux virements entre comptes aux libellés différents ne se
+  reconnaissent pas.
+- AXE-969 : rendre simple à l'expert de voir et d'imputer un petit écart
+  de semaine Rollee (2,00 € versés en trop chez MK DRIVING), pour solder
+  le 467x.
 - Pilote Rollee sur la prod : une synchro complète (bouton
   **Synchroniser**) avec le code du 16/11, pour stocker Heetch, Allocab et
   Free Now, récupérer les jours mis de côté avant la lecture jour par jour
@@ -566,7 +708,8 @@ sans Rollee. Les cinq tickets Rollee sont faits depuis le 12/11 (PR #132 à
 - AXE-842 : appliquer en production le reste de ce qui est mergé depuis le
   05/11 (crontab, clés, reprises du 10 au 13/11). Décision de Louis du
   06/11 : étape par étape, chaque reprise en simulation, puis appliquée
-  après accord. Reprise des virements internes (AXE-930) à appliquer.
+  après accord. La reprise des virements internes (AXE-930) passe
+  maintenant par l'étape horaire d'AXE-968.
 - Vérifications sur de vraies données : lecture d'un vrai SIREN à l'INSEE
   et au RNE, un vrai FEC repris. Rollee est vérifié sur la prod depuis le
   14/11 (montants en euros, jours, flottes).
@@ -603,8 +746,8 @@ AXE-424, et tout le cœur VTC ci-dessus. Reste, dans l'ordre :
   seulement s'il fait mieux sur le jeu gelé ; avec lui, le top 3 du modèle
   dans l'entrée du LLM.
 - AXE-903 : mesurer le rappel de la détection d'anomalies.
-- AXE-912 : débloquer un versement de plateforme « à vérifier » (depuis
-  AXE-924 : une semaine à vérifier).
+- ~~AXE-912 : débloquer une semaine de plateforme « à vérifier »~~ : fait
+  le 16/11 (#210). Suite : AXE-969 (imputer un petit écart).
 
 **Après, ou à trancher**
 - AXE-423 : finir l'audit du dataset 10 ans. La relecture des 500 lignes
@@ -660,6 +803,14 @@ sur une référence provisoire). Détail plus haut.
   reste sur le 4672 de B'CARS (arrondi Bolt) : l'accepter ou l'écrire ?
 - MK DRIVING : quel compte bancaire reçoit Uber de juin à début août ?
   Sans lui, 9 semaines Uber restent sans virement.
+- Petits écarts de semaine Rollee (AXE-969) : à partir de quel montant
+  l'expert impute-t-il l'écart, et sur quel compte ? Question à
+  l'expert-comptable.
+- Rémunération du dirigeant : la règle du pack la laisse en confiance
+  basse, parce que le compte dépend du statut (641, 644 ou 108). Pour une
+  SARL à l'IS comme MK DRIVING (39 opérations, 4 830 € d'août à octobre),
+  quel compte ? Question à l'expert-comptable ; à terme, un réglage par
+  dossier.
 
 ### Actions hors code (Louis)
 
@@ -674,14 +825,32 @@ sur une référence provisoire). Détail plus haut.
   elle en couvre 8 sur 15. B'CARS SERVICES (DIGI_86930) n'y est pas, ses
   rapprochements restent donc fermés dans le mode expert.
 - Cliquer sur **Synchroniser** (code du 16/11 en place).
-- Valider l'application de la reprise des virements internes (AXE-930).
+- ~~Valider l'application de la reprise des virements internes
+  (AXE-930)~~ : remplacée par l'étape horaire d'AXE-968, qui écrit à la
+  promotion de #225.
+- Avant de promouvoir #222 (porte des dossiers) : poser
+  `AXELCOMPTA_URL_DOSSIER=https://app-compta.axelproject.fr` dans le
+  `.env` du droplet (absent au 17/11), et autoriser
+  `https://app-compta.axelproject.fr/auth/lien` et
+  `https://app-compta.axelproject.fr/dossier/accepter-invitation` dans
+  Supabase.
+- Poser `AXELCOMPTA_SLACK_DEMANDES_WEBHOOK` sur le droplet (AXE-962, absent
+  au 17/11), et brancher une alerte (e-mail ou téléphone) sur le moniteur
+  Sentry `axelcompta-taches`.
+- Supprimer à la main dans Supabase Auth les comptes des accès
+  gestionnaire retirés avant #223.
+- Republier dans Supabase les modèles d'e-mails de `deploy/emails/`
+  (#208), si ce n'est pas fait.
+- Relire le texte de la page publique (`frontend/lib/landing-contenu.ts`)
+  avant de communiquer l'adresse (critère de fin d'AXE-949).
 - Déclarer chez Rollee le webhook de chaque compte (Intégrations › Rollee),
   maintenant que l'API a une adresse publique.
 - Compléter l'hébergeur applicatif dans les textes juridiques
   (`mentions-legales.md`, `confidentialite.md`, aujourd'hui « À
   COMPLÉTER ») : fournisseur et région du droplet.
-- Promouvoir `main` vers `prod` pour livrer AXE-952 (PR `main` → `prod`,
-  en merge commit).
+- ~~Promouvoir `main` vers `prod` pour livrer AXE-952~~ : fait le 16/11
+  (#209). Prochaine promotion : après avoir mergé `prod` dans `main`
+  (encadré ⚠️ en tête).
 
 ### Ce qui reste vrai de septembre
 

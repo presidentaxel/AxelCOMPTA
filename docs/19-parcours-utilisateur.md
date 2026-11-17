@@ -298,6 +298,12 @@ n'existe plus côté gestionnaire (§2.1, §2.4).
    vers `/auth/lien`. Une invitation chauffeur (`dossier_id`) va sur
    `/chauffeur/accepter-invitation` ; une invitation d'équipe (`tenant_id`)
    reste sur `/auth/lien`. Les deux demandent le mot de passe.
+   **Depuis le 17/11 (AXE-965, en tête du doc)**, ces chemins sont
+   `/dossier/login`, `/dossier/compte` et `/dossier/accepter-invitation`,
+   sur `app-compta.axelproject.fr` ; les anciens redirigent. Un lien de
+   connexion ouvre le côté qui l'a demandé (#208), et un compte avec la
+   double authentification donne aussi son code pour changer de mot de
+   passe (AXE-961).
 3. **Complément de profil** si nécessaire (une partie est déjà pré-remplie
    depuis la fiche dossier créée côté gestionnaire).
 4. **Connexion bancaire** — trois cas concrets selon `mode_acces_bancaire`
