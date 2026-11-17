@@ -27,6 +27,8 @@ from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.synchro_digifactory import SOURCE
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
+from axelcompta.tenants.tags import etat_du_portefeuille, retenus
+from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.workflow.ventilation_bancaire import ventilation_du_dossier
 
 
@@ -49,14 +51,20 @@ class _SansEcriture(PostgresCompteBancaireRepository):
 
 
 def _dossiers(
-    depot: PostgresDossierRepository, arguments: argparse.Namespace
+    depot: PostgresDossierRepository,
+    tags: PostgresTagsRepository,
+    arguments: argparse.Namespace,
 ) -> tuple[Dossier, ...]:
     if arguments.dossier:
         dossier = depot.obtenir(DossierId(arguments.dossier))
         if dossier is None:
             raise SystemExit(f"dossier inconnu : {arguments.dossier}")
         return (dossier,)
-    return depot.lister_par_tenant(TenantId(arguments.tenant))
+    tenant_id = TenantId(arguments.tenant)
+    # Un dossier qu'un tag exclut (société du gestionnaire, test, hors
+    # périmètre) n'est pas touché ; `--dossier` le vise quand même.
+    etat = etat_du_portefeuille(tags, tenant_id)
+    return retenus(depot.lister_par_tenant(tenant_id), etat, "synchro")
 
 
 def main() -> int:
@@ -73,7 +81,10 @@ def main() -> int:
     comptes = (
         PostgresCompteBancaireRepository(engine) if arguments.appliquer else _SansEcriture(engine)
     )
-    for dossier in _dossiers(PostgresDossierRepository(engine), arguments):
+    dossiers = _dossiers(
+        PostgresDossierRepository(engine), PostgresTagsRepository(engine), arguments
+    )
+    for dossier in dossiers:
         reclassements = ventilation_du_dossier(
             dossier.id, ledger.grand_livre(dossier.id), journal, comptes, SOURCE
         )

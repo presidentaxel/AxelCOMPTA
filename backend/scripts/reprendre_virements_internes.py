@@ -27,19 +27,27 @@ from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.packs.vtc_demo import charger_compte_par_categorie
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
+from axelcompta.tenants.tags import etat_du_portefeuille, retenus
+from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.virements_internes_dossier import reprise_du_dossier
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
 
 
 def _dossiers(
-    depot: PostgresDossierRepository, arguments: argparse.Namespace
+    depot: PostgresDossierRepository,
+    tags: PostgresTagsRepository,
+    arguments: argparse.Namespace,
 ) -> tuple[Dossier, ...]:
     if arguments.dossier:
         dossier = depot.obtenir(DossierId(arguments.dossier))
         if dossier is None:
             raise SystemExit(f"dossier inconnu : {arguments.dossier}")
         return (dossier,)
-    return depot.lister_par_tenant(TenantId(arguments.tenant))
+    tenant_id = TenantId(arguments.tenant)
+    # Un dossier qu'un tag exclut (société du gestionnaire, test, hors
+    # périmètre) n'est pas touché ; `--dossier` le vise quand même.
+    etat = etat_du_portefeuille(tags, tenant_id)
+    return retenus(depot.lister_par_tenant(tenant_id), etat, "categorisation")
 
 
 def main() -> int:
@@ -55,7 +63,10 @@ def main() -> int:
     decisions = PostgresDecisionRepository(engine)
     comptes_pack = charger_compte_par_categorie()
     total = 0
-    for dossier in _dossiers(PostgresDossierRepository(engine), arguments):
+    dossiers = _dossiers(
+        PostgresDossierRepository(engine), PostgresTagsRepository(engine), arguments
+    )
+    for dossier in dossiers:
         reprise = reprise_du_dossier(
             dossier, ledger, decisions, comptes_pack, seulement_en_attente=False
         )
