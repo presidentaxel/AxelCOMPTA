@@ -119,9 +119,9 @@ export DATABASE_URL="postgresql://user:password@localhost:5432/axelcompta_test"
 .venv/bin/pytest -q -m integration -k "not supabase"
 ```
 
-Appels réels à Digifactory (hors CI, `DIGIFACTORY_TOKEN` dans le `.env`
-racine) : `.venv/bin/pytest -q -m digifactory`. Le test ne garde aucun
-libellé, IBAN ni nom.
+Appels réels à Digifactory (hors CI, branchement Digifactory du
+portefeuille de démo) : `.venv/bin/pytest -q -m digifactory`. Le test ne
+garde aucun libellé, IBAN ni nom.
 
 Dossiers de démo branchés sur les contacts Digifactory (idempotent ;
 `--formes` ne fait que reprendre la forme juridique depuis Sirene) :
@@ -172,7 +172,7 @@ editor) avant `alembic upgrade head` et `demo_seed` ; les comptes Supabase
 Auth (schéma `auth`) ne sont pas concernés.
 
 Synchroniser les transactions Digifactory d'un portefeuille (nécessite
-`DIGIFACTORY_BASE_URL`, `DIGIFACTORY_TOKEN` et des dossiers portant un
+un branchement Digifactory dans Intégrations et des dossiers portant un
 `contact_nr`) :
 
 ```bash
@@ -407,7 +407,8 @@ reprise en simulation, puis appliquée après accord.
    `a3f8c2d71e46` (identité) à `e2a6c8f4b913` (liens Rollee).
 2. **Intégrations** (écran du même nom, admin) : brancher **d'abord le
    jeton Digifactory actuel**, qui devient le défaut ; ensuite seulement
-   les autres comptes. `DIGIFACTORY_TOKEN` peut alors rester vide.
+   les autres comptes. L'adresse et le jeton ne sont pas des variables
+   d'environnement.
    `AXELCOMPTA_CLE_INTEGRATIONS` doit être posée aussi sur la machine des
    tâches planifiées et du worker, et ne jamais changer (AXE-872).
 3. Variables (voir `.env.example`), chacune facultative, rien ne se passe

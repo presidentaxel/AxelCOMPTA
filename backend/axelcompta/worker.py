@@ -279,11 +279,10 @@ async def contacts_du_portefeuille(
     branchements: list[Branchement],
 ) -> dict[str, dict[str, object]]:
     """AXE-872 : les contacts de chaque branchement Digifactory actif, celui
-    par défaut d'abord. Aucun branchement : le jeton de l'environnement."""
+    par défaut d'abord. Aucun branchement : aucun contact."""
     actifs = sorted((b for b in branchements if b.actif), key=lambda b: not b.par_defaut)
-    sources: list[Branchement | None] = list(actifs) or [None]
     tous: dict[str, dict[str, object]] = {}
-    for branchement in sources:
+    for branchement in actifs:
         client = client_digifactory(branchement)
         try:
             brut = await client.contacts()
@@ -292,12 +291,8 @@ async def contacts_du_portefeuille(
         for nr, contact in brut.items():
             if not isinstance(contact, dict) or str(nr) in tous:
                 continue
-            secondaire = branchement is not None and not branchement.par_defaut
-            tous[str(nr)] = (
-                {**contact, CLE_BRANCHEMENT: branchement.id}
-                if secondaire and branchement
-                else contact
-            )
+            secondaire = not branchement.par_defaut
+            tous[str(nr)] = {**contact, CLE_BRANCHEMENT: branchement.id} if secondaire else contact
     return tous
 
 
