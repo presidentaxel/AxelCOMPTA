@@ -3721,7 +3721,9 @@ def _enregistrer_routes_membres(app: FastAPI) -> None:
 def retirer_membre(
     entree: InvitationMembreEntree, comptes: ComptesDep, identite: IdentiteDep
 ) -> None:
-    """Garde la ligne de droit : sans ligne, `_role_membre` rendrait le compte admin."""
+    """Garde la ligne de droit : sans ligne, `_role_membre` rendrait le compte admin.
+    Le compte Auth du gestionnaire est supprimé : sinon il reste dans
+    Supabase et peut rouvrir une session."""
     tenant_id, identite = _verifier_acces_gestionnaire(identite)
     _exiger_admin(identite, tenant_id)
     email = entree.email.strip().lower()
@@ -3737,6 +3739,7 @@ def retirer_membre(
     if email in [admin.lower() for admin in admins] and len(admins) <= 1:
         raise HTTPException(status_code=400, detail="Il reste un seul administrateur.")
     _ecrire_role(tenant_id, email, "retire")
+    comptes.retirer_membre(str(tenant_id), email)
 
 
 def _enregistrer_routes_invitation(app: FastAPI) -> None:

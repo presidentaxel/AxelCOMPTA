@@ -50,6 +50,18 @@ def test_un_membre_invite_n_a_pas_encore_accepte() -> None:
     assert [(membre.email, membre.accepte) for membre in membres] == [("marie@example.com", False)]
 
 
+def test_retirer_un_membre_enleve_son_compte_et_pas_celui_d_un_autre() -> None:
+    repo = InMemoryCompteRepository()
+    repo.inviter_membre("T1", "marie@example.com")
+    repo.inviter_membre("T2", "paul@example.com")
+
+    repo.retirer_membre("T1", "Marie@example.com")
+    repo.retirer_membre("T1", "personne@example.com")
+
+    assert repo.membres("T1") == []
+    assert [membre.email for membre in repo.membres("T2")] == ["paul@example.com"]
+
+
 def test_inviter_un_membre_deja_connu_est_refuse() -> None:
     repo = InMemoryCompteRepository()
     repo.inviter_membre("T1", "marie@example.com")

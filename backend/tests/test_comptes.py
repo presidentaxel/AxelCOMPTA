@@ -171,6 +171,22 @@ def test_renvoyer_pointe_vers_la_page_du_mot_de_passe(monkeypatch: pytest.Monkey
     assert json.loads(renvois[0].content) == {"type": "signup", "email": "d1@exemple.fr"}
 
 
+def test_retirer_un_membre_supprime_son_compte_auth_pas_un_chauffeur() -> None:
+    utilisateurs: list[dict[str, object]] = [
+        {"id": "gest", "email": "marie@exemple.fr", "app_metadata": {"tenant_id": "T1"}},
+        {"id": "chauffeur", "email": "sophie@exemple.fr", "app_metadata": {"dossier_id": "d1"}},
+    ]
+    appels: list[httpx.Request] = []
+    depot = _depot_supabase(utilisateurs, appels)
+
+    depot.retirer_membre("T1", "Marie@exemple.fr")
+    depot.retirer_membre("T1", "sophie@exemple.fr")
+    depot.retirer_membre("T1", "inconnu@exemple.fr")
+
+    suppressions = [appel for appel in appels if appel.method == "DELETE"]
+    assert [appel.url.path for appel in suppressions] == ["/auth/v1/admin/users/gest"]
+
+
 def test_inviter_sans_reverifier_ne_relit_pas_les_comptes() -> None:
     appels: list[httpx.Request] = []
     depot = _depot_supabase([], appels)
