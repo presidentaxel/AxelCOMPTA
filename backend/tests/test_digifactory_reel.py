@@ -1,7 +1,9 @@
 """Appels réels à Digifactory. Hors CI : `pytest -m digifactory`.
 
-Ne conserve aucun libellé, IBAN ni nom. Vérifie seulement que le parseur
-accepte le payload du jour et sort des centimes entiers.
+Le jeton est celui du branchement Digifactory du portefeuille de démo
+(Intégrations), pas une variable d'environnement. Ne conserve aucun
+libellé, IBAN ni nom. Vérifie seulement que le parseur accepte le
+payload du jour et sort des centimes entiers.
 """
 
 from __future__ import annotations
@@ -13,12 +15,17 @@ from pathlib import Path
 import pytest
 from dotenv import load_dotenv
 
+from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId
+from axelcompta.ingestion.digifactory_contacts import TENANT_DEMO
 from axelcompta.ingestion.providers.digifactory import (
     DigifactoryHttpClient,
     DigifactoryProvider,
     parser_lot,
 )
+from axelcompta.synchro_digifactory import TYPE_DIGIFACTORY, client_digifactory
+from axelcompta.tenants.branchements import choisir
+from axelcompta.tenants.branchements_postgres import PostgresBranchements
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
@@ -26,9 +33,16 @@ pytestmark = pytest.mark.digifactory
 
 
 def _client() -> DigifactoryHttpClient:
-    if not os.environ.get("DIGIFACTORY_TOKEN"):
-        pytest.skip("DIGIFACTORY_TOKEN absent")
-    return DigifactoryHttpClient.depuis_env()
+    if not os.environ.get("DATABASE_URL") or not os.environ.get("AXELCOMPTA_CLE_INTEGRATIONS"):
+        pytest.skip("branchement Digifactory : base ou clé absente")
+    branchement = choisir(
+        PostgresBranchements(engine_depuis_env()).lister(TENANT_DEMO),
+        TYPE_DIGIFACTORY,
+        None,
+    )
+    if branchement is None:
+        pytest.skip("aucun branchement Digifactory actif")
+    return client_digifactory(branchement)
 
 
 def test_le_token_ouvre_les_contacts_et_les_comptes() -> None:

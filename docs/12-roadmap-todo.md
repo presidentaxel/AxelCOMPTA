@@ -248,7 +248,7 @@ d'avancement du projet publié (le précédent datait du 06/10).
   un **branchement** nommé par accès (mail, SMS, Digifactory, Rollee), un
   par défaut (sauf Rollee : tous les comptes sont interrogés tant qu'un
   dossier n'est pas relié à l'un d'eux), et un choix possible par dossier. La synchro Digifactory
-  ouvre un client par jeton ; `DIGIFACTORY_TOKEN` ne sert plus qu'en repli.
+  ouvre un client par jeton, lu dans Intégrations.
   `integrations_envoi` est repris puis supprimé.
 - Client Rollee (AXE-818, #133) : jeton JWT par branchement (sandbox ou
   production), renouvelé sur 401 et **toujours gardé** ; 429 et 5xx

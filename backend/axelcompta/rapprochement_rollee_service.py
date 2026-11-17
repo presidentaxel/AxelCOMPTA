@@ -958,7 +958,12 @@ async def sources_reelles(
         contacts = {}
     ibans: dict[str, list[str]] = {}
     for branchement, groupe in repartir_par_branchement(dossiers, branchements):
-        client = client_digifactory(branchement)
+        if branchement is None:
+            continue
+        try:
+            client = client_digifactory(branchement)
+        except RuntimeError:
+            continue
         try:
             for dossier in groupe:
                 if dossier.contact_nr:

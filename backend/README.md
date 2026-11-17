@@ -119,9 +119,9 @@ export DATABASE_URL="postgresql://user:password@localhost:5432/axelcompta_test"
 .venv/bin/pytest -q -m integration -k "not supabase"
 ```
 
-Appels réels à Digifactory (hors CI, `DIGIFACTORY_TOKEN` dans le `.env`
-racine) : `.venv/bin/pytest -q -m digifactory`. Le test ne garde aucun
-libellé, IBAN ni nom.
+Appels réels à Digifactory (hors CI, branchement Digifactory du
+portefeuille de démo) : `.venv/bin/pytest -q -m digifactory`. Le test ne
+garde aucun libellé, IBAN ni nom.
 
 Dossiers de démo branchés sur les contacts Digifactory (idempotent ;
 `--formes` ne fait que reprendre la forme juridique depuis Sirene) :
@@ -172,7 +172,7 @@ editor) avant `alembic upgrade head` et `demo_seed` ; les comptes Supabase
 Auth (schéma `auth`) ne sont pas concernés.
 
 Synchroniser les transactions Digifactory d'un portefeuille (nécessite
-`DIGIFACTORY_BASE_URL`, `DIGIFACTORY_TOKEN` et des dossiers portant un
+un branchement Digifactory dans Intégrations et des dossiers portant un
 `contact_nr`) :
 
 ```bash
@@ -407,7 +407,8 @@ reprise en simulation, puis appliquée après accord.
    `a3f8c2d71e46` (identité) à `e2a6c8f4b913` (liens Rollee).
 2. **Intégrations** (écran du même nom, admin) : brancher **d'abord le
    jeton Digifactory actuel**, qui devient le défaut ; ensuite seulement
-   les autres comptes. `DIGIFACTORY_TOKEN` peut alors rester vide.
+   les autres comptes. L'adresse et le jeton ne sont pas des variables
+   d'environnement.
    `AXELCOMPTA_CLE_INTEGRATIONS` doit être posée aussi sur la machine des
    tâches planifiées et du worker, et ne jamais changer (AXE-872).
 3. Variables (voir `.env.example`), chacune facultative, rien ne se passe
@@ -417,7 +418,6 @@ reprise en simulation, puis appliquée après accord.
    |---|---|
    | `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`, `MODELES_BUCKET`, `AXELCOMPTA_MODELE_VERSION` | récupérer le modèle de catégorisation (AXE-847, plus bas) |
    | `INSEE_API_KEY`, ou `INPI_RNE_USERNAME` et `INPI_RNE_PASSWORD` | relire les registres officiels (AXE-849, plus bas) |
-   | `ROLLEE_JETON_SANDBOX` (+ `ROLLEE_COMPTE_SANDBOX`, `ROLLEE_PLATEFORME_SANDBOX`) | test de contrat Rollee seulement, jamais en production |
    | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `AXELCOMPTA_LLM_ACTIF=1` | allumer l'étage LLM (AXE-887, plus bas) |
    | `AXELCOMPTA_LLM_PLAFOND_CHAUFFEUR_USD`, `AXELCOMPTA_LLM_PLAFOND_GLOBAL_USD` | changer le budget de l'IA (0,50 $ et 100 $ par défaut) |
    | `AXELCOMPTA_ROLLEE_RAPPROCHEMENT=1` | relier seuls les users Rollee la nuit (AXE-911, après la simulation) |
@@ -428,8 +428,9 @@ reprise en simulation, puis appliquée après accord.
        python scripts/reprendre_tva_deductible.py --tenant TENANT --appliquer
 
 5. Rollee, dans l'ordre :
-   1. jeton sandbox, puis `python -m pytest -m rollee` depuis `backend/`
-      (unité des montants, AXE-818) ;
+   1. un branchement Rollee sandbox dans Intégrations, puis
+      `python -m pytest -m rollee` depuis `backend/` (unité des montants,
+      AXE-818) ;
    2. Intégrations › Rollee : jeton de production, « Tester » ;
    3. l'API est en ligne depuis le 16/11 : sur chaque compte Rollee
       d'Intégrations : saisir l'adresse publique de l'API, puis le popup

@@ -12,8 +12,8 @@
 > se résout depuis Anomalies (AXE-424). Depuis le 12/11 (AXE-872), le jeton
 > Digifactory est un branchement du portefeuille, chiffré, et il peut y en
 > avoir plusieurs : la synchro ouvre un client par jeton, les nouveaux
-> contacts sont lus sur chaque compte. `DIGIFACTORY_TOKEN` ne sert plus
-> qu'en repli, tant qu'aucun branchement n'existe. Depuis le 15/11, le
+> contacts sont lus sur chaque compte. L'adresse et le jeton ne sont pas
+> des variables d'environnement. Depuis le 15/11, le
 > bouton Synchroniser relit aussi Rollee pour chaque dossier relié, après
 > Digifactory (AXE-929) ; les IBAN ne servent plus à relier les users
 > Rollee (#170). Prochaine étape : la première synchro des chauffeurs réels
@@ -78,8 +78,8 @@ pas revenir dessus si un futur doute survient.
 
 Le token est un secret de 64 caractères (shared secret, pas un JWT/bearer),
 transmis hors bande. Il ne doit jamais être commité ni écrit dans un fichier
-versionné — lecture par variable d'environnement uniquement
-(`DIGIFACTORY_TOKEN`).
+versionné. Il est saisi dans Intégrations, chiffré sur le branchement
+Digifactory du portefeuille, avec l'adresse de l'API.
 
 Cycle de vie du token (durée de validité, rotation, scope, procédure en cas de
 fuite) : **non documenté**, question posée au fournisseur, sans réponse à ce
@@ -383,8 +383,8 @@ Digifactory (délai de rétention des logs dépassé) — sans conséquence, la
 cause est identifiée par un autre biais (Pierre a testé directement avec
 notre token).
 
-**Retesté et confirmé en réel le 2026-09-11**, avec le vrai token de
-`.env` (`DIGIFACTORY_TOKEN`, suffixe `...8512`, celui transmis par Pierre) :
+**Retesté et confirmé en réel le 2026-09-11**, avec le jeton transmis par
+Pierre (suffixe `...8512`) :
 
 ```
 GET /contacts    → 200, objet indexé par nr, 5 contacts (voir §3.3)

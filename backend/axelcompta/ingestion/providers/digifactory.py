@@ -25,7 +25,6 @@ données (2026-09-11) : le payload réel indexe chaque compte par un **dict
 from __future__ import annotations
 
 import calendar
-import os
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -367,18 +366,6 @@ class DigifactoryHttpClient:
             headers={"accept": "*/*", "X_DIGI_TOKEN": token},
             timeout=timeout,
         )
-
-    @classmethod
-    def depuis_env(cls) -> DigifactoryHttpClient:
-        """Lit `DIGIFACTORY_BASE_URL`/`DIGIFACTORY_TOKEN` (`.env`, doc 16 §2)."""
-        base_url = os.environ.get("DIGIFACTORY_BASE_URL")
-        token = os.environ.get("DIGIFACTORY_TOKEN")
-        if not base_url or not token:
-            raise RuntimeError(
-                "DIGIFACTORY_BASE_URL/DIGIFACTORY_TOKEN manquantes — "
-                "voir .env.example à la racine du repo"
-            )
-        return cls(base_url, token)
 
     @classmethod
     def depuis_parametres(cls, parametres: dict[str, str]) -> DigifactoryHttpClient:
