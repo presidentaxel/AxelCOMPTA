@@ -23,8 +23,32 @@ def test_le_registre_rend_le_texte_prometheus() -> None:
 
 def test_sentry_reste_eteint_sans_dsn(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SENTRY_DSN", raising=False)
+    monkeypatch.delenv("ENV", raising=False)
     assert installer_sentry() is False
     assert installer_sentry("") is False
+
+
+def test_un_dsn_demarre_sentry_hors_dev(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sentry_sdk
+
+    monkeypatch.delenv("ENV", raising=False)
+    monkeypatch.setenv("SENTRY_DSN", "https://cle@o0.ingest.sentry.io/1")
+    appels: list[dict[str, object]] = []
+
+    def init(**kwargs: object) -> None:
+        appels.append(kwargs)
+
+    monkeypatch.setattr(sentry_sdk, "init", init)
+    assert installer_sentry() is True
+    assert appels[0]["dsn"] == "https://cle@o0.ingest.sentry.io/1"
+    assert appels[0]["send_default_pii"] is False
+
+
+def test_sentry_reste_eteint_en_dev_meme_avec_un_dsn(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ENV", "dev")
+    monkeypatch.setenv("SENTRY_DSN", "https://cle@o0.ingest.sentry.io/1")
+    assert installer_sentry() is False
+    assert installer_sentry("https://cle@o0.ingest.sentry.io/1") is False
 
 
 def test_le_journal_est_une_ligne_json() -> None:

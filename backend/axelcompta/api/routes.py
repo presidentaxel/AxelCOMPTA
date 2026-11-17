@@ -9647,6 +9647,9 @@ def _enregistrer_routes_societe(app: FastAPI) -> None:
 
 
 def create_app() -> FastAPI:
+    from axelcompta.environnement import charger_environnement
+
+    charger_environnement()
     app = FastAPI(
         title="AxeLCompta — API",
         version="0.0.1",

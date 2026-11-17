@@ -7,9 +7,10 @@
 #
 #   7 * * * * /chemin/vers/AxeLCompta/backend/scripts/taches_planifiees.sh
 #
-# Variables : le `.env` racine s'il existe (poste de dev). Sur le serveur,
-# pas de `.env` : l'environnement vient du service (EnvironmentFile d'un
-# timer systemd, ou variables de l'utilisateur du crontab).
+# Variables : le `.env` racine s'il existe, puis `.env.dev` qui l'emporte
+# (poste de dev, ENV=dev). Sur le serveur, pas de ces fichiers :
+# l'environnement vient du service (EnvironmentFile d'un timer systemd,
+# ou variables de l'utilisateur du crontab).
 # Journaux : `AXELCOMPTA_JOURNAUX` (par défaut backend/_demo_output/journaux,
 # ignoré par git ; /var/log/axelcompta sur un serveur).
 set -euo pipefail
@@ -23,6 +24,12 @@ if [ -f "$RACINE/.env" ]; then
   set -a
   # shellcheck disable=SC1091
   . "$RACINE/.env"
+  set +a
+fi
+if [ -f "$RACINE/.env.dev" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$RACINE/.env.dev"
   set +a
 fi
 
