@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   deposerDocumentImport,
   deposerDocumentsExercice,
+  lireFicheImport,
   rangerDocumentImport,
   retirerDocumentImport,
   telechargerDocumentImport,
@@ -15,6 +16,7 @@ import {
 import {
   ajouterAnnee,
   CATEGORIES_EXERCICE,
+  deplacerDocument,
   documentsVisibles,
   lireAnnee,
   basculerRetard,
@@ -49,12 +51,59 @@ export function EmplacementsSection({
   enregistrer: (champs: Record<string, string>) => Promise<void>;
 }) {
   const siens = fiche.emplacements.filter((e) => e.section === section);
+  const essais = useRef(new Map<string, number>());
+  const suites = useRef(new Map<string, Promise<void>>());
+  const [erreurs, setErreurs] = useState<Record<string, string>>({});
   if (siens.length === 0) return null;
   const groupes = new Map(parExercice(siens));
+
+  /** Le document change de carte tout de suite. Seul le dernier choix de ce
+   * document est envoyé, puis remplace la fiche ; un échec la relit. */
+  function ranger(document: DocumentImport, categorie: string) {
+    const emplacement = `reprise:${categorie}:${document.exercice}`;
+    if (emplacement === document.emplacement) return;
+    const ticket = (essais.current.get(document.id) ?? 0) + 1;
+    essais.current.set(document.id, ticket);
+    setErreurs((courant) => ({ ...courant, [document.id]: "" }));
+    const avant = fiche;
+    onFiche(deplacerDocument(fiche, document.id, emplacement));
+    const suite = (suites.current.get(document.id) ?? Promise.resolve()).then(async () => {
+      if (essais.current.get(document.id) !== ticket) return;
+      try {
+        const suivante = await rangerDocumentImport(fiche.id, document.id, emplacement);
+        if (essais.current.get(document.id) === ticket) onFiche(suivante);
+      } catch (exception) {
+        if (essais.current.get(document.id) !== ticket) return;
+        const message = exception instanceof Error ? exception.message : "Erreur inattendue.";
+        setErreurs((courant) => ({ ...courant, [document.id]: message }));
+        try {
+          onFiche(await lireFicheImport(fiche.id));
+        } catch {
+          onFiche(avant);
+        }
+      }
+    });
+    suites.current.set(
+      document.id,
+      suite.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+  }
+
   const grille = (liste: EmplacementImport[]) => (
     <div className="grid gap-3 md:grid-cols-2">
       {liste.map((e) => (
-        <CarteEmplacement key={e.cle} fiche={fiche} emplacement={e} modifiable={modifiable} onFiche={onFiche} />
+        <CarteEmplacement
+          key={e.cle}
+          fiche={fiche}
+          emplacement={e}
+          modifiable={modifiable}
+          onFiche={onFiche}
+          onRanger={ranger}
+          erreurs={erreurs}
+        />
       ))}
     </div>
   );
@@ -280,11 +329,15 @@ function CarteEmplacement({
   emplacement,
   modifiable,
   onFiche,
+  onRanger,
+  erreurs,
 }: {
   fiche: FicheImport;
   emplacement: EmplacementImport;
   modifiable: boolean;
   onFiche: (fiche: FicheImport) => void;
+  onRanger: (document: DocumentImport, categorie: string) => void;
+  erreurs: Record<string, string>;
 }) {
   const [survol, setSurvol] = useState(false);
   const [envois, setEnvois] = useState<Envoi[]>([]);
@@ -337,7 +390,15 @@ function CarteEmplacement({
       {(emplacement.documents.length > 0 || envois.length > 0) && (
         <ul className="space-y-2">
           {visibles.map((d) => (
-            <LigneDocument key={d.id} fiche={fiche} document={d} modifiable={modifiable} onFiche={onFiche} />
+            <LigneDocument
+              key={d.id}
+              fiche={fiche}
+              document={d}
+              modifiable={modifiable}
+              onFiche={onFiche}
+              onRanger={onRanger}
+              erreur={erreurs[d.id] ?? ""}
+            />
           ))}
           {caches > 0 && (
             <li>
@@ -392,11 +453,15 @@ function LigneDocument({
   document,
   modifiable,
   onFiche,
+  onRanger,
+  erreur,
 }: {
   fiche: FicheImport;
   document: DocumentImport;
   modifiable: boolean;
   onFiche: (fiche: FicheImport) => void;
+  onRanger: (document: DocumentImport, categorie: string) => void;
+  erreur: string;
 }) {
   async function ouvrir() {
     const blob = await telechargerDocumentImport(fiche.id, document.id);
@@ -445,37 +510,29 @@ function LigneDocument({
         {document.resume && <span className="text-subtle">· {document.resume}</span>}
       </p>
       {modifiable && document.exercice !== null && document.emplacement.startsWith("reprise:") && (
-        <RangerDocument fiche={fiche} document={document} onFiche={onFiche} />
+        <RangerDocument document={document} erreur={erreur} onRanger={onRanger} />
       )}
     </li>
   );
 }
 
-/** AXE-970 : un document classé seul se range ailleurs dans son exercice. */
+/** AXE-970 : un document classé seul se range ailleurs dans son exercice.
+ * Le déplacement est affiché tout de suite. */
 function RangerDocument({
-  fiche,
   document,
-  onFiche,
+  erreur,
+  onRanger,
 }: {
-  fiche: FicheImport;
   document: DocumentImport;
-  onFiche: (fiche: FicheImport) => void;
+  erreur: string;
+  onRanger: (document: DocumentImport, categorie: string) => void;
 }) {
-  const [erreur, setErreur] = useState("");
   return (
     <label className="mt-1 flex flex-wrap items-center gap-2 text-xs text-subtle">
       Ranger dans
       <select
         value={document.categorie}
-        onChange={async (e) => {
-          setErreur("");
-          try {
-            const emplacement = `reprise:${e.target.value}:${document.exercice}`;
-            onFiche(await rangerDocumentImport(fiche.id, document.id, emplacement));
-          } catch (exception) {
-            setErreur(exception instanceof Error ? exception.message : "Erreur inattendue.");
-          }
-        }}
+        onChange={(e) => onRanger(document, e.target.value)}
         className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-ink"
         aria-label={`Ranger ${document.nom_fichier} dans`}
       >

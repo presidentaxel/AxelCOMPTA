@@ -410,6 +410,65 @@ export const CATEGORIES_EXERCICE: { cle: string; libelle: string }[] = [
   { cle: "autre", libelle: "Autre document" },
 ];
 
+/** Le texte d'une carte créée à l'écran quand aucune pièce n'y était encore. */
+const EXPLICATIONS_EXERCICE: Record<string, string> = {
+  comptes_annuels: "Bilan, compte de résultat, annexe.",
+  declaration_tva: "CA3, CA12 (3517-S) et leurs synthèses.",
+  declaration_is: "Relevés d'acompte et de solde (2571, 2572).",
+  accuse_reception: "Accusés de dépôt des déclarations.",
+  paiement_impot: "Ordres de paiement et avis de prélèvement.",
+  piece: "Factures, reçus, encaissements.",
+  archive: "Gardée intacte : chaque fichier qu'elle contient est rangé à part.",
+  autre: "Tout autre document de l'exercice.",
+};
+
+/** Déplace le document vers `emplacement` avant la réponse du serveur.
+ * La carte d'arrivée apparaît tout de suite si elle n'existait pas. */
+export function deplacerDocument<T extends { emplacements: EmplacementImport[] }>(
+  fiche: T,
+  documentId: string,
+  emplacement: string,
+): T {
+  let document: DocumentImport | undefined;
+  const restants = fiche.emplacements.map((carte) => {
+    const garde = carte.documents.filter((d) => {
+      if (d.id !== documentId) return true;
+      document = d;
+      return false;
+    });
+    return garde.length === carte.documents.length ? carte : { ...carte, documents: garde };
+  });
+  if (!document || document.emplacement === emplacement) return fiche;
+  const deplace: DocumentImport = {
+    ...document,
+    categorie: emplacement.split(":")[1] ?? document.categorie,
+    emplacement,
+  };
+  const index = restants.findIndex((carte) => carte.cle === emplacement);
+  if (index >= 0) {
+    const cible = restants[index];
+    const suivant = [...restants];
+    suivant[index] = { ...cible, documents: [deplace, ...cible.documents] };
+    return { ...fiche, emplacements: suivant };
+  }
+  const annee = anneeEmplacement(emplacement);
+  const libelle = CATEGORIES_EXERCICE.find((c) => c.cle === deplace.categorie)?.libelle ?? "Document";
+  return {
+    ...fiche,
+    emplacements: [
+      ...restants,
+      {
+        cle: emplacement,
+        section: emplacement.split(":")[0] || "reprise",
+        libelle: annee ? `${libelle} ${annee}` : libelle,
+        explication: EXPLICATIONS_EXERCICE[deplace.categorie] ?? "",
+        attendu: false,
+        documents: [deplace],
+      },
+    ],
+  };
+}
+
 /** L'année saisie pour « Ajouter un exercice », ou le message d'erreur. */
 export function lireAnnee(texte: string, aujourdhui: Date): number | string {
   const annee = Number(texte.trim());

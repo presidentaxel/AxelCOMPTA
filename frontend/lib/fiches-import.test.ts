@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   ajouterAnnee,
+  deplacerDocument,
   documentsVisibles,
   lireAnnee,
   badgeStatut,
@@ -15,6 +16,7 @@ import {
   phraseExercice,
   retardPossible,
   type ExerciceImport,
+  type DocumentImport,
   type EmplacementImport,
   libelleStatut,
   fichesActives,
@@ -190,6 +192,50 @@ test("AXE-970 : ajouter un exercice depuis 2000, même avec des trous", () => {
   assert.equal(ajouterAnnee("", 2019), "2019");
   assert.equal(ajouterAnnee("2019,2015", 2019), "2015,2019");
   assert.equal(ajouterAnnee("2019", 2010), "2010,2019");
+});
+
+test("AXE-970 : reclasser un document le déplace avant la réponse du serveur", () => {
+  const document = (id: string, emplacement: string): DocumentImport => ({
+    id,
+    categorie: emplacement.split(":")[1] ?? "",
+    libelle: id,
+    exercice: Number(emplacement.split(":")[2]),
+    emplacement,
+    nom_fichier: `${id}.pdf`,
+    taille: 10,
+    depose_par: "a@x.fr",
+    depose_le: "2026-01-01T00:00:00Z",
+    statut_traitement: "a_traiter",
+    resume: "",
+  });
+  const carte = (cle: string, documents: DocumentImport[] = []): EmplacementImport => ({
+    cle,
+    section: "reprise",
+    libelle: cle,
+    explication: "",
+    attendu: false,
+    documents,
+  });
+  const fiche = {
+    emplacements: [
+      carte("reprise:liasse:2019", [document("d1", "reprise:liasse:2019"), document("d2", "reprise:liasse:2019")]),
+      carte("reprise:fec:2019", [document("deja", "reprise:fec:2019")]),
+    ],
+  };
+  const deplace = deplacerDocument(fiche, "d1", "reprise:fec:2019");
+  assert.deepEqual(
+    deplace.emplacements.map((e) => [e.cle, e.documents.map((d) => d.id)]),
+    [
+      ["reprise:liasse:2019", ["d2"]],
+      ["reprise:fec:2019", ["d1", "deja"]],
+    ],
+  );
+  assert.equal(fiche.emplacements[0]?.documents.length, 2);
+  const cree = deplacerDocument(fiche, "d1", "reprise:piece:2019");
+  assert.equal(cree.emplacements.at(-1)?.libelle, "Pièces justificatives 2019");
+  assert.equal(cree.emplacements.at(-1)?.documents[0]?.emplacement, "reprise:piece:2019");
+  assert.equal(deplacerDocument(fiche, "absent", "reprise:fec:2019"), fiche);
+  assert.equal(deplacerDocument(fiche, "d1", "reprise:liasse:2019"), fiche);
 });
 
 test("AXE-970 : une carte qui reçoit une archive replie ses pièces", () => {
