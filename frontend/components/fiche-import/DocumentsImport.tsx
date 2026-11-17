@@ -19,6 +19,9 @@ import {
   deplacerDocument,
   documentsVisibles,
   lireAnnee,
+  archiveDe,
+  nomCourt,
+  versions,
   phraseDepot,
   basculerRetard,
   libelleTraitement,
@@ -346,6 +349,7 @@ function CarteEmplacement({
   const [tout, setTout] = useState(false);
   const entree = useRef<HTMLInputElement>(null);
   const rempli = emplacement.documents.length > 0;
+  const enDouble = versions(emplacement.cle.split(":")[1] ?? "", emplacement.documents);
   const { visibles, caches } = documentsVisibles(emplacement.documents, tout);
 
   async function deposer(fichiers: FileList | null) {
@@ -384,6 +388,11 @@ function CarteEmplacement({
         <div className="min-w-0">
           <p className="font-medium text-ink">{emplacement.libelle}</p>
           <p className="mt-0.5 text-xs text-subtle">{emplacement.explication}</p>
+          {enDouble > 1 && (
+            <p className="mt-1 text-xs text-warning">
+              {enDouble} versions de ce document : gardez la bonne, retirez les autres.
+            </p>
+          )}
         </div>
         <Badge variant={rempli ? "validated" : emplacement.attendu ? "pending" : "missing"}>
           {rempli ? "Reçu" : emplacement.attendu ? "Attendu" : "Facultatif"}
@@ -469,7 +478,7 @@ function LigneDocument({
     const blob = await telechargerDocumentImport(fiche.id, document.id);
     const lien = window.document.createElement("a");
     lien.href = URL.createObjectURL(blob);
-    lien.download = document.nom_fichier;
+    lien.download = nomCourt(document.nom_fichier);
     lien.click();
     URL.revokeObjectURL(lien.href);
   }
@@ -485,7 +494,7 @@ function LigneDocument({
       <div className="flex items-center gap-2 text-sm">
         <FileText className="size-4 shrink-0 text-subtle" aria-hidden />
         <span className="min-w-0 flex-1 truncate text-ink" title={document.nom_fichier}>
-          {document.nom_fichier}
+          {nomCourt(document.nom_fichier)}
           <span className="ml-2 text-xs text-muted">{taille(document.taille)}</span>
         </span>
         <Button size="sm" variant="ghost" onClick={ouvrir} aria-label={`Télécharger ${document.nom_fichier}`}>
@@ -544,7 +553,7 @@ function RangerDocument({
           </option>
         ))}
       </select>
-      {document.origine_id && <span>· sorti d&apos;une archive</span>}
+      {document.origine_id && <span>· dans {archiveDe(document.nom_fichier) ?? "une archive"}</span>}
       {erreur && <span className="text-danger">{erreur}</span>}
     </label>
   );
