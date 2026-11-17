@@ -2,7 +2,7 @@
  * par chauffeur à reprendre, remplie catégorie par catégorie, avec ses
  * documents. Compilé seul pour les tests. */
 
-export type StatutImport = "a_importer" | "en_traitement" | "traitee";
+export type StatutImport = "a_importer" | "en_traitement" | "traitee" | "ignore";
 
 export type ChoixImport = { cle: string; libelle: string };
 
@@ -108,6 +108,7 @@ export const STATUTS_IMPORT: { cle: StatutImport; libelle: string }[] = [
   { cle: "a_importer", libelle: "À importer" },
   { cle: "en_traitement", libelle: "En traitement" },
   { cle: "traitee", libelle: "Traitée" },
+  { cle: "ignore", libelle: "Ignoré" },
 ];
 
 export function libelleStatut(statut: StatutImport): string {
@@ -115,9 +116,15 @@ export function libelleStatut(statut: StatutImport): string {
 }
 
 /** Badge du design system (DESIGN.md › Badges) pour un statut. */
-export function badgeStatut(statut: StatutImport): "missing" | "pending" | "validated" {
+export function badgeStatut(statut: StatutImport): "missing" | "pending" | "validated" | "closed" {
   if (statut === "traitee") return "validated";
+  if (statut === "ignore") return "closed";
   return statut === "en_traitement" ? "pending" : "missing";
+}
+
+/** Ignoré ne compte ni dans Toutes, ni dans Entreprises. */
+export function fichesActives<T extends { statut: StatutImport }>(fiches: T[]): T[] {
+  return fiches.filter((fiche) => fiche.statut !== "ignore");
 }
 
 /** « Karim Dupont », ou l'entreprise si le chauffeur n'a pas de nom. */

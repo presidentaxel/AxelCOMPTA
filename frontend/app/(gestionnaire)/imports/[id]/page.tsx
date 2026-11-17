@@ -18,6 +18,7 @@ import {
   ErreurAuthGestionnaire,
   annulerFicheImport,
   completerFicheImport,
+  deciderFicheImport,
   creerChauffeurImport,
   lireFicheImport,
 } from "@/lib/auth-gestionnaire";
@@ -90,7 +91,7 @@ export default function FicheImportPage() {
       <Link href="/imports" className="inline-flex items-center gap-1 text-sm text-subtle hover:text-ink">
         <ArrowLeft className="size-4" aria-hidden /> Imports
       </Link>
-      <EnTete fiche={fiche} ecriture={droit.ecriture} />
+      <EnTete fiche={fiche} ecriture={droit.ecriture} onFiche={setFiche} />
       <div className="grid gap-6 lg:grid-cols-[17rem_minmax(0,1fr)]">
         <Sommaire fiche={fiche} actif={actif} onOuvrir={ouvrir} />
         <div className="min-w-0 rounded-lg border border-border bg-canvas p-5 sm:p-6">
@@ -115,9 +116,26 @@ export default function FicheImportPage() {
   );
 }
 
-function EnTete({ fiche, ecriture }: { fiche: FicheImport; ecriture: boolean }) {
+function EnTete({
+  fiche,
+  ecriture,
+  onFiche,
+}: {
+  fiche: FicheImport;
+  ecriture: boolean;
+  onFiche: (fiche: FicheImport) => void;
+}) {
   const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
+
+  async function decider(decision: "ignorer" | "reprendre") {
+    try {
+      onFiche(await deciderFicheImport(fiche.id, decision));
+      setMessage(decision === "ignorer" ? "Fiche ignorée." : "Fiche remise dans les imports.");
+    } catch (exception) {
+      setMessage(exception instanceof Error ? exception.message : "Erreur inattendue.");
+    }
+  }
 
   async function annuler() {
     const qui = nomChauffeur(fiche);
@@ -154,6 +172,16 @@ function EnTete({ fiche, ecriture }: { fiche: FicheImport; ecriture: boolean }) 
           >
             <Link2 className="size-4" aria-hidden /> Copier le lien
           </Button>
+          {ecriture && fiche.statut === "ignore" && (
+            <Button size="sm" variant="secondary" onClick={() => void decider("reprendre")}>
+              Remettre dans les imports
+            </Button>
+          )}
+          {ecriture && fiche.statut !== "ignore" && (
+            <Button size="sm" variant="ghost" onClick={() => void decider("ignorer")}>
+              Ignorer
+            </Button>
+          )}
           {ecriture && (
             <Button size="sm" variant="ghost" onClick={() => void annuler()}>
               <Trash2 className="size-4" aria-hidden /> Annuler l&apos;import
