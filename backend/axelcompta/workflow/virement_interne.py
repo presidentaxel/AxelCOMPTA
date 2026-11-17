@@ -14,17 +14,20 @@ n'en a pas, et on ne réécrit pas une TVA à l'aveugle.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from axelcompta.categorize.virements_internes import Jambe, apparier
 from axelcompta.core.ids import EcritureId
 from axelcompta.core.libelles import sans_categorie
-from axelcompta.core.pcg import est_compte_banque
+from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
 from axelcompta.ledger.contrepassation import annulees, id_contrepassation, origine
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.ledger.periodes import Periode, date_de_report
 
+from .ventilation_bancaire import SUFFIXE_VENTILATION as SUFFIXE_VENTILATION_BANQUE
+
 COMPTE_VIREMENT_INTERNE = "580"
+COMPTE_ATTENTE = "471"
 MARQUE_INTERNE = ":virement-interne"
 
 
@@ -95,19 +98,52 @@ def en_virement_interne(ecriture: Ecriture) -> Ecriture:
     )
 
 
-def _jambe(ecriture: Ecriture) -> Jambe | None:
+def sous_comptes_ventiles(ecritures: Sequence[Ecriture]) -> dict[str, str]:
+    """`{id de l'opération: 512x}` d'après les reclassements AXE-832 : une
+    opération écrite au 512 avant les sous-comptes garde ainsi la trace du
+    compte bancaire d'où elle vient (AXE-968)."""
+    trouves: dict[str, str] = {}
+    exclues = annulees(ecritures)
+    for ecriture in ecritures:
+        if not ecriture.id.endswith(SUFFIXE_VENTILATION_BANQUE) or ecriture.id in exclues:
+            continue
+        source = ecriture.id[: -len(SUFFIXE_VENTILATION_BANQUE)]
+        sous_compte = next(
+            (
+                x.compte
+                for x in ecriture.lignes
+                if est_compte_banque(x.compte) and x.compte != COMPTE_BANQUE
+            ),
+            None,
+        )
+        if sous_compte is not None:
+            trouves[source] = sous_compte
+    return trouves
+
+
+def _jambe(ecriture: Ecriture, sous_comptes: Mapping[str, str]) -> Jambe | None:
     banques = [x for x in ecriture.lignes if est_compte_banque(x.compte)]
     if len(banques) != 1:
         return None
     ligne = banques[0]
     signe = 1 if ligne.sens is Sens.DEBIT else -1
+    compte = ligne.compte
+    if compte == COMPTE_BANQUE:
+        compte = sous_comptes.get(str(ecriture.id), compte)
     return Jambe(
         str(ecriture.id),
         ecriture.date,
         signe * ligne.montant.centimes,
-        ligne.compte,
+        compte,
         sans_categorie(ecriture.libelle),
     )
+
+
+def _au_compte_d_attente(ecriture: Ecriture) -> bool:
+    """Toutes les lignes hors banque sont encore au 471 : personne n'a
+    classé l'opération. Le passage automatique ne touche qu'à celles-là."""
+    economiques = [x for x in ecriture.lignes if _economique(x)]
+    return bool(economiques) and all(x.compte == COMPTE_ATTENTE for x in economiques)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -117,17 +153,33 @@ class Reprise:
     avec_tva: int  # paires laissées : une jambe porte de la TVA
 
 
-def reprises(projetees: Sequence[Ecriture], periodes_closes: Sequence[Periode] = ()) -> Reprise:
+def reprises(
+    projetees: Sequence[Ecriture],
+    periodes_closes: Sequence[Periode] = (),
+    *,
+    sous_comptes: Mapping[str, str] | None = None,
+    seulement_en_attente: bool = False,
+) -> Reprise:
     """Les paires de virement interne parmi les opérations bancaires déjà
     écrites (vue projetée), et l'OD de chaque jambe pas encore en 580. Les
-    deux jambes d'une paire sont reprises ensemble, ou pas du tout."""
+    deux jambes d'une paire sont reprises ensemble, ou pas du tout.
+
+    `sous_comptes` : le 512x de chaque opération écrite au 512 (AXE-832),
+    pour reconnaître un virement entre deux comptes même quand les libellés
+    diffèrent. `seulement_en_attente` : le passage horaire (AXE-968) ne
+    regarde que les opérations encore au 471 ; une opération déjà classée
+    par un humain n'est jamais déplacée."""
     exclues = annulees(projetees)
     par_id = {
         str(e.id): e
         for e in projetees
-        if e.journal is Journal.BQ and e.id not in exclues and origine(e.id) is None
+        if e.journal is Journal.BQ
+        and e.id not in exclues
+        and origine(e.id) is None
+        and (not seulement_en_attente or _au_compte_d_attente(e))
     }
-    jambes = [j for e in par_id.values() if (j := _jambe(e)) is not None]
+    connus = sous_comptes or {}
+    jambes = [j for e in par_id.values() if (j := _jambe(e, connus)) is not None]
     paires = apparier(jambes)
     ecritures: list[Ecriture] = []
     vues: set[str] = set()

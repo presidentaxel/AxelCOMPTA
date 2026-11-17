@@ -27,10 +27,8 @@ from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.packs.vtc_demo import charger_compte_par_categorie
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
-from axelcompta.tenants.statuts import configuration_de
+from axelcompta.virements_internes_dossier import reprise_du_dossier
 from axelcompta.workflow.decisions_postgres import PostgresDecisionRepository
-from axelcompta.workflow.reclassement import grand_livre_tranche
-from axelcompta.workflow.virement_interne import reprises
 
 
 def _dossiers(
@@ -58,12 +56,9 @@ def main() -> int:
     comptes_pack = charger_compte_par_categorie()
     total = 0
     for dossier in _dossiers(PostgresDossierRepository(engine), arguments):
-        vue = grand_livre_tranche(
-            ledger.grand_livre(dossier.id),
-            decisions.lister_decisions(dossier.id),
-            (configuration_de(dossier).comptes_categories_statut(), comptes_pack),
+        reprise = reprise_du_dossier(
+            dossier, ledger, decisions, comptes_pack, seulement_en_attente=False
         )
-        reprise = reprises(vue, ledger.periodes_closes(dossier.id))
         total += len(reprise.ecritures)
         if reprise.ecritures or reprise.avec_tva:
             print(
