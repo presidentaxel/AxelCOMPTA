@@ -310,7 +310,7 @@ function AjoutPortefeuille({
 
   if (fiche.dossier_id) {
     return (
-      <div className="flex items-center gap-3 border-y border-success-border bg-success-subtle px-1 py-3 text-sm text-ink">
+      <div className="flex items-center gap-3 rounded-md border border-success-border bg-success-subtle px-4 py-3 text-sm text-ink">
         <Check className="size-4 text-success" aria-hidden />
         {fiche.dossier_cree
           ? `Chauffeur ajouté au portefeuille (${fiche.dossier_id}). Il sera invité dans son app plus tard.`
@@ -319,7 +319,7 @@ function AjoutPortefeuille({
     );
   }
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border py-3">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-canvas-app px-4 py-3">
       <p className="text-sm text-ink">
         {pret
           ? "La fiche suffit pour ajouter le chauffeur au portefeuille. Le reste peut se compléter ensuite."
