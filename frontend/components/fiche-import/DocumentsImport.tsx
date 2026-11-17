@@ -45,14 +45,14 @@ export function EmplacementsSection({
   const siens = fiche.emplacements.filter((e) => e.section === section);
   if (siens.length === 0) return null;
   const groupes = new Map(parExercice(siens));
-  const grille = (liste: EmplacementImport[]) => (
-    <div className="grid gap-3 md:grid-cols-2">
-      {liste.map((e) => (
+  const liste = (emplacements: EmplacementImport[]) => (
+    <ul className="divide-y divide-hairline border-y border-border">
+      {emplacements.map((e) => (
         <CarteEmplacement key={e.cle} fiche={fiche} emplacement={e} modifiable={modifiable} onFiche={onFiche} />
       ))}
-    </div>
+    </ul>
   );
-  if (section !== "reprise") return grille(siens);
+  if (section !== "reprise") return liste(siens);
   const exercices = [...fiche.exercices].sort((a, b) => b.annee - a.annee);
   return (
     <div className="space-y-6">
@@ -64,12 +64,12 @@ export function EmplacementsSection({
             modifiable={modifiable}
             enregistrer={enregistrer}
           />
-          {grille(groupes.get(e.annee) ?? [])}
+          {liste(groupes.get(e.annee) ?? [])}
         </div>
       ))}
       <div className="space-y-3">
         <h3 className="text-sm font-semibold text-ink">Autres documents</h3>
-        {grille(groupes.get(null) ?? [])}
+        {liste(groupes.get(null) ?? [])}
       </div>
     </div>
   );
@@ -157,7 +157,7 @@ function CarteEmplacement({
   }
 
   return (
-    <div
+    <li
       onDragOver={(e) => {
         if (!modifiable) return;
         e.preventDefault();
@@ -169,9 +169,7 @@ function CarteEmplacement({
         setSurvol(false);
         if (modifiable) void deposer(e.dataTransfer.files);
       }}
-      className={`flex flex-col gap-3 rounded-lg border p-4 transition-colors ${
-        survol ? "border-ink bg-surface-soft" : rempli ? "border-border" : "border-dashed border-border-strong"
-      }`}
+      className={`flex flex-col gap-3 py-4 transition-colors ${survol ? "bg-surface-soft" : ""}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -205,10 +203,10 @@ function CarteEmplacement({
           <button
             type="button"
             onClick={() => entree.current?.click()}
-            className="flex items-center justify-center gap-2 rounded-md bg-canvas-app px-3 py-3 text-sm text-subtle transition-colors hover:bg-surface-soft hover:text-ink"
+            className="inline-flex items-center gap-2 text-sm text-subtle transition-colors hover:text-ink"
           >
             <UploadCloud className="size-4" aria-hidden />
-            Glissez le fichier ici, ou cliquez
+            Déposer ou glisser un fichier
           </button>
           <input
             ref={entree}
@@ -224,7 +222,7 @@ function CarteEmplacement({
           />
         </>
       )}
-    </div>
+    </li>
   );
 }
 
@@ -255,7 +253,7 @@ function LigneDocument({
         ? "text-danger"
         : "text-warning";
   return (
-    <li className="rounded-md bg-canvas-app px-3 py-2">
+    <li className="py-1.5">
       <div className="flex items-center gap-2 text-sm">
         <FileText className="size-4 shrink-0 text-subtle" aria-hidden />
         <span className="min-w-0 flex-1 truncate text-ink" title={document.nom_fichier}>

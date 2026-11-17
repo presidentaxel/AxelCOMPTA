@@ -19,7 +19,11 @@ import {
   nomChauffeur,
   devinerCategorie,
   devinerExercice,
+  ecrireComptesChoisis,
+  fusionnerComptes,
   identifiantComplet,
+  libelleIban,
+  lireComptesChoisis,
   lireListe,
   progression,
   taille,
@@ -156,4 +160,32 @@ test("chaque exercice dit son rôle pour la reprise, et le retard se coche", () 
   assert.equal(retardPossible({ ...e, role: "source" }), true);
   assert.equal(basculerRetard("", 2025), "2025");
   assert.equal(basculerRetard("2024,2025", 2025), "2024");
+});
+
+test("un compte se marque pro ou perso, et une ancienne ligne se relit", () => {
+  const legacy = lireComptesChoisis("Compte courant (retenu)\nLivret (écarté)");
+  assert.deepEqual(
+    legacy.map((compte) => [compte.nom, compte.usage]),
+    [
+      ["Compte courant", "pro"],
+      ["Livret", "perso"],
+    ],
+  );
+  const live = [
+    {
+      id: "12",
+      nom: "Compte courant",
+      banque: "Qonto",
+      iban: "FR7630006000011234567890189",
+      professionnel: true,
+    },
+  ];
+  const fusion = fusionnerComptes(live, legacy);
+  assert.equal(fusion[0]?.usage, "pro");
+  assert.equal(libelleIban(live[0].iban, ""), "FR76 3000 6000 0112 3456 7890 189");
+  const choisi = ecrireComptesChoisis([{ ...fusion[0], usage: "perso" }]);
+  assert.deepEqual(lireComptesChoisis(choisi), [
+    { id: "12", nom: "Compte courant", banque: "Qonto", fin: "0189", usage: "perso" },
+  ]);
+  assert.equal(libelleIban("", "0189"), "•••• 0189");
 });

@@ -9,6 +9,7 @@ import { Badge } from "@/components/Badge";
 import { SqueletteLignes } from "@/components/Squelette";
 import { AssociesImport } from "@/components/fiche-import/AssociesImport";
 import { ChampAuto, type Enregistrer } from "@/components/fiche-import/ChampAuto";
+import { ComptesBancairesImport } from "@/components/fiche-import/ComptesBancairesImport";
 import { DigifactoryImport } from "@/components/fiche-import/DigifactoryImport";
 import { EmplacementsSection } from "@/components/fiche-import/DocumentsImport";
 import { EntrepriseImport } from "@/components/fiche-import/EntrepriseImport";
@@ -87,14 +88,14 @@ export default function FicheImportPage() {
   const modifiable = droit.ecriture;
   const section = fiche.sections_detail.find((s) => s.cle === actif) ?? null;
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <Link href="/imports" className="inline-flex items-center gap-1 text-sm text-subtle hover:text-ink">
         <ArrowLeft className="size-4" aria-hidden /> Imports
       </Link>
       <EnTete fiche={fiche} ecriture={droit.ecriture} onFiche={setFiche} />
-      <div className="grid gap-6 lg:grid-cols-[17rem_minmax(0,1fr)]">
+      <div className="grid gap-8 lg:grid-cols-[16rem_minmax(0,1fr)] lg:gap-12">
         <Sommaire fiche={fiche} actif={actif} onOuvrir={ouvrir} />
-        <div className="min-w-0 rounded-lg border border-border bg-canvas p-5 sm:p-6">
+        <div className="min-w-0">
           {section === null ? (
             <VueEnsemble fiche={fiche} ecriture={droit.ecriture} onFiche={setFiche} onOuvrir={ouvrir} />
           ) : (
@@ -150,7 +151,7 @@ function EnTete({
 
   const pourcent = progression(fiche);
   return (
-    <header className="rounded-lg border border-border bg-canvas p-5 sm:p-6">
+    <header>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
@@ -268,24 +269,24 @@ function VueEnsemble({
         <p className="mt-1 text-sm text-subtle">Ce qui reste à compléter, catégorie par catégorie.</p>
       </div>
       <AjoutPortefeuille fiche={fiche} ecriture={ecriture} onFiche={onFiche} />
-      <ul className="grid gap-3 md:grid-cols-2">
+      <ul className="divide-y divide-hairline border-y border-border">
         {fiche.sections_detail.map((s) => (
           <li key={s.cle}>
             <button
               type="button"
               onClick={() => onOuvrir(s.cle)}
-              className="group flex h-full w-full flex-col gap-2 rounded-lg border border-border p-4 text-left transition-colors hover:border-border-strong hover:bg-surface-soft"
+              className="flex w-full items-center gap-4 py-3 text-left transition-colors hover:bg-surface-soft"
             >
-              <span className="flex items-center justify-between gap-2">
-                <span className="font-medium text-ink">{s.libelle}</span>
-                <Badge variant={s.complet ? "validated" : "pending"}>{etatSection(s)}</Badge>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2">
+                  <span className="font-medium text-ink">{s.libelle}</span>
+                  <Badge variant={s.complet ? "validated" : "pending"}>{etatSection(s)}</Badge>
+                </span>
+                <span className="mt-0.5 block truncate text-xs text-subtle">
+                  {s.complet ? s.description : s.manquants.slice(0, 4).join(" · ") + (s.manquants.length > 4 ? " …" : "")}
+                </span>
               </span>
-              <span className="text-xs text-subtle">
-                {s.complet ? s.description : s.manquants.slice(0, 4).join(" · ") + (s.manquants.length > 4 ? " …" : "")}
-              </span>
-              <span className="mt-auto flex items-center gap-1 text-xs font-medium text-ink opacity-0 transition-opacity group-hover:opacity-100">
-                Ouvrir <ArrowRight className="size-3" aria-hidden />
-              </span>
+              <ArrowRight className="size-4 shrink-0 text-muted" aria-hidden />
             </button>
           </li>
         ))}
@@ -309,7 +310,7 @@ function AjoutPortefeuille({
 
   if (fiche.dossier_id) {
     return (
-      <div className="flex items-center gap-3 rounded-md border border-success-border bg-success-subtle px-4 py-3 text-sm text-ink">
+      <div className="flex items-center gap-3 border-y border-success-border bg-success-subtle px-1 py-3 text-sm text-ink">
         <Check className="size-4 text-success" aria-hidden />
         {fiche.dossier_cree
           ? `Chauffeur ajouté au portefeuille (${fiche.dossier_id}). Il sera invité dans son app plus tard.`
@@ -318,7 +319,7 @@ function AjoutPortefeuille({
     );
   }
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-canvas-app px-4 py-3">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border py-3">
       <p className="text-sm text-ink">
         {pret
           ? "La fiche suffit pour ajouter le chauffeur au portefeuille. Le reste peut se compléter ensuite."
@@ -437,10 +438,9 @@ function ContenuSection({
       />
     );
   };
-  if (section.champs.length === 0) return null;
-  return (
-    <div className="grid gap-5 sm:grid-cols-2">
-      {section.cle === "banque" && (
+  if (section.cle === "banque") {
+    return (
+      <div className="space-y-8">
         <DigifactoryImport
           ficheId={fiche.id}
           contactActuel={valeurChamp(fiche, "contact_digifactory")}
@@ -449,7 +449,22 @@ function ContenuSection({
           modifiable={modifiable}
           enregistrer={enregistrer}
         />
-      )}
+        <ComptesBancairesImport
+          ficheId={fiche.id}
+          contact={valeurChamp(fiche, "contact_digifactory")}
+          valeur={valeurChamp(fiche, "comptes_bancaires")}
+          modifiable={modifiable}
+          enregistrer={enregistrer}
+        />
+        <div className="grid max-w-sm gap-5">
+          {section.champs.filter((c) => c.cle === "debut_historique").map(champ)}
+        </div>
+      </div>
+    );
+  }
+  if (section.champs.length === 0) return null;
+  return (
+    <div className="grid gap-5 sm:grid-cols-2">
       {section.champs.filter((c) => c.cle !== "en_retard").map(champ)}
     </div>
   );
