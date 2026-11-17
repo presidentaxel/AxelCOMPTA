@@ -73,7 +73,7 @@ export default function LienAuthPage() {
         setCote(demandee);
         if (recu.type === "invite" && pageInvitation(recu.accessToken) === "chauffeur") {
           window.location.replace(
-            `/chauffeur/accepter-invitation${window.location.search}${window.location.hash}`,
+            `/dossier/accepter-invitation${window.location.search}${window.location.hash}`,
           );
           return;
         }

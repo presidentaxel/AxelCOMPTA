@@ -7,7 +7,7 @@ import { decoderChargeUtileJwt, obtenirSession } from "@/lib/auth-chauffeur";
 import { deconnecterGestionnaire } from "@/lib/auth-gestionnaire";
 import { CHEMIN_DOUBLE_AUTHENTIFICATION } from "@/lib/mfa-code";
 
-const PAGES_PUBLIQUES = new Set(["/chauffeur/login", "/chauffeur/accepter-invitation"]);
+const PAGES_PUBLIQUES = new Set(["/dossier/login", "/dossier/accepter-invitation"]);
 
 /** Le compte de test lit tous les dossiers : le code est exigé avant.
  * Entrer de ce côté ferme aussi la session gestionnaire. */
@@ -26,7 +26,7 @@ export function GardeCodeCompteDeTest() {
       codeDejaSaisi = false;
     }
     if (codeDejaSaisi) return;
-    const params = new URLSearchParams({ cote: "chauffeur", retour: chemin || "/chauffeur/test" });
+    const params = new URLSearchParams({ cote: "chauffeur", retour: chemin || "/dossier/test" });
     window.location.replace(`${CHEMIN_DOUBLE_AUTHENTIFICATION}?${params.toString()}`);
   }, [chemin]);
 

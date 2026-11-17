@@ -101,6 +101,8 @@
     "lib/plateformes.ts",
     "lib/plateformes.test.ts",
     "lib/logos.ts",
-    "lib/logos.test.ts"
+    "lib/logos.test.ts",
+    "lib/porte-dossier.ts",
+    "lib/porte-dossier.test.ts"
   ]
 }

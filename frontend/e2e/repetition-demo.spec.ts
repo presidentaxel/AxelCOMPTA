@@ -338,7 +338,7 @@ async function ordonnee(page: Page, nom: string) {
 test("Sophie saisit une facture pas encore reçue", async ({ page }) => {
   await sessionChauffeur(page, "DEMO_sophie");
   await intercepterApi(page);
-  await page.goto("/chauffeur/DEMO_sophie/exercice");
+  await page.goto("/dossier/DEMO_sophie/exercice");
   await expect(page.getByRole("heading", { name: "Exercice", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Récupérer la liasse" })).toBeDisabled();
   await expect(page.getByText("Chaque opération").first()).toBeVisible();
@@ -394,7 +394,7 @@ test("Sophie lit une proposition sans code ni pourcentage", async ({ page }) => 
       confiance_proposition: 0.2,
     },
   ]);
-  await page.goto("/chauffeur/DEMO_sophie");
+  await page.goto("/dossier/DEMO_sophie");
   // Une seule carte : la plus récente d'abord (l'entrée), puis la dépense.
   await expect(page.getByText("À quoi correspond cette entrée ?")).toBeVisible();
   await expect(page.getByText("non categorise a verifier")).toHaveCount(0);
@@ -409,7 +409,7 @@ test("Sophie lit une proposition sans code ni pourcentage", async ({ page }) => 
 test("la clôture confirme sans recharger et ouvre la liasse", async ({ page }) => {
   await sessionChauffeur(page, "DEMO_pret");
   await intercepterApi(page);
-  await page.goto("/chauffeur/DEMO_pret/exercice");
+  await page.goto("/dossier/DEMO_pret/exercice");
   await expect(
     page.getByText("Les comptes ne sont pas clôturés. La liasse définitive sera disponible"),
   ).toBeVisible();
@@ -430,7 +430,7 @@ test("la clôture confirme sans recharger et ouvre la liasse", async ({ page }) 
 test("Mes dividendes reste accessible une fois l'affectation décidée", async ({ page }) => {
   await sessionChauffeur(page, "DEMO_clos");
   await intercepterApi(page);
-  await page.goto("/chauffeur/DEMO_clos/exercice");
+  await page.goto("/dossier/DEMO_clos/exercice");
   await expect(page.getByRole("link", { name: "Mes dividendes 2025 →" })).toBeVisible();
   await expect(page.getByText("Les comptes sont clôturés.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Récupérer la liasse" })).toBeEnabled();
@@ -440,7 +440,7 @@ test("Mes dividendes reste accessible une fois l'affectation décidée", async (
 test("Sophie tranche une dépense et l'écran suit", async ({ page }) => {
   await sessionChauffeur(page, "DEMO_sophie");
   await intercepterApi(page);
-  await page.goto("/chauffeur/DEMO_sophie");
+  await page.goto("/dossier/DEMO_sophie");
   await expect(page.getByRole("heading", { name: "Sophie Martin" })).toBeVisible();
   await expect(page.getByText("ZARA")).toBeVisible();
   await page.getByRole("button", { name: "Personnelle" }).click();
@@ -452,7 +452,7 @@ test("Sophie tranche une dépense et l'écran suit", async ({ page }) => {
 test("un dossier sans opération n'a qu'un message, avec une action", async ({ page }) => {
   await commeSophie(page);
   await intercepterApi(page, { transactions: [] });
-  await page.goto("/chauffeur/DEMO_sophie");
+  await page.goto("/dossier/DEMO_sophie");
   await expect(page.getByRole("heading", { name: "Sophie Martin" })).toBeVisible();
   await expect(page.getByText("Vos transactions arrivent bientôt.")).toBeVisible();
   await page.getByRole("button", { name: "Actualiser" }).click();
@@ -469,7 +469,7 @@ test("connecter ma banque explique à l'écran pourquoi le bouton est inactif", 
     transactions: [],
     dossier: { ...DOSSIER_SOPHIE, peut_connecter_sa_banque: true },
   });
-  await page.goto("/chauffeur/DEMO_sophie");
+  await page.goto("/dossier/DEMO_sophie");
   const bouton = page.getByRole("button", { name: "Connecter ma banque" });
   await expect(bouton).toBeDisabled();
   await expect(bouton).not.toHaveAttribute("title");
@@ -481,7 +481,7 @@ test("connecter ma banque explique à l'écran pourquoi le bouton est inactif", 
 test("l'arriéré vide propose de voir les mouvements", async ({ page }) => {
   await commeSophie(page);
   await intercepterApi(page, { transactions: [{ ...ZARA, statut: "validé", a_justificatif: true }] });
-  await page.goto("/chauffeur/DEMO_sophie");
+  await page.goto("/dossier/DEMO_sophie");
   await expect(page.getByText("Tout est à jour.")).toBeVisible();
   await page.getByRole("button", { name: "Voir mes mouvements" }).click();
   await expect(page.getByText("ZARA")).toBeVisible();
@@ -491,7 +491,7 @@ test("l'arriéré vide propose de voir les mouvements", async ({ page }) => {
 test("un mois sans entrée propose l'autre sens", async ({ page }) => {
   await commeSophie(page);
   await intercepterApi(page);
-  await page.goto("/chauffeur/DEMO_sophie");
+  await page.goto("/dossier/DEMO_sophie");
   await page.getByRole("button", { name: "Mouvements" }).click();
   await page.getByRole("button", { name: "Entrées" }).click();
   await expect(page.getByText("Aucune entrée ce mois-ci.")).toBeVisible();
@@ -505,7 +505,7 @@ test("la cloche vide propose l'activité, et l'erreur se réessaie", async ({ pa
   await selonLeReseau(page, (url, methode) =>
     couperNotifs && methode === "GET" && url.includes("/notifications") ? "couper" : "suite",
   );
-  await page.goto("/chauffeur/DEMO_sophie");
+  await page.goto("/dossier/DEMO_sophie");
   await expect(page.getByRole("heading", { name: "Sophie Martin" })).toBeVisible();
   await page.getByRole("button", { name: "Notifications" }).click();
   await expect(page.getByText(MESSAGE_RESEAU)).toBeVisible();
@@ -520,10 +520,10 @@ test("couper le réseau propose Réessayer sur chaque page chauffeur", async ({ 
   let couper = true;
   await selonLeReseau(page, () => (couper ? "couper" : "suite"));
   const pages = [
-    "/chauffeur/DEMO_sophie",
-    "/chauffeur/DEMO_sophie/exercice",
-    "/chauffeur/DEMO_sophie/resultat",
-    "/chauffeur/compte",
+    "/dossier/DEMO_sophie",
+    "/dossier/DEMO_sophie/exercice",
+    "/dossier/DEMO_sophie/resultat",
+    "/dossier/compte",
   ];
   for (const chemin of pages) {
     couper = true;
@@ -545,7 +545,7 @@ test("une panne du serveur ne se confond pas avec le réseau", async ({ page }) 
   await selonLeReseau(page, (url, methode) =>
     methode === "GET" && url.endsWith("/dossiers/DEMO_sophie") ? "serveur" : "suite",
   );
-  await page.goto("/chauffeur/DEMO_sophie");
+  await page.goto("/dossier/DEMO_sophie");
   await expect(page.getByText(MESSAGE_SERVEUR)).toBeVisible();
   await expect(page.getByRole("button", { name: "Réessayer" })).toBeVisible();
   await expect(page.getByText(MESSAGE_RESEAU)).toHaveCount(0);

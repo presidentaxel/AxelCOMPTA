@@ -10,7 +10,7 @@ import { PaieSection } from "@/components/PaieSection";
 import { ProvisionsCloture } from "@/components/ProvisionsCloture";
 import { ContratsLoa } from "@/components/ContratsLoa";
 import { RegistreImmobilisations } from "@/components/RegistreImmobilisations";
-import { useDossierChauffeur } from "@/app/chauffeur/use-dossier";
+import { useDossierChauffeur } from "@/app/dossier/use-dossier";
 import { Etat } from "@/components/Etat";
 import { Squelette, SqueletteLignes } from "@/components/Squelette";
 import { fetchAvecAuthChauffeur } from "@/lib/auth-chauffeur";
@@ -53,14 +53,14 @@ export default function ExerciceChauffeurPage({
       {periode && <p className="mt-2 text-sm text-subtle">{periode}</p>}
       {fiche && fiche.tva_recettes_regime !== "franchise" && (
         <Link
-          href={`/chauffeur/${dossierId}/tva`}
+          href={`/dossier/${dossierId}/tva`}
           className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-signal"
         >
           Ma TVA : déclaration de la période →
         </Link>
       )}
       <Link
-        href={`/chauffeur/${dossierId}/ouverture`}
+        href={`/dossier/${dossierId}/ouverture`}
         className="mt-1 flex min-h-11 items-center text-sm font-medium text-signal"
       >
         Votre société existait avant ? Reprendre vos comptes →
@@ -196,7 +196,7 @@ function LienAffectation({
   }
   if (affectation?.applicable) {
     return (
-      <Link href={`/chauffeur/${dossierId}/resultat`} className={LIEN}>
+      <Link href={`/dossier/${dossierId}/resultat`} className={LIEN}>
         Décider de ce que je fais de mon résultat {affectation.annee_exercice} →
       </Link>
     );
@@ -204,7 +204,7 @@ function LienAffectation({
   if (dividendes?.applicable) {
     const annee = dividendes.annee_exercice ? ` ${dividendes.annee_exercice}` : "";
     return (
-      <Link href={`/chauffeur/${dossierId}/resultat`} className={LIEN}>
+      <Link href={`/dossier/${dossierId}/resultat`} className={LIEN}>
         Mes dividendes{annee} →
       </Link>
     );

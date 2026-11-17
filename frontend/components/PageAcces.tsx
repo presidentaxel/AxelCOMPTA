@@ -8,7 +8,7 @@ import { cn } from "cn";
  * une colonne centrée de 440 px. Sur grand écran la page reste sobre : on
  * descend un peu le contenu au lieu d'inventer un panneau décoratif.
  *
- * Le chauffeur a son propre habillage (`app/chauffeur/layout.tsx`, qui porte
+ * Le chauffeur a son propre habillage (`app/dossier/layout.tsx`, qui porte
  * déjà la marque) : ce cadre n'y sert pas. */
 export function PageAcces({ children }: { children: ReactNode }) {
   return (

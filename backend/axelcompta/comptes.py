@@ -149,15 +149,32 @@ _PAR_PAGE = 200
 _PAGES_MAX = 50
 # Le courriel ajoute `?token_hash` à cette adresse : pas de query ici.
 _CHEMIN_INVITATION_MEMBRE = "/auth/lien"
-_CHEMIN_INVITATION_CHAUFFEUR = "/chauffeur/accepter-invitation"
+_CHEMIN_INVITATION_DOSSIER = "/dossier/accepter-invitation"
+
+
+def base_porte_dossier(source: Mapping[str, str]) -> str:
+    """Hôte des liens envoyés à la personne qui a un dossier (AXE-965).
+
+    `AXELCOMPTA_URL_DOSSIER` en production (`https://app-compta.axelproject.fr`).
+    Sans elle, on retombe sur `AXELCOMPTA_URL_APP`, pour le poste de dev.
+    Vide si rien n'est posé.
+    """
+    dossier = source.get("AXELCOMPTA_URL_DOSSIER", "").strip().rstrip("/")
+    if dossier:
+        return dossier
+    return source.get("AXELCOMPTA_URL_APP", "").strip().rstrip("/")
 
 
 def url_retour_invitation(chemin: str, environ: Mapping[str, str] | None = None) -> str | None:
     """Page où le lien d'invitation dépose la personne, pour qu'elle choisisse
-    un mot de passe. Sans `AXELCOMPTA_URL_APP`, Supabase retombe sur son
-    Site URL."""
+    un mot de passe. Le dirigeant arrive sur la porte du dossier. Le
+    gestionnaire reste sur `AXELCOMPTA_URL_APP`. Sans base, Supabase retombe
+    sur son Site URL."""
     source = os.environ if environ is None else environ
-    base = source.get("AXELCOMPTA_URL_APP", "").strip().rstrip("/")
+    if chemin == _CHEMIN_INVITATION_DOSSIER:
+        base = base_porte_dossier(source)
+    else:
+        base = source.get("AXELCOMPTA_URL_APP", "").strip().rstrip("/")
     if not base:
         return None
     return f"{base}{chemin}"
@@ -188,7 +205,7 @@ class SupabaseCompteRepository(CompteRepository):
         if verifier_existant and self.statut(dossier_id) is not None:
             raise CompteDejaInviteError(f"dossier déjà invité : {dossier_id}")
         reponse = self._client.post(
-            "/invite", json=_corps_invitation(email, _CHEMIN_INVITATION_CHAUFFEUR)
+            "/invite", json=_corps_invitation(email, _CHEMIN_INVITATION_DOSSIER)
         )
         reponse.raise_for_status()
         # Le lien au dossier va dans `app_metadata`, écrit ici côté serveur
@@ -275,7 +292,7 @@ class SupabaseCompteRepository(CompteRepository):
         # Même page que l'invitation d'origine : sans `redirect_to`, Supabase
         # renvoie à l'adresse du site et le lien n'ouvre pas le mot de passe.
         params = {}
-        retour = url_retour_invitation(_CHEMIN_INVITATION_CHAUFFEUR)
+        retour = url_retour_invitation(_CHEMIN_INVITATION_DOSSIER)
         if retour is not None:
             params["redirect_to"] = retour
         reponse = self._client.post(
