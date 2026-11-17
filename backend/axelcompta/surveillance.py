@@ -1,7 +1,8 @@
 """Prévenir quand le worker ou les tâches planifiées échouent ou ne passent
 plus (AXE-959).
 
-- Sentry démarre au début de chaque passage, si `SENTRY_DSN` est posé.
+- Sentry démarre au début de chaque passage, si `SENTRY_DSN` est posé
+  et que `ENV` n'est pas `dev`.
 - Un job du worker en échec part dans Sentry, avec son type.
 - Les tâches planifiées font un check-in sur le moniteur Sentry Crons
   `axelcompta-taches` : au début, puis ok ou erreur à la fin. Sentry alerte
@@ -83,7 +84,8 @@ MUETTE = Sentinelle()
 
 
 def sentinelle_sentry() -> Sentinelle:
-    """Branchée sur Sentry si `SENTRY_DSN` est posé, muette sinon."""
+    """Branchée sur Sentry si `SENTRY_DSN` est posé, muette sinon.
+    Muette aussi quand `ENV=dev`."""
     if not installer_sentry():
         return MUETTE
     import sentry_sdk

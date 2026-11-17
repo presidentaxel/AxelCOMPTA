@@ -372,10 +372,18 @@ async def _relire_un(
             return None, str(encore), None
 
 
+def _voulus(seulement: str | Collection[str] | None) -> frozenset[str] | None:
+    if seulement is None:
+        return None
+    if isinstance(seulement, str):
+        return frozenset({seulement})
+    return frozenset(seulement)
+
+
 async def lire_users(
     client: RolleeHttpClient,
     cle: bytes,
-    seulement: str | None = None,
+    seulement: str | Collection[str] | None = None,
     *,
     nom: str = "Rollee",
     noter: Callable[[str], None] | None = None,
@@ -389,13 +397,15 @@ async def lire_users(
 ) -> Lecture:
     """Liste GET /users, puis la carte. Un user à 0 plateforme n'est pas
     interrogé. Un user de la carte n'est relu que si `accounts_number` change.
-    `lire_absents` faux : on compte les absents, on ne les appelle pas."""
+    `lire_absents` faux : on compte les absents, on ne les appelle pas.
+    `seulement` : un user, ou quelques-uns (les webhooks d'un lot)."""
     _publier(noter, f"{nom} : lecture de la liste…")
     carte = dict(connus or {})
+    voulus = _voulus(seulement)
     bruts = [
         brut
         for brut in await client.utilisateurs()
-        if "id" in brut and (seulement is None or str(brut["id"]) == seulement)
+        if "id" in brut and (voulus is None or str(brut["id"]) in voulus)
     ]
     vides, reutilises, a_lire = _repartir(bruts, carte, set(sauf))
     if garder is not None:
@@ -769,7 +779,7 @@ async def _lire_portefeuille(
     liens_poses: Sequence[Lien],
     memoriser: bool,
     maintenant: datetime,
-    seulement: str | None,
+    seulement: str | Collection[str] | None,
     plafond: int | None,
 ) -> list[tuple[Any, Lecture]]:
     deja = frozenset(lien.rollee_user_id for lien in liens_poses)
@@ -806,7 +816,7 @@ def _bilan_portefeuille(
     ecrire: bool,
     entretenir: bool,
     maintenant: datetime,
-    seulement: str | None,
+    seulement: str | Collection[str] | None,
 ) -> list[str]:
     lies = {lien.rollee_user_id for lien in liens_poses}
     tous: list[UserRollee] = []
@@ -894,15 +904,17 @@ async def passer_tenant(
     tenant_id: TenantId,
     ecrire: bool,
     maintenant: datetime,
-    seulement: str | None = None,
+    seulement: str | Collection[str] | None = None,
     *,
     entretenir: bool = False,
     plafond: int | None = None,
+    branchements: Collection[str] | None = None,
 ) -> list[str]:
     """Un passage sur un portefeuille. `ecrire` faux : simulation, les liens
     ne sont pas posés. `entretenir` garde quand même chaque user lu dans la
-    carte. `seulement` : un seul user (webhook). `plafond` : nombre de
-    users absents de la carte lus dans ce passage."""
+    carte. `seulement` : les seuls users à lire (webhooks). `plafond` :
+    nombre de users absents de la carte lus dans ce passage. `branchements` :
+    les seules flottes Rollee à lister (celles d'où viennent les webhooks)."""
     cle = cle_empreintes()
     dossiers = depots.dossiers.lister_par_tenant(tenant_id)
     sources = await depots.sources(tenant_id, dossiers)
@@ -910,7 +922,7 @@ async def passer_tenant(
     rollee = [
         b
         for b in depots.services.branchements.lister(tenant_id)
-        if b.type == TYPE_ROLLEE and b.actif
+        if b.type == TYPE_ROLLEE and b.actif and (branchements is None or b.id in branchements)
     ]
     liens_poses = depots.liens.liens(tenant_id)
     lus = await _lire_portefeuille(
@@ -989,7 +1001,7 @@ def depots_postgres(engine: Engine) -> DepotsRapprochement:
 def entretenir_cartes(engine: Engine, maintenant: datetime) -> list[str]:
     """Passage horaire : les comptes absents de la carte sont lus, par
     tranches. Un compte nouveau arrivé par webhook est lu tout de suite
-    (`rapprocher_inconnu`). Les liens ne sont posés que si le rapprochement
+    (`rapprocher_inconnus`). Les liens ne sont posés que si le rapprochement
     automatique est activé."""
     depots = depots_postgres(engine)
     ecrire = rapprochement_actif()
@@ -1023,22 +1035,41 @@ def passer_tous(engine: Engine, ecrire: bool, maintenant: datetime) -> list[str]
     return lignes
 
 
-async def rapprocher_inconnu(engine: Engine, tenant_id: TenantId, user_id: str) -> str:
-    """Webhook d'un user Rollee qu'aucun dossier ne connaît : il entre dans
-    la carte tout de suite. Le lien n'est posé que si le rapprochement
-    automatique est activé. Déjà dans la file : rien à relire."""
-    depots = depots_postgres(engine)
-    if any(a.rollee_user_id == user_id for a in depots.liens.a_choisir(tenant_id)):
-        return f"user {user_id} inconnu, déjà à choisir"
-    lignes = await passer_tenant(
-        depots,
-        tenant_id,
-        rapprochement_actif(),
-        datetime.now(UTC),
-        seulement=user_id,
-        entretenir=True,
+async def rapprocher_inconnus(
+    engine: Engine, tenant_id: TenantId, users: Mapping[str, Collection[str]]
+) -> str:
+    """Webhooks de users Rollee qu'aucun dossier ne connaît : ils entrent
+    dans la carte tout de suite, en un seul passage pour tout le lot, sur
+    les seules flottes d'où viennent leurs webhooks (AXE-966). Le lien n'est
+    posé que si le rapprochement automatique est activé. Déjà dans la file :
+    rien à relire."""
+    return await rapprocher_inconnus_avec(
+        depots_postgres(engine), tenant_id, users, rapprochement_actif(), datetime.now(UTC)
     )
-    return " ; ".join(lignes) or f"user {user_id} inconnu"
+
+
+async def rapprocher_inconnus_avec(
+    depots: DepotsRapprochement,
+    tenant_id: TenantId,
+    users: Mapping[str, Collection[str]],
+    ecrire: bool,
+    maintenant: datetime,
+) -> str:
+    deja = {a.rollee_user_id for a in depots.liens.a_choisir(tenant_id)}
+    a_lire = {user: flottes for user, flottes in users.items() if user not in deja}
+    attendent = len(users) - len(a_lire)
+    lignes = [f"{attendent} user(s) inconnu(s) déjà à choisir"] if attendent else []
+    if a_lire:
+        lignes += await passer_tenant(
+            depots,
+            tenant_id,
+            ecrire,
+            maintenant,
+            seulement=frozenset(a_lire),
+            entretenir=True,
+            branchements=frozenset(b for flottes in a_lire.values() for b in flottes),
+        )
+    return " ; ".join(lignes) or f"{len(users)} user(s) inconnu(s)"
 
 
 def rapprocher_maintenant(
