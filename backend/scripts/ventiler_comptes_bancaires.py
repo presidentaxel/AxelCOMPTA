@@ -16,8 +16,11 @@ import argparse
 import sys
 from collections import Counter
 
+from sqlalchemy.engine import Engine
+
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.ingestion.comptes_bancaires import CompteBancaire
 from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ledger.repository import PostgresLedgerService
@@ -25,6 +28,24 @@ from axelcompta.synchro_digifactory import SOURCE
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.workflow.ventilation_bancaire import ventilation_du_dossier
+
+
+class _SansEcriture(PostgresCompteBancaireRepository):
+    """Simulation : les comptes inconnus du registre sont attribués en
+    mémoire, jamais enregistrés en base (AXE-968). Avant, la simulation
+    créait leur fiche dans `comptes_bancaires`."""
+
+    def __init__(self, engine: Engine) -> None:
+        super().__init__(engine)
+        self._ajoutes: list[CompteBancaire] = []
+
+    def lister(self, dossier_id: DossierId) -> tuple[CompteBancaire, ...]:
+        siens = tuple(c for c in self._ajoutes if c.dossier_id == dossier_id)
+        return (*super().lister(dossier_id), *siens)
+
+    def ajouter(self, compte: CompteBancaire) -> CompteBancaire:
+        self._ajoutes.append(compte)
+        return compte
 
 
 def _dossiers(
@@ -49,7 +70,9 @@ def main() -> int:
     engine = engine_depuis_env()
     ledger = PostgresLedgerService(engine)
     journal = PostgresJournalIngestion(engine)
-    comptes = PostgresCompteBancaireRepository(engine)
+    comptes = (
+        PostgresCompteBancaireRepository(engine) if arguments.appliquer else _SansEcriture(engine)
+    )
     for dossier in _dossiers(PostgresDossierRepository(engine), arguments):
         reclassements = ventilation_du_dossier(
             dossier.id, ledger.grand_livre(dossier.id), journal, comptes, SOURCE
