@@ -252,7 +252,7 @@ def _un_envoi(
     sujet, texte = contenu(
         envoi.message,
         contexte.nb_a_traiter(envoi.dossier_id),
-        f"{contexte.base_url}/chauffeur/{envoi.dossier_id}",
+        f"{contexte.base_url}/dossier/{envoi.dossier_id}",
         lien_desinscription(contexte.base_url, envoi.dossier_id, envoi.canal),
         envoi.canal,
     )

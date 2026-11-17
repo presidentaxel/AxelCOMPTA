@@ -128,7 +128,7 @@ de jobs : import des dossiers, bouton « Synchroniser », rappels ; lancé
 par `scripts/worker_planifie.sh`), `nouveaux_contacts.py` (les contacts
 Digifactory sans dossier, proposés au gestionnaire, AXE-845) et
 `rappels.py` (règles automatiques et envoi des rappels par e-mail et SMS,
-AXE-808). Depuis le 2026-11-11 (complété le 2026-11-16) :
+AXE-808). Depuis le 2026-11-11 (complété le 2026-11-17) :
 
 | Fichier | Rôle |
 |---|---|
@@ -145,6 +145,13 @@ AXE-808). Depuis le 2026-11-11 (complété le 2026-11-16) :
 | `rapprochement_rollee_service.py` | relie les users Rollee à leurs dossiers par la carte (`ingestion/cartes_rollee.py`) et le job `rapprochement_rollee` ; relit Rollee pour tout le portefeuille (AXE-911, #170, AXE-929) ; l'algorithme pur est dans `ingestion/rapprochement_rollee.py` |
 | `llm_synchro.py` | l'étage LLM dans les tâches planifiées : relever, soumettre, alerter ; budget dans `workflow/budget_llm.py` (AXE-887) |
 | `prevenir_admins.py` | mail aux admins d'un cabinet par son SMTP par défaut (AXE-911) |
+| `depot_documents_import.py` | ce qui entre sur une fiche d'import : dépôt sur une carte ou en vrac sur un exercice, archives zip dépliées (AXE-970) |
+| `stockage_documents.py` | le bucket S3 privé des documents d'import (`DOCUMENTS_BUCKET`, AXE-970) |
+| `fiches_import_portefeuille.py` | la synchro complète les fiches d'import du portefeuille avec ce qu'on sait de chaque dossier ; la décision est dans `tenants/fiches_import_dossiers.py` (AXE-952) |
+| `traitement_documents_import.py` | lit les documents déposés sur une fiche d'import : FEC et QIF lus, les autres restent « à lire » (AXE-947) |
+| `virements_internes_dossier.py` | étape horaire : les virements internes encore au 471 passent au 580, sur tout le grand livre ; l'appariement pur est dans `workflow/virement_interne.py` (AXE-930, AXE-968) |
+| `surveillance.py` | Sentry pour le worker et les tâches : job en échec, check-in du moniteur `axelcompta-taches` (AXE-959) |
+| `environnement.py` | charge `.env` puis `.env.dev` ; `ENV=dev` coupe Sentry (#219) |
 
 `api/app.py` est le point d'entrée HTTP depuis le 2026-10-25
 (`uvicorn axelcompta.api.app:app`). Il sert l'app construite par

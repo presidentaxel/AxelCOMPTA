@@ -17,8 +17,8 @@ developers.getrollee.com) :
   `other_fees`, `net_amount`, `payouts` (un total, pas la liste des
   virements), `currency` ;
 * l'unité des montants n'est pas documentée. On lit des euros décimaux
-  (`UNITE_MONTANTS`) ; le test de contrat contre le sandbox
-  (`ROLLEE_JETON_SANDBOX`) le confirme ou le fera échouer ;
+  (`UNITE_MONTANTS`) ; le test de contrat contre le branchement sandbox
+  (`pytest -m rollee`) le confirme ou le fera échouer ;
 * la date du virement n'est pas donnée : on prend la fin de la période,
   la réconciliation cherche le virement de -3 à +5 jours autour.
 

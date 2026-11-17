@@ -84,7 +84,7 @@ def test_un_rappel_part_une_fois_sans_montant_avec_le_lien_de_desinscription() -
     ((destinataire, _sujet, texte),) = smtp.messages
     assert destinataire == "karim@example.com"
     assert "12 opérations vous attendent" in texte and "€" not in texte
-    assert "https://app/chauffeur/d1" in texte and "/desinscription?d=d1&c=mail" in texte
+    assert "https://app/dossier/d1" in texte and "/desinscription?d=d1&c=mail" in texte
 
 
 def test_un_fournisseur_en_panne_donne_trois_essais_puis_echec() -> None:

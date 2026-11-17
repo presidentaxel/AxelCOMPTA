@@ -22,7 +22,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 
-from axelcompta.comptes import SupabaseCompteRepository, SupabaseConfig
+from axelcompta.comptes import SupabaseCompteRepository, SupabaseConfig, base_porte_dossier
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.ingestion.comptes_rollee_postgres import PostgresComptesRollee
 from axelcompta.ledger.repository import PostgresLedgerService
@@ -41,8 +41,6 @@ from axelcompta.workflow.rappels_envoi import (
     expediteur_de,
 )
 from axelcompta.workflow.rappels_envoi_postgres import PostgresEnvois
-
-VARIABLE_URL_APP = "AXELCOMPTA_URL_APP"
 
 
 def _regles(engine: Engine, tenant_id: str) -> list[Regle]:
@@ -173,7 +171,7 @@ def envoyer(engine: Engine, maintenant: datetime) -> dict[str, int]:
     contexte = Contexte(
         destinataire=destinataire,
         nb_a_traiter=lambda d: len(ecritures_a_trancher(ledger, decisions, d)),
-        base_url=os.environ.get(VARIABLE_URL_APP, "http://localhost:3000").rstrip("/"),
+        base_url=base_porte_dossier(os.environ) or "http://localhost:3000",
     )
     return envoyer_en_attente(
         PostgresEnvois(engine), PostgresBranchements(engine), contexte, expediteur_de, maintenant

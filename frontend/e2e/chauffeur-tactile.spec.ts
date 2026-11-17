@@ -204,7 +204,7 @@ test("l'inset clavier ignore un innerHeight qui rétrécit avec lui", () => {
 });
 
 test("la connexion chauffeur tient dans la cible tactile", async ({ page }) => {
-  await page.goto("/chauffeur/login");
+  await page.goto("/dossier/login");
   const viewport = await page.locator('meta[name="viewport"]').getAttribute("content");
   expect(viewport).toContain("width=device-width");
   expect(viewport).toContain("initial-scale=1");
@@ -227,7 +227,7 @@ test("la connexion chauffeur tient dans la cible tactile", async ({ page }) => {
   const vvh = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--vvh").trim());
   expect(vvh.endsWith("px")).toBe(true);
   await masquerIndicateurDev(page);
-  await page.screenshot({ path: "/opt/cursor/artifacts/chauffeur-login.png", fullPage: false });
+  await page.screenshot({ path: "/opt/cursor/artifacts/dossier-login.png", fullPage: false });
 });
 
 test("le bouton gestionnaire reste à la taille du design", async ({ page }) => {
@@ -237,7 +237,7 @@ test("le bouton gestionnaire reste à la taille du design", async ({ page }) => 
 
 test("les contrôles du dossier chauffeur font 44 px et passent AA", async ({ page }) => {
   await session(page);
-  await page.goto("/chauffeur/DEMO_sophie");
+  await page.goto("/dossier/DEMO_sophie");
   await expect(page.getByRole("heading", { name: "Sophie Martin" })).toBeVisible();
 
   const activite = page.getByRole("link", { name: "Activité" });
@@ -271,7 +271,7 @@ test("les contrôles du dossier chauffeur font 44 px et passent AA", async ({ pa
   await expect(ticket).toBeVisible();
   expect(await hauteur(page, ticket)).toBeGreaterThanOrEqual(44);
   await masquerIndicateurDev(page);
-  await page.screenshot({ path: "/opt/cursor/artifacts/chauffeur-activite.png", fullPage: false });
+  await page.screenshot({ path: "/opt/cursor/artifacts/dossier-activite.png", fullPage: false });
 
   await page.getByRole("link", { name: "Exercice" }).click();
   await expect(page.getByRole("heading", { name: "Exercice", exact: true })).toBeVisible();
@@ -304,16 +304,16 @@ test("les contrôles du dossier chauffeur font 44 px et passent AA", async ({ pa
   const boite = await dialogue.boundingBox();
   expect(boite!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
   await masquerIndicateurDev(page);
-  await page.screenshot({ path: "/opt/cursor/artifacts/chauffeur-dialogue.png", fullPage: false });
+  await page.screenshot({ path: "/opt/cursor/artifacts/dossier-dialogue.png", fullPage: false });
   await page.keyboard.press("Escape");
 
-  await page.goto("/chauffeur/DEMO_sophie/resultat");
+  await page.goto("/dossier/DEMO_sophie/resultat");
   const date = page.locator('input[type="date"]');
   await expect(date).toBeVisible();
   expect(await taillePolice(date)).toBeGreaterThanOrEqual(16);
   expect(await hauteur(page, date)).toBeGreaterThanOrEqual(44);
 
-  await page.goto("/chauffeur/compte");
+  await page.goto("/dossier/compte");
   const sortie = page.getByRole("button", { name: "Se déconnecter" });
   await expect(sortie).toBeVisible();
   expect(await hauteur(page, sortie)).toBeGreaterThanOrEqual(44);

@@ -24,6 +24,17 @@
 > échec envoie son bilan. Aucune variable locale n'est envoyée dans les
 > traces (`include_local_variables=False`). Le moniteur se crée tout seul au
 > premier check-in ; l'alerte (e-mail, téléphone) se règle dans Sentry.
+>
+> **Depuis le 2026-11-17** : un job qui échoue mais sera retenté (trou DNS,
+> premier ou deuxième essai) ne prévient plus Sentry ; l'alerte part au
+> dernier essai, quand le job est clos (#219). Le poste de dev charge
+> `.env` puis `.env.dev`, où `ENV=dev` coupe Sentry même si `SENTRY_DSN`
+> est posé ; la production ne pose pas `ENV`. Un job pris depuis plus de
+> 2 h (worker remplacé par un redéploiement) est relâché au passage
+> suivant, avec le motif « Abandonné… » dans le journal du worker
+> (AXE-958, colonne `jobs.pris_le`). La durée des jobs se lit dans la
+> table `jobs` : c'est ainsi qu'a été mesuré le gain d'AXE-966 (jobs
+> `rollee` de 24-65 min à 10-80 s).
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-16
 

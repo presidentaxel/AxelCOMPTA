@@ -1,6 +1,6 @@
 # 06 — Moteur comptable (`ledger` + `closing` + `filings`)
 
-> **État au 2026-11-16** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-17** (ajouté ; le reste du doc décrit la cible) :
 > - Invariants : I2 tenu en base (2026-09-24). I4 tenu en base depuis le
 >   06/11 (trigger, AXE-806) ; une correction d'exercice clos est datée du
 >   premier jour de l'exercice ouvert du dossier (AXE-838). I3 (séquence
@@ -20,8 +20,16 @@
 >     (autoliquidation Bolt en 44566/44571), espèces en **530** (AXE-931) ;
 >     chaque virement solde la créance, sans toucher au 512 ; frais
 >     d'instantanés en 627. Contre-passées si le lien Rollee est retiré ;
->   - virements entre enveloppes d'un même compte : 580, par appariement à
->     la synchro ou par OD `{S}:virement-interne` pour le passé (AXE-930) ;
+>   - virements internes (entre enveloppes d'un même compte, ou entre deux
+>     comptes du dossier) : 580, par appariement à la synchro ou par OD
+>     `{S}:virement-interne` (AXE-930). Depuis AXE-968 (17/11), une étape
+>     des tâches horaires relit tout le grand livre : deux jambes encore au
+>     471, arrivées à des synchros différentes, passent au 580 (montant
+>     opposé, à un jour près, même libellé ou deux comptes 512x
+>     différents). Une opération classée par un humain n'est jamais
+>     déplacée ;
+>   - semaine Rollee « à vérifier » tranchée par l'expert (AXE-912) :
+>     écrite telle quelle, l'écart restant dû sur le 467x, ou écartée ;
 >   - TVA déductible estimée par catégorie sur les dépenses bancaires
 >     (AXE-831, `packs/tva_deductible.toml`) ;
 >   - immobilisations : amortissement linéaire au prorata (30/360), dotation

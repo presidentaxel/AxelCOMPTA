@@ -1,6 +1,6 @@
 # 13 — Intégrations de plateformes et pattern DataProvider
 
-> **État au 2026-11-16** (ajouté ; le reste du doc décrit la cible
+> **État au 2026-11-17** (ajouté ; le reste du doc décrit la cible
 > d'origine, dont le modèle « une période = un virement » du §4, remplacé) :
 > Rollee tourne sur la base réelle depuis le 14/11 (pilote sur les
 > chauffeurs de Serenity).
@@ -74,8 +74,24 @@
 > - Mode expert, « Rapprochements Rollee » (AXE-925, `explication_semaines.py`)
 >   : par semaine, dû, payé, frais, écart, jours et virements. En tête, « Ce
 >   qui manque pour tout rapprocher » (AXE-934, `manques_rollee.py`).
-> - Reste : sortir une semaine de « à vérifier » (AXE-912) ; relevés CSV
->   Uber et Bolt pour un chauffeur sans Rollee (AXE-801).
+> - L'expert tranche une semaine « à vérifier » (AXE-912, 16/11, route
+>   `POST /expert/dossiers/{id}/rapprochements/decision`, motif
+>   obligatoire) : **Écrire telle quelle** (recettes, solde des virements
+>   et frais écrits ; l'écart reste dû sur le 467x, visible au bilan, et un
+>   virement arrivé plus tard le solde) ou **Écarter ces jours** (rien
+>   n'est écrit). Un exercice clos reporte les écritures au premier jour de
+>   l'exercice ouvert.
+> - Reste : imputer simplement un petit écart pour solder le 467x
+>   (AXE-969) ; relevés CSV Uber et Bolt pour un chauffeur sans Rollee
+>   (AXE-801).
+>
+> **Charge (17/11)**
+> - Webhooks traités par dossier (AXE-966) : un lot de 200 événements au
+>   plus relit chaque dossier une fois. Les users inconnus du lot passent
+>   en un seul rapprochement, limité aux flottes d'où viennent leurs
+>   webhooks. Un job `rollee` dure de 10 à 80 s (24 à 65 min avant).
+> - Le bouton Synchroniser relit les deux dernières semaines Rollee ;
+>   l'historique complet reste le passage de 4 h (#212).
 
 > Statut : brouillon à valider — Dernière mise à jour : 2026-06-16
 

@@ -47,7 +47,13 @@ import type {
 
 import type { FicheAnnuaireRollee, FicheRollee, RolleePortefeuille } from "./liens-rollee";
 import type { AnalyseFec, OuvertureVue } from "./ouverture";
-import type { DigifactoryFiche, FicheImport, FicheImportResume, HistoriqueDigifactory } from "./fiches-import";
+import type {
+  ComptesDigifactory,
+  DigifactoryFiche,
+  FicheImport,
+  FicheImportResume,
+  HistoriqueDigifactory,
+} from "./fiches-import";
 const CLE_SESSION = "axelcompta_session_gestionnaire";
 
 export type SessionGestionnaire = {
@@ -1490,6 +1496,11 @@ export async function relireRegistresImport(id: string): Promise<FicheImport> {
   return ficheOuErreur(await requeteGestionnaire(`/portefeuille/imports/${id}/registres`, { method: "POST" }));
 }
 
+/** Passe la fiche en Ignoré, ou la remet dans le calcul du statut. */
+export async function deciderFicheImport(id: string, decision: "ignorer" | "reprendre"): Promise<FicheImport> {
+  return ficheOuErreur(await requeteGestionnaire(`/portefeuille/imports/${id}/${decision}`, { method: "POST" }));
+}
+
 /** AXE-947 : l'import n'est plus voulu ; la fiche sort de la liste. */
 export async function annulerFicheImport(id: string): Promise<void> {
   const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/annuler`, { method: "POST" });
@@ -1501,6 +1512,18 @@ export async function chercherDigifactoryImport(id: string): Promise<Digifactory
   const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/digifactory`);
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
   return (await reponse.json()) as DigifactoryFiche;
+}
+
+/** Les comptes bancaires du contact Digifactory, pour choisir pro ou perso. */
+export async function comptesDigifactoryImport(
+  id: string,
+  contactNr: string,
+): Promise<ComptesDigifactory> {
+  const reponse = await requeteGestionnaire(
+    `/portefeuille/imports/${id}/digifactory/${encodeURIComponent(contactNr)}/comptes`,
+  );
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as ComptesDigifactory;
 }
 
 /** Date de la première écriture Digifactory du contact, pour l'historique bancaire. */
@@ -1528,6 +1551,30 @@ export async function telechargerDocumentImport(id: string, documentId: string):
   const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/documents/${documentId}`);
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
   return reponse.blob();
+}
+
+/** AXE-970 : des fichiers déposés en vrac sur l'exercice clos en `annee`,
+ * classés par l'API (archives zip dépliées). L'exercice s'ajoute à la fiche. */
+export async function deposerDocumentsExercice(id: string, annee: number, fichiers: File[]): Promise<FicheImport> {
+  const corps = new FormData();
+  for (const fichier of fichiers) corps.append("fichiers", fichier);
+  return ficheOuErreur(
+    await requeteGestionnaire(`/portefeuille/imports/${id}/exercices/${annee}/documents`, {
+      method: "POST",
+      body: corps,
+    }),
+  );
+}
+
+/** AXE-970 : ranger un document ailleurs (« reprise:liasse:2019 »). */
+export async function rangerDocumentImport(id: string, documentId: string, emplacement: string): Promise<FicheImport> {
+  return ficheOuErreur(
+    await requeteGestionnaire(`/portefeuille/imports/${id}/documents/${documentId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emplacement }),
+    }),
+  );
 }
 
 export async function retirerDocumentImport(id: string, documentId: string): Promise<FicheImport> {

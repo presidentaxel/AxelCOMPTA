@@ -4,6 +4,7 @@ import { Check, LoaderCircle, Unplug } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { chercherDigifactoryImport, historiqueDigifactoryImport } from "@/lib/auth-gestionnaire";
 import type { DigifactoryFiche } from "@/lib/fiches-import";
 
@@ -38,6 +39,7 @@ export function DigifactoryImport({
 }) {
   const [resultat, setResultat] = useState<{ cle: string; vue: DigifactoryFiche } | null>(null);
   const [choisi, setChoisi] = useState(contactActuel);
+  const [numero, setNumero] = useState(contactActuel);
   const [debut, setDebut] = useState<string | null>(null);
   const [historiqueLu, setHistoriqueLu] = useState<boolean | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -74,12 +76,19 @@ export function DigifactoryImport({
   async function relier(contactNr: string) {
     const avant = choisi;
     setChoisi(contactNr); // tout de suite ; l'API confirme
+    setNumero(contactNr);
     setErreur(null);
     try {
       await enregistrer({ contact_digifactory: contactNr });
     } catch (exception) {
       setChoisi(avant);
+      setNumero(avant);
       setErreur(exception instanceof Error ? exception.message : "Erreur inattendue.");
+      return;
+    }
+    if (!contactNr) {
+      setDebut(null);
+      setHistoriqueLu(null);
       return;
     }
     try {
@@ -93,8 +102,9 @@ export function DigifactoryImport({
   }
 
   const vue = resultat?.cle === cle ? resultat.vue : null;
+  const dansLaListe = vue?.contacts.some((c) => c.contact_nr === choisi) ?? false;
   return (
-    <div className="space-y-3 rounded-lg border border-border p-4 sm:col-span-2">
+    <div className="space-y-3">
       <p className="text-sm font-medium text-ink">Compte Digifactory</p>
       {vue === null ? (
         <p className="flex items-center gap-2 text-sm text-subtle">
@@ -108,11 +118,11 @@ export function DigifactoryImport({
           Pas encore connecté à Digifactory : aucun contact à ce nom ni à ce SIREN.
         </p>
       ) : (
-        <ul className="divide-y divide-border rounded-md border border-border">
+        <ul className="divide-y divide-hairline border-y border-border">
           {vue.contacts.map((c) => {
             const relie = choisi === c.contact_nr;
             return (
-              <li key={c.contact_nr} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+              <li key={c.contact_nr} className="flex items-center justify-between gap-3 py-3 text-sm">
                 <span className="min-w-0">
                   <span className="font-medium text-ink">{c.nom}</span>
                   <span className="ml-2 text-subtle">
@@ -130,6 +140,25 @@ export function DigifactoryImport({
             );
           })}
         </ul>
+      )}
+      {modifiable && vue !== null && !dansLaListe && (
+        <label htmlFor="contact-digifactory" className="block max-w-xs text-sm text-ink">
+          Numéro de contact
+          <Input
+            id="contact-digifactory"
+            className="mt-1.5"
+            inputMode="numeric"
+            value={numero}
+            onChange={(e) => setNumero(e.target.value)}
+            onBlur={() => {
+              const saisi = numero.trim();
+              if (saisi !== choisi) void relier(saisi);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            }}
+          />
+        </label>
       )}
       {debut && (
         <p className="text-sm text-subtle">Première écriture Digifactory : {dateFrancaise(debut)}.</p>

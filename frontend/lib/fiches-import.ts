@@ -2,7 +2,7 @@
  * par chauffeur à reprendre, remplie catégorie par catégorie, avec ses
  * documents. Compilé seul pour les tests. */
 
-export type StatutImport = "a_importer" | "en_traitement" | "traitee";
+export type StatutImport = "a_importer" | "en_traitement" | "traitee" | "ignore";
 
 export type ChoixImport = { cle: string; libelle: string };
 
@@ -55,6 +55,8 @@ export type StatutDocument = "traite" | "a_traiter" | "illisible";
 
 export type DocumentImport = {
   id: string;
+  /** AXE-970 : l'archive zip d'où il a été sorti. */
+  origine_id?: string | null;
   categorie: string;
   libelle: string;
   exercice: number | null;
@@ -108,6 +110,7 @@ export const STATUTS_IMPORT: { cle: StatutImport; libelle: string }[] = [
   { cle: "a_importer", libelle: "À importer" },
   { cle: "en_traitement", libelle: "En traitement" },
   { cle: "traitee", libelle: "Traitée" },
+  { cle: "ignore", libelle: "Ignoré" },
 ];
 
 export function libelleStatut(statut: StatutImport): string {
@@ -115,21 +118,18 @@ export function libelleStatut(statut: StatutImport): string {
 }
 
 /** Badge du design system (DESIGN.md › Badges) pour un statut. */
-export function badgeStatut(statut: StatutImport): "missing" | "pending" | "validated" {
+export function badgeStatut(statut: StatutImport): "missing" | "pending" | "validated" | "closed" {
   if (statut === "traitee") return "validated";
+  if (statut === "ignore") return "closed";
   return statut === "en_traitement" ? "pending" : "missing";
 }
 
-/** « Karim Dupont », ou l'entreprise si le chauffeur n'a pas de nom. */
-/** Fiches pas encore visibles comme entreprise du portefeuille. */
-export function fichesSansDossier<T extends { dossier_id: string | null }>(
-  fiches: T[],
-  dossiers: { dossier_id: string }[],
-): T[] {
-  const presentes = new Set(dossiers.map((dossier) => dossier.dossier_id));
-  return fiches.filter((fiche) => fiche.dossier_id === null || !presentes.has(fiche.dossier_id));
+/** Ignoré ne compte ni dans Toutes, ni dans Entreprises. */
+export function fichesActives<T extends { statut: StatutImport }>(fiches: T[]): T[] {
+  return fiches.filter((fiche) => fiche.statut !== "ignore");
 }
 
+/** « Karim Dupont », ou l'entreprise si le chauffeur n'a pas de nom. */
 export function nomChauffeur(fiche: Pick<FicheImportResume, "nom" | "prenom" | "denomination">): string {
   const nom = [fiche.prenom, fiche.nom].filter(Boolean).join(" ");
   return nom || fiche.denomination || "Chauffeur sans nom";
@@ -230,6 +230,112 @@ export function valeurChamp(fiche: Pick<FicheImport, "sections_detail">, cle: st
 
 // --- AXE-947 ---------------------------------------------------------------
 
+export type UsageCompte = "pro" | "perso";
+
+/** Un compte tel que la fiche le garde : l'IBAN complet n'est pas enregistré,
+ * seulement ses 4 derniers caractères, pour le reconnaître sans le recopier. */
+export type CompteBancaireFiche = {
+  id: string;
+  nom: string;
+  banque: string;
+  fin: string;
+  usage: UsageCompte | "";
+};
+
+/** Un compte lu chez Digifactory, avant le choix pro / perso. */
+export type CompteDigifactoryFiche = {
+  id: string;
+  nom: string;
+  banque: string;
+  iban: string;
+  professionnel: boolean | null;
+};
+
+export type ComptesDigifactory = { lu: boolean; comptes: CompteDigifactoryFiche[] };
+
+const USAGES: ReadonlySet<string> = new Set(["pro", "perso"]);
+
+function finIban(iban: string): string {
+  return iban.replace(/\s/g, "").slice(-4);
+}
+
+/** « FR76 3000 … 0189 », ou « •••• 0189 » si seul le rappel est connu. */
+export function libelleIban(iban: string, fin: string): string {
+  const compact = iban.replace(/\s/g, "").toUpperCase();
+  if (compact) return compact.replace(/(.{4})/g, "$1 ").trim();
+  return fin ? `•••• ${fin}` : "";
+}
+
+function usageDe(valeur: unknown): UsageCompte | "" {
+  return typeof valeur === "string" && USAGES.has(valeur) ? (valeur as UsageCompte) : "";
+}
+
+function compteJson(ligne: unknown): CompteBancaireFiche | null {
+  if (typeof ligne !== "object" || ligne === null || !("id" in ligne)) return null;
+  const brut = ligne as Record<string, unknown>;
+  const id = typeof brut.id === "string" ? brut.id : "";
+  if (!id) return null;
+  return {
+    id,
+    nom: typeof brut.nom === "string" ? brut.nom : "",
+    banque: typeof brut.banque === "string" ? brut.banque : "",
+    fin: typeof brut.fin === "string" ? brut.fin : "",
+    usage: usageDe(brut.usage),
+  };
+}
+
+/** « Compte courant (retenu) » : la forme écrite par la synchro avant le choix. */
+function compteLegacy(ligne: string): CompteBancaireFiche {
+  const lu = /^(.*?)\s*\((retenu|écarté|à choisir)\)\s*$/.exec(ligne);
+  if (!lu) return { id: ligne, nom: ligne, banque: "", fin: "", usage: "" };
+  const nom = lu[1].trim();
+  const usage = lu[2] === "retenu" ? "pro" : lu[2] === "écarté" ? "perso" : "";
+  return { id: nom || ligne, nom, banque: "", fin: "", usage };
+}
+
+/** Les choix déjà sur la fiche : JSON, ou les lignes « Nom (retenu) » d'avant. */
+export function lireComptesChoisis(valeur: string): CompteBancaireFiche[] {
+  const json = lireListe<unknown>(valeur).map(compteJson).filter((c) => c !== null);
+  if (json.length > 0) return json;
+  return valeur
+    .split("\n")
+    .map((ligne) => ligne.trim())
+    .filter(Boolean)
+    .map(compteLegacy);
+}
+
+export function ecrireComptesChoisis(comptes: CompteBancaireFiche[]): string {
+  if (comptes.length === 0) return "";
+  return JSON.stringify(
+    comptes.map(({ id, nom, banque, fin, usage }) => ({ id, nom, banque, fin, usage })),
+  );
+}
+
+/** La liste à montrer : les comptes Digifactory, avec le choix déjà fait
+ * (par identifiant, sinon par nom pour les anciennes lignes). Sans réponse
+ * Digifactory, ce qui est déjà sur la fiche. */
+export function fusionnerComptes(
+  live: CompteDigifactoryFiche[] | null,
+  sauves: CompteBancaireFiche[],
+): (CompteBancaireFiche & { iban: string; professionnel: boolean | null })[] {
+  if (live === null || live.length === 0) {
+    return sauves.map((compte) => ({ ...compte, iban: "", professionnel: null }));
+  }
+  const parId = new Map(sauves.map((compte) => [compte.id, compte.usage]));
+  const parNom = new Map(
+    sauves.filter((compte) => compte.nom).map((compte) => [compte.nom, compte.usage]),
+  );
+  return live.map((compte) => ({
+    id: compte.id,
+    nom: compte.nom,
+    banque: compte.banque,
+    fin: finIban(compte.iban),
+    usage: parId.has(compte.id) ? (parId.get(compte.id) ?? "") : (parNom.get(compte.nom) ?? ""),
+    iban: compte.iban,
+    professionnel: compte.professionnel,
+  }));
+}
+
 export type ContactDigifactory = {
   contact_nr: string;
   nom: string;
@@ -282,4 +388,107 @@ export function retardPossible(e: ExerciceImport): boolean {
 
 export function basculerRetard(enRetard: string, annee: number): string {
   return basculerChoix(enRetard, String(annee)).split(",").filter(Boolean).sort().join(",");
+}
+
+// --- AXE-970 : tout l'historique, exercice par exercice ----------------------
+
+export const ANNEE_MIN_REPRISE = 2000;
+
+/** Où ranger une pièce d'un exercice : les catégories proposées au reclassement. */
+export const CATEGORIES_EXERCICE: { cle: string; libelle: string }[] = [
+  { cle: "liasse", libelle: "Liasse fiscale" },
+  { cle: "fec", libelle: "FEC" },
+  { cle: "balance", libelle: "Balance" },
+  { cle: "grand_livre", libelle: "Grand livre" },
+  { cle: "comptes_annuels", libelle: "Bilan et compte de résultat" },
+  { cle: "declaration_tva", libelle: "Déclarations de TVA" },
+  { cle: "declaration_is", libelle: "Déclarations d'IS" },
+  { cle: "accuse_reception", libelle: "Accusés de réception" },
+  { cle: "paiement_impot", libelle: "Paiements d'impôts" },
+  { cle: "piece", libelle: "Pièces justificatives" },
+  { cle: "archive", libelle: "Archive" },
+  { cle: "autre", libelle: "Autre document" },
+];
+
+/** Le texte d'une carte créée à l'écran quand aucune pièce n'y était encore. */
+const EXPLICATIONS_EXERCICE: Record<string, string> = {
+  comptes_annuels: "Bilan, compte de résultat, annexe.",
+  declaration_tva: "CA3, CA12 (3517-S) et leurs synthèses.",
+  declaration_is: "Relevés d'acompte et de solde (2571, 2572).",
+  accuse_reception: "Accusés de dépôt des déclarations.",
+  paiement_impot: "Ordres de paiement et avis de prélèvement.",
+  piece: "Factures, reçus, encaissements.",
+  archive: "Gardée intacte : chaque fichier qu'elle contient est rangé à part.",
+  autre: "Tout autre document de l'exercice.",
+};
+
+/** Déplace le document vers `emplacement` avant la réponse du serveur.
+ * La carte d'arrivée apparaît tout de suite si elle n'existait pas. */
+export function deplacerDocument<T extends { emplacements: EmplacementImport[] }>(
+  fiche: T,
+  documentId: string,
+  emplacement: string,
+): T {
+  let document: DocumentImport | undefined;
+  const restants = fiche.emplacements.map((carte) => {
+    const garde = carte.documents.filter((d) => {
+      if (d.id !== documentId) return true;
+      document = d;
+      return false;
+    });
+    return garde.length === carte.documents.length ? carte : { ...carte, documents: garde };
+  });
+  if (!document || document.emplacement === emplacement) return fiche;
+  const deplace: DocumentImport = {
+    ...document,
+    categorie: emplacement.split(":")[1] ?? document.categorie,
+    emplacement,
+  };
+  const index = restants.findIndex((carte) => carte.cle === emplacement);
+  if (index >= 0) {
+    const cible = restants[index];
+    const suivant = [...restants];
+    suivant[index] = { ...cible, documents: [deplace, ...cible.documents] };
+    return { ...fiche, emplacements: suivant };
+  }
+  const annee = anneeEmplacement(emplacement);
+  const libelle = CATEGORIES_EXERCICE.find((c) => c.cle === deplace.categorie)?.libelle ?? "Document";
+  return {
+    ...fiche,
+    emplacements: [
+      ...restants,
+      {
+        cle: emplacement,
+        section: emplacement.split(":")[0] || "reprise",
+        libelle: annee ? `${libelle} ${annee}` : libelle,
+        explication: EXPLICATIONS_EXERCICE[deplace.categorie] ?? "",
+        attendu: false,
+        documents: [deplace],
+      },
+    ],
+  };
+}
+
+/** L'année saisie pour « Ajouter un exercice », ou le message d'erreur. */
+export function lireAnnee(texte: string, aujourdhui: Date): number | string {
+  const annee = Number(texte.trim());
+  const max = aujourdhui.getFullYear();
+  if (!/^\d{4}$/.test(texte.trim()) || annee < ANNEE_MIN_REPRISE || annee > max) {
+    return `Une année de clôture, de ${ANNEE_MIN_REPRISE} à ${max}.`;
+  }
+  return annee;
+}
+
+/** La liste « 2015,2019 » avec une année de plus, triée et sans doublon. */
+export function ajouterAnnee(liste: string, annee: number): string {
+  const annees = new Set(liste.split(",").filter(Boolean).map(Number));
+  annees.add(annee);
+  return [...annees].sort((a, b) => a - b).join(",");
+}
+
+/** Une carte qui reçoit une archive peut avoir des dizaines de pièces : on en
+ * montre `max`, le reste sur demande. */
+export function documentsVisibles<T>(documents: T[], tout: boolean, max = 5): { visibles: T[]; caches: number } {
+  if (tout || documents.length <= max) return { visibles: documents, caches: 0 };
+  return { visibles: documents.slice(0, max), caches: documents.length - max };
 }

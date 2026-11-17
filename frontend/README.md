@@ -32,7 +32,7 @@ Puis ouvrir `http://localhost:3000`. `NEXT_PUBLIC_API_BASE_URL` (défaut
 `http://localhost:8000`) est configurable via `.env.local` (voir
 `.env.example`).
 
-**Pour tester la connexion chauffeur** (`/chauffeur/login`, doc 17 §9
+**Pour tester la connexion d'un dossier** (`/dossier/login`, doc 17 §9
 bloc B) : `.env.local` a aussi besoin de `NEXT_PUBLIC_SUPABASE_URL` et
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` (mêmes valeurs que `backend/.env`, la clé
 anon est faite pour être publique). Sans ça, le dashboard gestionnaire
@@ -111,6 +111,6 @@ chauffeur (mobile) est cadré dans [doc 19](../docs/19-parcours-utilisateur.md).
 ## Doc de référence
 
 [doc 11](../docs/11-ux-ui.md) (UX/UI complet),
-[doc 19](../docs/19-parcours-utilisateur.md) (parcours gestionnaire/chauffeur),
+[doc 19](../docs/19-parcours-utilisateur.md) (parcours gestionnaire/dossier),
 [DESIGN.md](../DESIGN.md) (design system : tokens, composants, Do's & Don'ts),
 [doc 17 §9](../docs/archive/17-plan-demo-journal-2026-09.md#9-semaines-et-jalons).

@@ -187,6 +187,9 @@ class _ClientS3Factice:
     def put_object(self, Bucket: str, Key: str, Body: bytes) -> None:  # noqa: N803
         self.objets[(Bucket, Key)] = Body
 
+    def delete_object(self, Bucket: str, Key: str) -> None:  # noqa: N803
+        self.objets.pop((Bucket, Key), None)
+
 
 def test_le_depot_s3_lit_ecrit_et_dit_absent() -> None:
     client = _ClientS3Factice()
@@ -195,3 +198,5 @@ def test_le_depot_s3_lit_ecrit_et_dit_absent() -> None:
     depot.ecrire("v/x", b"abc")
     assert depot.lire("v/x") == b"abc"
     assert ("modeles", "v/x") in client.objets
+    depot.supprimer("v/x")  # AXE-970 : un document retiré quitte le bucket
+    assert depot.lire("v/x") is None

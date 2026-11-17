@@ -11,7 +11,7 @@ import pytest
 
 from axelcompta import worker
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.synchro_digifactory import repartir_par_branchement
+from axelcompta.synchro_digifactory import client_digifactory, repartir_par_branchement
 from axelcompta.tenants.branchements import Branchement, BranchementsMemoire, nouveau
 from axelcompta.tenants.models import Dossier
 from axelcompta.worker import CLE_BRANCHEMENT, contacts_du_portefeuille
@@ -54,7 +54,7 @@ def _digi(depot: BranchementsMemoire, nom: str, jeton: str) -> Branchement:
     return cree
 
 
-def test_les_dossiers_sont_regroupes_par_branchement_et_sans_branchement_par_l_env() -> None:
+def test_les_dossiers_sont_regroupes_par_branchement_et_sans_branchement() -> None:
     depot = BranchementsMemoire()
     principal, second = _digi(depot, "Compte 1", "j1"), _digi(depot, "Compte 2", "j2")
     depot.choisir_pour_dossier(T, DossierId("b"), "digifactory", second.id)
@@ -65,6 +65,17 @@ def test_les_dossiers_sont_regroupes_par_branchement_et_sans_branchement_par_l_e
     vus = {(b.nom if b else None): [d.id for d in g] for b, g in groupes}
     assert vus == {"Compte 1": ["a", "c"], "Compte 2": ["b"], None: ["z"]}
     assert principal.par_defaut
+
+
+def test_sans_branchement_le_client_refuse(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DIGIFACTORY_TOKEN", "secret")
+    monkeypatch.setenv("DIGIFACTORY_BASE_URL", "https://digi.example")
+    with pytest.raises(RuntimeError, match="Intégrations"):
+        client_digifactory(None)
+
+
+def test_aucun_branchement_ne_donne_aucun_contact() -> None:
+    assert asyncio.run(contacts_du_portefeuille([])) == {}
 
 
 class _Client:

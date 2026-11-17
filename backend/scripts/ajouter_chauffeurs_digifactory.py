@@ -45,7 +45,13 @@ from axelcompta.ingestion.digifactory_contacts import (
 )
 from axelcompta.ingestion.providers.digifactory import DigifactoryHttpClient
 from axelcompta.nouveaux_contacts import fiche_sirene
-from axelcompta.synchro_digifactory import synchroniser_portefeuille
+from axelcompta.synchro_digifactory import (
+    TYPE_DIGIFACTORY,
+    client_digifactory,
+    synchroniser_portefeuille,
+)
+from axelcompta.tenants.branchements import choisir
+from axelcompta.tenants.branchements_postgres import PostgresBranchements
 from axelcompta.tenants.models import Dossier, Tenant
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.registres_depot import RegistresPostgres
@@ -54,8 +60,20 @@ from axelcompta.tenants.tags import POSE_PAR_IMPORT, TAG_CHAUFFEUR, a_taguer_cha
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 
 
+def _client_portefeuille() -> DigifactoryHttpClient:
+    """Le branchement Digifactory par défaut du portefeuille de démo."""
+    branchement = choisir(
+        PostgresBranchements(engine_depuis_env()).lister(TENANT_DEMO),
+        TYPE_DIGIFACTORY,
+        None,
+    )
+    if branchement is None:
+        raise SystemExit("Aucun branchement Digifactory : ajoutez-en un dans Intégrations.")
+    return client_digifactory(branchement)
+
+
 async def _contacts_bruts() -> dict[str, dict[str, object]]:
-    client = DigifactoryHttpClient.depuis_env()
+    client = _client_portefeuille()
     try:
         brut = await client.contacts()
     finally:
