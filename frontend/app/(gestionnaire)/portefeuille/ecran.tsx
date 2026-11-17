@@ -53,6 +53,7 @@ import {
 } from "@/lib/filtres-portefeuille";
 import {
   badgeStatut,
+  fichesActives,
   fichesSansDossier,
   libelleStatut,
   nomChauffeur,
@@ -65,7 +66,6 @@ import { useDroitGestionnaire } from "@/lib/use-droit";
 import { Squelette } from "@/components/Squelette";
 import {
   BoutonSynchroniser,
-  NouveauxChauffeurs,
   PhraseSynchronisation,
   useSynchronisationPortefeuille,
 } from "@/components/SynchronisationPortefeuille";
@@ -251,12 +251,15 @@ export function EcranEntreprises() {
   const choisi = dossiers?.find((dossier) => dossier.dossier_id === selection) ?? null;
   const fichesParDossier = useMemo(() => {
     const parDossier = new Map<string, FicheImportResume>();
-    for (const fiche of fiches) {
+    for (const fiche of fichesActives(fiches)) {
       if (fiche.dossier_id) parDossier.set(fiche.dossier_id, fiche);
     }
     return parDossier;
   }, [fiches]);
-  const enImport = useMemo(() => fichesSansDossier(fiches, dossiers ?? []), [fiches, dossiers]);
+  const enImport = useMemo(
+    () => fichesSansDossier(fichesActives(fiches), dossiers ?? []),
+    [fiches, dossiers],
+  );
   const ficheChoisie = choisi ? fichesParDossier.get(choisi.dossier_id) : undefined;
 
   return (
@@ -278,7 +281,6 @@ export function EcranEntreprises() {
           </Link>
         )}
       </div>
-      <NouveauxChauffeurs etat={synchro} ecriture={droit.ecriture} />
       {enImport.length > 0 && (
         <section className="mt-6 rounded-md border border-border bg-canvas p-4" aria-labelledby="titre-en-import">
           <h2 id="titre-en-import" className="text-sm font-semibold text-ink">En cours d&apos;import</h2>

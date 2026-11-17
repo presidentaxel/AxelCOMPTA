@@ -196,6 +196,21 @@ def test_une_fiche_complete_est_tout_de_suite_au_portefeuille() -> None:
     assert file.dernier("TENANT_DEMO", "import_dossiers") is None
 
 
+def test_ignorer_une_fiche_puis_la_remettre() -> None:
+    client, _file = _client(registres=False)
+    fiche = _ouvrir(client, siren="")
+    route = f"/portefeuille/imports/{fiche['id']}"
+
+    ignoree = client.post(f"{route}/ignorer", headers=EN_TETE)
+    assert ignoree.status_code == 200, ignoree.text
+    assert ignoree.json()["statut"] == "ignore"
+    assert client.get("/portefeuille/imports", headers=EN_TETE).json()[0]["statut"] == "ignore"
+
+    reprise = client.post(f"{route}/reprendre", headers=EN_TETE)
+    assert reprise.status_code == 200, reprise.text
+    assert reprise.json()["statut"] == "a_importer"
+
+
 def test_annuler_un_import_le_sort_de_la_liste() -> None:
     client, _file = _client()
     fiche = _ouvrir(client)

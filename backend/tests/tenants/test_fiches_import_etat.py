@@ -127,10 +127,12 @@ def test_des_parts_qui_ne_font_pas_100_pourcent_sont_signalees() -> None:
 
 
 def test_le_statut_se_calcule_tout_seul() -> None:
-    """AXE-947 : jamais choisi à la main."""
+    """AXE-947 : jamais choisi à la main, sauf Ignoré qui reste jusqu'à reprise."""
     vide = nouvelle_fiche("f1", T, "Dupont", "Karim", "", "b", LE)
     assert statut_calcule(vide, [], AUJOURD_HUI) == "a_importer"
     assert statut_calcule(_fiche(email="k@x.fr"), [], AUJOURD_HUI) == "en_traitement"
+    ignoree = replace(vide, statut="ignore")
+    assert statut_calcule(ignoree, [], AUJOURD_HUI) == "ignore"
 
 
 def test_la_fiche_complete_devient_une_ligne_d_import_valide() -> None:

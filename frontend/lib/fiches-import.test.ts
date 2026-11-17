@@ -14,6 +14,7 @@ import {
   type ExerciceImport,
   type EmplacementImport,
   libelleStatut,
+  fichesActives,
   fichesSansDossier,
   nomChauffeur,
   devinerCategorie,
@@ -53,9 +54,22 @@ test("une fiche sans dossier du portefeuille reste à part", () => {
 
 test("chaque statut a son libellé et son badge", () => {
   assert.equal(libelleStatut("a_importer"), "À importer");
+  assert.equal(libelleStatut("ignore"), "Ignoré");
   assert.deepEqual(
-    (["a_importer", "en_traitement", "traitee"] as const).map(badgeStatut),
-    ["missing", "pending", "validated"],
+    (["a_importer", "en_traitement", "traitee", "ignore"] as const).map(badgeStatut),
+    ["missing", "pending", "validated", "closed"],
+  );
+});
+
+test("une fiche ignorée sort de Toutes", () => {
+  const fiches = [
+    { statut: "a_importer" as const },
+    { statut: "ignore" as const },
+    { statut: "traitee" as const },
+  ];
+  assert.deepEqual(
+    fichesActives(fiches).map((fiche) => fiche.statut),
+    ["a_importer", "traitee"],
   );
 });
 
