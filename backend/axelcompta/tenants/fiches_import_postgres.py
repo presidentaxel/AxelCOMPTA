@@ -1,7 +1,14 @@
-"""Fiches d'import et documents en Postgres (AXE-941). RLS par portefeuille."""
+"""Fiches d'import et documents en Postgres (AXE-941). RLS par portefeuille.
+
+AXE-970 : avec un bucket (`DepotContenus`), le contenu y est écrit avant la
+ligne, sous `cle_archive` ; la base ne garde que la clé. Un contenu écrit
+dont la ligne échoue reste dans le bucket sans être lu : rien ne se perd.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import date
 from typing import Any
@@ -13,8 +20,8 @@ from sqlalchemy.engine import Connection, Engine, Row
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.core.rls import appliquer_rls
 
-from .fiches_import import DocumentImport, FicheImport
-from .fiches_import_depot import FicheIntrouvable, Instantane
+from .fiches_import import DocumentImport, FicheImport, cle_archive
+from .fiches_import_depot import DepotContenus, FicheIntrouvable, Instantane, deplacer
 from .fiches_import_etat import statut_calcule
 from .orm import documents_import, dossiers, fiches_import
 from .registres_json import fiche_depuis_json, fiche_vers_json
@@ -57,7 +64,33 @@ def _document(ligne: Row[Any]) -> DocumentImport:
         emplacement=ligne.emplacement,
         statut_traitement=ligne.statut_traitement,
         resume=ligne.resume,
+        origine_id=ligne.origine_id,
+        cle_stockage=ligne.cle_stockage or "",
+        donnees=ligne.donnees,
     )
+
+
+def _ligne_document(document: DocumentImport, contenu: bytes | None) -> dict[str, Any]:
+    return {
+        "id": document.id,
+        "fiche_id": document.fiche_id,
+        "tenant_id": document.tenant_id,
+        "categorie": document.categorie,
+        "exercice": document.exercice,
+        "nom_fichier": document.nom_fichier,
+        "type_mime": document.type_mime,
+        "taille": document.taille,
+        "empreinte": document.empreinte,
+        "contenu": contenu,
+        "depose_par": document.depose_par,
+        "depose_le": document.depose_le,
+        "emplacement": document.emplacement,
+        "statut_traitement": document.statut_traitement,
+        "resume": document.resume,
+        "origine_id": document.origine_id,
+        "cle_stockage": document.cle_stockage,
+        "donnees": document.donnees,
+    }
 
 
 def _valeurs(fiche: FicheImport) -> dict[str, Any]:
@@ -82,8 +115,22 @@ class PostgresFichesImport:
     """Une connexion par appel : lire une fiche rend aussi ses documents et
     l'état de son dossier (AXE-946)."""
 
-    def __init__(self, engine: Engine) -> None:
+    def __init__(self, engine: Engine, depot: DepotContenus | None = None) -> None:
         self._engine = engine
+        self._depot = depot
+
+    def _ranger_contenus(
+        self, documents: Sequence[tuple[DocumentImport, bytes]]
+    ) -> list[dict[str, Any]]:
+        """Les lignes à insérer ; avec un bucket, les contenus y partent
+        d'abord, en parallèle (une archive : des centaines de fichiers)."""
+        if self._depot is None:
+            return [_ligne_document(d, contenu) for d, contenu in documents]
+        depot = self._depot
+        ranges = [(replace(d, cle_stockage=cle_archive(d)), contenu) for d, contenu in documents]
+        with ThreadPoolExecutor(max_workers=8) as envois:
+            list(envois.map(lambda dc: depot.ecrire(dc[0].cle_stockage, dc[1]), ranges))
+        return [_ligne_document(d, None) for d, _contenu in ranges]
 
     def lister(self, tenant_id: TenantId) -> list[tuple[FicheImport, list[DocumentImport]]]:
         with self._engine.connect() as connexion:
@@ -137,28 +184,19 @@ class PostgresFichesImport:
             return _instantane(connexion, fiche)
 
     def deposer(self, document: DocumentImport, contenu: bytes) -> Instantane:
+        return self.deposer_lot([(document, contenu)])
+
+    def deposer_lot(self, documents: Sequence[tuple[DocumentImport, bytes]]) -> Instantane:
+        premier = documents[0][0]
+        if any(d.fiche_id != premier.fiche_id for d, _ in documents):
+            raise ValueError("Un lot de documents appartient à une seule fiche.")
         with self._engine.begin() as connexion:
             appliquer_rls(connexion)
-            fiche = _fiche(_ligne_fiche(connexion, document.tenant_id, document.fiche_id))
-            connexion.execute(
-                documents_import.insert().values(
-                    id=document.id,
-                    fiche_id=document.fiche_id,
-                    tenant_id=document.tenant_id,
-                    categorie=document.categorie,
-                    exercice=document.exercice,
-                    nom_fichier=document.nom_fichier,
-                    type_mime=document.type_mime,
-                    taille=document.taille,
-                    empreinte=document.empreinte,
-                    contenu=contenu,
-                    depose_par=document.depose_par,
-                    depose_le=document.depose_le,
-                    emplacement=document.emplacement,
-                    statut_traitement=document.statut_traitement,
-                    resume=document.resume,
-                )
-            )
+            fiche = _fiche(_ligne_fiche(connexion, premier.tenant_id, premier.fiche_id))
+            lignes = self._ranger_contenus(documents)
+            # L'archive d'abord : ses fichiers la citent (`origine_id`).
+            lignes.sort(key=lambda ligne: ligne["origine_id"] is not None)
+            connexion.execute(documents_import.insert(), lignes)
             return _instantane(connexion, fiche)
 
     def contenu(self, tenant_id: TenantId, document_id: str) -> tuple[DocumentImport, bytes]:
@@ -172,12 +210,53 @@ class PostgresFichesImport:
             ).first()
         if ligne is None:
             raise FicheIntrouvable("Document introuvable.")
-        return _document(ligne), bytes(ligne.contenu)
+        if ligne.contenu is not None:
+            return _document(ligne), bytes(ligne.contenu)
+        contenu = self._depot.lire(ligne.cle_stockage) if self._depot else None
+        if contenu is None:
+            raise FicheIntrouvable("Contenu du document introuvable dans le stockage.")
+        return _document(ligne), contenu
+
+    def ranger(self, document: DocumentImport) -> Instantane:
+        if self._depot is not None:
+            document = deplacer(self._depot, document)
+        with self._engine.begin() as connexion:
+            appliquer_rls(connexion)
+            fiche = _fiche(_ligne_fiche(connexion, document.tenant_id, document.fiche_id))
+            resultat = connexion.execute(
+                update(documents_import)
+                .where(
+                    documents_import.c.tenant_id == document.tenant_id,
+                    documents_import.c.id == document.id,
+                )
+                .values(
+                    categorie=document.categorie,
+                    exercice=document.exercice,
+                    emplacement=document.emplacement,
+                    cle_stockage=document.cle_stockage,
+                )
+            )
+            if resultat.rowcount == 0:
+                raise FicheIntrouvable("Document introuvable.")
+            return _instantane(connexion, fiche)
 
     def retirer(self, tenant_id: TenantId, fiche_id: str, document_id: str) -> Instantane:
         with self._engine.begin() as connexion:
             appliquer_rls(connexion)
             fiche = _fiche(_ligne_fiche(connexion, tenant_id, fiche_id))
+            cles = (
+                connexion.execute(
+                    select(documents_import.c.cle_stockage).where(
+                        documents_import.c.tenant_id == tenant_id,
+                        documents_import.c.fiche_id == fiche_id,
+                        (documents_import.c.id == document_id)
+                        | (documents_import.c.origine_id == document_id),
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            # Les fichiers sortis d'une archive partent avec elle (cascade).
             resultat = connexion.execute(
                 delete(documents_import).where(
                     documents_import.c.tenant_id == tenant_id,
@@ -187,7 +266,12 @@ class PostgresFichesImport:
             )
             if resultat.rowcount == 0:
                 raise FicheIntrouvable("Document introuvable.")
-            return _instantane(connexion, fiche)
+            instantane = _instantane(connexion, fiche)
+        if self._depot is not None:
+            for cle in cles:
+                if cle:
+                    self._depot.supprimer(cle)
+        return instantane
 
 
 def _ligne_fiche(connexion: Connection, tenant_id: TenantId, fiche_id: str) -> Row[Any]:

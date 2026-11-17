@@ -2,9 +2,22 @@
 	email {$ACME_EMAIL}
 }
 
+# `Host` est transmis tel que le navigateur l'a demandé. Sans ça, Caddy le
+# remplace par `web:3000` et le front ne distingue plus les deux portes.
 {$APP_DOMAIN} {
 	encode zstd gzip
-	reverse_proxy web:3000
+	reverse_proxy web:3000 {
+		header_up Host {http.request.host}
+	}
+}
+
+# Porte d'un dossier (AXE-965). Même conteneur que la vitrine : le front
+# choisit l'écran selon le nom. Le DNS A pointe déjà vers ce droplet.
+app-compta.axelproject.fr {
+	encode zstd gzip
+	reverse_proxy web:3000 {
+		header_up Host {http.request.host}
+	}
 }
 
 {$API_DOMAIN} {

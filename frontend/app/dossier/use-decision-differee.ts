@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { DELAI_ANNULATION_MS } from "@/app/chauffeur/file-a-traiter";
+import { DELAI_ANNULATION_MS } from "@/app/dossier/file-a-traiter";
 import { ApiError } from "@/lib/api";
 import { trancherTransactionChauffeur } from "@/lib/auth-chauffeur";
 import type { TransactionVue } from "@/lib/types";

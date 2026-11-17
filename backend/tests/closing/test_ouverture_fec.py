@@ -78,6 +78,11 @@ def test_un_fichier_renomme_n_est_plus_un_fec(nom: str) -> None:
         lire_nom(nom)
 
 
+def test_un_fec_nomme_avec_le_siret_donne_son_siren() -> None:
+    """AXE-970 : OneUp nomme le FEC `90877103300010FEC20220930.csv`."""
+    assert lire_nom("90877103300010FEC20220930.csv") == ("908771033", date(2022, 9, 30))
+
+
 def test_le_fec_d_une_autre_societe_est_refuse() -> None:
     analyse = _analyse(fec(), siren="123456782")
     assert analyse.a_nouveaux is None

@@ -23,6 +23,9 @@ COPY pyproject.toml alembic.ini ./
 COPY axelcompta ./axelcompta
 COPY migrations ./migrations
 COPY docker ./docker
+# Reprises ponctuelles (AXE-832, AXE-930…) : lancées dans le conteneur, en
+# simulation d'abord (`docker compose exec worker python scripts/…`).
+COPY scripts ./scripts
 
 RUN pip install --no-cache-dir -e ".[llm]" \
     && chmod 755 docker/entrypoint.sh \

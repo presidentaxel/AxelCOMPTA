@@ -49,7 +49,9 @@ COLONNES_OBLIGATOIRES = (
     "ecriturelib",
     "validdate",
 )
-_NOM = re.compile(r"^(\d{9})FEC(\d{8})(?:\.\w+)?$", re.IGNORECASE)
+# AXE-970 : certains outils (OneUp) nomment le FEC avec le SIRET ; ses 9
+# premiers chiffres sont le SIREN.
+_NOM = re.compile(r"^(\d{9})(?:\d{5})?FEC(\d{8})(?:\.\w+)?$", re.IGNORECASE)
 _DATE = re.compile(r"^\d{8}$")
 _MONTANT = re.compile(r"^\d+(?:[.,]\d{1,2})?$")
 _COMPTE_PCG = re.compile(r"^[1-7]\d{2,}$")
@@ -184,7 +186,8 @@ def lire_fec_externe(contenu: bytes) -> tuple[LigneFec, ...]:
 
 
 def lire_nom(nom_fichier: str) -> tuple[str, date]:
-    """`123456789FEC20251231.txt` → (SIREN, date de clôture)."""
+    """`123456789FEC20251231.txt` → (SIREN, date de clôture). Un nom au SIRET
+    (`12345678900010FEC20251231.csv`) donne le même SIREN."""
     trouve = _NOM.match(nom_fichier.strip().rsplit("/", 1)[-1])
     if trouve is None:
         raise FecRefuse(

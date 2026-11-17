@@ -42,6 +42,23 @@ def bornes(champs: Mapping[str, str], aujourd_hui: date) -> list[tuple[date, dat
     return resultat
 
 
+def bornes_de(champs: Mapping[str, str], annee: int) -> tuple[date, date]:
+    """AXE-970 : (début, fin) de l'exercice clos en `annee`, même avant la
+    date de création connue : fin à la date de clôture de la fiche (31/12
+    sans elle), début le lendemain de la clôture précédente. Pour le premier
+    exercice réel, `bornes` reste juste (date de création)."""
+    for debut, fin in bornes(champs, date(annee + 1, 12, 31)):
+        if fin.year == annee:
+            return debut, fin
+    try:
+        jour, mois = (int(x) for x in champs["cloture"].split("/"))
+        _cloture_dans(annee, jour, mois)
+    except (KeyError, ValueError):
+        jour, mois = 31, 12
+    fin = _cloture_dans(annee, jour, mois)
+    return _cloture_dans(annee - 1, jour, mois) + timedelta(days=1), fin
+
+
 def _fin_de_mois(annee: int, mois: int) -> date:
     return date(annee, mois, calendar.monthrange(annee, mois)[1])
 

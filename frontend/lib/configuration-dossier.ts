@@ -4,6 +4,7 @@
 const NOMS: Record<string, string> = {
   forme_juridique: "forme juridique",
   exercice: "premier exercice",
+  imposition: "imposition et TVA",
 };
 
 /** « Forme juridique et premier exercice à confirmer par le dirigeant. »,

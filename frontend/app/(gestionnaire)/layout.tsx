@@ -4,8 +4,8 @@ import { Navigation } from "@/components/Navigation";
 
 /** Habillage gestionnaire (PC/web) — doc 19 §7 : « même socle, deux
  * habillages ». Groupe de routes Next.js (`(gestionnaire)`, sans effet sur
- * l'URL) plutôt que codé en dur dans le layout racine, pour que `/chauffeur`
- * ait son propre habillage (`app/chauffeur/layout.tsx`) sans hériter de la
+ * l'URL) plutôt que codé en dur dans le layout racine, pour que `/dossier`
+ * ait son propre habillage (`app/dossier/layout.tsx`) sans hériter de la
  * barre latérale gestionnaire.
  *
  * Application shell (DESIGN.md) : la barre latérale de 256px à gauche (une

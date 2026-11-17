@@ -16,7 +16,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from axelcompta.core.ids import TenantId
-from axelcompta.tenants.fiches_import import FicheImport, preremplir
+from axelcompta.tenants.contacts_proposes_postgres import PostgresContactsProposes
+from axelcompta.tenants.fiches_import import FicheImport, fiches_des_contacts, preremplir
 from axelcompta.tenants.fiches_import_dossiers import (
     PAR_SYNCHRO,
     CompteRolleeDuDossier,
@@ -143,10 +144,20 @@ def completer_fiches(
     """Une fiche pour chaque dossier, complétée de ce qu'on sait ; le résumé
     s'ajoute à celui de la synchro (« » s'il n'y a rien à faire)."""
     le = maintenant or datetime.now(UTC)
-    fiches = PostgresFichesImport(engine)
     dossiers = PostgresDossierRepository(engine).lister_par_tenant(tenant_id)
     donnees = donnees_du_portefeuille(engine, tenant_id, dossiers)
-    a_ecrire, creees, completees = completer_portefeuille(donnees, fiches.toutes(tenant_id), le)
+    depot = PostgresFichesImport(engine)
+    a_ecrire, creees, completees = completer_portefeuille(donnees, depot.toutes(tenant_id), le)
     for fiche in a_ecrire:
-        fiches.enregistrer(_avec_registres(fiche, lire, le))
-    return resume(creees, completees)
+        depot.enregistrer(_avec_registres(fiche, lire, le))
+    contacts = PostgresContactsProposes(engine)
+    a_ouvrir = fiches_des_contacts(
+        contacts.propositions(tenant_id),
+        contacts.decisions(tenant_id),
+        depot.toutes(tenant_id),
+        tenant_id,
+        le,
+    )
+    for fiche in a_ouvrir:
+        depot.enregistrer(_avec_registres(fiche, lire, le))
+    return resume(creees + len(a_ouvrir), completees)

@@ -16,26 +16,55 @@ import argparse
 import sys
 from collections import Counter
 
+from sqlalchemy.engine import Engine
+
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.ingestion.comptes_bancaires import CompteBancaire
 from axelcompta.ingestion.comptes_bancaires_postgres import PostgresCompteBancaireRepository
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.synchro_digifactory import SOURCE
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
+from axelcompta.tenants.tags import etat_du_portefeuille, retenus
+from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.workflow.ventilation_bancaire import ventilation_du_dossier
 
 
+class _SansEcriture(PostgresCompteBancaireRepository):
+    """Simulation : les comptes inconnus du registre sont attribués en
+    mémoire, jamais enregistrés en base (AXE-968). Avant, la simulation
+    créait leur fiche dans `comptes_bancaires`."""
+
+    def __init__(self, engine: Engine) -> None:
+        super().__init__(engine)
+        self._ajoutes: list[CompteBancaire] = []
+
+    def lister(self, dossier_id: DossierId) -> tuple[CompteBancaire, ...]:
+        siens = tuple(c for c in self._ajoutes if c.dossier_id == dossier_id)
+        return (*super().lister(dossier_id), *siens)
+
+    def ajouter(self, compte: CompteBancaire) -> CompteBancaire:
+        self._ajoutes.append(compte)
+        return compte
+
+
 def _dossiers(
-    depot: PostgresDossierRepository, arguments: argparse.Namespace
+    depot: PostgresDossierRepository,
+    tags: PostgresTagsRepository,
+    arguments: argparse.Namespace,
 ) -> tuple[Dossier, ...]:
     if arguments.dossier:
         dossier = depot.obtenir(DossierId(arguments.dossier))
         if dossier is None:
             raise SystemExit(f"dossier inconnu : {arguments.dossier}")
         return (dossier,)
-    return depot.lister_par_tenant(TenantId(arguments.tenant))
+    tenant_id = TenantId(arguments.tenant)
+    # Un dossier qu'un tag exclut (société du gestionnaire, test, hors
+    # périmètre) n'est pas touché ; `--dossier` le vise quand même.
+    etat = etat_du_portefeuille(tags, tenant_id)
+    return retenus(depot.lister_par_tenant(tenant_id), etat, "synchro")
 
 
 def main() -> int:
@@ -49,8 +78,13 @@ def main() -> int:
     engine = engine_depuis_env()
     ledger = PostgresLedgerService(engine)
     journal = PostgresJournalIngestion(engine)
-    comptes = PostgresCompteBancaireRepository(engine)
-    for dossier in _dossiers(PostgresDossierRepository(engine), arguments):
+    comptes = (
+        PostgresCompteBancaireRepository(engine) if arguments.appliquer else _SansEcriture(engine)
+    )
+    dossiers = _dossiers(
+        PostgresDossierRepository(engine), PostgresTagsRepository(engine), arguments
+    )
+    for dossier in dossiers:
         reclassements = ventilation_du_dossier(
             dossier.id, ledger.grand_livre(dossier.id), journal, comptes, SOURCE
         )

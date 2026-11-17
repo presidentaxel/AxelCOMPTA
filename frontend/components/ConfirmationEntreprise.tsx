@@ -123,7 +123,7 @@ function LienMaSociete({ dossierId, phrase }: { dossierId: string; phrase: strin
   return (
     <p className="mt-4 text-sm text-ink">
       {phrase}{" "}
-      <Link href={`/chauffeur/${dossierId}/entreprise`} className="inline-flex min-h-11 items-center font-medium text-primary">
+      <Link href={`/dossier/${dossierId}/entreprise`} className="inline-flex min-h-11 items-center font-medium text-primary">
         Renseigner ma société
       </Link>
     </p>

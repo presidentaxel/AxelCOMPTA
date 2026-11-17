@@ -165,11 +165,11 @@ function Resultats({
       {fiches.length === 0 ? (
         <p className="mt-1 text-sm text-subtle">{vide}</p>
       ) : (
-        <ul className="mt-2 divide-y divide-border rounded-md border border-border">
+        <ul className="mt-2 divide-y divide-hairline border-y border-border">
           {fiches.map((fiche) => {
             const retenu = retenus.has(fiche.rollee_user_id);
             return (
-              <li key={fiche.rollee_user_id} className="flex items-center justify-between gap-3 px-3 py-2">
+              <li key={fiche.rollee_user_id} className="flex items-center justify-between gap-3 py-3">
                 <div className="min-w-0 text-sm">
                   <p className="truncate font-medium text-ink">{fiche.nom}</p>
                   <p className="truncate text-subtle">

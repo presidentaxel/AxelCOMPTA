@@ -174,6 +174,12 @@ from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, 
 from axelcompta.core.libelles import categorie_du_suffixe, sans_categorie
 from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
 from axelcompta.core.rls import appliquer_rls, contexte_identite
+from axelcompta.depot_documents_import import Fichier as FichierImport
+from axelcompta.depot_documents_import import (
+    depot_sur_emplacement,
+    depot_sur_exercice,
+    sans_doublons,
+)
 from axelcompta.documents.justificatifs import JustificatifRepository
 from axelcompta.documents.postgres import PostgresJustificatifRepository
 from axelcompta.exercices import (
@@ -212,6 +218,7 @@ from axelcompta.ingestion.comptes_bancaires import (
     CompteBancaire,
     CompteBancaireRepository,
     CompteDejaComptabilise,
+    CompteDigifactory,
     CompteInconnu,
     ComptesAChoisir,
     nombre_a_choisir,
@@ -296,6 +303,7 @@ from axelcompta.rapprochement_rollee_service import (
 )
 from axelcompta.revenus_rollee import delier_revenus, trancher_semaine_dossier
 from axelcompta.revenus_semaines import comparaison, debut_banque
+from axelcompta.stockage_documents import depot_documents
 from axelcompta.tenants.affectations import AffectationRepository
 from axelcompta.tenants.affectations_postgres import PostgresAffectationRepository
 from axelcompta.tenants.agregats import AgregatsRepository, AgregatStocke, LigneAgregat
@@ -337,13 +345,15 @@ from axelcompta.tenants.fiches_import import (
     DocumentImport,
     FicheImport,
     champs_du_registre,
-    document_import,
     nouvelle_fiche,
     preremplir,
 )
 from axelcompta.tenants.fiches_import import SECTIONS as SECTIONS_IMPORT
 from axelcompta.tenants.fiches_import import annuler as annuler_fiche
+from axelcompta.tenants.fiches_import import ignorer as ignorer_fiche
 from axelcompta.tenants.fiches_import import modifier as modifier_fiche
+from axelcompta.tenants.fiches_import import reclasser as reclasser_document
+from axelcompta.tenants.fiches_import import reprendre as reprendre_fiche
 from axelcompta.tenants.fiches_import_depot import FichesImportRepository, Instantane
 from axelcompta.tenants.fiches_import_etat import (
     ContactDigifactory,
@@ -406,7 +416,6 @@ from axelcompta.tenants.tags import (
 )
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.tester_branchement import tester as tester_branchement
-from axelcompta.traitement_documents_import import traiter as traiter_document_import
 from axelcompta.webhooks_rollee import preparer as preparer_webhook
 from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT, ACTE_SEMAINE_TRANCHEE
 from axelcompta.workflow.avis_etages import avis_etages, proposition_affichee
@@ -3737,7 +3746,9 @@ def _enregistrer_routes_membres(app: FastAPI) -> None:
 def retirer_membre(
     entree: InvitationMembreEntree, comptes: ComptesDep, identite: IdentiteDep
 ) -> None:
-    """Garde la ligne de droit : sans ligne, `_role_membre` rendrait le compte admin."""
+    """Garde la ligne de droit : sans ligne, `_role_membre` rendrait le compte admin.
+    Le compte Auth du gestionnaire est supprimé : sinon il reste dans
+    Supabase et peut rouvrir une session."""
     tenant_id, identite = _verifier_acces_gestionnaire(identite)
     _exiger_admin(identite, tenant_id)
     email = entree.email.strip().lower()
@@ -3753,6 +3764,7 @@ def retirer_membre(
     if email in [admin.lower() for admin in admins] and len(admins) <= 1:
         raise HTTPException(status_code=400, detail="Il reste un seul administrateur.")
     _ecrire_role(tenant_id, email, "retire")
+    comptes.retirer_membre(str(tenant_id), email)
 
 
 def _enregistrer_routes_invitation(app: FastAPI) -> None:
@@ -8598,7 +8610,9 @@ def _enregistrer_routes_import_dossiers(app: FastAPI) -> None:
 
 # --- Fiches d'import d'un chauffeur (AXE-941, AXE-946, AXE-947) --------------
 
-TAILLE_MAX_DOCUMENT_IMPORT = 20 * 1024 * 1024  # 20 Mo
+# AXE-970 : une archive d'exercice (FEC, grand livre, pièces) dépasse vite
+# 20 Mo. Le bucket Supabase doit accepter autant (réglage du stockage).
+TAILLE_MAX_DOCUMENT_IMPORT = 100 * 1024 * 1024  # 100 Mo
 EXTENSIONS_IMPORT = frozenset(
     {
         ".pdf",
@@ -8618,11 +8632,13 @@ EXTENSIONS_IMPORT = frozenset(
 REFUS_IMPORT_LECTURE = "Votre rôle est en lecture seule : vous ne pouvez pas modifier un import."
 LireContactsDigifactory = Callable[[list[Branchement]], dict[str, dict[str, object]]]
 LirePremiereEcritureDigifactory = Callable[[list[Branchement], str], date | None]
+LireComptesDigifactory = Callable[[list[Branchement], str], tuple[CompteDigifactory, ...]]
 
 
 def get_fiches_import() -> FichesImportRepository:
-    """Postgres, rôle web, RLS par portefeuille ; `FichesImportMemoire` en test."""
-    return PostgresFichesImport(_engine())
+    """Postgres, rôle web, RLS par portefeuille ; contenus dans le bucket
+    des documents s'il est configuré (AXE-970). `FichesImportMemoire` en test."""
+    return PostgresFichesImport(_engine(), depot_documents())
 
 
 def get_lire_contacts_digifactory() -> LireContactsDigifactory:
@@ -8642,6 +8658,13 @@ def get_lire_premiere_ecriture_digifactory() -> LirePremiereEcritureDigifactory:
     )
 
 
+def get_lire_comptes_digifactory() -> LireComptesDigifactory:
+    """Les comptes bancaires d'un contact (remplacé en test : jamais d'appel réel)."""
+    from axelcompta.synchro_digifactory import comptes_du_contact
+
+    return lambda branchements, contact: asyncio.run(comptes_du_contact(branchements, contact))
+
+
 FichesImportDep = Annotated[FichesImportRepository, Depends(get_fiches_import)]
 LireFicheOfficielleDep = Annotated[LireFicheOfficielle | None, Depends(get_lire_fiche_officielle)]
 LireContactsDigifactoryDep = Annotated[
@@ -8650,6 +8673,7 @@ LireContactsDigifactoryDep = Annotated[
 LirePremiereEcritureDigifactoryDep = Annotated[
     LirePremiereEcritureDigifactory, Depends(get_lire_premiere_ecriture_digifactory)
 ]
+LireComptesDigifactoryDep = Annotated[LireComptesDigifactory, Depends(get_lire_comptes_digifactory)]
 
 
 class ChoixVue(BaseModel):
@@ -8688,6 +8712,7 @@ class ExerciceImportVue(BaseModel):
 
 class DocumentImportVue(BaseModel):
     id: str
+    origine_id: str | None = None  # AXE-970 : l'archive d'où il sort
     categorie: str
     libelle: str
     exercice: int | None
@@ -8698,6 +8723,12 @@ class DocumentImportVue(BaseModel):
     depose_le: str
     statut_traitement: str  # traite | a_traiter | illisible
     resume: str
+
+
+class RangementDocumentVue(BaseModel):
+    """AXE-970 : où ranger un document déjà déposé (« reprise:fec:2019 »)."""
+
+    emplacement: str
 
 
 class EmplacementVue(BaseModel):
@@ -8715,7 +8746,7 @@ class FicheImportResumeVue(BaseModel):
     prenom: str
     denomination: str | None
     siren: str | None
-    statut: str  # calculé : a_importer | en_traitement | traitee
+    statut: str  # a_importer | en_traitement | traitee | ignore
     sections_completes: int
     sections: int
     documents_a_lire: int
@@ -8725,6 +8756,8 @@ class FicheImportResumeVue(BaseModel):
 
 
 class FicheImportVue(FicheImportResumeVue):
+    # AXE-971 : les fichiers d'un dépôt écartés parce que déjà sur la fiche.
+    doublons_ecartes: list[str] = []
     sections_detail: list[SectionImportVue]
     exercices: list[ExerciceImportVue]
     emplacements: list[EmplacementVue]
@@ -8740,6 +8773,10 @@ class NouvelleFicheEntree(BaseModel):
     nom: str = ""
     prenom: str = ""
     siren: str = ""
+
+
+class RelierImportsVue(BaseModel):
+    creees: int
 
 
 class ChampsFicheEntree(BaseModel):
@@ -8766,6 +8803,21 @@ class HistoriqueDigifactoryVue(BaseModel):
 
     lu: bool
     debut: str | None
+
+
+class CompteDigifactoryVue(BaseModel):
+    id: str
+    nom: str
+    banque: str
+    iban: str
+    professionnel: bool | None
+
+
+class ComptesDigifactoryVue(BaseModel):
+    """Les comptes du contact, pour choisir professionnel ou personnel."""
+
+    lu: bool
+    comptes: list[CompteDigifactoryVue]
 
 
 def _resume_fiche(fiche: FicheImport, documents: list[DocumentImport]) -> FicheImportResumeVue:
@@ -8816,6 +8868,7 @@ def _sections_vue(fiche: FicheImport, documents: list[DocumentImport]) -> list[S
 def _document_vue(d: DocumentImport) -> DocumentImportVue:
     return DocumentImportVue(
         id=d.id,
+        origine_id=d.origine_id,
         categorie=d.categorie,
         libelle=CATEGORIES_DOCUMENTS.get(d.categorie, d.categorie),
         exercice=d.exercice,
@@ -8845,7 +8898,7 @@ def _fiche_vue(instantane: Instantane) -> FicheImportVue:
                 echeance=e.echeance.isoformat() if e.echeance else None,
                 en_retard=e.en_retard,
             )
-            for e in exercices_import(fiche.champs, aujourd_hui)
+            for e in exercices_import(fiche.champs, aujourd_hui, documents)
         ],
         emplacements=[
             EmplacementVue(
@@ -9060,6 +9113,44 @@ def _enregistrer_route_digifactory_fiche(app: FastAPI) -> None:
         )
 
 
+def _enregistrer_route_comptes_digifactory(app: FastAPI) -> None:
+    """Les comptes du contact, pour les marquer professionnels ou personnels."""
+
+    @app.get(
+        "/portefeuille/imports/{fiche_id}/digifactory/{contact_nr}/comptes",
+        response_model=ComptesDigifactoryVue,
+    )
+    def comptes_digifactory_fiche(
+        fiche_id: str,
+        contact_nr: str,
+        identite: IdentiteDep,
+        fiches: FichesImportDep,
+        branchements: BranchementsDep,
+        lire_comptes: LireComptesDigifactoryDep,
+    ) -> ComptesDigifactoryVue:
+        """Les comptes du contact, pour les marquer professionnels ou personnels."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        fiches.lire(tenant_id, fiche_id)
+        digifactory = [b for b in branchements.lister(tenant_id) if b.type == "digifactory"]
+        try:
+            comptes = lire_comptes(digifactory, contact_nr)
+        except Exception:  # noqa: BLE001 — Digifactory injoignable : on le dit
+            return ComptesDigifactoryVue(lu=False, comptes=[])
+        return ComptesDigifactoryVue(
+            lu=True,
+            comptes=[
+                CompteDigifactoryVue(
+                    id=c.identifiant,
+                    nom=c.nom,
+                    banque=c.banque,
+                    iban=c.iban,
+                    professionnel=c.professionnel,
+                )
+                for c in comptes
+            ],
+        )
+
+
 def _document_accepte(fichier: UploadFile, contenu: bytes) -> None:
     extension = Path(fichier.filename or "").suffix.lower()
     if extension not in EXTENSIONS_IMPORT:
@@ -9070,7 +9161,10 @@ def _document_accepte(fichier: UploadFile, contenu: bytes) -> None:
     if not contenu:
         raise HTTPException(status_code=422, detail="Le fichier est vide.")
     if len(contenu) > TAILLE_MAX_DOCUMENT_IMPORT:
-        raise HTTPException(status_code=413, detail="Le fichier dépasse 20 Mo.")
+        raise HTTPException(
+            status_code=413,
+            detail="Le fichier dépasse 100 Mo : le déposer en plusieurs archives.",
+        )
 
 
 def _enregistrer_routes_documents_import(app: FastAPI) -> None:
@@ -9088,23 +9182,10 @@ def _enregistrer_routes_documents_import(app: FastAPI) -> None:
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
-        fiche = fiches.lire(tenant_id, fiche_id)
-        contenu = await fichier.read()
-        _document_accepte(fichier, contenu)
-        nom = fichier.filename or "document"
-        document = document_import(
-            uuid.uuid4().hex,
-            fiche,
-            emplacement,
-            nom,
-            fichier.content_type or "application/octet-stream",
-            contenu,
-            identite.email,
-            datetime.now(UTC),
-        )
-        statut, resume = traiter_document_import(document.categorie, nom, contenu)
-        document = dataclasses.replace(document, statut_traitement=statut, resume=resume)
-        return _fiche_vue(fiches.deposer(document, contenu))
+        avant = fiches.instantane(tenant_id, fiche_id)
+        lu = await _fichier_lu(fichier)
+        lot = depot_sur_emplacement(avant.fiche, emplacement, lu, identite.email, datetime.now(UTC))
+        return _deposer_sans_doublons(fiches, avant, lot)
 
     @app.get("/portefeuille/imports/{fiche_id}/documents/{document_id}")
     def lire_document_import(
@@ -9115,6 +9196,91 @@ def _enregistrer_routes_documents_import(app: FastAPI) -> None:
         if document.fiche_id != fiche_id:
             raise HTTPException(status_code=404, detail="Document introuvable.")
         return _fichier(contenu, document.type_mime, document.nom_fichier)
+
+
+def _deposer_sans_doublons(
+    fiches: FichesImportRepository, avant: Instantane, lot: list[tuple[DocumentImport, bytes]]
+) -> FicheImportVue:
+    """AXE-971 : un contenu déjà sur la fiche n'est pas déposé une seconde
+    fois. Tout le dépôt déjà présent : 409, avec les noms."""
+    gardes, ecartes = sans_doublons(lot, {d.empreinte for d in avant.documents})
+    if not gardes:
+        raise HTTPException(
+            status_code=409,
+            detail="Déjà sur la fiche : "
+            + ", ".join(ecartes[:5])
+            + (f" et {len(ecartes) - 5} autre(s)." if len(ecartes) > 5 else "."),
+        )
+    vue = _fiche_vue(fiches.deposer_lot(gardes))
+    return vue.model_copy(update={"doublons_ecartes": ecartes})
+
+
+async def _fichier_lu(fichier: UploadFile) -> FichierImport:
+    contenu = await fichier.read()
+    _document_accepte(fichier, contenu)
+    return FichierImport(
+        fichier.filename or "document",
+        fichier.content_type or "application/octet-stream",
+        contenu,
+    )
+
+
+def _enregistrer_routes_exercices_import(app: FastAPI) -> None:
+    """AXE-970 : reprendre n'importe quel exercice, depuis 2000 : y déposer
+    des fichiers en vrac (classés seuls, archives dépliées), et reclasser un
+    document."""
+
+    @app.post(
+        "/portefeuille/imports/{fiche_id}/exercices/{annee}/documents",
+        response_model=FicheImportVue,
+    )
+    async def deposer_documents_exercice(
+        fiche_id: str,
+        annee: int,
+        fichiers: list[UploadFile],
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+    ) -> FicheImportVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        if not fichiers:
+            raise HTTPException(status_code=422, detail="Aucun fichier.")
+        fiche = fiches.lire(tenant_id, fiche_id)
+        lus = [await _fichier_lu(f) for f in fichiers]
+        maintenant = datetime.now(UTC)
+        ajoutes = fiche.champs.get("exercices_ajoutes", "")
+        fiche = modifier_fiche(
+            fiche,
+            {"exercices_ajoutes": f"{ajoutes},{annee}".strip(",")},
+            identite.email,
+            maintenant,
+        )
+        avant = fiches.enregistrer(fiche)
+        lot = depot_sur_exercice(avant.fiche, annee, lus, identite.email, maintenant)
+        return _deposer_sans_doublons(fiches, avant, lot)
+
+    @app.patch(
+        "/portefeuille/imports/{fiche_id}/documents/{document_id}",
+        response_model=FicheImportVue,
+    )
+    def ranger_document_import(
+        fiche_id: str,
+        document_id: str,
+        corps: RangementDocumentVue,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+    ) -> FicheImportVue:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        document = next(
+            (d for d in fiches.instantane(tenant_id, fiche_id).documents if d.id == document_id),
+            None,
+        )
+        if document is None:
+            raise HTTPException(status_code=404, detail="Document introuvable.")
+        return _fiche_vue(fiches.ranger(reclasser_document(document, corps.emplacement)))
 
 
 def _enregistrer_route_retrait_document_import(app: FastAPI) -> None:
@@ -9140,6 +9306,29 @@ def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:
     chemin que l'import CSV (AXE-809). La création est immédiate : l'entreprise
     est dans les deux listes dès que les champs obligatoires sont là."""
 
+    @app.post("/portefeuille/imports/relier-dossiers", response_model=RelierImportsVue)
+    def relier_fiches_importees(
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+        dossiers: DossiersDep,
+    ) -> RelierImportsVue:
+        """Chaque fiche active qui a de quoi exister devient un dossier.
+        Une fiche Ignoré n'en crée pas."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        existants = list(dossiers.lister_par_tenant(tenant_id))
+        creees = 0
+        for fiche in fiches.toutes(tenant_id):
+            reliee, a_creer, _erreurs = relier_au_portefeuille(fiche, existants)
+            if a_creer is not None:
+                dossiers.enregistrer_lot((a_creer,))
+                existants.append(a_creer)
+                creees += 1
+            if reliee.dossier_id != fiche.dossier_id:
+                fiches.enregistrer(reliee)
+        return RelierImportsVue(creees=creees)
+
     @app.post("/portefeuille/imports/{fiche_id}/chauffeur", response_model=FicheImportVue)
     def creer_chauffeur_importe(
         fiche_id: str,
@@ -9163,14 +9352,42 @@ def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:
         return _fiche_vue(fiches.enregistrer(fiche))
 
 
+def _enregistrer_routes_fiches_import_decision(app: FastAPI) -> None:
+    """Ignorer une fiche, ou la remettre dans le calcul du statut."""
+
+    @app.post("/portefeuille/imports/{fiche_id}/ignorer", response_model=FicheImportVue)
+    def ignorer_import(
+        fiche_id: str, identite: IdentiteDep, role: RoleMembreDep, fiches: FichesImportDep
+    ) -> FicheImportVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        fiche = fiches.lire(tenant_id, fiche_id)
+        ignoree = ignorer_fiche(fiche, identite.email, datetime.now(UTC))
+        return _fiche_vue(fiches.enregistrer(ignoree))
+
+    @app.post("/portefeuille/imports/{fiche_id}/reprendre", response_model=FicheImportVue)
+    def reprendre_import(
+        fiche_id: str, identite: IdentiteDep, role: RoleMembreDep, fiches: FichesImportDep
+    ) -> FicheImportVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        fiche = fiches.lire(tenant_id, fiche_id)
+        return _fiche_vue(
+            fiches.enregistrer(reprendre_fiche(fiche, identite.email, datetime.now(UTC)))
+        )
+
+
 def _enregistrer_routes_imports(app: FastAPI) -> None:
     """Import CSV des dossiers (AXE-809) et fiches d'import (AXE-941)."""
     _enregistrer_routes_import_dossiers(app)
     _enregistrer_routes_fiches_import(app)
     _enregistrer_routes_fiches_import_saisie(app)
+    _enregistrer_routes_fiches_import_decision(app)
     _enregistrer_route_digifactory_fiche(app)
+    _enregistrer_route_comptes_digifactory(app)
     _enregistrer_routes_documents_import(app)
     _enregistrer_route_retrait_document_import(app)
+    _enregistrer_routes_exercices_import(app)
     _enregistrer_route_chauffeur_importe(app)
 
 

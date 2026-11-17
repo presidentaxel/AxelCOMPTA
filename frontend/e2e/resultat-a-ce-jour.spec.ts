@@ -167,7 +167,7 @@ test.use({ viewport: { width: 375, height: 812 } });
 
 test("les trois écrans affichent le même résultat à ce jour", async ({ page }) => {
   const libelle = `Résultat à ce jour, ${dateDuJour()}`;
-  await ouvrir(page, "/chauffeur/DEMO_sophie");
+  await ouvrir(page, "/dossier/DEMO_sophie");
   await expect(page.getByText(libelle)).toBeVisible();
   await expect(page.getByText("Résultat de l'exercice")).toHaveCount(0);
   const activite = page.getByText(libelle).locator("xpath=..");
@@ -177,7 +177,7 @@ test("les trois écrans affichent le même résultat à ce jour", async ({ page 
     fullPage: false,
   });
 
-  await page.goto("/chauffeur/DEMO_sophie/exercice");
+  await page.goto("/dossier/DEMO_sophie/exercice");
   await expect(page.getByRole("heading", { name: "Exercice", exact: true })).toBeVisible();
   await expect(page.getByText(libelle)).toBeVisible();
   await expect(page.getByText("Résultat", { exact: true })).toHaveCount(0);
@@ -188,7 +188,7 @@ test("les trois écrans affichent le même résultat à ce jour", async ({ page 
     fullPage: false,
   });
 
-  await page.goto("/chauffeur/DEMO_sophie/resultat");
+  await page.goto("/dossier/DEMO_sophie/resultat");
   await expect(page.getByRole("heading", { name: "Mon résultat 2025" })).toBeVisible();
   await expect(page.getByText(libelle)).toBeVisible();
   const resultat = page.getByText(libelle).locator("xpath=..");
@@ -201,7 +201,7 @@ test("les trois écrans affichent le même résultat à ce jour", async ({ page 
 });
 
 test("le montant libre refuse le vide et accepte 1 000,50", async ({ page }) => {
-  await ouvrir(page, "/chauffeur/DEMO_sophie/resultat");
+  await ouvrir(page, "/dossier/DEMO_sophie/resultat");
   await expect(page.getByRole("heading", { name: "Mon résultat 2025" })).toBeVisible();
 
   const radios = page.locator('input[type="radio"]');

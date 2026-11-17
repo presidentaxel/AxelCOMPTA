@@ -30,6 +30,20 @@ def test_les_origines_supplementaires_ignorent_ce_qui_n_est_pas_une_origine() ->
     assert origines == [*_DEV, "https://api.exemple.fr"]
 
 
+def test_la_porte_dun_dossier_est_une_origine() -> None:
+    origines = origines_autorisees(
+        {
+            "AXELCOMPTA_URL_APP": "https://compta.axelproject.fr",
+            "AXELCOMPTA_URL_DOSSIER": "https://app-compta.axelproject.fr/dossier/login",
+        }
+    )
+    assert origines == [
+        *_DEV,
+        "https://compta.axelproject.fr",
+        "https://app-compta.axelproject.fr",
+    ]
+
+
 def test_une_adresse_ipv6_garde_ses_crochets() -> None:
     origines = origines_autorisees({"AXELCOMPTA_URL_APP": "https://[::1]:8443"})
     assert "https://[::1]:8443" in origines

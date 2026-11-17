@@ -13,11 +13,13 @@ from axelcompta.api.routes import (
     get_demandes_jobs,
     get_dossiers,
     get_fiches_import,
+    get_lire_comptes_digifactory,
     get_lire_contacts_digifactory,
     get_lire_fiche_officielle,
     get_lire_premiere_ecriture_digifactory,
 )
 from axelcompta.core.ids import DossierId
+from axelcompta.ingestion.comptes_bancaires import CompteDigifactory
 from axelcompta.jobs.file import FileMemoire
 from axelcompta.tenants.branchements import BranchementsMemoire
 from axelcompta.tenants.fiches_import_depot import FichesImportMemoire
@@ -166,12 +168,15 @@ def test_un_releve_qif_depose_est_lu_tout_de_suite() -> None:
 
 
 def test_une_fiche_complete_est_tout_de_suite_au_portefeuille() -> None:
+    """Sans imposition ni TVA, le dossier est créé à l'IS au réel normal,
+    comme un contact Digifactory, avec l'imposition à confirmer (#234). Sans
+    SIREN, il manque de quoi le créer."""
     client, file = _client()
     fiche = _ouvrir(client)
     route = f"/portefeuille/imports/{fiche['id']}"
     depot = cast(FastAPI, client.app).dependency_overrides[get_dossiers]()
 
-    incomplet = client.post(f"{route}/chauffeur", headers=EN_TETE)
+    suppose = client.post(f"{route}/chauffeur", headers=EN_TETE)
     complete = client.patch(
         route,
         json={
@@ -183,17 +188,36 @@ def test_une_fiche_complete_est_tout_de_suite_au_portefeuille() -> None:
         },
         headers=EN_TETE,
     )
-    encore = client.post(f"{route}/chauffeur", headers=EN_TETE)
+    sans_siren = _ouvrir(client, siren="")
+    incomplet = client.post(f"/portefeuille/imports/{sans_siren['id']}/chauffeur", headers=EN_TETE)
 
-    assert incomplet.status_code == 422 and "Imposition" in incomplet.json()["detail"]
-    assert complete.status_code == 200, complete.text
-    assert (complete.json()["dossier_id"], complete.json()["dossier_cree"]) == (
+    assert suppose.status_code == 200, suppose.text
+    assert (suppose.json()["dossier_id"], suppose.json()["dossier_cree"]) == (
         f"SIREN_{SIREN}",
         True,
     )
-    assert depot.obtenir(DossierId(f"SIREN_{SIREN}")).nom == "MK DRIVING"
-    assert encore.status_code == 200 and encore.json()["dossier_cree"] is True
+    dossier = depot.obtenir(DossierId(f"SIREN_{SIREN}"))
+    assert dossier.nom == "MK DRIVING"
+    assert "imposition" in dossier.a_confirmer
+    assert complete.status_code == 200, complete.text
+    assert complete.json()["dossier_cree"] is True
+    assert incomplet.status_code == 422 and "SIREN" in incomplet.json()["detail"]
     assert file.dernier("TENANT_DEMO", "import_dossiers") is None
+
+
+def test_ignorer_une_fiche_puis_la_remettre() -> None:
+    client, _file = _client(registres=False)
+    fiche = _ouvrir(client, siren="")
+    route = f"/portefeuille/imports/{fiche['id']}"
+
+    ignoree = client.post(f"{route}/ignorer", headers=EN_TETE)
+    assert ignoree.status_code == 200, ignoree.text
+    assert ignoree.json()["statut"] == "ignore"
+    assert client.get("/portefeuille/imports", headers=EN_TETE).json()[0]["statut"] == "ignore"
+
+    reprise = client.post(f"{route}/reprendre", headers=EN_TETE)
+    assert reprise.status_code == 200, reprise.text
+    assert reprise.json()["statut"] == "a_importer"
 
 
 def test_annuler_un_import_le_sort_de_la_liste() -> None:
@@ -249,6 +273,41 @@ def test_l_historique_bancaire_est_la_premiere_ecriture_digifactory() -> None:
 
     assert trouve.json() == {"lu": True, "debut": "2024-03-02"}
     assert panne.json() == {"lu": False, "debut": None}
+
+
+def test_les_comptes_digifactory_se_lisent_pour_choisir_pro_ou_perso() -> None:
+    client, _file = _client()
+    app = cast(FastAPI, client.app)
+    courant = CompteDigifactory(
+        "12", "Compte courant", "Qonto", "FR7630006000011234567890189", True
+    )
+    app.dependency_overrides[get_lire_comptes_digifactory] = lambda: (
+        lambda _branchements, contact: (courant,) if contact == "22755" else ()
+    )
+    fiche = _ouvrir(client)
+    route = f"/portefeuille/imports/{fiche['id']}/digifactory/22755/comptes"
+
+    trouve = client.get(route, headers=EN_TETE)
+
+    def en_panne(_branchements: object, _contact: str) -> tuple[CompteDigifactory, ...]:
+        raise RuntimeError("Digifactory injoignable")
+
+    app.dependency_overrides[get_lire_comptes_digifactory] = lambda: en_panne
+    panne = client.get(route, headers=EN_TETE)
+
+    assert trouve.json() == {
+        "lu": True,
+        "comptes": [
+            {
+                "id": "12",
+                "nom": "Compte courant",
+                "banque": "Qonto",
+                "iban": "FR7630006000011234567890189",
+                "professionnel": True,
+            }
+        ],
+    }
+    assert panne.json() == {"lu": False, "comptes": []}
 
 
 def test_saisir_un_siret_lance_seul_la_recherche_aux_registres() -> None:
@@ -307,3 +366,123 @@ def test_renvoyer_le_meme_siren_relit_les_registres() -> None:
 
     entreprise = {c["cle"]: c["valeur"] for c in _section(relue, "entreprise")["champs"]}
     assert entreprise["denomination"] == "MK DRIVING"
+
+
+# --- AXE-970 : tout l'historique, exercice par exercice -----------------------
+
+FEC_2019 = (
+    b"JournalCode\tEcritureNum\tEcritureDate\tCompteNum\tPieceRef\tEcritureLib"
+    b"\tDebit\tCredit\tValidDate\r\n"
+    b"BQ\t1\t20190105\t512000\tP1\tApport\t1000,00\t0,00\t20190105\r\n"
+    b"BQ\t1\t20190105\t101000\tP1\tApport\t0,00\t1000,00\t20190105\r\n"
+)
+
+
+def _archive_2019() -> bytes:
+    import io
+    import zipfile
+
+    # Date figée : `writestr` avec un nom date chaque fichier de l'heure
+    # courante, et deux archives construites à une seconde d'écart n'auraient
+    # plus la même empreinte (le test des doublons échouait en CI).
+    fichiers = {
+        "55210055400010FEC20191231.csv": FEC_2019,
+        "Grand Livre.pdf": b"%PDF-1.4 grand livre",
+        "Encaissements de Vente/ENC-001.pdf": b"%PDF-1.4 ENC-001",
+        "META-INF/signature.pkcs7": b"sig",
+    }
+    tampon = io.BytesIO()
+    with zipfile.ZipFile(tampon, "w") as archive:
+        for nom, contenu in fichiers.items():
+            archive.writestr(zipfile.ZipInfo(nom, date_time=(2020, 1, 1, 0, 0, 0)), contenu)
+    return tampon.getvalue()
+
+
+def _deposer_2019(client: TestClient, fiche: dict[str, Any]) -> Any:
+    return client.post(
+        f"/portefeuille/imports/{fiche['id']}/exercices/2019/documents",
+        files=[
+            ("fichiers", ("archive-2019.zip", _archive_2019(), "application/zip")),
+            (
+                "fichiers",
+                ("Synthèse de la déclaration tva.pdf", b"%PDF-1.4 tva", "application/pdf"),
+            ),
+        ],
+        headers=EN_TETE,
+    )
+
+
+def test_deposer_en_vrac_sur_un_exercice_ancien_classe_et_deplie() -> None:
+    """2019, avant la création connue (2023) : l'exercice s'ajoute, l'archive
+    reste intacte, chaque fichier qu'elle contient est rangé et le FEC lu."""
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    reponse = _deposer_2019(client, fiche)
+    assert reponse.status_code == 200, reponse.text
+    vue = reponse.json()
+
+    assert 2019 in [e["annee"] for e in vue["exercices"]]
+    (archive,) = _emplacement(vue, "reprise:archive:2019")["documents"]
+    (fec,) = _emplacement(vue, "reprise:fec:2019")["documents"]
+    assert archive["resume"] == "Archive gardée intacte : 3 fichier(s) rangé(s) à part."
+    assert fec["origine_id"] == archive["id"]
+    assert fec["statut_traitement"] == "traite"
+    assert "Clos le 31/12/2019" in fec["resume"]
+    assert len(_emplacement(vue, "reprise:grand_livre:2019")["documents"]) == 1
+    assert len(_emplacement(vue, "reprise:piece:2019")["documents"]) == 1
+    assert len(_emplacement(vue, "reprise:declaration_tva:2019")["documents"]) == 1
+    assert _emplacement(vue, "reprise:piece:2019")["libelle"] == "Pièces justificatives 2019"
+
+
+def test_un_document_classe_seul_se_reclasse() -> None:
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    vue = _deposer_2019(client, fiche).json()
+    (tva,) = _emplacement(vue, "reprise:declaration_tva:2019")["documents"]
+    route = f"/portefeuille/imports/{fiche['id']}/documents/{tva['id']}"
+
+    deplace = client.patch(route, json={"emplacement": "reprise:liasse:2018"}, headers=EN_TETE)
+    refuse = client.patch(route, json={"emplacement": "reprise:liasse:1990"}, headers=EN_TETE)
+
+    assert deplace.status_code == 200, deplace.text
+    (liasse,) = _emplacement(deplace.json(), "reprise:liasse:2018")["documents"]
+    assert liasse["id"] == tva["id"]
+    assert 2018 in [e["annee"] for e in deplace.json()["exercices"]]
+    assert refuse.status_code == 422
+
+
+def test_retirer_une_archive_retire_ses_fichiers() -> None:
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    vue = _deposer_2019(client, fiche).json()
+    (archive,) = _emplacement(vue, "reprise:archive:2019")["documents"]
+    retire = client.delete(
+        f"/portefeuille/imports/{fiche['id']}/documents/{archive['id']}", headers=EN_TETE
+    )
+    restants = [d for e in retire.json()["emplacements"] for d in e["documents"]]
+    assert [d["libelle"] for d in restants] == ["Déclarations de TVA"]
+
+
+def test_un_lecteur_ne_depose_rien_sur_un_exercice() -> None:
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    lecteur = _client(role="lecture")[0]
+    reponse = lecteur.post(
+        f"/portefeuille/imports/{fiche['id']}/exercices/2019/documents",
+        files=[("fichiers", ("a.pdf", b"%PDF", "application/pdf"))],
+        headers=EN_TETE,
+    )
+    assert reponse.status_code == 403
+
+
+def test_une_archive_redeposee_est_refusee_comme_doublon() -> None:
+    """AXE-971 : la même archive une seconde fois : rien n'est ajouté (409)."""
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    premier = _deposer_2019(client, fiche)
+    second = _deposer_2019(client, fiche)
+    assert premier.json()["doublons_ecartes"] == []
+    assert second.status_code == 409
+    assert second.json()["detail"].startswith("Déjà sur la fiche : archive-2019.zip")
+    tous = client.get(f"/portefeuille/imports/{fiche['id']}", headers=EN_TETE).json()
+    assert sum(len(e["documents"]) for e in tous["emplacements"]) == 5

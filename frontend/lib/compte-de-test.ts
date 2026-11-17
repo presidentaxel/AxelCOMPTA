@@ -5,7 +5,7 @@
  * fonctions ne font que choisir l'adresse et l'en-tête. */
 
 export const ROLE_LECTEUR_TEST = "lecteur_tous_dossiers";
-export const PAGE_CHOIX_DOSSIER = "/chauffeur/test";
+export const PAGE_CHOIX_DOSSIER = "/dossier/test";
 
 type Metadata = { dossier_id?: unknown; role_test?: unknown };
 
@@ -27,7 +27,7 @@ type SessionLiens = { dossierId: string; lecteurTest?: boolean };
 /** Où aller une fois connecté : son dossier, ou l'écran « Quel dossier ? ». */
 export function cheminDuDossier(session: SessionLiens): string {
   if (session.lecteurTest && !session.dossierId) return PAGE_CHOIX_DOSSIER;
-  return `/chauffeur/${session.dossierId}`;
+  return `/dossier/${session.dossierId}`;
 }
 
 /** L'en-tête `X-Dossier`, pour le compte de test seulement. */

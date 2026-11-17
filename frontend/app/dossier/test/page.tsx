@@ -33,7 +33,7 @@ export default function ChoixDossierDeTestPage() {
   useEffect(() => {
     const session = obtenirSession();
     if (!session?.lecteurTest) {
-      router.replace(session ? `/chauffeur/${session.dossierId}` : "/chauffeur/login");
+      router.replace(session ? `/dossier/${session.dossierId}` : "/dossier/login");
       return;
     }
     // Premier chargement à l'ouverture de l'écran.
@@ -43,7 +43,7 @@ export default function ChoixDossierDeTestPage() {
 
   function ouvrir(dossier: DossierDeTest) {
     choisirDossierDeTest(dossier.dossier_id, dossier.nom);
-    router.push(`/chauffeur/${dossier.dossier_id}`);
+    router.push(`/dossier/${dossier.dossier_id}`);
   }
 
   return (

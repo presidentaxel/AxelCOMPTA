@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  ajouterAnnee,
+  deplacerDocument,
+  documentsVisibles,
+  lireAnnee,
+  phraseDepot,
   badgeStatut,
   basculerChoix,
   champsModifies,
@@ -12,13 +17,21 @@ import {
   phraseExercice,
   retardPossible,
   type ExerciceImport,
+  type DocumentImport,
   type EmplacementImport,
   libelleStatut,
+  fichesActives,
+  dossiersIgnores,
   fichesSansDossier,
   nomChauffeur,
+  nomEntreprise,
   devinerCategorie,
   devinerExercice,
+  ecrireComptesChoisis,
+  fusionnerComptes,
   identifiantComplet,
+  libelleIban,
+  lireComptesChoisis,
   lireListe,
   progression,
   taille,
@@ -39,24 +52,53 @@ const SECTION: SectionImport = {
   ],
 };
 
-test("une fiche sans dossier du portefeuille reste à part", () => {
-  const fiches = [
-    { dossier_id: "DIGI_1" },
-    { dossier_id: null },
-    { dossier_id: "SIREN_9" },
-  ];
+test("chaque statut a son libellé et son badge", () => {
+  assert.equal(libelleStatut("a_importer"), "À importer");
+  assert.equal(libelleStatut("ignore"), "Ignoré");
   assert.deepEqual(
-    fichesSansDossier(fiches, [{ dossier_id: "DIGI_1" }]).map((fiche) => fiche.dossier_id),
-    [null, "SIREN_9"],
+    (["a_importer", "en_traitement", "traitee", "ignore"] as const).map(badgeStatut),
+    ["missing", "pending", "validated", "closed"],
   );
 });
 
-test("chaque statut a son libellé et son badge", () => {
-  assert.equal(libelleStatut("a_importer"), "À importer");
+test("une fiche ignorée sort de Toutes", () => {
+  const fiches = [
+    { statut: "a_importer" as const },
+    { statut: "ignore" as const },
+    { statut: "traitee" as const },
+  ];
   assert.deepEqual(
-    (["a_importer", "en_traitement", "traitee"] as const).map(badgeStatut),
-    ["missing", "pending", "validated"],
+    fichesActives(fiches).map((fiche) => fiche.statut),
+    ["a_importer", "traitee"],
   );
+});
+
+test("Entreprises compte les mêmes fiches que Toutes", () => {
+  const fiches = [
+    { id: "a", dossier_id: "D1", statut: "en_traitement" as const },
+    { id: "b", dossier_id: null, statut: "en_traitement" as const },
+    { id: "c", dossier_id: "D2", statut: "ignore" as const },
+    { id: "d", dossier_id: "D3", statut: "traitee" as const },
+  ];
+  const dossiers = [{ dossier_id: "D1" }, { dossier_id: "D2" }, { dossier_id: "D3" }];
+  const ignores = dossiersIgnores(fiches);
+  assert.deepEqual([...ignores], ["D2"]);
+  const presents = dossiers.filter((dossier) => !ignores.has(dossier.dossier_id));
+  const seules = fichesSansDossier(fichesActives(fiches), presents);
+  assert.deepEqual(
+    seules.map((fiche) => fiche.id),
+    ["b"],
+  );
+  assert.equal(presents.length + seules.length, fichesActives(fiches).length);
+});
+
+test("une entreprise sans fiche n'est pas ignorée", () => {
+  assert.equal(dossiersIgnores([{ dossier_id: "D1", statut: "en_traitement" }]).has("D4"), false);
+});
+
+test("le nom d'entreprise prime sur celui du chauffeur", () => {
+  assert.equal(nomEntreprise({ nom: "Dupont", prenom: "Karim", denomination: "MK DRIVING" }), "MK DRIVING");
+  assert.equal(nomEntreprise({ nom: "Dupont", prenom: "Karim", denomination: null }), "Karim Dupont");
 });
 
 test("le nom du chauffeur, ou son entreprise à défaut", () => {
@@ -142,4 +184,103 @@ test("chaque exercice dit son rôle pour la reprise, et le retard se coche", () 
   assert.equal(retardPossible({ ...e, role: "source" }), true);
   assert.equal(basculerRetard("", 2025), "2025");
   assert.equal(basculerRetard("2024,2025", 2025), "2024");
+});
+
+test("un compte se marque pro ou perso, et une ancienne ligne se relit", () => {
+  const legacy = lireComptesChoisis("Compte courant (retenu)\nLivret (écarté)");
+  assert.deepEqual(
+    legacy.map((compte) => [compte.nom, compte.usage]),
+    [
+      ["Compte courant", "pro"],
+      ["Livret", "perso"],
+    ],
+  );
+  const live = [
+    {
+      id: "12",
+      nom: "Compte courant",
+      banque: "Qonto",
+      iban: "FR7630006000011234567890189",
+      professionnel: true,
+    },
+  ];
+  const fusion = fusionnerComptes(live, legacy);
+  assert.equal(fusion[0]?.usage, "pro");
+  assert.equal(libelleIban(live[0].iban, ""), "FR76 3000 6000 0112 3456 7890 189");
+  const choisi = ecrireComptesChoisis([{ ...fusion[0], usage: "perso" }]);
+  assert.deepEqual(lireComptesChoisis(choisi), [
+    { id: "12", nom: "Compte courant", banque: "Qonto", fin: "0189", usage: "perso" },
+  ]);
+  assert.equal(libelleIban("", "0189"), "•••• 0189");
+});
+
+test("AXE-970 : ajouter un exercice depuis 2000, même avec des trous", () => {
+  const aujourdhui = new Date(2026, 10, 17);
+  assert.equal(lireAnnee("2019", aujourdhui), 2019);
+  assert.equal(lireAnnee(" 2010 ", aujourdhui), 2010);
+  assert.equal(lireAnnee("1999", aujourdhui), "Une année de clôture, de 2000 à 2026.");
+  assert.equal(lireAnnee("2027", aujourdhui), "Une année de clôture, de 2000 à 2026.");
+  assert.equal(lireAnnee("19", aujourdhui), "Une année de clôture, de 2000 à 2026.");
+  assert.equal(ajouterAnnee("", 2019), "2019");
+  assert.equal(ajouterAnnee("2019,2015", 2019), "2015,2019");
+  assert.equal(ajouterAnnee("2019", 2010), "2010,2019");
+});
+
+test("AXE-970 : reclasser un document le déplace avant la réponse du serveur", () => {
+  const document = (id: string, emplacement: string): DocumentImport => ({
+    id,
+    categorie: emplacement.split(":")[1] ?? "",
+    libelle: id,
+    exercice: Number(emplacement.split(":")[2]),
+    emplacement,
+    nom_fichier: `${id}.pdf`,
+    taille: 10,
+    depose_par: "a@x.fr",
+    depose_le: "2026-01-01T00:00:00Z",
+    statut_traitement: "a_traiter",
+    resume: "",
+  });
+  const carte = (cle: string, documents: DocumentImport[] = []): EmplacementImport => ({
+    cle,
+    section: "reprise",
+    libelle: cle,
+    explication: "",
+    attendu: false,
+    documents,
+  });
+  const fiche = {
+    emplacements: [
+      carte("reprise:liasse:2019", [document("d1", "reprise:liasse:2019"), document("d2", "reprise:liasse:2019")]),
+      carte("reprise:fec:2019", [document("deja", "reprise:fec:2019")]),
+    ],
+  };
+  const deplace = deplacerDocument(fiche, "d1", "reprise:fec:2019");
+  assert.deepEqual(
+    deplace.emplacements.map((e) => [e.cle, e.documents.map((d) => d.id)]),
+    [
+      ["reprise:liasse:2019", ["d2"]],
+      ["reprise:fec:2019", ["d1", "deja"]],
+    ],
+  );
+  assert.equal(fiche.emplacements[0]?.documents.length, 2);
+  const cree = deplacerDocument(fiche, "d1", "reprise:piece:2019");
+  assert.equal(cree.emplacements.at(-1)?.libelle, "Pièces justificatives 2019");
+  assert.equal(cree.emplacements.at(-1)?.documents[0]?.emplacement, "reprise:piece:2019");
+  assert.equal(deplacerDocument(fiche, "absent", "reprise:fec:2019"), fiche);
+  assert.equal(deplacerDocument(fiche, "d1", "reprise:liasse:2019"), fiche);
+});
+
+test("AXE-970 : une carte qui reçoit une archive replie ses pièces", () => {
+  const pieces = Array.from({ length: 8 }, (_, i) => i);
+  assert.deepEqual(documentsVisibles(pieces, false), { visibles: [0, 1, 2, 3, 4], caches: 3 });
+  assert.deepEqual(documentsVisibles(pieces, true), { visibles: pieces, caches: 0 });
+  assert.deepEqual(documentsVisibles([1, 2], false), { visibles: [1, 2], caches: 0 });
+});
+
+test("AXE-971 : après un dépôt, les doublons écartés sont nommés", () => {
+  assert.equal(phraseDepot(3, []), "3 fichier(s) déposé(s), rangés par catégorie.");
+  assert.equal(
+    phraseDepot(1, ["a.pdf", "b.pdf", "c.pdf", "d.pdf"]),
+    "1 fichier(s) déposé(s), rangés par catégorie. 4 déjà sur la fiche, écarté(s) : a.pdf, b.pdf, c.pdf….",
+  );
 });

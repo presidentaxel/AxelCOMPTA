@@ -3,7 +3,7 @@
 Monolithe modulaire Python (FastAPI / SQLAlchemy / Postgres), découpage complet
 défini en [doc 03 §3](../docs/03-architecture.md#3--découpage-en-modules-monolithe-modulaire).
 
-> **État au 2026-11-13** : l'état du projet est tenu dans le
+> **État au 2026-11-17** : l'état du projet est tenu dans le
 > [doc 12](../docs/12-roadmap-todo.md) ; la carte des modules dans le
 > [doc 18](../docs/18-organisation-code.md). L'API se lance avec
 > `uvicorn axelcompta.api.app:app` (section « Lancer l'API de démo »).
@@ -119,9 +119,9 @@ export DATABASE_URL="postgresql://user:password@localhost:5432/axelcompta_test"
 .venv/bin/pytest -q -m integration -k "not supabase"
 ```
 
-Appels réels à Digifactory (hors CI, `DIGIFACTORY_TOKEN` dans le `.env`
-racine) : `.venv/bin/pytest -q -m digifactory`. Le test ne garde aucun
-libellé, IBAN ni nom.
+Appels réels à Digifactory (hors CI, branchement Digifactory du
+portefeuille de démo) : `.venv/bin/pytest -q -m digifactory`. Le test ne
+garde aucun libellé, IBAN ni nom.
 
 Dossiers de démo branchés sur les contacts Digifactory (idempotent ;
 `--formes` ne fait que reprendre la forme juridique depuis Sirene) :
@@ -172,7 +172,7 @@ editor) avant `alembic upgrade head` et `demo_seed` ; les comptes Supabase
 Auth (schéma `auth`) ne sont pas concernés.
 
 Synchroniser les transactions Digifactory d'un portefeuille (nécessite
-`DIGIFACTORY_BASE_URL`, `DIGIFACTORY_TOKEN` et des dossiers portant un
+un branchement Digifactory dans Intégrations et des dossiers portant un
 `contact_nr`) :
 
 ```bash
@@ -247,8 +247,13 @@ tout de suite avec `--recalculer --tout`.
 ### Tâches planifiées (cron)
 
 `python -m axelcompta.taches` enchaîne, pour chaque portefeuille, la synchro
-Digifactory (sautée si aucun dossier n'a de `contact_nr`) puis les
-notifications. `scripts/taches_planifiees.sh` l'enveloppe pour un
+Digifactory (sautée si aucun dossier n'a de `contact_nr`), les fiches
+d'import complétées, les virements internes repris sur tout le grand livre
+(AXE-968 : deux jambes encore au 471 qui se répondent passent au 580),
+les bascules d'exercice et les caches ; puis l'IA, les rappels, les
+nouveaux contacts, les registres et Rollee. Un dossier exclu par un tag
+(AXE-829) est sauté. Chaque étape qui échoue est notée au bilan sans
+arrêter le passage. `scripts/taches_planifiees.sh` l'enveloppe pour un
 planificateur : charge le `.env` racine s'il existe, empêche deux passages
 simultanés (`flock`), écrit dans `_demo_output/journaux/taches.log`
 (`AXELCOMPTA_JOURNAUX` pour changer). Installé sur le poste de démo le
@@ -374,6 +379,11 @@ En production (depuis le 16/11), ce crontab n'est plus à poser : le
 conteneur `worker` lance le worker chaque minute et les tâches chaque heure
 (`backend/docker/crontab`, `supercronic`). Voir « Déployer la production ».
 
+À chaque passage, le worker relâche d'abord les jobs pris depuis plus de
+2 h (`DELAI_ABANDON`, colonne `jobs.pris_le`, AXE-958) : un job abandonné
+par un redéploiement repart s'il lui reste des essais, sinon il passe en
+échec. Un job en échec n'alerte Sentry qu'au dernier essai (#219).
+
 ## Mettre en route les tickets du 05 au 10/11 sur une base existante
 
 Le code mergé ne suffit pas : sur la base réelle, il faut aussi (suivi dans
@@ -407,7 +417,8 @@ reprise en simulation, puis appliquée après accord.
    `a3f8c2d71e46` (identité) à `e2a6c8f4b913` (liens Rollee).
 2. **Intégrations** (écran du même nom, admin) : brancher **d'abord le
    jeton Digifactory actuel**, qui devient le défaut ; ensuite seulement
-   les autres comptes. `DIGIFACTORY_TOKEN` peut alors rester vide.
+   les autres comptes. L'adresse et le jeton ne sont pas des variables
+   d'environnement.
    `AXELCOMPTA_CLE_INTEGRATIONS` doit être posée aussi sur la machine des
    tâches planifiées et du worker, et ne jamais changer (AXE-872).
 3. Variables (voir `.env.example`), chacune facultative, rien ne se passe
@@ -417,7 +428,6 @@ reprise en simulation, puis appliquée après accord.
    |---|---|
    | `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`, `MODELES_BUCKET`, `AXELCOMPTA_MODELE_VERSION` | récupérer le modèle de catégorisation (AXE-847, plus bas) |
    | `INSEE_API_KEY`, ou `INPI_RNE_USERNAME` et `INPI_RNE_PASSWORD` | relire les registres officiels (AXE-849, plus bas) |
-   | `ROLLEE_JETON_SANDBOX` (+ `ROLLEE_COMPTE_SANDBOX`, `ROLLEE_PLATEFORME_SANDBOX`) | test de contrat Rollee seulement, jamais en production |
    | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `AXELCOMPTA_LLM_ACTIF=1` | allumer l'étage LLM (AXE-887, plus bas) |
    | `AXELCOMPTA_LLM_PLAFOND_CHAUFFEUR_USD`, `AXELCOMPTA_LLM_PLAFOND_GLOBAL_USD` | changer le budget de l'IA (0,50 $ et 100 $ par défaut) |
    | `AXELCOMPTA_ROLLEE_RAPPROCHEMENT=1` | relier seuls les users Rollee la nuit (AXE-911, après la simulation) |
@@ -428,8 +438,9 @@ reprise en simulation, puis appliquée après accord.
        python scripts/reprendre_tva_deductible.py --tenant TENANT --appliquer
 
 5. Rollee, dans l'ordre :
-   1. jeton sandbox, puis `python -m pytest -m rollee` depuis `backend/`
-      (unité des montants, AXE-818) ;
+   1. un branchement Rollee sandbox dans Intégrations, puis
+      `python -m pytest -m rollee` depuis `backend/` (unité des montants,
+      AXE-818) ;
    2. Intégrations › Rollee : jeton de production, « Tester » ;
    3. l'API est en ligne depuis le 16/11 : sur chaque compte Rollee
       d'Intégrations : saisir l'adresse publique de l'API, puis le popup
@@ -461,8 +472,11 @@ cache d'un dossier à la main (démo d'AXE-888, plafond `--plafond-usd`).
 ## Rollee (AXE-818 à 821, 911, 917 à 934)
 
 - `plateformes_rollee.py` : le chauffeur relie ses plateformes (Rollee
-  Connect) ; traitement des jobs `rollee` déposés par les webhooks. Un
-  compte au nom d'un autre chauffeur n'est pas stocké (AXE-923).
+  Connect) ; traitement des jobs `rollee` déposés par les webhooks,
+  regroupés par dossier (AXE-966) : chaque dossier est relu une fois par
+  lot, et les users inconnus passent en un seul `rapprocher_inconnus`,
+  limité aux flottes de leurs webhooks. Un compte au nom d'un autre
+  chauffeur n'est pas stocké (AXE-923).
 - `revenus_rollee.py` : jours Rollee → `settlements_plateforme` →
   semaines rapprochées (`ingestion/semaines_plateforme.py`) → écritures
   (`revenus_semaines.py`, `ingestion/ecritures_semaines.py`). Seules les
@@ -475,6 +489,12 @@ cache d'un dossier à la main (démo d'AXE-888, plafond `--plafond-usd`).
 - Mode expert : `explication_semaines.py` (une semaine expliquée) et
   `manques_rollee.py` (ce qui manque pour tout rapprocher), routes
   `GET /expert/dossiers/{id}/rapprochements` et `…/rapprochements/manques`.
+  `POST …/rapprochements/decision` tranche une semaine « à vérifier »
+  (`trancher_semaine`, « ecrire » ou « ecarter », motif obligatoire,
+  AXE-912).
+- Le bouton Synchroniser relit Rollee sur les deux dernières semaines
+  déjà gardées (`RECOUVREMENT`) ; l'historique complet reste le passage
+  de 4 h (#212).
 - **Jamais deux lectures Rollee en même temps** : passer par la file de
   jobs (`synchro_digifactory` ou `rapprochement_rollee`), que le worker
   traite une à une.
@@ -502,8 +522,11 @@ dernière étape. Dans l'ordre, pour une autre base :
    AXE-931 écrirait de nouvelles semaines sur les anciens comptes.
 4. Redémarrer API et worker, puis **Synchroniser** : Rollee est relu pour
    chaque dossier relié, sur tout l'historique.
-5. Reprise des virements entre enveloppes en 580 (AXE-930 ; 484 OD
-   simulées, **pas encore appliquée** sur la base réelle) :
+5. Reprise des virements entre enveloppes en 580 (AXE-930). **Plus à
+   lancer à la main depuis AXE-968** : l'étape horaire le fait, pour les
+   opérations encore au 471. Le script reste pour déplacer une opération
+   déjà classée ailleurs (par exemple en 645) ; il saute les dossiers
+   exclus par un tag :
 
        python scripts/reprendre_virements_internes.py --tenant TENANT              # simulation
        python scripts/reprendre_virements_internes.py --tenant TENANT --appliquer
@@ -515,6 +538,33 @@ en route : `alembic upgrade head` (migration `b7f3e2a91c40`). Le
 préremplissage par le SIREN utilise `INSEE_API_KEY` et le compte RNE ;
 sans eux, tout se saisit à la main. « Ajouter le chauffeur au portefeuille »
 dépose un job `import_dossiers` : le worker doit tourner.
+
+**Tout l'historique comptable (AXE-970).** « Importer un exercice d'une
+autre année » ajoute n'importe quel exercice depuis 2000, même avec des
+trous. Sur chaque exercice clos, « Déposer tout le dossier » prend des
+fichiers en vrac : chacun est classé (FEC reconnu à son contenu, liasse,
+balance, grand livre, comptes annuels, déclarations de TVA et d'IS, accusés,
+paiements, pièces…) et se reclasse ensuite. Une archive zip est gardée
+intacte et chaque fichier qu'elle contient devient un document de
+l'exercice (zips imbriqués compris, 5 000 fichiers et 1 Go déplié au plus).
+Un FEC est lu : période, SIREN, clôture, résultat et solde de chaque
+compte, gardés dans `documents_import.donnees` pour la reprise.
+Un fichier dont le contenu est déjà sur la fiche (même empreinte) n'est
+pas redéposé, seul ou sorti d'une archive déposée par-dessus (AXE-971).
+Les relevés bancaires sont **obligatoires** tant que Digifactory ne couvre
+pas tout depuis le début du plus ancien exercice que nous tenons (à
+déclarer, ou en cours) ; facultatifs ensuite.
+
+Les contenus vivent dans le bucket S3 privé `DOCUMENTS_BUCKET` (`documents`
+par défaut, mêmes identifiants que le stockage des modèles), rangés par
+portefeuille, fiche, exercice et catégorie :
+
+    <tenant>/imports/<fiche>/<année de clôture | permanent>/<catégorie>/<id>-<nom>
+
+Sans S3 configuré, ils restent en base comme avant. Mise en route :
+`alembic upgrade head` (migration `f7a2c9e4b318`), créer le bucket privé
+`documents` dans Supabase Storage, et y régler la taille maximale d'un
+fichier à 100 Mo au moins (plafond d'un dépôt).
 
 ## Déployer la production (AXE-427)
 
@@ -539,6 +589,15 @@ reste sur Supabase.
   Déploiement de `.env.example`, même clé Fernet que la base en service,
   propriétaire `deploy`, mode 600) et autoriser
   `https://<front>/auth/lien` dans Supabase.
+- **Porte d'un dossier (AXE-965)** : Caddy sert aussi
+  `app-compta.axelproject.fr`, vers le même front. Avant de promouvoir
+  cette livraison, poser dans le `.env` du droplet
+  `AXELCOMPTA_URL_DOSSIER=https://app-compta.axelproject.fr` (invitations,
+  rappels, CORS). Dans Supabase, autoriser
+  `https://app-compta.axelproject.fr/auth/lien` et
+  `https://app-compta.axelproject.fr/dossier/accepter-invitation`.
+  Le DNS A de ce nom pointe déjà vers le droplet. Sans ces URL, le lien
+  d'invitation est refusé.
 - Modèles des e-mails d'authentification Supabase : `deploy/emails/`.
 - **Demandes d'échange de la page publique (AXE-949)** : poser
   `AXELCOMPTA_SLACK_DEMANDES_WEBHOOK` dans `/opt/axelcompta/.env` (un
@@ -550,13 +609,51 @@ reste sur Supabase.
   Pour relire les demandes : `SELECT cree_le, nom, email, organisation,
   role, notifiee_le, tentatives FROM demandes_echange ORDER BY cree_le
   DESC;` avec le rôle propriétaire (le rôle web ne lit pas les noms).
-- **Porte d'un dossier, `app.axelproject.fr` (doc 19, 2026-11-17)** : pas
-  servie. Le jour où on la branche, un enregistrement DNS vers le même
-  droplet, puis le nom ajouté à Caddy (`deploy/Caddyfile` ne connaît
-  aujourd'hui que `APP_DOMAIN` et `API_DOMAIN`) pour le certificat, et
-  l'URL de redirection dans Supabase. Le DNS seul répond par le mauvais
-  site, ou par rien. Les chemins sont encore `/chauffeur/…`.
+- **Lancer une reprise** : depuis #225, les scripts sont dans l'image.
+  Toujours en simulation d'abord, puis `--appliquer` après accord :
+
+      cd /opt/axelcompta
+      docker compose -f docker-compose.prod.yml exec worker python scripts/<script>.py --tenant TENANT
+
+- **Une seule tête Alembic.** `e1c8a4f72b09` suit `b6e2f9a4c715`, puis
+  `f7a2c9e4b318`. `f7` n'ajoute une colonne que si elle manque : la base
+  réelle a déjà reçu ces colonnes à la main, avec `alembic_version` resté
+  sur `b6e2f9a4c715`. Vérifier `alembic heads` avant de merger.
 - Reste (AXE-811) : restauration chronométrée des sauvegardes et runbook.
+
+## Mettre en route les tickets du 16 au 17/11 (PR #202 à #227)
+
+1. Les migrations n'ont plus qu'une tête : `e1c8a4f72b09` suit
+   `b6e2f9a4c715`, puis `f7a2c9e4b318`. La base réelle est à
+   `b6e2f9a4c715` ; la contrainte d'ignore y est déjà posée, et les
+   colonnes d'archives aussi (posées à la main). `f7` ne les recrée pas.
+   `d4b7e9a2c361` (`jobs.pris_le`) est déjà passée. Après cette promotion,
+   remerger `prod` dans `main` pour que la prochaine n'oublie pas ce
+   rattachement.
+2. Dans `/opt/axelcompta/.env` : `AXELCOMPTA_URL_DOSSIER` (porte des
+   dossiers, plus haut) et `AXELCOMPTA_SLACK_DEMANDES_WEBHOOK` s'il n'y
+   est pas déjà. Créer le bucket privé `documents` (100 Mo minimum).
+   `DIGIFACTORY_TOKEN`, `DIGIFACTORY_BASE_URL`, `ROLLEE_JETON_SANDBOX`,
+   `ROLLEE_COMPTE_SANDBOX` et `ROLLEE_PLATEFORME_SANDBOX` ne sont plus lus :
+   on peut les retirer. Le jeton Digifactory vient d'Intégrations (#226).
+3. Promouvoir `main` vers `prod`. Au premier passage horaire, la ligne
+   « virements internes : N paire(s) au 580 » apparaît au journal du
+   worker, puis plus rien s'il n'y a rien de nouveau.
+4. Une fois, ventiler l'historique sur les sous-comptes 512x (AXE-832).
+   Sans elle, deux virements entre comptes aux libellés différents ne se
+   reconnaissent pas. Lent, plus de 5 minutes :
+
+       docker compose -f docker-compose.prod.yml exec worker python scripts/ventiler_comptes_bancaires.py --tenant TENANT              # simulation
+       docker compose -f docker-compose.prod.yml exec worker python scripts/ventiler_comptes_bancaires.py --tenant TENANT --appliquer
+
+   La simulation n'écrit plus rien en base (avant #225, elle créait les
+   fiches des comptes qu'elle découvrait).
+5. Supabase Auth : supprimer les comptes des accès gestionnaire retirés
+   avant #223 ; republier `deploy/emails/` (#208).
+6. Sentry : brancher une alerte sur le moniteur `axelcompta-taches`.
+7. Poste de développement : copier `.env.dev.example` en `.env.dev`
+   (`ENV=dev` coupe Sentry ; une ligne décommentée remplace celle de
+   `.env`).
 
 ## Mettre en route Rollee après la PR 170 (AXE-922)
 

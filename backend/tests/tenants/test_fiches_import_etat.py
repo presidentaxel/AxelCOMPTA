@@ -7,7 +7,15 @@ from dataclasses import replace
 from datetime import UTC, date, datetime
 
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.tenants.fiches_import import DocumentImport, FicheImport, modifier, nouvelle_fiche
+from axelcompta.tenants.fiches_import import (
+    DocumentImport,
+    FicheImport,
+    cle_archive,
+    document_import,
+    modifier,
+    nouvelle_fiche,
+)
+from axelcompta.tenants.fiches_import_depot import ContenusMemoire, FichesImportMemoire, deplacer
 from axelcompta.tenants.fiches_import_etat import (
     ContactDigifactory,
     contacts_correspondants,
@@ -127,10 +135,12 @@ def test_des_parts_qui_ne_font_pas_100_pourcent_sont_signalees() -> None:
 
 
 def test_le_statut_se_calcule_tout_seul() -> None:
-    """AXE-947 : jamais choisi à la main."""
+    """AXE-947 : jamais choisi à la main, sauf Ignoré qui reste jusqu'à reprise."""
     vide = nouvelle_fiche("f1", T, "Dupont", "Karim", "", "b", LE)
     assert statut_calcule(vide, [], AUJOURD_HUI) == "a_importer"
     assert statut_calcule(_fiche(email="k@x.fr"), [], AUJOURD_HUI) == "en_traitement"
+    ignoree = replace(vide, statut="ignore")
+    assert statut_calcule(ignoree, [], AUJOURD_HUI) == "ignore"
 
 
 def test_la_fiche_complete_devient_une_ligne_d_import_valide() -> None:
@@ -144,7 +154,7 @@ def test_la_fiche_complete_devient_une_ligne_d_import_valide() -> None:
         contact_digifactory="contact 22755",
     )
     assert manque_pour_creer(fiche) == []
-    assert len(manque_pour_creer(_fiche())) == 6
+    assert len(manque_pour_creer(_fiche())) == 4
     (ligne,) = rapport(T, [ligne_dossier(fiche)], []).lignes
     assert ligne.dossier is not None and ligne.erreurs == ()
     assert ligne.dossier.id == DossierId("DIGI_22755") == dossier_prevu(fiche)
@@ -216,3 +226,130 @@ def test_le_meme_siren_relie_la_fiche_sans_creer_un_second_dossier() -> None:
     fiche = _fiche(siren="552100554", denomination="MK DRIVING")
     reliee, a_creer, erreurs = relier_au_portefeuille(fiche, (deja,))
     assert (reliee.dossier_id, a_creer, erreurs) == (DossierId("DIGI_10"), None, ())
+
+
+def test_une_fiche_sans_regime_devient_un_dossier_a_confirmer() -> None:
+    fiche = _fiche(
+        siren="883828527",
+        denomination="DF TRANSPORTS",
+        forme_juridique="SASU",
+        exercice_debut="2026-01-01",
+    )
+    reliee, dossier, erreurs = relier_au_portefeuille(fiche, ())
+    assert erreurs == ()
+    assert dossier is not None
+    assert reliee.dossier_id == dossier.id == DossierId("SIREN_883828527")
+    assert (dossier.regime_imposition, dossier.regime_tva) == ("IS", "reel_normal")
+    assert dossier.a_confirmer == ("imposition",)
+
+
+def test_une_fiche_ignoree_ne_cree_pas_de_dossier() -> None:
+    fiche = replace(
+        _fiche(
+            siren="883828527",
+            denomination="DF TRANSPORTS",
+            forme_juridique="SASU",
+            exercice_debut="2026-01-01",
+        ),
+        statut="ignore",
+    )
+    assert relier_au_portefeuille(fiche, ()) == (fiche, None, ())
+
+
+# --- AXE-970 : tout exercice, depuis 2000 ---------------------------------
+
+
+def test_un_exercice_ajoute_ou_garni_apparait_meme_avant_2024() -> None:
+    champs = {
+        "date_creation": "2022-01-03",
+        "cloture": "30/09",
+        "premiere_cloture": "2022-09-30",
+        "exercices_ajoutes": "2019",
+    }
+    fiche = nouvelle_fiche("f", TenantId("T"), "D", "K", "", "b", LE)
+    document = document_import("d", fiche, "reprise:piece:2022", "ENC-1.pdf", "", b"%", "b", LE)
+    liste = exercices(champs, AUJOURD_HUI, [document])
+    assert [(e.annee, e.role) for e in liste] == [
+        (2019, "anterieur"),
+        (2022, "anterieur"),
+        (2024, "anterieur"),
+        (2025, "source"),
+        (2026, "a_declarer"),
+        (2027, "en_cours"),
+    ]
+    assert (liste[0].debut, liste[0].fin) == (date(2018, 10, 1), date(2019, 9, 30))
+
+
+def test_une_piece_classee_a_sa_carte_dans_son_exercice() -> None:
+    fiche = nouvelle_fiche("f", TenantId("T"), "D", "K", "", "b", LE)
+    document = document_import("d", fiche, "reprise:piece:2022", "ENC-1.pdf", "", b"%", "b", LE)
+    champs = {"date_creation": "2022-01-03", "cloture": "30/09"}
+    cartes = {e.cle: e for e in emplacements(champs, [document], AUJOURD_HUI)}
+    assert "reprise:liasse:2022" in cartes  # l'exercice garni a ses cartes de base
+    piece = cartes["reprise:piece:2022"]
+    assert (piece.libelle, piece.explication, len(piece.documents)) == (
+        "Pièces justificatives 2022",
+        "Factures, reçus, encaissements.",
+        1,
+    )
+
+
+def test_le_depot_en_memoire_range_deplace_et_retire_avec_l_archive() -> None:
+    fiche = nouvelle_fiche("f", TenantId("T"), "D", "K", "", "b", LE)
+    depot = FichesImportMemoire()
+    depot.enregistrer(fiche)
+    archive = document_import("z", fiche, "reprise:archive:2022", "a.zip", "", b"PK", "b", LE)
+    membre = replace(
+        document_import("m", fiche, "reprise:autre:2022", "x.pdf", "", b"%", "b", LE),
+        origine_id="z",
+    )
+    depot.deposer_lot([(archive, b"PK"), (membre, b"%")])
+    range_ = depot.ranger(replace(membre, categorie="liasse", emplacement="reprise:liasse:2022"))
+    assert [d.categorie for d in range_.documents] == ["archive", "liasse"]
+    assert depot.retirer(TenantId("T"), "f", "z").documents == []
+
+
+def test_un_document_reclasse_change_de_place_dans_le_bucket() -> None:
+    fiche = nouvelle_fiche("f", TenantId("T"), "D", "K", "", "b", LE)
+    bucket = ContenusMemoire()
+    document = document_import("d" * 12, fiche, "reprise:autre:2022", "x.pdf", "", b"%", "b", LE)
+    document = replace(document, cle_stockage=cle_archive(document))
+    bucket.ecrire(document.cle_stockage, b"%")
+    deplace = deplacer(bucket, replace(document, categorie="liasse", exercice=2021))
+    assert deplace.cle_stockage == "T/imports/f/2021/liasse/dddddddddddd-x.pdf"
+    assert bucket.objets == {deplace.cle_stockage: b"%"}
+
+
+def test_les_releves_restent_obligatoires_tant_que_l_exercice_a_declarer_n_est_pas_couvert() -> (
+    None
+):
+    """AXE-971, KERFICE : Digifactory couvre l'exercice en cours (ouvert le
+    01/10/2026) mais pas celui clos le 30/09/2026, à déclarer par nous."""
+    champs = {
+        "date_creation": "2022-01-03",
+        "cloture": "30/09",
+        "contact_digifactory": "24951",
+        "debut_historique": "2026-08-20",
+        "exercice_debut": "2026-10-01",
+    }
+    aujourd_hui = date(2026, 11, 17)
+    releves = next(
+        e for e in emplacements(champs, [], aujourd_hui) if e.cle == "banque:releve_bancaire"
+    )
+    assert releves.attendu
+    assert releves.explication.startswith("Du 01/10/2025 au 19/08/2026")
+
+    couvert = {**champs, "debut_historique": "2025-09-01"}
+    facultatif = next(
+        e for e in emplacements(couvert, [], aujourd_hui) if e.cle == "banque:releve_bancaire"
+    )
+    assert not facultatif.attendu
+    assert facultatif.explication.startswith("Digifactory remonte tout depuis le 01/09/2025")
+
+    sans_historique = {k: v for k, v in champs.items() if k != "debut_historique"}
+    inconnu = next(
+        e
+        for e in emplacements(sans_historique, [], aujourd_hui)
+        if e.cle == "banque:releve_bancaire"
+    )
+    assert inconnu.attendu and "du 01/10/2025 à aujourd'hui" in inconnu.explication

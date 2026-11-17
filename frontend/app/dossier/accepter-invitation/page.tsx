@@ -23,9 +23,10 @@ type Etape = "verification" | "definir_mot_de_passe" | "erreur";
  * (`#access_token=...`), jamais dans l'URL visible ni envoyé au serveur.
  *
  * **Infra requise côté Louis, pas du code** : ajouter
- * `.../chauffeur/accepter-invitation` aux "Redirect URLs" autorisées dans
- * le dashboard Supabase (Authentication → URL Configuration) — sinon
- * Supabase redirige vers sa propre page par défaut.
+ * `https://app-compta.axelproject.fr/dossier/accepter-invitation` et
+ * `https://app-compta.axelproject.fr/auth/lien` aux "Redirect URLs"
+ * autorisées dans le dashboard Supabase (Authentication → URL
+ * Configuration) — sinon Supabase refuse le lien.
  */
 export default function AccepterInvitationPage() {
   const router = useRouter();
@@ -78,7 +79,7 @@ export default function AccepterInvitationPage() {
     setErreur(null);
     try {
       await definirMotDePasse(motDePasse);
-      router.replace(`/chauffeur/${dossierId}`);
+      router.replace(`/dossier/${dossierId}`);
     } catch (exception) {
       setErreur(traduireExceptionAuth(exception));
     } finally {

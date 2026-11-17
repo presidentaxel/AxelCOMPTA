@@ -299,7 +299,7 @@ const ESPACE_CHAUFFEUR = {
   lire: obtenirSession,
   enregistrer: enregistrerSessionChauffeur,
   effacer: deconnecter,
-  pageConnexion: "/chauffeur/login",
+  pageConnexion: "/dossier/login",
 };
 
 /** Toute requête chauffeur vers l'API : jeton renouvelé au besoin, retour à

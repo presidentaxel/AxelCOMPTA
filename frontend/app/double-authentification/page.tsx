@@ -50,7 +50,7 @@ export default function DoubleAuthentificationPage() {
     const cote = new URLSearchParams(window.location.search).get("cote");
     const session = cote === "chauffeur" ? obtenirSession() : obtenirSessionGestionnaire();
     if (!session) {
-      router.replace(cote === "chauffeur" ? "/chauffeur/login" : "/connexion");
+      router.replace(cote === "chauffeur" ? "/dossier/login" : "/connexion");
       return;
     }
     try {
@@ -94,7 +94,7 @@ export default function DoubleAuthentificationPage() {
       }
       const retour = cheminDeRetour(
         window.location.search,
-        cote === "chauffeur" ? "/chauffeur/test" : "/portefeuille",
+        cote === "chauffeur" ? "/dossier/test" : "/",
       );
       router.replace(retour === "/securite" || retour.startsWith("/securite?") ? "/portefeuille" : retour);
     } catch (exception) {

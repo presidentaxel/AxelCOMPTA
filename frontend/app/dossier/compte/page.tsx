@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { useDossierChauffeur } from "@/app/chauffeur/use-dossier";
+import { useDossierChauffeur } from "@/app/dossier/use-dossier";
 import { AccesDossier } from "@/components/AccesDossier";
 import { ComptesBancaires } from "@/components/ComptesBancaires";
 import { Etat } from "@/components/Etat";
@@ -29,7 +29,7 @@ export default function CompteChauffeurPage() {
   useEffect(() => {
     const session = obtenirSession();
     if (!session) {
-      router.replace("/chauffeur/login");
+      router.replace("/dossier/login");
       return;
     }
     // Lecture de localStorage : même pont que le layout chauffeur.
@@ -69,7 +69,7 @@ export default function CompteChauffeurPage() {
         className="mt-10 h-12 w-full text-base"
         onClick={() => {
           deconnecter();
-          router.replace("/chauffeur/login");
+          router.replace("/dossier/login");
         }}
       >
         Se déconnecter

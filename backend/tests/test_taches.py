@@ -279,3 +279,46 @@ def test_l_etage_llm_dit_son_echec_sans_arreter_le_passage() -> None:
 
     assert _llm(panne) == ["llm : échec (ConnectionError)"]
     assert _llm(lambda: ["llm : 1 lot(s) soumis"]) == ["llm : 1 lot(s) soumis"]
+
+
+def test_les_virements_internes_passent_apres_la_synchro_et_avant_les_caches() -> None:
+    """AXE-968 : une jambe arrivée à ce passage retrouve celle d'un passage
+    précédent, et l'écran recalculé la montre déjà au 580. Un dossier exclu
+    du classement automatique n'est pas touché."""
+    appels: list[str] = []
+    depot = _depot(("b1", "B", None), ("b2", "B", None))
+    exclusions = dict(EXCLUSIONS_PAR_DEFAUT, categorisation=frozenset({"sans_auto"}))
+    etat = EtatTags({DossierId("b1"): frozenset({"sans_auto"})}, exclusions)
+
+    def reprendre(dossiers: tuple[Dossier, ...]) -> str:
+        appels.append("virements " + ",".join(d.id for d in dossiers))
+        return "virements internes : 3 paire(s) au 580"
+
+    def prechauffer(_dossiers: tuple[Dossier, ...]) -> int:
+        appels.append("caches")
+        return 0
+
+    bilan = lancer_taches(
+        depot,
+        None,
+        _notifier_tout,
+        perimetre=lambda _t: etat,
+        prechauffer=prechauffer,
+        reprendre_virements=reprendre,
+    )
+
+    assert appels == ["virements b2", "caches"]
+    assert "B virements internes : 3 paire(s) au 580" in bilan.lignes
+
+
+def test_une_reprise_des_virements_en_echec_n_arrete_pas_le_passage() -> None:
+    def planter(_dossiers: tuple[Dossier, ...]) -> str:
+        raise RuntimeError("base indisponible")
+
+    bilan = lancer_taches(
+        _depot(("a1", "A", None)), None, _notifier_tout, reprendre_virements=planter
+    )
+
+    assert bilan.echec
+    assert "A virements internes : échec (RuntimeError)" in bilan.lignes
+    assert any("notifications" in ligne for ligne in bilan.lignes)

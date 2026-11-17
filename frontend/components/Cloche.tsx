@@ -27,11 +27,11 @@ const HAUTEUR_PANNEAU = "calc(100dvh - 8rem - env(safe-area-inset-bottom, 0px))"
  * où se choisissent aussi les comptes bancaires (AXE-851).
  * Les opérations à traiter s'ouvrent sur Activité. */
 export function lienNotification(dossierId: string, type: string): string {
-  if (type === "cloture_a_valider") return `/chauffeur/${dossierId}/exercice`;
-  if (type.startsWith("tva_")) return `/chauffeur/${dossierId}/tva`;
-  if (type.startsWith("connexion")) return "/chauffeur/compte";
-  if (type === "comptes_a_choisir") return "/chauffeur/compte";
-  return `/chauffeur/${dossierId}`;
+  if (type === "cloture_a_valider") return `/dossier/${dossierId}/exercice`;
+  if (type.startsWith("tva_")) return `/dossier/${dossierId}/tva`;
+  if (type.startsWith("connexion")) return "/dossier/compte";
+  if (type === "comptes_a_choisir") return "/dossier/compte";
+  return `/dossier/${dossierId}`;
 }
 
 /** Notifications internes (doc 19 §5.2). Ouvrir la cloche ne marque rien :
@@ -147,7 +147,7 @@ export function Cloche({ dossierId, chemin }: { dossierId: string; chemin: strin
               message="Aucune notification."
               action={{
                 libelle: "Voir mon activité",
-                href: `/chauffeur/${dossierId}`,
+                href: `/dossier/${dossierId}`,
                 onClick: () => setOuvert(false),
               }}
             />

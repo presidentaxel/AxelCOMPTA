@@ -1,16 +1,14 @@
 """AXE-818 : test de contrat contre le **sandbox** Rollee, hors CI.
 
-Lancé seulement avec un jeton sandbox (tableau de bord Rollee, Settings →
-JWT Token) :
+Le jeton est celui d'un branchement Rollee dont l'environnement est
+`sandbox` (Intégrations), pas une variable d'environnement :
 
-    ROLLEE_JETON_SANDBOX=… python -m pytest -m rollee
+    python -m pytest -m rollee
 
-Il crée un utilisateur de test et une session Rollee Connect. Avec
-`ROLLEE_COMPTE_SANDBOX` (l'identifiant d'un compte relié dans le sandbox, via
-le lien de session et n'importe quels identifiants), il lit aussi un mois de
-revenus (plateforme `ROLLEE_PLATEFORME_SANDBOX`, Uber par défaut) et
-vérifie qu'ils se traduisent sans rejet : c'est ce test qui
-confirme l'unité des montants (`UNITE_MONTANTS`).
+Il crée un utilisateur de test et une session Rollee Connect. S'il trouve
+un compte déjà relié sur ce sandbox, il lit aussi un mois de revenus et
+vérifie qu'ils se traduisent sans rejet : c'est ce test qui confirme
+l'unité des montants (`UNITE_MONTANTS`).
 """
 
 from __future__ import annotations
@@ -18,25 +16,42 @@ from __future__ import annotations
 import asyncio
 import os
 from datetime import date, timedelta
+from pathlib import Path
 
 import pytest
+from dotenv import load_dotenv
 
+from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId
 from axelcompta.ingestion.providers.rollee import CompteRollee, RolleeHttpClient, lire_revenus
 from axelcompta.packs.vtc_demo import charger_plateformes
+from axelcompta.plateformes_rollee import TYPE_ROLLEE
+from axelcompta.tenants.branchements_postgres import PostgresBranchements
+from axelcompta.tenants.postgres import PostgresDossierRepository
+
+load_dotenv(Path(__file__).resolve().parents[4] / ".env")
 
 pytestmark = pytest.mark.rollee
 
-JETON = os.environ.get("ROLLEE_JETON_SANDBOX", "")
-COMPTE = os.environ.get("ROLLEE_COMPTE_SANDBOX", "")
-PLATEFORME = os.environ.get("ROLLEE_PLATEFORME_SANDBOX", "Uber")
+
+def _client() -> RolleeHttpClient:
+    if not os.environ.get("DATABASE_URL") or not os.environ.get("AXELCOMPTA_CLE_INTEGRATIONS"):
+        pytest.skip("branchement Rollee sandbox : base ou clé absente")
+    engine = engine_depuis_env()
+    depot = PostgresBranchements(engine)
+    for tenant in PostgresDossierRepository(engine).lister_tenants():
+        for branchement in depot.lister(tenant.id):
+            if branchement.type != TYPE_ROLLEE or not branchement.actif:
+                continue
+            parametres = branchement.parametres()
+            if parametres.get("environnement") == "sandbox" and parametres.get("jeton"):
+                return RolleeHttpClient.depuis_parametres(parametres)
+    pytest.skip("aucun branchement Rollee sandbox")
 
 
 @pytest.fixture
 def client() -> RolleeHttpClient:
-    if not JETON:
-        pytest.skip("ROLLEE_JETON_SANDBOX non défini")
-    return RolleeHttpClient("sandbox", JETON)
+    return _client()
 
 
 def test_le_jeton_sandbox_cree_un_utilisateur_et_une_session(client: RolleeHttpClient) -> None:
@@ -54,18 +69,28 @@ def test_le_jeton_sandbox_cree_un_utilisateur_et_une_session(client: RolleeHttpC
 
 
 def test_un_mois_de_revenus_sandbox_se_traduit_sans_rejet(client: RolleeHttpClient) -> None:
-    if not COMPTE:
-        pytest.skip("ROLLEE_COMPTE_SANDBOX non défini")
-
-    async def lire() -> dict[str, object]:
+    async def lire() -> tuple[str, str, dict[str, object]] | None:
         try:
-            fin = date.today()
-            return await client.revenus(COMPTE, fin - timedelta(days=31), fin)
+            for utilisateur in await client.utilisateurs():
+                identifiant = str(utilisateur.get("id") or "")
+                if not identifiant:
+                    continue
+                for compte in await client.comptes(identifiant):
+                    if not (compte.get("connected") and compte.get("id") and compte.get("name")):
+                        continue
+                    compte_id, nom = str(compte["id"]), str(compte["name"])
+                    fin = date.today()
+                    reponse = await client.revenus(compte_id, fin - timedelta(days=31), fin)
+                    return compte_id, nom, reponse
+            return None
         finally:
             await client.aclose()
 
-    reponse = asyncio.run(lire())
+    trouve = asyncio.run(lire())
+    if trouve is None:
+        pytest.skip("aucun compte Rollee relié dans le sandbox")
+    compte_id, nom, reponse = trouve
     releve = lire_revenus(
-        DossierId("TEST"), CompteRollee(COMPTE, PLATEFORME), reponse, charger_plateformes()
+        DossierId("TEST"), CompteRollee(compte_id, nom), reponse, charger_plateformes()
     )
     assert releve.rejets == [], [r.motif for r in releve.rejets]
