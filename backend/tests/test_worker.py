@@ -9,6 +9,7 @@ from datetime import UTC, date, datetime
 
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.jobs.file import TYPE_ROLLEE, TYPE_SYNCHRO, FileMemoire
+from axelcompta.surveillance import Sentinelle
 from axelcompta.synchro_digifactory import ResultatDossier
 from axelcompta.tenants.contacts_proposes import ContactsProposesMemoire
 from axelcompta.tenants.memory import InMemoryDossierRepository
@@ -22,6 +23,7 @@ from axelcompta.worker import (
     detecter_portefeuilles,
     executer_job,
     resume,
+    signaler_echec_definitif,
 )
 from axelcompta.workflow.synchro import RapportSynchro
 
@@ -214,3 +216,14 @@ def test_la_synchro_complete_aussi_les_fiches_d_import() -> None:
     )
     resultat = executer_job(FileMemoire().demander(T, TYPE_SYNCHRO), deps, AUJOURD_HUI)
     assert resultat.endswith("Rollee relu pour 1 dossier(s) · 15 fiches d'import créées")
+
+
+def test_seul_le_dernier_echec_part_dans_sentry() -> None:
+    erreurs: list[BaseException] = []
+    sentinelle = Sentinelle(exception=lambda e, _etiquettes: erreurs.append(e))
+    job = FileMemoire().demander(T, TYPE_SYNCHRO)
+    erreur = OSError("résolution de nom")
+    signaler_echec_definitif(sentinelle, erreur, job, False)
+    assert erreurs == []
+    signaler_echec_definitif(sentinelle, erreur, job, True)
+    assert erreurs == [erreur]

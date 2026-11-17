@@ -37,6 +37,7 @@ from axelcompta.api.routes import prechauffer_caches
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.core.metriques import METRIQUES
+from axelcompta.environnement import charger_environnement
 from axelcompta.fiches_import_portefeuille import (
     completer_fiches as completer_fiches_portefeuille,
 )
@@ -297,6 +298,7 @@ def main() -> int:
     parseur.add_argument("--sans-synchro", action="store_true")
     args = parseur.parse_args()
 
+    charger_environnement()
     # AXE-959 : Sentry dès le début, et un check-in au début et à la fin du
     # passage. Un passage qui plante est signalé en erreur, puis relancé.
     sentinelle = sentinelle_sentry()

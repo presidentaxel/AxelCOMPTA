@@ -33,7 +33,11 @@ def recuperer_modele_au_demarrage() -> None:
 
 def create_app() -> FastAPI:
     # Import local : routes construit son app au chargement, et ne doit
-    # pas être tiré par un simple import de ce module.
+    # pas être tiré par un simple import de ce module. L'environnement
+    # d'abord : Sentry s'installe dans cet import.
+    from axelcompta.environnement import charger_environnement
+
+    charger_environnement()
     from axelcompta.api import routes
 
     app: FastAPI = routes.app

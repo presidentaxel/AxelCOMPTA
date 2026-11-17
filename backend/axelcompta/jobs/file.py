@@ -134,7 +134,8 @@ class FileMemoire:
     def terminer(self, identifiant: str) -> None:
         self._jobs[identifiant] = replace(self._jobs[identifiant], statut="fait", verrou_par=None)
 
-    def echouer(self, identifiant: str) -> None:
+    def echouer(self, identifiant: str) -> bool:
+        """Remet en attente s'il reste un essai. Rend True quand le job est clos."""
         actuel = self._jobs[identifiant]
         doublon = any(
             j.id != identifiant
@@ -144,6 +145,7 @@ class FileMemoire:
         )
         statut = "echec" if actuel.tentatives >= TENTATIVES_MAX or doublon else "en_attente"
         self._jobs[identifiant] = replace(actuel, statut=statut, verrou_par=None)
+        return statut == "echec"
 
     def relacher_abandonnes(
         self, maintenant: datetime, delai: timedelta = DELAI_ABANDON
