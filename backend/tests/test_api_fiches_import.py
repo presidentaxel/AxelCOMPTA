@@ -359,3 +359,100 @@ def test_renvoyer_le_meme_siren_relit_les_registres() -> None:
 
     entreprise = {c["cle"]: c["valeur"] for c in _section(relue, "entreprise")["champs"]}
     assert entreprise["denomination"] == "MK DRIVING"
+
+
+# --- AXE-970 : tout l'historique, exercice par exercice -----------------------
+
+FEC_2019 = (
+    b"JournalCode\tEcritureNum\tEcritureDate\tCompteNum\tPieceRef\tEcritureLib"
+    b"\tDebit\tCredit\tValidDate\r\n"
+    b"BQ\t1\t20190105\t512000\tP1\tApport\t1000,00\t0,00\t20190105\r\n"
+    b"BQ\t1\t20190105\t101000\tP1\tApport\t0,00\t1000,00\t20190105\r\n"
+)
+
+
+def _archive_2019() -> bytes:
+    import io
+    import zipfile
+
+    tampon = io.BytesIO()
+    with zipfile.ZipFile(tampon, "w") as archive:
+        archive.writestr("55210055400010FEC20191231.csv", FEC_2019)
+        archive.writestr("Grand Livre.pdf", b"%PDF-1.4")
+        archive.writestr("Encaissements de Vente/ENC-001.pdf", b"%PDF-1.4")
+        archive.writestr("META-INF/signature.pkcs7", b"sig")
+    return tampon.getvalue()
+
+
+def _deposer_2019(client: TestClient, fiche: dict[str, Any]) -> Any:
+    return client.post(
+        f"/portefeuille/imports/{fiche['id']}/exercices/2019/documents",
+        files=[
+            ("fichiers", ("archive-2019.zip", _archive_2019(), "application/zip")),
+            ("fichiers", ("Synthèse de la déclaration tva.pdf", b"%PDF-1.4", "application/pdf")),
+        ],
+        headers=EN_TETE,
+    )
+
+
+def test_deposer_en_vrac_sur_un_exercice_ancien_classe_et_deplie() -> None:
+    """2019, avant la création connue (2023) : l'exercice s'ajoute, l'archive
+    reste intacte, chaque fichier qu'elle contient est rangé et le FEC lu."""
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    reponse = _deposer_2019(client, fiche)
+    assert reponse.status_code == 200, reponse.text
+    vue = reponse.json()
+
+    assert 2019 in [e["annee"] for e in vue["exercices"]]
+    (archive,) = _emplacement(vue, "reprise:archive:2019")["documents"]
+    (fec,) = _emplacement(vue, "reprise:fec:2019")["documents"]
+    assert archive["resume"] == "Archive gardée intacte : 3 fichier(s) rangé(s) à part."
+    assert fec["origine_id"] == archive["id"]
+    assert fec["statut_traitement"] == "traite"
+    assert "Clos le 31/12/2019" in fec["resume"]
+    assert len(_emplacement(vue, "reprise:grand_livre:2019")["documents"]) == 1
+    assert len(_emplacement(vue, "reprise:piece:2019")["documents"]) == 1
+    assert len(_emplacement(vue, "reprise:declaration_tva:2019")["documents"]) == 1
+    assert _emplacement(vue, "reprise:piece:2019")["libelle"] == "Pièces justificatives 2019"
+
+
+def test_un_document_classe_seul_se_reclasse() -> None:
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    vue = _deposer_2019(client, fiche).json()
+    (tva,) = _emplacement(vue, "reprise:declaration_tva:2019")["documents"]
+    route = f"/portefeuille/imports/{fiche['id']}/documents/{tva['id']}"
+
+    deplace = client.patch(route, json={"emplacement": "reprise:liasse:2018"}, headers=EN_TETE)
+    refuse = client.patch(route, json={"emplacement": "reprise:liasse:1990"}, headers=EN_TETE)
+
+    assert deplace.status_code == 200, deplace.text
+    (liasse,) = _emplacement(deplace.json(), "reprise:liasse:2018")["documents"]
+    assert liasse["id"] == tva["id"]
+    assert 2018 in [e["annee"] for e in deplace.json()["exercices"]]
+    assert refuse.status_code == 422
+
+
+def test_retirer_une_archive_retire_ses_fichiers() -> None:
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    vue = _deposer_2019(client, fiche).json()
+    (archive,) = _emplacement(vue, "reprise:archive:2019")["documents"]
+    retire = client.delete(
+        f"/portefeuille/imports/{fiche['id']}/documents/{archive['id']}", headers=EN_TETE
+    )
+    restants = [d for e in retire.json()["emplacements"] for d in e["documents"]]
+    assert [d["libelle"] for d in restants] == ["Déclarations de TVA"]
+
+
+def test_un_lecteur_ne_depose_rien_sur_un_exercice() -> None:
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    lecteur = _client(role="lecture")[0]
+    reponse = lecteur.post(
+        f"/portefeuille/imports/{fiche['id']}/exercices/2019/documents",
+        files=[("fichiers", ("a.pdf", b"%PDF", "application/pdf"))],
+        headers=EN_TETE,
+    )
+    assert reponse.status_code == 403

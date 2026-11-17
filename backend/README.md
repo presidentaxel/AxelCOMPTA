@@ -539,6 +539,28 @@ préremplissage par le SIREN utilise `INSEE_API_KEY` et le compte RNE ;
 sans eux, tout se saisit à la main. « Ajouter le chauffeur au portefeuille »
 dépose un job `import_dossiers` : le worker doit tourner.
 
+**Tout l'historique comptable (AXE-970).** « Importer un exercice d'une
+autre année » ajoute n'importe quel exercice depuis 2000, même avec des
+trous. Sur chaque exercice clos, « Déposer tout le dossier » prend des
+fichiers en vrac : chacun est classé (FEC reconnu à son contenu, liasse,
+balance, grand livre, comptes annuels, déclarations de TVA et d'IS, accusés,
+paiements, pièces…) et se reclasse ensuite. Une archive zip est gardée
+intacte et chaque fichier qu'elle contient devient un document de
+l'exercice (zips imbriqués compris, 5 000 fichiers et 1 Go déplié au plus).
+Un FEC est lu : période, SIREN, clôture, résultat et solde de chaque
+compte, gardés dans `documents_import.donnees` pour la reprise.
+
+Les contenus vivent dans le bucket S3 privé `DOCUMENTS_BUCKET` (`documents`
+par défaut, mêmes identifiants que le stockage des modèles), rangés par
+portefeuille, fiche, exercice et catégorie :
+
+    <tenant>/imports/<fiche>/<année de clôture | permanent>/<catégorie>/<id>-<nom>
+
+Sans S3 configuré, ils restent en base comme avant. Mise en route :
+`alembic upgrade head` (migration `f7a2c9e4b318`), créer le bucket privé
+`documents` dans Supabase Storage, et y régler la taille maximale d'un
+fichier à 100 Mo au moins (plafond d'un dépôt).
+
 ## Déployer la production (AXE-427)
 
 En service depuis le 16/11. Un droplet fait tourner l'API, le front, Caddy

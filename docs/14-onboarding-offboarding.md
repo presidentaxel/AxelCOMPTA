@@ -27,7 +27,11 @@
 >   fiche crée le dossier dès que ses champs obligatoires sont remplis, ou
 >   se relie au dossier du même SIREN (#212). Une fiche s'**ignore** et se
 >   remet (catégorie Ignoré, #224). Section Banque : les comptes remontés
->   par Digifactory, chacun marqué **Pro** ou **Perso** (#227).
+>   par Digifactory, chacun marqué **Pro** ou **Perso** (#227). Depuis
+>   AXE-970 : tout exercice se reprend depuis 2000 (« Importer un exercice
+>   d'une autre année »), un dossier de clôture se dépose en vrac et se
+>   classe seul, une archive zip est dépliée, les contenus vivent dans un
+>   bucket S3 privé rangé par exercice et catégorie.
 > - Fait : intégrations du portefeuille en branchements, plusieurs par type
 >   (AXE-872). Le chauffeur relie Uber et Bolt via Rollee Connect (AXE-819),
 >   relancé tant qu'il ne l'a pas fait (AXE-890) ; un user Rollee existant

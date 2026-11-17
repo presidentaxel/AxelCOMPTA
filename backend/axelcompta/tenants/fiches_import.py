@@ -13,13 +13,21 @@ d'Entreprises, et « reprendre » la remet dans le calcul. « Créer le
 chauffeur » ajoute le dossier dans ce portefeuille, par le même chemin
 que l'import CSV (AXE-809).
 
-Rien n'est lu automatiquement dans les documents (OCR : AXE-943).
+Rien n'est lu automatiquement dans les documents (OCR : AXE-943), sauf le
+FEC et le QIF (`traitement_documents_import.py`).
+
+AXE-970 : tout l'historique comptable se reprend, exercice par exercice,
+depuis 2000. Un document est rangé par exercice (année de clôture) et par
+catégorie ; une archive zip est gardée intacte et chaque fichier qu'elle
+contient devient un document de l'exercice (`origine_id`). Le contenu vit
+dans un bucket S3 privé, sous `cle_archive`.
 """
 
 from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
@@ -60,6 +68,8 @@ TypeChamp = Literal[
     "annees",
 ]
 LONGUEUR_MAX = 2_000
+# AXE-970 : la reprise remonte jusque-là (exercices ajoutés à la main).
+ANNEE_MIN_ARCHIVE = 2000
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +176,9 @@ SECTIONS: tuple[Section, ...] = (
             # AXE-950 : exercices dont la date limite est passée mais dont la
             # liasse n'a jamais été déposée. Rendu sur chaque exercice.
             Champ("en_retard", "Exercices non déposés (en retard)", "annees"),
+            # AXE-970 : exercices ajoutés à la main, depuis 2000, même avec
+            # des trous (2019 sans 2020). Rendus en tête de la reprise.
+            Champ("exercices_ajoutes", "Exercices ajoutés", "annees"),
             Champ(
                 "ancien_comptable",
                 "Ancien expert-comptable",
@@ -215,6 +228,14 @@ CATEGORIES_DOCUMENTS: dict[str, str] = {
     "fec": "FEC",
     "balance": "Balance",
     "grand_livre": "Grand livre",
+    # AXE-970 : le reste d'un dossier de clôture.
+    "comptes_annuels": "Bilan et compte de résultat",
+    "declaration_tva": "Déclarations de TVA",
+    "declaration_is": "Déclarations d'IS",
+    "accuse_reception": "Accusés de réception",
+    "paiement_impot": "Paiements d'impôts",
+    "piece": "Pièces justificatives",
+    "archive": "Archive",
     "kbis": "Kbis",
     "statuts": "Statuts",
     "rib": "RIB",
@@ -246,6 +267,12 @@ class DocumentImport:
     emplacement: str = ""
     statut_traitement: StatutDocument = "a_traiter"
     resume: str = ""
+    # AXE-970 : l'archive d'où il a été extrait, où vit son contenu (bucket
+    # S3 ; vide : en base), et ce qui en a été lu, structuré (un FEC : période,
+    # SIREN, soldes par compte) pour la reprise.
+    origine_id: str | None = None
+    cle_stockage: str = ""
+    donnees: Mapping[str, object] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -565,8 +592,7 @@ def document_import(
     _section, categorie, exercice = lire_emplacement(emplacement)
     if categorie not in CATEGORIES_DOCUMENTS:
         raise SaisieInvalide(f"Catégorie de document inconnue : {categorie}.")
-    if exercice is not None and not 2000 <= exercice <= 2100:
-        raise SaisieInvalide("Exercice : l'année de clôture, par exemple 2025.")
+    _verifier_exercice(exercice)
     return DocumentImport(
         id=id_,
         fiche_id=fiche.id,
@@ -581,6 +607,52 @@ def document_import(
         depose_le=le,
         emplacement=emplacement,
     )
+
+
+def _slug(nom: str) -> str:
+    """Un nom de fichier sûr pour une clé de stockage : sans accent, sans
+    espace, sans chemin."""
+    base = unicodedata.normalize("NFKD", nom.rsplit("/", 1)[-1])
+    base = base.encode("ascii", "ignore").decode("ascii").lower()
+    base = re.sub(r"[^a-z0-9.]+", "-", base).strip("-.")
+    return base[:120] or "document"
+
+
+def cle_archive(document: DocumentImport) -> str:
+    """AXE-970 : où le contenu vit dans le bucket, rangé pour s'y retrouver
+    sans la base : portefeuille, fiche, exercice (année de clôture, ou
+    « permanent » pour Kbis, statuts, RIB…), catégorie, puis le nom.
+
+        T1/imports/<fiche>/2022/fec/1a2b3c4d5e6f-908771033fec20220930.csv
+    """
+    periode = str(document.exercice) if document.exercice else "permanent"
+    return (
+        f"{document.tenant_id}/imports/{document.fiche_id}/{periode}/"
+        f"{document.categorie}/{document.id[:12]}-{_slug(document.nom_fichier)}"
+    )
+
+
+def emplacement_de(section: str, categorie: str, exercice: int | None) -> str:
+    """« reprise », « fec », 2022 → « reprise:fec:2022 »."""
+    return f"{section}:{categorie}:{exercice}" if exercice else f"{section}:{categorie}"
+
+
+def reclasser(document: DocumentImport, emplacement: str) -> DocumentImport:
+    """AXE-970 : un document classé tout seul se range ailleurs (autre
+    catégorie, autre exercice). Son contenu ne change pas."""
+    _section, categorie, exercice = lire_emplacement(emplacement)
+    if categorie not in CATEGORIES_DOCUMENTS:
+        raise SaisieInvalide(f"Catégorie de document inconnue : {categorie}.")
+    _verifier_exercice(exercice)
+    return replace(document, categorie=categorie, exercice=exercice, emplacement=emplacement)
+
+
+def _verifier_exercice(exercice: int | None) -> None:
+    if exercice is not None and not ANNEE_MIN_ARCHIVE <= exercice <= 2100:
+        raise SaisieInvalide(
+            f"Exercice : l'année de clôture, de {ANNEE_MIN_ARCHIVE} à aujourd'hui, "
+            "par exemple 2019."
+        )
 
 
 def champs_du_registre(fiche: FicheImport) -> list[str]:

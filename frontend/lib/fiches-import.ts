@@ -55,6 +55,8 @@ export type StatutDocument = "traite" | "a_traiter" | "illisible";
 
 export type DocumentImport = {
   id: string;
+  /** AXE-970 : l'archive zip d'où il a été sorti. */
+  origine_id?: string | null;
   categorie: string;
   libelle: string;
   exercice: number | null;
@@ -386,4 +388,107 @@ export function retardPossible(e: ExerciceImport): boolean {
 
 export function basculerRetard(enRetard: string, annee: number): string {
   return basculerChoix(enRetard, String(annee)).split(",").filter(Boolean).sort().join(",");
+}
+
+// --- AXE-970 : tout l'historique, exercice par exercice ----------------------
+
+export const ANNEE_MIN_REPRISE = 2000;
+
+/** Où ranger une pièce d'un exercice : les catégories proposées au reclassement. */
+export const CATEGORIES_EXERCICE: { cle: string; libelle: string }[] = [
+  { cle: "liasse", libelle: "Liasse fiscale" },
+  { cle: "fec", libelle: "FEC" },
+  { cle: "balance", libelle: "Balance" },
+  { cle: "grand_livre", libelle: "Grand livre" },
+  { cle: "comptes_annuels", libelle: "Bilan et compte de résultat" },
+  { cle: "declaration_tva", libelle: "Déclarations de TVA" },
+  { cle: "declaration_is", libelle: "Déclarations d'IS" },
+  { cle: "accuse_reception", libelle: "Accusés de réception" },
+  { cle: "paiement_impot", libelle: "Paiements d'impôts" },
+  { cle: "piece", libelle: "Pièces justificatives" },
+  { cle: "archive", libelle: "Archive" },
+  { cle: "autre", libelle: "Autre document" },
+];
+
+/** Le texte d'une carte créée à l'écran quand aucune pièce n'y était encore. */
+const EXPLICATIONS_EXERCICE: Record<string, string> = {
+  comptes_annuels: "Bilan, compte de résultat, annexe.",
+  declaration_tva: "CA3, CA12 (3517-S) et leurs synthèses.",
+  declaration_is: "Relevés d'acompte et de solde (2571, 2572).",
+  accuse_reception: "Accusés de dépôt des déclarations.",
+  paiement_impot: "Ordres de paiement et avis de prélèvement.",
+  piece: "Factures, reçus, encaissements.",
+  archive: "Gardée intacte : chaque fichier qu'elle contient est rangé à part.",
+  autre: "Tout autre document de l'exercice.",
+};
+
+/** Déplace le document vers `emplacement` avant la réponse du serveur.
+ * La carte d'arrivée apparaît tout de suite si elle n'existait pas. */
+export function deplacerDocument<T extends { emplacements: EmplacementImport[] }>(
+  fiche: T,
+  documentId: string,
+  emplacement: string,
+): T {
+  let document: DocumentImport | undefined;
+  const restants = fiche.emplacements.map((carte) => {
+    const garde = carte.documents.filter((d) => {
+      if (d.id !== documentId) return true;
+      document = d;
+      return false;
+    });
+    return garde.length === carte.documents.length ? carte : { ...carte, documents: garde };
+  });
+  if (!document || document.emplacement === emplacement) return fiche;
+  const deplace: DocumentImport = {
+    ...document,
+    categorie: emplacement.split(":")[1] ?? document.categorie,
+    emplacement,
+  };
+  const index = restants.findIndex((carte) => carte.cle === emplacement);
+  if (index >= 0) {
+    const cible = restants[index];
+    const suivant = [...restants];
+    suivant[index] = { ...cible, documents: [deplace, ...cible.documents] };
+    return { ...fiche, emplacements: suivant };
+  }
+  const annee = anneeEmplacement(emplacement);
+  const libelle = CATEGORIES_EXERCICE.find((c) => c.cle === deplace.categorie)?.libelle ?? "Document";
+  return {
+    ...fiche,
+    emplacements: [
+      ...restants,
+      {
+        cle: emplacement,
+        section: emplacement.split(":")[0] || "reprise",
+        libelle: annee ? `${libelle} ${annee}` : libelle,
+        explication: EXPLICATIONS_EXERCICE[deplace.categorie] ?? "",
+        attendu: false,
+        documents: [deplace],
+      },
+    ],
+  };
+}
+
+/** L'année saisie pour « Ajouter un exercice », ou le message d'erreur. */
+export function lireAnnee(texte: string, aujourdhui: Date): number | string {
+  const annee = Number(texte.trim());
+  const max = aujourdhui.getFullYear();
+  if (!/^\d{4}$/.test(texte.trim()) || annee < ANNEE_MIN_REPRISE || annee > max) {
+    return `Une année de clôture, de ${ANNEE_MIN_REPRISE} à ${max}.`;
+  }
+  return annee;
+}
+
+/** La liste « 2015,2019 » avec une année de plus, triée et sans doublon. */
+export function ajouterAnnee(liste: string, annee: number): string {
+  const annees = new Set(liste.split(",").filter(Boolean).map(Number));
+  annees.add(annee);
+  return [...annees].sort((a, b) => a - b).join(",");
+}
+
+/** Une carte qui reçoit une archive peut avoir des dizaines de pièces : on en
+ * montre `max`, le reste sur demande. */
+export function documentsVisibles<T>(documents: T[], tout: boolean, max = 5): { visibles: T[]; caches: number } {
+  if (tout || documents.length <= max) return { visibles: documents, caches: 0 };
+  return { visibles: documents.slice(0, max), caches: documents.length - max };
 }

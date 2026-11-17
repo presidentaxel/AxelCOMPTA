@@ -1553,6 +1553,30 @@ export async function telechargerDocumentImport(id: string, documentId: string):
   return reponse.blob();
 }
 
+/** AXE-970 : des fichiers déposés en vrac sur l'exercice clos en `annee`,
+ * classés par l'API (archives zip dépliées). L'exercice s'ajoute à la fiche. */
+export async function deposerDocumentsExercice(id: string, annee: number, fichiers: File[]): Promise<FicheImport> {
+  const corps = new FormData();
+  for (const fichier of fichiers) corps.append("fichiers", fichier);
+  return ficheOuErreur(
+    await requeteGestionnaire(`/portefeuille/imports/${id}/exercices/${annee}/documents`, {
+      method: "POST",
+      body: corps,
+    }),
+  );
+}
+
+/** AXE-970 : ranger un document ailleurs (« reprise:liasse:2019 »). */
+export async function rangerDocumentImport(id: string, documentId: string, emplacement: string): Promise<FicheImport> {
+  return ficheOuErreur(
+    await requeteGestionnaire(`/portefeuille/imports/${id}/documents/${documentId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emplacement }),
+    }),
+  );
+}
+
 export async function retirerDocumentImport(id: string, documentId: string): Promise<FicheImport> {
   return ficheOuErreur(
     await requeteGestionnaire(`/portefeuille/imports/${id}/documents/${documentId}`, { method: "DELETE" }),

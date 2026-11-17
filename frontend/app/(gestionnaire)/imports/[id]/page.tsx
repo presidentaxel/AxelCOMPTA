@@ -465,7 +465,7 @@ function ContenuSection({
   if (section.champs.length === 0) return null;
   return (
     <div className="grid gap-5 sm:grid-cols-2">
-      {section.champs.filter((c) => c.cle !== "en_retard").map(champ)}
+      {section.champs.filter((c) => c.cle !== "en_retard" && c.cle !== "exercices_ajoutes").map(champ)}
     </div>
   );
 }

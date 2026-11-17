@@ -7,7 +7,15 @@ from dataclasses import replace
 from datetime import UTC, date, datetime
 
 from axelcompta.core.ids import DossierId, TenantId
-from axelcompta.tenants.fiches_import import DocumentImport, FicheImport, modifier, nouvelle_fiche
+from axelcompta.tenants.fiches_import import (
+    DocumentImport,
+    FicheImport,
+    cle_archive,
+    document_import,
+    modifier,
+    nouvelle_fiche,
+)
+from axelcompta.tenants.fiches_import_depot import ContenusMemoire, FichesImportMemoire, deplacer
 from axelcompta.tenants.fiches_import_etat import (
     ContactDigifactory,
     contacts_correspondants,
@@ -218,3 +226,67 @@ def test_le_meme_siren_relie_la_fiche_sans_creer_un_second_dossier() -> None:
     fiche = _fiche(siren="552100554", denomination="MK DRIVING")
     reliee, a_creer, erreurs = relier_au_portefeuille(fiche, (deja,))
     assert (reliee.dossier_id, a_creer, erreurs) == (DossierId("DIGI_10"), None, ())
+
+
+# --- AXE-970 : tout exercice, depuis 2000 ---------------------------------
+
+
+def test_un_exercice_ajoute_ou_garni_apparait_meme_avant_2024() -> None:
+    champs = {
+        "date_creation": "2022-01-03",
+        "cloture": "30/09",
+        "premiere_cloture": "2022-09-30",
+        "exercices_ajoutes": "2019",
+    }
+    fiche = nouvelle_fiche("f", TenantId("T"), "D", "K", "", "b", LE)
+    document = document_import("d", fiche, "reprise:piece:2022", "ENC-1.pdf", "", b"%", "b", LE)
+    liste = exercices(champs, AUJOURD_HUI, [document])
+    assert [(e.annee, e.role) for e in liste] == [
+        (2019, "anterieur"),
+        (2022, "anterieur"),
+        (2024, "anterieur"),
+        (2025, "source"),
+        (2026, "a_declarer"),
+        (2027, "en_cours"),
+    ]
+    assert (liste[0].debut, liste[0].fin) == (date(2018, 10, 1), date(2019, 9, 30))
+
+
+def test_une_piece_classee_a_sa_carte_dans_son_exercice() -> None:
+    fiche = nouvelle_fiche("f", TenantId("T"), "D", "K", "", "b", LE)
+    document = document_import("d", fiche, "reprise:piece:2022", "ENC-1.pdf", "", b"%", "b", LE)
+    champs = {"date_creation": "2022-01-03", "cloture": "30/09"}
+    cartes = {e.cle: e for e in emplacements(champs, [document], AUJOURD_HUI)}
+    assert "reprise:liasse:2022" in cartes  # l'exercice garni a ses cartes de base
+    piece = cartes["reprise:piece:2022"]
+    assert (piece.libelle, piece.explication, len(piece.documents)) == (
+        "Pièces justificatives 2022",
+        "Factures, reçus, encaissements.",
+        1,
+    )
+
+
+def test_le_depot_en_memoire_range_deplace_et_retire_avec_l_archive() -> None:
+    fiche = nouvelle_fiche("f", TenantId("T"), "D", "K", "", "b", LE)
+    depot = FichesImportMemoire()
+    depot.enregistrer(fiche)
+    archive = document_import("z", fiche, "reprise:archive:2022", "a.zip", "", b"PK", "b", LE)
+    membre = replace(
+        document_import("m", fiche, "reprise:autre:2022", "x.pdf", "", b"%", "b", LE),
+        origine_id="z",
+    )
+    depot.deposer_lot([(archive, b"PK"), (membre, b"%")])
+    range_ = depot.ranger(replace(membre, categorie="liasse", emplacement="reprise:liasse:2022"))
+    assert [d.categorie for d in range_.documents] == ["archive", "liasse"]
+    assert depot.retirer(TenantId("T"), "f", "z").documents == []
+
+
+def test_un_document_reclasse_change_de_place_dans_le_bucket() -> None:
+    fiche = nouvelle_fiche("f", TenantId("T"), "D", "K", "", "b", LE)
+    bucket = ContenusMemoire()
+    document = document_import("d" * 12, fiche, "reprise:autre:2022", "x.pdf", "", b"%", "b", LE)
+    document = replace(document, cle_stockage=cle_archive(document))
+    bucket.ecrire(document.cle_stockage, b"%")
+    deplace = deplacer(bucket, replace(document, categorie="liasse", exercice=2021))
+    assert deplace.cle_stockage == "T/imports/f/2021/liasse/dddddddddddd-x.pdf"
+    assert bucket.objets == {deplace.cle_stockage: b"%"}

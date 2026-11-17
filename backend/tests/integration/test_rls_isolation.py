@@ -58,7 +58,7 @@ from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
 from axelcompta.tenants.fiches_import import annuler as annuler_fiche
 from axelcompta.tenants.fiches_import import document_import, nouvelle_fiche
 from axelcompta.tenants.fiches_import import modifier as modifier_fiche
-from axelcompta.tenants.fiches_import_depot import FicheIntrouvable
+from axelcompta.tenants.fiches_import_depot import ContenusMemoire, FicheIntrouvable
 from axelcompta.tenants.fiches_import_postgres import PostgresFichesImport
 from axelcompta.tenants.journal_portefeuille_postgres import PostgresJournalPortefeuille
 from axelcompta.tenants.models import Dossier, Tenant
@@ -871,6 +871,39 @@ def test_les_releves_de_plateformes_se_relisent_et_restent_au_dossier(
     assert relu.settlement == semaine and relu.etat == "reconcilie"
     with contexte_identite(dossier_id="sophie", tenant_id=None):
         assert web.lister(DossierId("karim")) == []
+
+
+def test_une_archive_d_import_vit_dans_le_bucket_et_part_avec_ses_fichiers(
+    engine_web: Engine, deux_tenants_trois_dossiers: None
+) -> None:
+    """Migration `f7a2c9e4b318` (AXE-970) : le rôle web range une archive et
+    ses fichiers en un lot, contenus dans le bucket ; il reclasse un fichier
+    (colonnes accordées), et retirer l'archive retire ses fichiers."""
+    le = datetime(2026, 11, 17, tzinfo=UTC)
+    bucket = ContenusMemoire()
+    web = PostgresFichesImport(engine_web, bucket)
+    fiche = nouvelle_fiche("fiche-z", TenantId("tenant-a"), "Konate", "K", "", "b", le)
+    archive = document_import(
+        "zip-a", fiche, "reprise:archive:2022", "a.zip", "application/zip", b"PK", "b", le
+    )
+    membre = dataclasses.replace(
+        document_import("fec-a", fiche, "reprise:autre:2022", "x.csv", "", b"FEC", "b", le),
+        origine_id="zip-a",
+        donnees={"type": "fec", "soldes_cts": {"512": 100}},
+    )
+    with contexte_identite(dossier_id=None, tenant_id="tenant-a"):
+        web.enregistrer(fiche)
+        instantane = web.deposer_lot([(membre, b"FEC"), (archive, b"PK")])
+        lu = {d.id: d for d in instantane.documents}
+        assert lu["fec-a"].donnees == {"type": "fec", "soldes_cts": {"512": 100}}
+        assert lu["fec-a"].cle_stockage == "tenant-a/imports/fiche-z/2022/autre/fec-a-x.csv"
+        assert web.contenu(TenantId("tenant-a"), "fec-a")[1] == b"FEC"
+        range_ = dataclasses.replace(lu["fec-a"], categorie="fec", emplacement="reprise:fec:2022")
+        web.ranger(range_)
+        assert web.contenu(TenantId("tenant-a"), "fec-a")[1] == b"FEC"
+        assert "tenant-a/imports/fiche-z/2022/fec/fec-a-x.csv" in bucket.objets
+        assert web.retirer(TenantId("tenant-a"), "fiche-z", "zip-a").documents == []
+        assert bucket.objets == {}
 
 
 def test_une_fiche_d_import_et_ses_documents_restent_dans_leur_portefeuille(
