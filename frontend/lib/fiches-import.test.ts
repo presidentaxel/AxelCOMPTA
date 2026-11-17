@@ -21,7 +21,10 @@ import {
   type EmplacementImport,
   libelleStatut,
   fichesActives,
+  dossiersIgnores,
+  fichesSansDossier,
   nomChauffeur,
+  nomEntreprise,
   devinerCategorie,
   devinerExercice,
   ecrireComptesChoisis,
@@ -68,6 +71,34 @@ test("une fiche ignorée sort de Toutes", () => {
     fichesActives(fiches).map((fiche) => fiche.statut),
     ["a_importer", "traitee"],
   );
+});
+
+test("Entreprises compte les mêmes fiches que Toutes", () => {
+  const fiches = [
+    { id: "a", dossier_id: "D1", statut: "en_traitement" as const },
+    { id: "b", dossier_id: null, statut: "en_traitement" as const },
+    { id: "c", dossier_id: "D2", statut: "ignore" as const },
+    { id: "d", dossier_id: "D3", statut: "traitee" as const },
+  ];
+  const dossiers = [{ dossier_id: "D1" }, { dossier_id: "D2" }, { dossier_id: "D3" }];
+  const ignores = dossiersIgnores(fiches);
+  assert.deepEqual([...ignores], ["D2"]);
+  const presents = dossiers.filter((dossier) => !ignores.has(dossier.dossier_id));
+  const seules = fichesSansDossier(fichesActives(fiches), presents);
+  assert.deepEqual(
+    seules.map((fiche) => fiche.id),
+    ["b"],
+  );
+  assert.equal(presents.length + seules.length, fichesActives(fiches).length);
+});
+
+test("une entreprise sans fiche n'est pas ignorée", () => {
+  assert.equal(dossiersIgnores([{ dossier_id: "D1", statut: "en_traitement" }]).has("D4"), false);
+});
+
+test("le nom d'entreprise prime sur celui du chauffeur", () => {
+  assert.equal(nomEntreprise({ nom: "Dupont", prenom: "Karim", denomination: "MK DRIVING" }), "MK DRIVING");
+  assert.equal(nomEntreprise({ nom: "Dupont", prenom: "Karim", denomination: null }), "Karim Dupont");
 });
 
 test("le nom du chauffeur, ou son entreprise à défaut", () => {

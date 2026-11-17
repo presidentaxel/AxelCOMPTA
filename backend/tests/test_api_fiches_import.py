@@ -168,12 +168,15 @@ def test_un_releve_qif_depose_est_lu_tout_de_suite() -> None:
 
 
 def test_une_fiche_complete_est_tout_de_suite_au_portefeuille() -> None:
+    """Sans imposition ni TVA, le dossier est créé à l'IS au réel normal,
+    comme un contact Digifactory, avec l'imposition à confirmer (#234). Sans
+    SIREN, il manque de quoi le créer."""
     client, file = _client()
     fiche = _ouvrir(client)
     route = f"/portefeuille/imports/{fiche['id']}"
     depot = cast(FastAPI, client.app).dependency_overrides[get_dossiers]()
 
-    incomplet = client.post(f"{route}/chauffeur", headers=EN_TETE)
+    suppose = client.post(f"{route}/chauffeur", headers=EN_TETE)
     complete = client.patch(
         route,
         json={
@@ -185,16 +188,20 @@ def test_une_fiche_complete_est_tout_de_suite_au_portefeuille() -> None:
         },
         headers=EN_TETE,
     )
-    encore = client.post(f"{route}/chauffeur", headers=EN_TETE)
+    sans_siren = _ouvrir(client, siren="")
+    incomplet = client.post(f"/portefeuille/imports/{sans_siren['id']}/chauffeur", headers=EN_TETE)
 
-    assert incomplet.status_code == 422 and "Imposition" in incomplet.json()["detail"]
-    assert complete.status_code == 200, complete.text
-    assert (complete.json()["dossier_id"], complete.json()["dossier_cree"]) == (
+    assert suppose.status_code == 200, suppose.text
+    assert (suppose.json()["dossier_id"], suppose.json()["dossier_cree"]) == (
         f"SIREN_{SIREN}",
         True,
     )
-    assert depot.obtenir(DossierId(f"SIREN_{SIREN}")).nom == "MK DRIVING"
-    assert encore.status_code == 200 and encore.json()["dossier_cree"] is True
+    dossier = depot.obtenir(DossierId(f"SIREN_{SIREN}"))
+    assert dossier.nom == "MK DRIVING"
+    assert "imposition" in dossier.a_confirmer
+    assert complete.status_code == 200, complete.text
+    assert complete.json()["dossier_cree"] is True
+    assert incomplet.status_code == 422 and "SIREN" in incomplet.json()["detail"]
     assert file.dernier("TENANT_DEMO", "import_dossiers") is None
 
 
@@ -375,12 +382,19 @@ def _archive_2019() -> bytes:
     import io
     import zipfile
 
+    # Date figée : `writestr` avec un nom date chaque fichier de l'heure
+    # courante, et deux archives construites à une seconde d'écart n'auraient
+    # plus la même empreinte (le test des doublons échouait en CI).
+    fichiers = {
+        "55210055400010FEC20191231.csv": FEC_2019,
+        "Grand Livre.pdf": b"%PDF-1.4 grand livre",
+        "Encaissements de Vente/ENC-001.pdf": b"%PDF-1.4 ENC-001",
+        "META-INF/signature.pkcs7": b"sig",
+    }
     tampon = io.BytesIO()
     with zipfile.ZipFile(tampon, "w") as archive:
-        archive.writestr("55210055400010FEC20191231.csv", FEC_2019)
-        archive.writestr("Grand Livre.pdf", b"%PDF-1.4 grand livre")
-        archive.writestr("Encaissements de Vente/ENC-001.pdf", b"%PDF-1.4 ENC-001")
-        archive.writestr("META-INF/signature.pkcs7", b"sig")
+        for nom, contenu in fichiers.items():
+            archive.writestr(zipfile.ZipInfo(nom, date_time=(2020, 1, 1, 0, 0, 0)), contenu)
     return tampon.getvalue()
 
 
