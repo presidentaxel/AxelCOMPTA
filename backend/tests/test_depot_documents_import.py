@@ -12,6 +12,7 @@ from axelcompta.depot_documents_import import (
     Fichier,
     depot_sur_emplacement,
     depot_sur_exercice,
+    sans_doublons,
 )
 from axelcompta.tenants.fiches_import import nouvelle_fiche
 
@@ -83,3 +84,33 @@ def test_une_archive_abimee_est_gardee_et_dite_illisible() -> None:
     )
     assert seul[0].statut_traitement == "illisible"
     assert seul[0].resume.startswith("Archive : archive zip illisible")
+
+
+def test_un_contenu_deja_sur_la_fiche_n_est_pas_redepose() -> None:
+    """AXE-971 : l'archive déposée par-dessus des fichiers déjà là n'ajoute
+    que ce qui manque ; une archive déjà déposée est écartée en entier."""
+    grand_livre = b"%PDF grand livre"
+    archive = _zip({"Grand Livre.pdf": grand_livre, "90877103300010FEC20220930.csv": FEC})
+    seul = depot_sur_exercice(
+        FICHE, 2022, [Fichier("Grand Livre.pdf", "", grand_livre)], "a@x.fr", LE
+    )
+    deja = {d.empreinte for d, _ in seul}
+
+    lot = depot_sur_exercice(FICHE, 2022, [Fichier("a.zip", "", archive)], "a@x.fr", LE)
+    gardes, ecartes = sans_doublons(lot, deja)
+    assert [d.categorie for d, _ in gardes] == ["archive", "fec"]
+    assert ecartes == ["Grand Livre.pdf"]
+    assert gardes[0][0].resume == (
+        "Archive gardée intacte : 1 fichier(s) rangé(s) à part, 1 déjà sur la fiche."
+    )
+
+    deja |= {d.empreinte for d, _ in gardes}
+    encore = depot_sur_exercice(FICHE, 2022, [Fichier("a.zip", "", archive)], "a@x.fr", LE)
+    assert sans_doublons(encore, deja) == ([], ["a.zip"])
+
+
+def test_un_meme_fichier_depose_deux_fois_d_un_coup_ne_compte_qu_une_fois() -> None:
+    double = [Fichier("x.pdf", "", b"%PDF x"), Fichier("copie de x.pdf", "", b"%PDF x")]
+    gardes, ecartes = sans_doublons(depot_sur_exercice(FICHE, 2022, double, "a", LE), set())
+    assert [d.nom_fichier for d, _ in gardes] == ["x.pdf"]
+    assert ecartes == ["copie de x.pdf"]
