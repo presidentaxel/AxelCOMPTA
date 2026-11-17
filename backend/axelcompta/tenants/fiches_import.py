@@ -176,7 +176,7 @@ SECTIONS: tuple[Section, ...] = (
     Section(
         "banque",
         "Banque",
-        "Le contact Digifactory (Bridge) qui remonte les comptes du chauffeur.",
+        "Le contact Digifactory, puis pour chaque compte : professionnel ou personnel.",
         (
             Champ("contact_digifactory", "Numéro de contact Digifactory", obligatoire=True),
             Champ(
@@ -189,7 +189,7 @@ SECTIONS: tuple[Section, ...] = (
                 "comptes_bancaires",
                 "Comptes bancaires",
                 "long",
-                aide="Banque et usage : pro, perso.",
+                aide="Chaque compte remonté : professionnel ou personnel.",
             ),
         ),
     ),

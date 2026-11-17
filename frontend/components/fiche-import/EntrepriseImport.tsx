@@ -49,7 +49,7 @@ export function EntrepriseImport({
   const autres = section.champs.filter((c) => c.cle !== "siren" && c.cle !== "siret");
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border border-border bg-canvas-app p-4">
+      <div className="max-w-md">
         <label htmlFor="identifiant-entreprise" className="text-sm font-medium text-ink">
           SIREN ou SIRET
         </label>
@@ -128,7 +128,7 @@ function ResultatRegistre({
   }
   const forme = valeurChamp(fiche, "forme_juridique");
   return (
-    <div className="mt-3 flex items-start gap-3 rounded-md border border-border bg-canvas p-3">
+    <div className="mt-3 flex items-start gap-3">
       <Building2 className="mt-0.5 size-5 shrink-0 text-subtle" aria-hidden />
       <div className="text-sm">
         <p className="font-medium text-ink">

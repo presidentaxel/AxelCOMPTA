@@ -228,6 +228,112 @@ export function valeurChamp(fiche: Pick<FicheImport, "sections_detail">, cle: st
 
 // --- AXE-947 ---------------------------------------------------------------
 
+export type UsageCompte = "pro" | "perso";
+
+/** Un compte tel que la fiche le garde : l'IBAN complet n'est pas enregistré,
+ * seulement ses 4 derniers caractères, pour le reconnaître sans le recopier. */
+export type CompteBancaireFiche = {
+  id: string;
+  nom: string;
+  banque: string;
+  fin: string;
+  usage: UsageCompte | "";
+};
+
+/** Un compte lu chez Digifactory, avant le choix pro / perso. */
+export type CompteDigifactoryFiche = {
+  id: string;
+  nom: string;
+  banque: string;
+  iban: string;
+  professionnel: boolean | null;
+};
+
+export type ComptesDigifactory = { lu: boolean; comptes: CompteDigifactoryFiche[] };
+
+const USAGES: ReadonlySet<string> = new Set(["pro", "perso"]);
+
+function finIban(iban: string): string {
+  return iban.replace(/\s/g, "").slice(-4);
+}
+
+/** « FR76 3000 … 0189 », ou « •••• 0189 » si seul le rappel est connu. */
+export function libelleIban(iban: string, fin: string): string {
+  const compact = iban.replace(/\s/g, "").toUpperCase();
+  if (compact) return compact.replace(/(.{4})/g, "$1 ").trim();
+  return fin ? `•••• ${fin}` : "";
+}
+
+function usageDe(valeur: unknown): UsageCompte | "" {
+  return typeof valeur === "string" && USAGES.has(valeur) ? (valeur as UsageCompte) : "";
+}
+
+function compteJson(ligne: unknown): CompteBancaireFiche | null {
+  if (typeof ligne !== "object" || ligne === null || !("id" in ligne)) return null;
+  const brut = ligne as Record<string, unknown>;
+  const id = typeof brut.id === "string" ? brut.id : "";
+  if (!id) return null;
+  return {
+    id,
+    nom: typeof brut.nom === "string" ? brut.nom : "",
+    banque: typeof brut.banque === "string" ? brut.banque : "",
+    fin: typeof brut.fin === "string" ? brut.fin : "",
+    usage: usageDe(brut.usage),
+  };
+}
+
+/** « Compte courant (retenu) » : la forme écrite par la synchro avant le choix. */
+function compteLegacy(ligne: string): CompteBancaireFiche {
+  const lu = /^(.*?)\s*\((retenu|écarté|à choisir)\)\s*$/.exec(ligne);
+  if (!lu) return { id: ligne, nom: ligne, banque: "", fin: "", usage: "" };
+  const nom = lu[1].trim();
+  const usage = lu[2] === "retenu" ? "pro" : lu[2] === "écarté" ? "perso" : "";
+  return { id: nom || ligne, nom, banque: "", fin: "", usage };
+}
+
+/** Les choix déjà sur la fiche : JSON, ou les lignes « Nom (retenu) » d'avant. */
+export function lireComptesChoisis(valeur: string): CompteBancaireFiche[] {
+  const json = lireListe<unknown>(valeur).map(compteJson).filter((c) => c !== null);
+  if (json.length > 0) return json;
+  return valeur
+    .split("\n")
+    .map((ligne) => ligne.trim())
+    .filter(Boolean)
+    .map(compteLegacy);
+}
+
+export function ecrireComptesChoisis(comptes: CompteBancaireFiche[]): string {
+  if (comptes.length === 0) return "";
+  return JSON.stringify(
+    comptes.map(({ id, nom, banque, fin, usage }) => ({ id, nom, banque, fin, usage })),
+  );
+}
+
+/** La liste à montrer : les comptes Digifactory, avec le choix déjà fait
+ * (par identifiant, sinon par nom pour les anciennes lignes). Sans réponse
+ * Digifactory, ce qui est déjà sur la fiche. */
+export function fusionnerComptes(
+  live: CompteDigifactoryFiche[] | null,
+  sauves: CompteBancaireFiche[],
+): (CompteBancaireFiche & { iban: string; professionnel: boolean | null })[] {
+  if (live === null || live.length === 0) {
+    return sauves.map((compte) => ({ ...compte, iban: "", professionnel: null }));
+  }
+  const parId = new Map(sauves.map((compte) => [compte.id, compte.usage]));
+  const parNom = new Map(
+    sauves.filter((compte) => compte.nom).map((compte) => [compte.nom, compte.usage]),
+  );
+  return live.map((compte) => ({
+    id: compte.id,
+    nom: compte.nom,
+    banque: compte.banque,
+    fin: finIban(compte.iban),
+    usage: parId.has(compte.id) ? (parId.get(compte.id) ?? "") : (parNom.get(compte.nom) ?? ""),
+    iban: compte.iban,
+    professionnel: compte.professionnel,
+  }));
+}
+
 export type ContactDigifactory = {
   contact_nr: string;
   nom: string;

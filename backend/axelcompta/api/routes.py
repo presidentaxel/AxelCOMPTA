@@ -202,6 +202,7 @@ from axelcompta.ingestion.comptes_bancaires import (
     CompteBancaire,
     CompteBancaireRepository,
     CompteDejaComptabilise,
+    CompteDigifactory,
     CompteInconnu,
     ComptesAChoisir,
     nombre_a_choisir,
@@ -8535,6 +8536,7 @@ EXTENSIONS_IMPORT = frozenset(
 REFUS_IMPORT_LECTURE = "Votre rôle est en lecture seule : vous ne pouvez pas modifier un import."
 LireContactsDigifactory = Callable[[list[Branchement]], dict[str, dict[str, object]]]
 LirePremiereEcritureDigifactory = Callable[[list[Branchement], str], date | None]
+LireComptesDigifactory = Callable[[list[Branchement], str], tuple[CompteDigifactory, ...]]
 
 
 def get_fiches_import() -> FichesImportRepository:
@@ -8559,6 +8561,13 @@ def get_lire_premiere_ecriture_digifactory() -> LirePremiereEcritureDigifactory:
     )
 
 
+def get_lire_comptes_digifactory() -> LireComptesDigifactory:
+    """Les comptes bancaires d'un contact (remplacé en test : jamais d'appel réel)."""
+    from axelcompta.synchro_digifactory import comptes_du_contact
+
+    return lambda branchements, contact: asyncio.run(comptes_du_contact(branchements, contact))
+
+
 FichesImportDep = Annotated[FichesImportRepository, Depends(get_fiches_import)]
 LireFicheOfficielleDep = Annotated[LireFicheOfficielle | None, Depends(get_lire_fiche_officielle)]
 LireContactsDigifactoryDep = Annotated[
@@ -8567,6 +8576,7 @@ LireContactsDigifactoryDep = Annotated[
 LirePremiereEcritureDigifactoryDep = Annotated[
     LirePremiereEcritureDigifactory, Depends(get_lire_premiere_ecriture_digifactory)
 ]
+LireComptesDigifactoryDep = Annotated[LireComptesDigifactory, Depends(get_lire_comptes_digifactory)]
 
 
 class ChoixVue(BaseModel):
@@ -8683,6 +8693,21 @@ class HistoriqueDigifactoryVue(BaseModel):
 
     lu: bool
     debut: str | None
+
+
+class CompteDigifactoryVue(BaseModel):
+    id: str
+    nom: str
+    banque: str
+    iban: str
+    professionnel: bool | None
+
+
+class ComptesDigifactoryVue(BaseModel):
+    """Les comptes du contact, pour choisir professionnel ou personnel."""
+
+    lu: bool
+    comptes: list[CompteDigifactoryVue]
 
 
 def _resume_fiche(fiche: FicheImport, documents: list[DocumentImport]) -> FicheImportResumeVue:
@@ -8977,6 +9002,44 @@ def _enregistrer_route_digifactory_fiche(app: FastAPI) -> None:
         )
 
 
+def _enregistrer_route_comptes_digifactory(app: FastAPI) -> None:
+    """Les comptes du contact, pour les marquer professionnels ou personnels."""
+
+    @app.get(
+        "/portefeuille/imports/{fiche_id}/digifactory/{contact_nr}/comptes",
+        response_model=ComptesDigifactoryVue,
+    )
+    def comptes_digifactory_fiche(
+        fiche_id: str,
+        contact_nr: str,
+        identite: IdentiteDep,
+        fiches: FichesImportDep,
+        branchements: BranchementsDep,
+        lire_comptes: LireComptesDigifactoryDep,
+    ) -> ComptesDigifactoryVue:
+        """Les comptes du contact, pour les marquer professionnels ou personnels."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        fiches.lire(tenant_id, fiche_id)
+        digifactory = [b for b in branchements.lister(tenant_id) if b.type == "digifactory"]
+        try:
+            comptes = lire_comptes(digifactory, contact_nr)
+        except Exception:  # noqa: BLE001 — Digifactory injoignable : on le dit
+            return ComptesDigifactoryVue(lu=False, comptes=[])
+        return ComptesDigifactoryVue(
+            lu=True,
+            comptes=[
+                CompteDigifactoryVue(
+                    id=c.identifiant,
+                    nom=c.nom,
+                    banque=c.banque,
+                    iban=c.iban,
+                    professionnel=c.professionnel,
+                )
+                for c in comptes
+            ],
+        )
+
+
 def _document_accepte(fichier: UploadFile, contenu: bytes) -> None:
     extension = Path(fichier.filename or "").suffix.lower()
     if extension not in EXTENSIONS_IMPORT:
@@ -9112,6 +9175,7 @@ def _enregistrer_routes_imports(app: FastAPI) -> None:
     _enregistrer_routes_fiches_import_saisie(app)
     _enregistrer_routes_fiches_import_decision(app)
     _enregistrer_route_digifactory_fiche(app)
+    _enregistrer_route_comptes_digifactory(app)
     _enregistrer_routes_documents_import(app)
     _enregistrer_route_retrait_document_import(app)
     _enregistrer_route_chauffeur_importe(app)
