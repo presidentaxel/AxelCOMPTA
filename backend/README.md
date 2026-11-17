@@ -550,6 +550,12 @@ reste sur Supabase.
   Pour relire les demandes : `SELECT cree_le, nom, email, organisation,
   role, notifiee_le, tentatives FROM demandes_echange ORDER BY cree_le
   DESC;` avec le rôle propriétaire (le rôle web ne lit pas les noms).
+- **Porte d'un dossier, `app.axelproject.fr` (doc 19, 2026-11-17)** : pas
+  servie. Le jour où on la branche, un enregistrement DNS vers le même
+  droplet, puis le nom ajouté à Caddy (`deploy/Caddyfile` ne connaît
+  aujourd'hui que `APP_DOMAIN` et `API_DOMAIN`) pour le certificat, et
+  l'URL de redirection dans Supabase. Le DNS seul répond par le mauvais
+  site, ou par rien. Les chemins sont encore `/chauffeur/…`.
 - Reste (AXE-811) : restauration chronométrée des sauvegardes et runbook.
 
 ## Mettre en route Rollee après la PR 170 (AXE-922)

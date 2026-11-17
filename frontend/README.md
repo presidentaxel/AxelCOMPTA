@@ -98,7 +98,10 @@ chauffeur (mobile) est cadré dans [doc 19](../docs/19-parcours-utilisateur.md).
   page donne les cinq textes juridiques. La vitrine reste affichée même avec
   une session : « Se connecter » ouvre le portefeuille d'un gestionnaire déjà
   connecté, sinon `/connexion` (`LienSeConnecter`, `lib/accueil.ts`). Une
-  session chauffeur ne change pas ce lien. La session est dans le navigateur,
+  session chauffeur ne change pas ce lien. Les noms publics visés
+  (doc 19, 2026-11-17) : `compta.axelproject.fr` pour la vitrine et le
+  gestionnaire, `app.axelproject.fr` et `/dossier/…` pour la personne qui a
+  un dossier. Le code sert encore `/chauffeur/…`. La session est dans le navigateur,
   le serveur ne la lit pas. Aucun traceur ni mesure d'audience. Les destinations par défaut après
   connexion sont `/portefeuille`, plus `/`.
 - **V1 (doc 12, phase 3-4)** : Next.js complet sur `api/` (le vrai backend,
