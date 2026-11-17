@@ -414,13 +414,77 @@ def test_un_webhook_d_un_user_inconnu_lance_son_rapprochement() -> None:
     """AXE-911 : un user Rollee qu'aucun dossier ne connaît est rapproché tout de suite."""
     services, _journal, _ = _services()
     suivi = _suivi(services, [])
-    vus: list[tuple[str, str]] = []
+    vus: list[tuple[str, dict[str, set[str]]]] = []
 
-    async def rapprocher(tenant_id: TenantId, user: str) -> str:
-        vus.append((tenant_id, user))
-        return f"user {user} : à choisir"
+    async def rapprocher(tenant_id: TenantId, users: Any) -> str:
+        vus.append((tenant_id, {u: set(f) for u, f in users.items()}))
+        return "à choisir"
 
-    suivi.rapprocher_inconnu = rapprocher
+    suivi.rapprocher_inconnus = rapprocher
     suivi.evenements.garder(_evenement({"type": "update_endpoint", "data": {"user_id": "u-x"}}))
     traiter_evenements(suivi, T)
-    assert vus == [(T, "u-x")]
+    assert vus == [(T, {"u-x": {"b1"}})]
+
+
+def test_un_lot_relit_chaque_dossier_une_fois_et_les_inconnus_ensemble() -> None:
+    """AXE-966 : Rollee envoie des dizaines de webhooks pour le même user ;
+    le dossier n'est relu qu'une fois, et les inconnus en un seul passage."""
+    services, _journal, _ = _services()
+    asyncio.run(ouvrir_session(services, DOSSIER))
+    revenus: list[str] = []
+    suivi = _suivi(services, [], revenus)
+    appels: list[dict[str, set[str]]] = []
+
+    async def rapprocher(_tenant_id: TenantId, users: Any) -> str:
+        appels.append({u: set(f) for u, f in users.items()})
+        return "carte mise à jour"
+
+    suivi.rapprocher_inconnus = rapprocher
+    for n in range(30):
+        suivi.evenements.garder(
+            _evenement({"type": "update_endpoint", "data": {"user_id": "user-1"}, "n": n})
+        )
+    suivi.evenements.garder(_evenement({"action": "update_account", "data": {"user_id": "user-1"}}))
+    for n in range(20):
+        user = "u-x" if n % 2 else "u-y"
+        evenement = EvenementRollee(
+            f"inconnu-{n}",
+            T,
+            "b2" if n == 3 else "b1",
+            "update_endpoint",
+            {"type": "update_endpoint", "data": {"user_id": user}},
+            LE,
+        )
+        suivi.evenements.garder(evenement)
+
+    resultat = traiter_evenements(suivi, T)
+
+    assert resultat == "51 événements Rollee traités"
+    assert revenus == ["DIGI_1"]
+    assert appels == [{"u-x": {"b1", "b2"}, "u-y": {"b1"}}]
+    assert isinstance(suivi.evenements, EvenementsRolleeMemoire)
+    textes = {e.resultat for e in suivi.evenements.evenements.values()}
+    assert textes == {"revenus lus", "carte mise à jour"}
+    assert suivi.evenements.a_traiter(T, 100) == []
+
+
+def test_un_dossier_en_erreur_ne_touche_que_ses_evenements() -> None:
+    services, _journal, _ = _services()
+    asyncio.run(ouvrir_session(services, DOSSIER))
+    suivi = _suivi(services, [])
+
+    async def casse(_dossier: Dossier) -> str:
+        raise RuntimeError("Rollee indisponible")
+
+    suivi.relever_revenus = casse
+
+    async def rapprocher(_tenant_id: TenantId, _users: Any) -> str:
+        return "carte mise à jour"
+
+    suivi.rapprocher_inconnus = rapprocher
+    suivi.evenements.garder(_evenement({"type": "update_endpoint", "data": {"user_id": "user-1"}}))
+    suivi.evenements.garder(_evenement({"type": "update_endpoint", "data": {"user_id": "u-x"}}))
+    traiter_evenements(suivi, T)
+    assert isinstance(suivi.evenements, EvenementsRolleeMemoire)
+    textes = sorted(e.resultat or "" for e in suivi.evenements.evenements.values())
+    assert textes == ["carte mise à jour", "erreur : RuntimeError : Rollee indisponible"]
