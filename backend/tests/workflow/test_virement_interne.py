@@ -11,10 +11,12 @@ from axelcompta.core.money import Money
 from axelcompta.ledger.contrepassation import contrepasser
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.workflow.reclassement import projeter
+from axelcompta.workflow.ventilation_bancaire import ecriture_de_ventilation
 from axelcompta.workflow.virement_interne import (
     ecriture_virement_interne,
     reprises,
     source_du_virement_interne,
+    sous_comptes_ventiles,
 )
 
 D = DossierId("d")
@@ -92,3 +94,40 @@ def test_une_od_contre_passee_ne_compte_plus() -> None:
     annulee = contrepasser(od, (), None)
     vue = projeter([sortie, od, annulee])
     assert [x.compte for x in vue[0].lignes] == ["512", "645"]
+
+
+def test_deux_jambes_arrivees_a_deux_synchros_passent_en_580() -> None:
+    """AXE-968 : « trésorerie » −50 € écrite le 13/11, +50 € le 16/11. Le
+    passage horaire voit tout le grand livre, pas seulement le dernier lot."""
+    premiere = _operation("s", -50_00, compte="471", libelle="trésorerie")
+    seconde = _operation("e", 50_00, compte="471", libelle="trésorerie")
+    reprise = reprises([premiere, seconde], seulement_en_attente=True)
+    assert reprise.paires == 1
+    assert "471" not in _soldes([premiere, seconde, *reprise.ecritures])
+
+
+def test_deux_comptes_du_dossier_se_reconnaissent_malgre_des_libelles_differents() -> None:
+    """AXE-968 : « trésorerie » −20 € sur un compte, « cotisation TVA » +20 €
+    sur un autre. Écrites au 512 avant les sous-comptes, leurs reclassements
+    AXE-832 disent de quel compte elles viennent."""
+    sortie = _operation("s", -20_00, compte="471", libelle="trésorerie")
+    entree = _operation("e", 20_00, compte="471", libelle="cotisation impôts, TVA")
+    assert reprises([sortie, entree]).paires == 0  # sans les comptes : rien
+    ventilations = [
+        v
+        for e, compte in ((sortie, "5121"), (entree, "5123"))
+        if (v := ecriture_de_ventilation(e, compte)) is not None
+    ]
+    grand_livre = [sortie, entree, *ventilations]
+    assert sous_comptes_ventiles(grand_livre) == {"s": "5121", "e": "5123"}
+    reprise = reprises([sortie, entree], sous_comptes=sous_comptes_ventiles(grand_livre))
+    assert reprise.paires == 1
+
+
+def test_le_passage_horaire_ne_deplace_pas_une_operation_classee() -> None:
+    """Une jambe classée par un humain (645) reste où elle est : le passage
+    automatique ne regarde que le 471. La reprise manuelle, elle, la prend."""
+    classee = _operation("s", -20_00, compte="645")
+    attente = _operation("e", 20_00, compte="471", libelle="cotisation URSSAF")
+    assert reprises([classee, attente], seulement_en_attente=True).paires == 0
+    assert reprises([classee, attente]).paires == 1

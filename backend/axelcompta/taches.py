@@ -63,6 +63,7 @@ from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.repository import DossierRepository
 from axelcompta.tenants.tags import SANS_TAGS, EtatTags, etat_du_portefeuille, exclus, retenus
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
+from axelcompta.virements_internes_dossier import reprendre_dossiers
 from axelcompta.worker import dependances_reelles, detecter_portefeuilles, resume_envois
 from axelcompta.workflow.budget_llm import debut_du_mois
 from axelcompta.workflow.indicateurs_categorisation import OperationSuivie, calculer
@@ -81,6 +82,8 @@ Perimetre = Callable[[TenantId], EtatTags]
 Prechauffer = Callable[[tuple[Dossier, ...]], int]
 # Résumé des fiches d'import créées ou complétées pour un portefeuille.
 CompleterFiches = Callable[[TenantId], str]
+# AXE-968 : virements internes reconnus dans tout le grand livre.
+ReprendreVirements = Callable[[tuple[Dossier, ...]], str]
 
 
 @dataclass
@@ -97,6 +100,7 @@ def lancer_taches(
     perimetre: Perimetre | None = None,
     prechauffer: Prechauffer | None = None,
     completer_fiches: CompleterFiches | None = None,
+    reprendre_virements: ReprendreVirements | None = None,
 ) -> BilanTaches:
     """`synchroniser` à None saute la synchro (`--sans-synchro`). Un
     portefeuille sans aucun contact Digifactory n'appelle pas Digifactory.
@@ -112,6 +116,10 @@ def lancer_taches(
             _synchroniser(bilan, tenant.id, dossiers, etat, synchroniser)
         if completer_fiches is not None:
             _completer_fiches(bilan, tenant.id, completer_fiches)
+        if reprendre_virements is not None:
+            _reprendre_virements(
+                bilan, tenant.id, retenus(dossiers, etat, "categorisation"), reprendre_virements
+            )
         if programmer_bascules is not None:
             _programmer_bascules(bilan, tenant.id, dossiers, programmer_bascules)
         if prechauffer is not None:
@@ -150,6 +158,24 @@ def _completer_fiches(bilan: BilanTaches, tenant_id: TenantId, completer: Comple
     except Exception as exc:  # noqa: BLE001 — une étape n'arrête pas les autres
         bilan.echec = True
         bilan.lignes.append(f"{tenant_id} fiches d'import : échec ({type(exc).__name__})")
+        return
+    if ligne:
+        bilan.lignes.append(f"{tenant_id} {ligne}")
+
+
+def _reprendre_virements(
+    bilan: BilanTaches,
+    tenant_id: TenantId,
+    dossiers: tuple[Dossier, ...],
+    reprendre: ReprendreVirements,
+) -> None:
+    """Après la synchro, avant les caches : une jambe arrivée à ce passage
+    retrouve celle d'un passage précédent."""
+    try:
+        ligne = reprendre(dossiers)
+    except Exception as exc:  # noqa: BLE001 — une étape n'arrête pas les autres
+        bilan.echec = True
+        bilan.lignes.append(f"{tenant_id} virements internes : échec ({type(exc).__name__})")
         return
     if ligne:
         bilan.lignes.append(f"{tenant_id} {ligne}")
@@ -335,6 +361,7 @@ def passer(sans_synchro: bool, debut: datetime) -> BilanTaches:
         lambda tenant_id: etat_du_portefeuille(PostgresTagsRepository(engine), tenant_id),
         lambda d: prechauffer_caches(engine, d),
         lambda tenant_id: completer_fiches_portefeuille(engine, tenant_id, lecteur_depuis_env()),
+        lambda dossiers: reprendre_dossiers(engine, dossiers),
     )
     bilan.lignes += _llm(lambda: passer_llm(engine, debut))
     bilan.lignes += _rappels(engine, debut)
