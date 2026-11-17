@@ -519,9 +519,7 @@ def relier_au_portefeuille(
     if resultat.dossier is not None:
         dossier = resultat.dossier
         if _regime_suppose(fiche):
-            dossier = replace(
-                dossier, a_confirmer=(*dossier.a_confirmer, A_CONFIRMER_IMPOSITION)
-            )
+            dossier = replace(dossier, a_confirmer=(*dossier.a_confirmer, A_CONFIRMER_IMPOSITION))
         return replace(fiche, dossier_id=dossier.id), dossier, ()
     prevu = identifiant(ligne["siren"], ligne["contact_digifactory"])
     if prevu in deja:
