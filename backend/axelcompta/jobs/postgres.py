@@ -38,6 +38,7 @@ FROM (
   FROM jobs j WHERE j.id = :id
 ) d
 WHERE jobs.id = :id
+RETURNING jobs.statut
 """
 
 
@@ -120,14 +121,16 @@ class FilePostgres:
     def terminer(self, identifiant: str, resultat: str) -> None:
         self._fermer(identifiant, "fait", resultat=resultat)
 
-    def echouer(self, identifiant: str, erreur: str) -> None:
+    def echouer(self, identifiant: str, erreur: str) -> bool:
         """Réessayé plus tard, sauf au dernier essai, ou si la même demande
         attend déjà (AXE-921) : elle refera le travail, et deux demandes
-        identiques en attente sont interdites par l'index."""
+        identiques en attente sont interdites par l'index. Rend True quand
+        le job est clos, False quand il repart en attente."""
         with self._engine.begin() as connexion:
-            connexion.execute(
+            ligne = connexion.execute(
                 text(REQUETE_ECHOUER), {"id": identifiant, "e": erreur, "max": TENTATIVES_MAX}
-            )
+            ).one()
+        return str(ligne.statut) == "echec"
 
     def relacher_abandonnes(self, delai: timedelta = DELAI_ABANDON) -> list[str]:
         """AXE-958 : un job `en_cours` pris depuis plus de `delai` a perdu
@@ -145,7 +148,7 @@ class FilePostgres:
                 connexion.execute(
                     text(REQUETE_ECHOUER),
                     {"id": identifiant, "e": ERREUR_ABANDON, "max": TENTATIVES_MAX},
-                )
+                ).one()
         return ids
 
     def _fermer(self, identifiant: str, statut: str, resultat: str) -> None:

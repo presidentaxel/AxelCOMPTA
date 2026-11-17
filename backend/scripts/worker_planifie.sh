@@ -21,6 +21,13 @@ if [ -f "$RACINE/.env" ]; then
   . "$RACINE/.env"
   set +a
 fi
+# Le poste de dev : `.env.dev` l'emporte (ENV=dev coupe Sentry).
+if [ -f "$RACINE/.env.dev" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$RACINE/.env.dev"
+  set +a
+fi
 
 cd "$BACKEND"
 exec flock -n "$JOURNAUX/.verrou-worker" .venv/bin/python -m axelcompta.worker "$@" \

@@ -34,6 +34,14 @@ def test_deux_workers_ne_prennent_pas_le_meme_job() -> None:
     assert file.prendre("w2") is None
 
 
+def test_un_echec_isole_repart_en_attente_sans_clore() -> None:
+    file = FileMemoire()
+    file.deposer("j", "ten", "notifier", "{}")
+    assert file.prendre("w") is not None
+    assert file.echouer("j") is False
+    assert file.lire("j").statut == "en_attente"
+
+
 def test_trois_echecs_sortent_le_job_de_la_file() -> None:
     file = FileMemoire()
     file.deposer("j", "ten", "notifier", "{}")
@@ -114,7 +122,7 @@ def test_un_job_en_echec_ne_double_pas_une_demande_qui_attend() -> None:
     premiere = file.demander("t", TYPE_SYNCHRO)
     file.prendre("w")
     seconde = file.demander("t", TYPE_SYNCHRO)
-    file.echouer(premiere.id)
+    assert file.echouer(premiere.id) is True
     assert (file.lire(premiere.id).statut, file.lire(seconde.id).statut) == ("echec", "en_attente")
 
 

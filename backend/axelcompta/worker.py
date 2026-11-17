@@ -26,6 +26,7 @@ from datetime import UTC, date, datetime
 
 from axelcompta.core.db import engine_depuis_env
 from axelcompta.core.ids import DossierId, TenantId
+from axelcompta.environnement import charger_environnement
 from axelcompta.fiches_import_portefeuille import completer_fiches
 from axelcompta.jobs.file import (
     ERREUR_ABANDON,
@@ -52,7 +53,7 @@ from axelcompta.rapprochement_rollee_service import (
     relever_portefeuille_postgres,
 )
 from axelcompta.registres_officiels import lecteur_depuis_env
-from axelcompta.surveillance import sentinelle_sentry
+from axelcompta.surveillance import Sentinelle, sentinelle_sentry
 from axelcompta.synchro_digifactory import (
     TYPE_DIGIFACTORY,
     ResultatDossier,
@@ -330,9 +331,19 @@ def dependances_reelles() -> Dependances:
     )
 
 
+def signaler_echec_definitif(
+    sentinelle: Sentinelle, exc: BaseException, job: Job, definitif: bool
+) -> None:
+    """Sentry au dernier essai seulement. Un trou DNS repart en attente
+    sans alerte ; le troisième échec, ou un doublon déjà en attente, part."""
+    if definitif:
+        sentinelle.job_en_echec(exc, job.type, job.id)
+
+
 def main() -> int:
     """Une passe : toutes les demandes en attente, puis s'arrête (le
     planificateur relance chaque minute, sous `flock`)."""
+    charger_environnement()
     sentinelle = sentinelle_sentry()
     assurer_modele()
     file = FilePostgres(engine_depuis_env())
@@ -343,9 +354,9 @@ def main() -> int:
         try:
             resultat = executer_job(job, deps, date.today())
         except Exception as exc:  # noqa: BLE001 — l'erreur est gardée et affichée
-            file.echouer(job.id, f"{type(exc).__name__}: {exc}")
+            definitif = file.echouer(job.id, f"{type(exc).__name__}: {exc}")
             print(f"[{job.id}] échec : {exc}", flush=True)
-            sentinelle.job_en_echec(exc, job.type, job.id)
+            signaler_echec_definitif(sentinelle, exc, job, definitif)
         else:
             file.terminer(job.id, resultat)
             print(f"[{job.id}] {resultat}", flush=True)

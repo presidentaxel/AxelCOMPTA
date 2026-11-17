@@ -63,6 +63,7 @@ def test_un_job_en_echec_part_avec_son_type() -> None:
 
 def test_sans_dsn_rien_n_est_envoye(monkeypatch: Any) -> None:
     monkeypatch.delenv("SENTRY_DSN", raising=False)
+    monkeypatch.delenv("ENV", raising=False)
     sentinelle = sentinelle_sentry()
     assert sentinelle is MUETTE
     passage = sentinelle.debut_taches()

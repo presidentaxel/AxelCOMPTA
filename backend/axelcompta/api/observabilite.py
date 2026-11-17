@@ -1,6 +1,8 @@
 """Sentry et métriques HTTP, branchés sur l'application qui sert le front.
 
 Sentry ne démarre que si `SENTRY_DSN` est posé. Sans DSN, rien n'est envoyé.
+`ENV=dev` (fichier `.env.dev`) coupe aussi l'envoi : le poste de
+développement ne remonte pas d'erreur.
 
 `/metrics` n'est pas public (AXE-810) : sans `METRICS_TOKEN`, la route
 répond 404 ; avec, elle exige `Authorization: Bearer <jeton>` (401 sinon).
@@ -22,6 +24,8 @@ Suite = Callable[[Request], Awaitable[Response]]
 
 
 def installer_sentry(dsn: str | None = None) -> bool:
+    if os.environ.get("ENV") == "dev":
+        return False
     effectif = os.environ.get("SENTRY_DSN") if dsn is None else dsn
     if not effectif:
         return False

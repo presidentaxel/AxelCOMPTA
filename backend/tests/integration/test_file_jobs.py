@@ -125,7 +125,7 @@ def test_un_job_en_echec_ne_double_pas_une_demande_qui_attend(
     assert pris is not None
     with contexte_identite(dossier_id=None, tenant_id=id_unique):
         attend = FilePostgres(web).demander(id_unique, TYPE_SYNCHRO)
-    worker.echouer(pris.id, "Digifactory indisponible")
+    assert worker.echouer(pris.id, "Digifactory indisponible") is True
     with engine.connect() as connexion:
         lignes = connexion.execute(
             text("SELECT id, statut FROM jobs WHERE tenant_id = :t"), {"t": id_unique}
