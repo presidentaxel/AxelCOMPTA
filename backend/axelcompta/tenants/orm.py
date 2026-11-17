@@ -448,15 +448,31 @@ documents_import = Table(
     Column("type_mime", String, nullable=False),
     Column("taille", Integer, nullable=False),
     Column("empreinte", String, nullable=False),
-    Column("contenu", LargeBinary, nullable=False),
+    # AXE-970 : vide quand le contenu vit dans le bucket S3 (`cle_stockage`).
+    Column("contenu", LargeBinary, nullable=True),
     Column("depose_par", String, nullable=False),
     Column("depose_le", DateTime(timezone=True), nullable=False),
     # AXE-947 : son emplacement sur la fiche, et ce qui en a été tiré.
     Column("emplacement", String, nullable=False, server_default=""),
     Column("statut_traitement", String, nullable=False, server_default="a_traiter"),
     Column("resume", String, nullable=False, server_default=""),
+    # AXE-970 : l'archive dont il est sorti (supprimée avec elle), la clé de
+    # son contenu dans le bucket, et ce qui en a été lu (FEC : soldes…).
+    Column(
+        "origine_id",
+        String,
+        ForeignKey("documents_import.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    ),
+    Column("cle_stockage", String, nullable=False, server_default=""),
+    Column("donnees", JSON, nullable=True),
     CheckConstraint(
         "statut_traitement IN ('a_traiter', 'traite', 'illisible')",
         name="documents_import_statut_traitement",
+    ),
+    CheckConstraint(
+        "contenu IS NOT NULL OR cle_stockage <> ''",
+        name="documents_import_contenu_quelque_part",
     ),
 )

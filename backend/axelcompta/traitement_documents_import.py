@@ -1,24 +1,36 @@
-"""Lire automatiquement les documents déposés sur une fiche d'import (AXE-947).
+"""Lire automatiquement les documents déposés sur une fiche d'import (AXE-947,
+AXE-970).
 
 Le statut de traitement d'un document dit si ses informations ont été
 compilées :
-- **FEC** : lu avec le lecteur du bilan d'ouverture (AXE-804) : nombre de
-  lignes, période, équilibre ;
+- **FEC** (reconnu à son contenu, quel que soit son nom ou son extension) :
+  lu avec le lecteur du bilan d'ouverture (AXE-804). Le résumé dit période,
+  nombre de lignes et équilibre ; les **données** gardent SIREN, clôture,
+  journaux, résultat et le solde de chaque compte, pour la reprise ;
 - **QIF** (relevés exportés par la banque) : opérations, période, total ;
 - les autres (PDF, images, Excel) restent « à lire » : l'OCR viendra avec
   AXE-943.
 
 Un fichier qui ne se lit pas est « illisible », avec la raison.
+
+AXE-970 : `classer` devine la catégorie d'un fichier déposé en vrac sur un
+exercice (nom, puis contenu) ; `deplier` sort chaque fichier d'une archive
+zip, zips imbriqués compris (archive fiscale OneUp : un zip signé qui en
+contient un autre), avec des plafonds contre une archive piégée.
 """
 
 from __future__ import annotations
 
+import io
+import re
+import unicodedata
+import zipfile
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from axelcompta.closing.ouverture_fec import FecRefuse, lire_fec_externe
+from axelcompta.closing.ouverture_fec import FecRefuse, LigneFec, lire_fec_externe, lire_nom
 from axelcompta.tenants.fiches_import import StatutDocument
 
 A_LIRE = "À lire : sera lu par l'OCR (AXE-943), ou compilé à la main."
@@ -98,37 +110,229 @@ def lire_qif(contenu: bytes) -> list[OperationQif]:
     return operations
 
 
-def _fec(contenu: bytes) -> tuple[StatutDocument, str]:
+@dataclass(frozen=True, slots=True)
+class Traitement:
+    """Ce qui a été tiré d'un document : statut, phrase pour l'écran, données
+    structurées (FEC) et l'exercice qu'il dit (année de clôture du FEC)."""
+
+    statut: StatutDocument
+    resume: str
+    donnees: dict[str, object] | None = None
+    exercice: int | None = None
+
+
+def est_fec(contenu: bytes) -> bool:
+    """Un FEC se reconnaît à son en-tête, pas à son nom (OneUp le nomme
+    avec le SIRET et l'extension .csv)."""
+    tete = contenu[:600].lstrip(b"\xef\xbb\xbf").lower()
+    return tete.startswith(b"journalcode") and (b"\t" in tete or b"|" in tete)
+
+
+def _donnees_fec(lignes: tuple[LigneFec, ...], nom: str) -> dict[str, object]:
+    soldes: dict[str, int] = {}
+    for lg in lignes:
+        soldes[lg.compte] = soldes.get(lg.compte, 0) + lg.debit - lg.credit
+    try:
+        siren, cloture = lire_nom(nom)
+    except FecRefuse:
+        siren, cloture = None, None
+    return {
+        "type": "fec",
+        "siren": siren,
+        "cloture": cloture.isoformat() if cloture else None,
+        "debut": min(x.date_ecriture for x in lignes).isoformat(),
+        "fin": max(x.date_ecriture for x in lignes).isoformat(),
+        "lignes": len(lignes),
+        "ecritures": len({(x.journal, x.numero) for x in lignes}),
+        "journaux": sorted({x.journal for x in lignes}),
+        "total_debit_cts": sum(x.debit for x in lignes),
+        "equilibre": sum(x.debit - x.credit for x in lignes) == 0,
+        "resultat_cts": -sum(s for c, s in soldes.items() if c.startswith(("6", "7"))),
+        "soldes_cts": {c: s for c, s in sorted(soldes.items()) if s},
+    }
+
+
+def _fec(contenu: bytes, nom: str, siren: str | None) -> Traitement:
     try:
         lignes = lire_fec_externe(contenu)
     except FecRefuse as exc:
-        return "illisible", f"FEC illisible : {exc}"
+        return Traitement("illisible", f"FEC illisible : {exc}")
+    except UnicodeDecodeError:
+        return Traitement("illisible", "FEC illisible : ce n'est pas un fichier texte.")
+    donnees = _donnees_fec(lignes, nom)
     debit, credit = sum(x.debit for x in lignes), sum(x.credit for x in lignes)
     debut, fin = min(x.date_ecriture for x in lignes), max(x.date_ecriture for x in lignes)
     equilibre = "équilibré" if debit == credit else f"déséquilibré de {_euros(debit - credit)}"
-    return "traite", (
-        f"FEC lu : {len(lignes)} lignes du {debut:%d/%m/%Y} au {fin:%d/%m/%Y}, {equilibre}."
+    phrase = (
+        f"FEC lu : {len(lignes)} lignes du {debut:%d/%m/%Y} au {fin:%d/%m/%Y}, {equilibre}, "
+        f"résultat {_euros(int(str(donnees['resultat_cts'])))}."
     )
+    cloture = donnees["cloture"]
+    if cloture:
+        phrase += f" Clos le {date.fromisoformat(str(cloture)):%d/%m/%Y}."
+    if siren and donnees["siren"] and donnees["siren"] != siren:
+        phrase += f" ⚠ SIREN {donnees['siren']} dans le nom, pas celui de la fiche ({siren})."
+    exercice = date.fromisoformat(str(cloture)).year if cloture else fin.year
+    return Traitement("traite", phrase, donnees, exercice)
 
 
-def _qif(contenu: bytes) -> tuple[StatutDocument, str]:
+def _qif(contenu: bytes) -> Traitement:
     try:
         operations = lire_qif(contenu)
     except (QifIllisible, UnicodeDecodeError) as exc:
-        return "illisible", f"QIF illisible : {exc}."
+        return Traitement("illisible", f"QIF illisible : {exc}.")
     debut, fin = min(o.jour for o in operations), max(o.jour for o in operations)
     total = sum(o.montant_cts for o in operations)
-    return "traite", (
+    return Traitement(
+        "traite",
         f"QIF lu : {len(operations)} opérations du {debut:%d/%m/%Y} au {fin:%d/%m/%Y}, "
-        f"solde des mouvements {_euros(total)}."
+        f"solde des mouvements {_euros(total)}.",
+        {
+            "type": "qif",
+            "debut": debut.isoformat(),
+            "fin": fin.isoformat(),
+            "operations": len(operations),
+            "solde_mouvements_cts": total,
+        },
+        fin.year,
     )
 
 
-def traiter(categorie: str, nom_fichier: str, contenu: bytes) -> tuple[StatutDocument, str]:
-    """Le statut de traitement d'un document déposé, et son résumé."""
+def traiter(
+    categorie: str, nom_fichier: str, contenu: bytes, siren: str | None = None
+) -> Traitement:
+    """Le statut de traitement d'un document déposé, son résumé et ce qui en
+    a été lu. `siren` : celui de la fiche, pour signaler un FEC d'une autre
+    société."""
     extension = Path(nom_fichier).suffix.lower()
     if extension == ".qif":
         return _qif(contenu)
-    if categorie == "fec" or (extension == ".txt" and b"JournalCode" in contenu[:500]):
-        return _fec(contenu)
-    return "a_traiter", A_LIRE
+    if est_fec(contenu) or (categorie == "fec" and extension in (".txt", ".csv")):
+        return _fec(contenu, Path(nom_fichier).name, siren)
+    if categorie == "archive" or extension == ".zip":
+        return Traitement("traite", "Archive gardée intacte ; ses fichiers sont rangés à part.")
+    return Traitement("a_traiter", A_LIRE)
+
+
+# --- AXE-970 : classer un fichier déposé en vrac ------------------------------
+
+_FEC_NOM = re.compile(r"(^|/)\d{9}(\d{5})?fec\d{8}", re.IGNORECASE)
+# Dans l'ordre : le premier motif qui parle l'emporte (« paiement_IS » est
+# un paiement avant d'être de l'IS).
+_MOTIFS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(motif), categorie)
+    for motif, categorie in (
+        (r"paiement|ordre de prelevement|avis de prelevement", "paiement_impot"),
+        (r"accuse", "accuse_reception"),
+        (r"liasse|\b(2065|2033|2031|2035|2050|2051|2052|2053)\b", "liasse"),
+        (r"\btva\b|\b3517\b|\bca3\b|\bca12\b|\b3310\b", "declaration_tva"),
+        (r"\bis\b|\b257[12]\b|impot sur les societes|\bacompte", "declaration_is"),
+        (r"grand[ ._-]?livre|\bgl\b", "grand_livre"),
+        (r"balance", "balance"),
+        (r"bilan|compte de resultat|comptes annuels|\bannexe", "comptes_annuels"),
+        (r"releve|\.qif$|\.ofx$", "releve_bancaire"),
+        (r"k-?bis|extrait", "kbis"),
+        (r"statuts", "statuts"),
+        (r"\brib\b|\biban\b", "rib"),
+        (
+            r"encaissement|\b(enc|fac|fa|av)-?\d+|facture|\brecu\b|ticket|note de frais",
+            "piece",
+        ),
+    )
+)
+
+
+def _sans_accent(texte: str) -> str:
+    decompose = unicodedata.normalize("NFKD", texte)
+    return "".join(c for c in decompose if not unicodedata.combining(c)).lower()
+
+
+def classer(nom_fichier: str, contenu: bytes) -> str:
+    """La catégorie d'un fichier d'après son contenu (FEC, archive) puis son
+    nom, chemin compris (« Encaissements de Vente/ENC-117.pdf » : une pièce) ;
+    « autre » si rien ne parle. Une impression PDF du FEC n'est pas un FEC."""
+    nom = _sans_accent(nom_fichier).replace("_", " ")
+    if contenu[:4] == b"PK\x03\x04" or nom.endswith(".zip"):
+        return "archive"
+    if est_fec(contenu) or (
+        _FEC_NOM.search(nom.replace(" ", "")) and not contenu.startswith(b"%PDF")
+    ):
+        return "fec"
+    for motif, categorie in _MOTIFS:
+        if motif.search(nom):
+            return categorie
+    return "autre"
+
+
+def annee_du_nom(nom_fichier: str, permises: set[int] | None = None) -> int | None:
+    """L'année de clôture lue dans un nom (« 908771033FEC20220930 », « liasse
+    2019 ») ; la dernière qui parle, et seulement parmi `permises` si donné."""
+    lues = [int(a) for a in re.findall(r"(?<!\d)(20\d\d)(?:\d{4})?(?!\d)", nom_fichier)]
+    if permises is not None:
+        lues = [a for a in lues if a in permises]
+    return lues[-1] if lues else None
+
+
+# --- AXE-970 : déplier une archive -------------------------------------------
+
+MEMBRES_MAX = 5_000
+TAILLE_DEPLIEE_MAX = 1024 * 1024 * 1024  # 1 Go une fois dépliée, toutes profondeurs
+PROFONDEUR_MAX = 3
+_IGNORES = re.compile(r"(^|/)(__macosx|meta-inf)(/|$)|(^|/)\.|(^|/)(mimetype(\.txt)?|thumbs\.db)$")
+
+
+class ArchiveIllisible(ValueError):
+    """Zip abîmé, chiffré, ou au-delà des plafonds."""
+
+
+@dataclass(frozen=True, slots=True)
+class Membre:
+    chemin: str  # « archive.zip/Encaissements de Vente/ENC-117/ENC-117.pdf »
+    contenu: bytes
+
+
+def _nom_membre(info: zipfile.ZipInfo) -> str:
+    """Un nom en UTF-8 sans le drapeau UTF-8 (OneUp) est relu comme UTF-8."""
+    if info.flag_bits & 0x800:
+        return info.filename
+    try:
+        return info.filename.encode("cp437").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return info.filename
+
+
+def deplier(contenu: bytes) -> list[Membre]:
+    """Chaque fichier de l'archive, zips imbriqués dépliés à leur tour (le zip
+    intermédiaire n'est pas gardé : il est dans l'archive d'origine). Les
+    dossiers, fichiers cachés, `__MACOSX` et la signature `META-INF` sont
+    laissés : l'archive d'origine les garde intacts."""
+    membres: list[Membre] = []
+    budget = [TAILLE_DEPLIEE_MAX]
+
+    def ouvrir(donnees: bytes, prefixe: str, profondeur: int) -> None:
+        try:
+            archive = zipfile.ZipFile(io.BytesIO(donnees))
+        except zipfile.BadZipFile as exc:
+            raise ArchiveIllisible("archive zip illisible") from exc
+        with archive:
+            for info in archive.infolist():
+                nom = _nom_membre(info)
+                if info.is_dir() or _IGNORES.search(nom.lower()):
+                    continue
+                if info.flag_bits & 0x1:
+                    raise ArchiveIllisible(f"{nom} est protégé par un mot de passe")
+                budget[0] -= info.file_size
+                if budget[0] < 0 or len(membres) >= MEMBRES_MAX:
+                    raise ArchiveIllisible(
+                        f"archive trop grosse une fois dépliée (plus de {MEMBRES_MAX} fichiers "
+                        "ou plus de 1 Go) : la déposer en plusieurs fois"
+                    )
+                donnee = archive.read(info)
+                chemin = f"{prefixe}{nom}"
+                if donnee[:4] == b"PK\x03\x04" and profondeur < PROFONDEUR_MAX:
+                    ouvrir(donnee, f"{chemin}/", profondeur + 1)
+                    continue
+                membres.append(Membre(chemin, donnee))
+
+    ouvrir(contenu, "", 1)
+    return membres

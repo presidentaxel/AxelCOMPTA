@@ -15,8 +15,10 @@ from axelcompta.core.ids import TenantId
 from axelcompta.tenants.contacts_proposes import PropositionStockee
 from axelcompta.tenants.fiches_import import (
     SECTIONS,
+    DocumentImport,
     FicheImport,
     annuler,
+    cle_archive,
     depuis_registre,
     document_import,
     fiches_des_contacts,
@@ -24,10 +26,11 @@ from axelcompta.tenants.fiches_import import (
     modifier,
     nouvelle_fiche,
     preremplir,
+    reclasser,
     reprendre,
     valider,
 )
-from axelcompta.tenants.fiches_import_calculs import date_limite_liasse, numero_tva
+from axelcompta.tenants.fiches_import_calculs import bornes_de, date_limite_liasse, numero_tva
 from axelcompta.tenants.registres import FicheOfficielle, PersonneOfficielle
 
 LE = datetime(2026, 11, 16, 10, 0, tzinfo=UTC)
@@ -243,3 +246,51 @@ def test_un_contact_sans_dossier_ouvre_une_fiche_sauf_s_il_en_a_deja() -> None:
     )
     remise = reprendre(ignorer(deja[0], "louis", LE), "louis", LE)
     assert remise.statut == "a_importer"
+
+
+# --- AXE-970 : rangement des documents -------------------------------------
+
+
+def _document_range(emplacement: str, nom: str = "Grand Livre é.pdf") -> DocumentImport:
+    fiche = nouvelle_fiche("fiche-1", T, "Dupont", "Karim", SIREN, "b", LE)
+    return document_import("0123456789abcdef", fiche, emplacement, nom, "", b"%PDF", "b", LE)
+
+
+def test_la_cle_d_un_document_dit_portefeuille_fiche_exercice_categorie() -> None:
+    assert cle_archive(_document_range("reprise:grand_livre:2019")) == (
+        "TENANT_DEMO/imports/fiche-1/2019/grand_livre/0123456789ab-grand-livre-e.pdf"
+    )
+    assert cle_archive(_document_range("documents:kbis", "../../Kbis 2026.pdf")) == (
+        "TENANT_DEMO/imports/fiche-1/permanent/kbis/0123456789ab-kbis-2026.pdf"
+    )
+
+
+def test_un_document_se_reclasse_dans_une_autre_annee_ou_categorie() -> None:
+    document = _document_range("reprise:autre:2022")
+    range_ = reclasser(document, "reprise:liasse:2021")
+    assert (range_.categorie, range_.exercice, range_.emplacement) == (
+        "liasse",
+        2021,
+        "reprise:liasse:2021",
+    )
+    with pytest.raises(SaisieInvalide, match="de 2000"):
+        reclasser(document, "reprise:liasse:1999")
+    with pytest.raises(SaisieInvalide, match="inconnue"):
+        reclasser(document, "reprise:recette:2021")
+
+
+def test_les_exercices_ajoutes_se_saisissent_en_annees() -> None:
+    fiche = nouvelle_fiche("fiche-1", T, "Dupont", "Karim", SIREN, "b", LE)
+    assert (
+        modifier(fiche, {"exercices_ajoutes": "2019, 2015,2019"}, "b", LE).champs[
+            "exercices_ajoutes"
+        ]
+        == "2015,2019"
+    )
+
+
+def test_les_bornes_d_un_exercice_ancien_suivent_la_cloture() -> None:
+    champs = {"date_creation": "2022-01-03", "cloture": "30/09", "premiere_cloture": "2022-09-30"}
+    assert bornes_de(champs, 2022) == (date(2022, 1, 3), date(2022, 9, 30))
+    assert bornes_de(champs, 2019) == (date(2018, 10, 1), date(2019, 9, 30))
+    assert bornes_de({}, 2015) == (date(2015, 1, 1), date(2015, 12, 31))

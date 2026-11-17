@@ -4,8 +4,12 @@ statut (AXE-941, AXE-947). Pur.
 **Emplacements** : un par document attendu, avec ce que c'est et pourquoi.
 Pour un exercice clos depuis 2024 : liasse et FEC (ou balance et grand
 livre sans FEC) ; seul le dernier exercice clos est indispensable, il donne
-le report à nouveau. En banque : les relevés des mois que Digifactory ne
-couvre pas, et le RIB. Documents administratifs : Kbis, statuts, et la
+le report à nouveau. AXE-970 : tout exercice plus ancien s'ajoute à la main
+(« Ajouter un exercice », depuis 2000, même avec des trous), ou apparaît dès
+qu'un document y est rangé ; les autres pièces d'un dossier de clôture
+(comptes annuels, déclarations, accusés, paiements, pièces, archives) ont
+leur emplacement dès qu'un document y est classé. En banque : les relevés
+des mois que Digifactory ne couvre pas, et le RIB. Documents administratifs : Kbis, statuts, et la
 lettre de l'ancien comptable (facultative).
 
 **Statut** : calculé, jamais choisi. « À importer » tant qu'il n'y a que le
@@ -22,6 +26,7 @@ from datetime import date, timedelta
 from typing import Literal
 
 from .fiches_import import (
+    ANNEE_MIN_ARCHIVE,
     CATEGORIES_DOCUMENTS,
     SECTIONS,
     DocumentImport,
@@ -29,7 +34,7 @@ from .fiches_import import (
     Section,
     Statut,
 )
-from .fiches_import_calculs import bornes, date_limite_liasse
+from .fiches_import_calculs import bornes, bornes_de, date_limite_liasse
 from .fiches_import_listes import lire_associes, total_parts
 from .import_dossiers import identifiant, rapport
 from .models import Dossier
@@ -40,6 +45,13 @@ SECTION_PAR_CATEGORIE = {
     "fec": "reprise",
     "balance": "reprise",
     "grand_livre": "reprise",
+    "comptes_annuels": "reprise",
+    "declaration_tva": "reprise",
+    "declaration_is": "reprise",
+    "accuse_reception": "reprise",
+    "paiement_impot": "reprise",
+    "piece": "reprise",
+    "archive": "reprise",
     "releve_bancaire": "banque",
     "rib": "banque",
     "kbis": "documents",
@@ -48,6 +60,19 @@ SECTION_PAR_CATEGORIE = {
     "autre": "documents",
 }
 CHAMPS_DE_DEPART = frozenset({"nom", "prenom"})
+# AXE-970 : le reste d'un dossier de clôture, proposé seulement quand un
+# document y est classé (sinon chaque exercice aurait douze cartes vides).
+EXPLICATIONS_EXERCICE = {
+    "comptes_annuels": "Bilan, compte de résultat, annexe.",
+    "declaration_tva": "CA3, CA12 (3517-S) et leurs synthèses.",
+    "declaration_is": "Relevés d'acompte et de solde (2571, 2572).",
+    "accuse_reception": "Accusés de dépôt des déclarations.",
+    "paiement_impot": "Ordres de paiement et avis de prélèvement.",
+    "piece": "Factures, reçus, encaissements.",
+    "archive": "Gardée intacte : chaque fichier qu'elle contient est rangé à part.",
+    "releve_bancaire": "Relevés des comptes sur l'exercice.",
+    "autre": "Tout autre document de l'exercice.",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +127,15 @@ def annees_en_retard(champs: Mapping[str, str]) -> set[int]:
     return {int(a) for a in champs.get("en_retard", "").split(",") if a.isdigit()}
 
 
+def annees_ajoutees(champs: Mapping[str, str]) -> set[int]:
+    """AXE-970 : les exercices ajoutés à la main (« Ajouter un exercice »)."""
+    return {
+        int(a)
+        for a in champs.get("exercices_ajoutes", "").split(",")
+        if a.isdigit() and int(a) >= ANNEE_MIN_ARCHIVE
+    }
+
+
 def _roles(clos: list[date], aujourd_hui: date, retard: set[int]) -> dict[date, RoleExercice]:
     """En remontant depuis le dernier exercice clos : à déclarer tant que la
     date limite n'est pas passée ou qu'il n'a pas été déposé ; le premier
@@ -116,20 +150,37 @@ def _roles(clos: list[date], aujourd_hui: date, retard: set[int]) -> dict[date, 
     return roles
 
 
-def exercices(champs: Mapping[str, str], aujourd_hui: date) -> list[Exercice]:
+def exercices(
+    champs: Mapping[str, str],
+    aujourd_hui: date,
+    documents: Iterable[DocumentImport] = (),
+) -> list[Exercice]:
     """L'exercice en cours, ceux à déclarer par nous, la source du report à
-    nouveau, et les exercices antérieurs déposés depuis 2024."""
+    nouveau, les exercices antérieurs déposés depuis 2024, et (AXE-970) tout
+    exercice ajouté à la main ou qui a déjà un document, du plus ancien au
+    plus récent."""
     tous = bornes(champs, aujourd_hui)
     retard = annees_en_retard(champs)
+    voulus = annees_ajoutees(champs) | {
+        d.exercice for d in documents if d.exercice and d.exercice >= ANNEE_MIN_ARCHIVE
+    }
     roles = _roles([fin for _d, fin in tous if fin < aujourd_hui], aujourd_hui, retard)
     resultat = []
     for debut, fin in tous:
         role: RoleExercice = "en_cours" if fin >= aujourd_hui else roles.get(fin, "anterieur")
-        if role == "anterieur" and fin.year < ANNEE_MIN_REPRISE:
+        if role == "anterieur" and fin.year < ANNEE_MIN_REPRISE and fin.year not in voulus:
             continue
         echeance = None if role == "en_cours" else date_limite_liasse(fin)
         resultat.append(Exercice(debut, fin, role, echeance, fin.year in retard))
-    return resultat
+    connues = {e.annee for e in resultat}
+    for annee in sorted(voulus - connues):
+        # Avant la création connue (ou date de création inconnue) : bornes
+        # déduites de la date de clôture, 31/12 par défaut.
+        debut, fin = bornes_de(champs, annee)
+        if fin >= aujourd_hui:
+            continue
+        resultat.append(Exercice(debut, fin, "anterieur", date_limite_liasse(fin)))
+    return sorted(resultat, key=lambda e: e.fin)
 
 
 def cle_du_document(document: DocumentImport) -> str:
@@ -207,8 +258,10 @@ def _emplacements_exercice(e: Exercice, suivant: Exercice | None) -> list[Emplac
     ]
 
 
-def _reprise(champs: Mapping[str, str], aujourd_hui: date) -> list[Emplacement]:
-    liste = exercices(champs, aujourd_hui)
+def _reprise(
+    champs: Mapping[str, str], aujourd_hui: date, documents: Sequence[DocumentImport] = ()
+) -> list[Emplacement]:
+    liste = exercices(champs, aujourd_hui, documents)
     emplacements = []
     for i, e in enumerate(liste):
         if e.role != "en_cours":
@@ -247,9 +300,11 @@ def _releves(champs: Mapping[str, str]) -> Emplacement:
     return Emplacement(cle, "banque", "releve_bancaire", None, libelle, explication, False)
 
 
-def _vides(champs: Mapping[str, str], aujourd_hui: date) -> list[Emplacement]:
+def _vides(
+    champs: Mapping[str, str], aujourd_hui: date, documents: Sequence[DocumentImport] = ()
+) -> list[Emplacement]:
     return [
-        *_reprise(champs, aujourd_hui),
+        *_reprise(champs, aujourd_hui, documents),
         _releves(champs),
         Emplacement("banque:rib", "banque", "rib", None, "RIB", "Du compte professionnel.", True),
         Emplacement(
@@ -293,22 +348,30 @@ def emplacements(
     par_cle: dict[str, list[DocumentImport]] = {}
     for d in documents:
         par_cle.setdefault(cle_du_document(d), []).append(d)
-    vides = _vides(champs, aujourd_hui)
+    vides = _vides(champs, aujourd_hui, documents)
     connus = {e.cle for e in vides}
     orphelins = [
-        Emplacement(
-            cle,
-            cle.split(":")[0],
-            docs[0].categorie,
-            docs[0].exercice,
-            CATEGORIES_DOCUMENTS.get(docs[0].categorie, "Document"),
-            "Déposé plus tôt.",
-            False,
-        )
-        for cle, docs in par_cle.items()
-        if cle not in connus
+        _emplacement_classe(cle, docs[0]) for cle, docs in par_cle.items() if cle not in connus
     ]
     return [replace(e, documents=tuple(par_cle.get(e.cle, ()))) for e in [*vides, *orphelins]]
+
+
+def _emplacement_classe(cle: str, document: DocumentImport) -> Emplacement:
+    """L'emplacement d'un document classé hors des cartes proposées : une
+    autre pièce de l'exercice (AXE-970), ou une carte qui n'est plus proposée
+    (date de clôture changée)."""
+    libelle = CATEGORIES_DOCUMENTS.get(document.categorie, "Document")
+    section = cle.split(":")[0]
+    explication = (
+        EXPLICATIONS_EXERCICE.get(document.categorie, "Déposé plus tôt.")
+        if section == "reprise"
+        else "Déposé plus tôt."
+    )
+    if document.exercice and section == "reprise":
+        libelle = f"{libelle} {document.exercice}"
+    return Emplacement(
+        cle, section, document.categorie, document.exercice, libelle, explication, False
+    )
 
 
 def _manquants_champs(section: Section, champs: Mapping[str, str]) -> list[str]:

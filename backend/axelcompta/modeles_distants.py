@@ -190,9 +190,13 @@ class DepotS3:
     def ecrire(self, cle: str, contenu: bytes) -> None:
         self._client.put_object(Bucket=self._bucket, Key=cle, Body=contenu)
 
+    def supprimer(self, cle: str) -> None:
+        self._client.delete_object(Bucket=self._bucket, Key=cle)
 
-def depot_depuis_env(environ: Mapping[str, str] | None = None) -> DepotS3 | None:
-    """`None` si le stockage n'est pas configuré (poste de développement)."""
+
+def client_s3_depuis_env(environ: Mapping[str, str] | None = None) -> Any | None:
+    """Le client du stockage S3, ou `None` s'il n'est pas configuré (poste
+    de développement). Partagé avec le bucket des documents (AXE-970)."""
     valeurs = os.environ if environ is None else environ
     endpoint = valeurs.get("S3_ENDPOINT", "").strip()
     cle = valeurs.get("S3_ACCESS_KEY", "").strip()
@@ -201,13 +205,21 @@ def depot_depuis_env(environ: Mapping[str, str] | None = None) -> DepotS3 | None
         return None
     import boto3  # import tardif : seuls les points d'entrée s'en servent
 
-    client = boto3.client(
+    return boto3.client(
         "s3",
         endpoint_url=endpoint,
         aws_access_key_id=cle,
         aws_secret_access_key=secret,
         region_name=valeurs.get("S3_REGION", "").strip() or "eu-west-1",
     )
+
+
+def depot_depuis_env(environ: Mapping[str, str] | None = None) -> DepotS3 | None:
+    """`None` si le stockage n'est pas configuré (poste de développement)."""
+    valeurs = os.environ if environ is None else environ
+    client = client_s3_depuis_env(valeurs)
+    if client is None:
+        return None
     return DepotS3(client, valeurs.get("MODELES_BUCKET", "").strip() or BUCKET_PAR_DEFAUT)
 
 

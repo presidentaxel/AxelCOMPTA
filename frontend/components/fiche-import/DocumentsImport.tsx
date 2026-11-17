@@ -1,16 +1,22 @@
 "use client";
 
-import { AlertTriangle, Check, Download, FileText, LoaderCircle, Trash2, UploadCloud } from "lucide-react";
+import { AlertTriangle, Check, Download, FileText, LoaderCircle, Plus, Trash2, UploadCloud } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/ui/button";
 import {
   deposerDocumentImport,
+  deposerDocumentsExercice,
+  rangerDocumentImport,
   retirerDocumentImport,
   telechargerDocumentImport,
 } from "@/lib/auth-gestionnaire";
 import {
+  ajouterAnnee,
+  CATEGORIES_EXERCICE,
+  documentsVisibles,
+  lireAnnee,
   basculerRetard,
   libelleTraitement,
   parExercice,
@@ -56,6 +62,7 @@ export function EmplacementsSection({
   const exercices = [...fiche.exercices].sort((a, b) => b.annee - a.annee);
   return (
     <div className="space-y-6">
+      {modifiable && <AjouterExercice fiche={fiche} enregistrer={enregistrer} />}
       {exercices.map((e) => (
         <div key={e.annee} className="space-y-3">
           <EnTeteExercice
@@ -64,6 +71,7 @@ export function EmplacementsSection({
             modifiable={modifiable}
             enregistrer={enregistrer}
           />
+          {modifiable && e.etat === "clos" && <DepotExercice fiche={fiche} annee={e.annee} onFiche={onFiche} />}
           {grille(groupes.get(e.annee) ?? [])}
         </div>
       ))}
@@ -71,6 +79,148 @@ export function EmplacementsSection({
         <h3 className="text-sm font-semibold text-ink">Autres documents</h3>
         {grille(groupes.get(null) ?? [])}
       </div>
+    </div>
+  );
+}
+
+/** AXE-970 : reprendre un exercice plus ancien que ceux proposés, depuis 2000,
+ * même avec des trous (2019 sans 2020). */
+function AjouterExercice({
+  fiche,
+  enregistrer,
+}: {
+  fiche: FicheImport;
+  enregistrer: (champs: Record<string, string>) => Promise<void>;
+}) {
+  const [annee, setAnnee] = useState("");
+  const [erreur, setErreur] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+  const connues = new Set(fiche.exercices.map((e) => e.annee));
+
+  async function ajouter() {
+    const lue = lireAnnee(annee, new Date());
+    if (typeof lue === "string") return setErreur(lue);
+    if (connues.has(lue)) return setErreur(`L'exercice ${lue} est déjà dans la liste.`);
+    setEnvoi(true);
+    setErreur("");
+    try {
+      await enregistrer({ exercices_ajoutes: ajouterAnnee(valeurChamp(fiche, "exercices_ajoutes"), lue) });
+      setAnnee("");
+    } catch (exception) {
+      setErreur(exception instanceof Error ? exception.message : "Erreur inattendue.");
+    } finally {
+      setEnvoi(false);
+    }
+  }
+
+  return (
+    <form
+      className="flex flex-wrap items-end gap-3 rounded-lg border border-border p-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void ajouter();
+      }}
+    >
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="font-medium text-ink">Importer un exercice d&apos;une autre année</span>
+        <span className="text-xs text-subtle">
+          L&apos;année de clôture, depuis 2000. Un exercice manquant entre deux n&apos;empêche rien.
+        </span>
+        <input
+          inputMode="numeric"
+          maxLength={4}
+          placeholder="2019"
+          value={annee}
+          onChange={(e) => setAnnee(e.target.value)}
+          className="h-11 w-28 rounded-md border border-border-strong bg-surface px-3 text-ink"
+          aria-label="Année de clôture de l'exercice à ajouter"
+        />
+      </label>
+      <Button type="submit" disabled={envoi || !annee}>
+        {envoi ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : <Plus className="size-4" aria-hidden />}
+        Ajouter l&apos;exercice
+      </Button>
+      {erreur && <p className="w-full text-sm text-danger">{erreur}</p>}
+    </form>
+  );
+}
+
+/** AXE-970 : tout le dossier d'un exercice déposé d'un coup (fichiers ou archive
+ * zip) ; chaque fichier est rangé dans sa catégorie, et se reclasse ensuite. */
+function DepotExercice({
+  fiche,
+  annee,
+  onFiche,
+}: {
+  fiche: FicheImport;
+  annee: number;
+  onFiche: (fiche: FicheImport) => void;
+}) {
+  const [survol, setSurvol] = useState(false);
+  const [etat, setEtat] = useState<{ envoi: boolean; message: string; erreur: boolean }>({
+    envoi: false,
+    message: "",
+    erreur: false,
+  });
+  const entree = useRef<HTMLInputElement>(null);
+
+  async function deposer(liste: FileList | null) {
+    const fichiers = Array.from(liste ?? []);
+    if (fichiers.length === 0) return;
+    setEtat({ envoi: true, message: `Envoi de ${fichiers.length} fichier(s)…`, erreur: false });
+    try {
+      onFiche(await deposerDocumentsExercice(fiche.id, annee, fichiers));
+      setEtat({ envoi: false, message: `${fichiers.length} fichier(s) rangé(s).`, erreur: false });
+    } catch (exception) {
+      const message = exception instanceof Error ? exception.message : "Erreur inattendue.";
+      setEtat({ envoi: false, message, erreur: true });
+    }
+  }
+
+  return (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        setSurvol(true);
+      }}
+      onDragLeave={() => setSurvol(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setSurvol(false);
+        void deposer(e.dataTransfer.files);
+      }}
+      className={`rounded-lg border border-dashed p-3 transition-colors ${
+        survol ? "border-ink bg-surface-soft" : "border-border-strong"
+      }`}
+    >
+      <button
+        type="button"
+        disabled={etat.envoi}
+        onClick={() => entree.current?.click()}
+        className="flex min-h-11 w-full items-center justify-center gap-2 text-sm text-subtle hover:text-ink"
+      >
+        {etat.envoi ? (
+          <LoaderCircle className="size-4 animate-spin" aria-hidden />
+        ) : (
+          <UploadCloud className="size-4" aria-hidden />
+        )}
+        Déposer tout le dossier {annee} : classé automatiquement, archives zip dépliées
+      </button>
+      <input
+        ref={entree}
+        type="file"
+        multiple
+        className="sr-only"
+        aria-label={`Déposer des fichiers de l'exercice ${annee}`}
+        accept={FORMATS}
+        onChange={(e) => {
+          void deposer(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      {etat.message && (
+        <p className={`mt-1 text-center text-xs ${etat.erreur ? "text-danger" : "text-subtle"}`}>{etat.message}</p>
+      )}
     </div>
   );
 }
@@ -138,8 +288,10 @@ function CarteEmplacement({
 }) {
   const [survol, setSurvol] = useState(false);
   const [envois, setEnvois] = useState<Envoi[]>([]);
+  const [tout, setTout] = useState(false);
   const entree = useRef<HTMLInputElement>(null);
   const rempli = emplacement.documents.length > 0;
+  const { visibles, caches } = documentsVisibles(emplacement.documents, tout);
 
   async function deposer(fichiers: FileList | null) {
     const liste = Array.from(fichiers ?? []);
@@ -184,9 +336,16 @@ function CarteEmplacement({
       </div>
       {(emplacement.documents.length > 0 || envois.length > 0) && (
         <ul className="space-y-2">
-          {emplacement.documents.map((d) => (
+          {visibles.map((d) => (
             <LigneDocument key={d.id} fiche={fiche} document={d} modifiable={modifiable} onFiche={onFiche} />
           ))}
+          {caches > 0 && (
+            <li>
+              <Button size="sm" variant="ghost" onClick={() => setTout(true)}>
+                Voir les {caches} autres
+              </Button>
+            </li>
+          )}
           {envois.map((e) => (
             <li key={e.cle} className="flex items-center gap-2 text-sm">
               {e.erreur ? (
@@ -285,6 +444,49 @@ function LigneDocument({
         <span className="font-medium">{libelleTraitement(document.statut_traitement)}</span>
         {document.resume && <span className="text-subtle">· {document.resume}</span>}
       </p>
+      {modifiable && document.exercice !== null && document.emplacement.startsWith("reprise:") && (
+        <RangerDocument fiche={fiche} document={document} onFiche={onFiche} />
+      )}
     </li>
+  );
+}
+
+/** AXE-970 : un document classé seul se range ailleurs dans son exercice. */
+function RangerDocument({
+  fiche,
+  document,
+  onFiche,
+}: {
+  fiche: FicheImport;
+  document: DocumentImport;
+  onFiche: (fiche: FicheImport) => void;
+}) {
+  const [erreur, setErreur] = useState("");
+  return (
+    <label className="mt-1 flex flex-wrap items-center gap-2 text-xs text-subtle">
+      Ranger dans
+      <select
+        value={document.categorie}
+        onChange={async (e) => {
+          setErreur("");
+          try {
+            const emplacement = `reprise:${e.target.value}:${document.exercice}`;
+            onFiche(await rangerDocumentImport(fiche.id, document.id, emplacement));
+          } catch (exception) {
+            setErreur(exception instanceof Error ? exception.message : "Erreur inattendue.");
+          }
+        }}
+        className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-ink"
+        aria-label={`Ranger ${document.nom_fichier} dans`}
+      >
+        {CATEGORIES_EXERCICE.map((c) => (
+          <option key={c.cle} value={c.cle}>
+            {c.libelle}
+          </option>
+        ))}
+      </select>
+      {document.origine_id && <span>· sorti d&apos;une archive</span>}
+      {erreur && <span className="text-danger">{erreur}</span>}
+    </label>
   );
 }

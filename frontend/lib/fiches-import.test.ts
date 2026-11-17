@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  ajouterAnnee,
+  documentsVisibles,
+  lireAnnee,
   badgeStatut,
   basculerChoix,
   champsModifies,
@@ -175,4 +178,23 @@ test("un compte se marque pro ou perso, et une ancienne ligne se relit", () => {
     { id: "12", nom: "Compte courant", banque: "Qonto", fin: "0189", usage: "perso" },
   ]);
   assert.equal(libelleIban("", "0189"), "•••• 0189");
+});
+
+test("AXE-970 : ajouter un exercice depuis 2000, même avec des trous", () => {
+  const aujourdhui = new Date(2026, 10, 17);
+  assert.equal(lireAnnee("2019", aujourdhui), 2019);
+  assert.equal(lireAnnee(" 2010 ", aujourdhui), 2010);
+  assert.equal(lireAnnee("1999", aujourdhui), "Une année de clôture, de 2000 à 2026.");
+  assert.equal(lireAnnee("2027", aujourdhui), "Une année de clôture, de 2000 à 2026.");
+  assert.equal(lireAnnee("19", aujourdhui), "Une année de clôture, de 2000 à 2026.");
+  assert.equal(ajouterAnnee("", 2019), "2019");
+  assert.equal(ajouterAnnee("2019,2015", 2019), "2015,2019");
+  assert.equal(ajouterAnnee("2019", 2010), "2010,2019");
+});
+
+test("AXE-970 : une carte qui reçoit une archive replie ses pièces", () => {
+  const pieces = Array.from({ length: 8 }, (_, i) => i);
+  assert.deepEqual(documentsVisibles(pieces, false), { visibles: [0, 1, 2, 3, 4], caches: 3 });
+  assert.deepEqual(documentsVisibles(pieces, true), { visibles: pieces, caches: 0 });
+  assert.deepEqual(documentsVisibles([1, 2], false), { visibles: [1, 2], caches: 0 });
 });
