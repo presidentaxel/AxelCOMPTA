@@ -418,7 +418,6 @@ reprise en simulation, puis appliquée après accord.
    |---|---|
    | `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`, `MODELES_BUCKET`, `AXELCOMPTA_MODELE_VERSION` | récupérer le modèle de catégorisation (AXE-847, plus bas) |
    | `INSEE_API_KEY`, ou `INPI_RNE_USERNAME` et `INPI_RNE_PASSWORD` | relire les registres officiels (AXE-849, plus bas) |
-   | `ROLLEE_JETON_SANDBOX` (+ `ROLLEE_COMPTE_SANDBOX`, `ROLLEE_PLATEFORME_SANDBOX`) | test de contrat Rollee seulement, jamais en production |
    | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `AXELCOMPTA_LLM_ACTIF=1` | allumer l'étage LLM (AXE-887, plus bas) |
    | `AXELCOMPTA_LLM_PLAFOND_CHAUFFEUR_USD`, `AXELCOMPTA_LLM_PLAFOND_GLOBAL_USD` | changer le budget de l'IA (0,50 $ et 100 $ par défaut) |
    | `AXELCOMPTA_ROLLEE_RAPPROCHEMENT=1` | relier seuls les users Rollee la nuit (AXE-911, après la simulation) |
@@ -429,8 +428,9 @@ reprise en simulation, puis appliquée après accord.
        python scripts/reprendre_tva_deductible.py --tenant TENANT --appliquer
 
 5. Rollee, dans l'ordre :
-   1. jeton sandbox, puis `python -m pytest -m rollee` depuis `backend/`
-      (unité des montants, AXE-818) ;
+   1. un branchement Rollee sandbox dans Intégrations, puis
+      `python -m pytest -m rollee` depuis `backend/` (unité des montants,
+      AXE-818) ;
    2. Intégrations › Rollee : jeton de production, « Tester » ;
    3. l'API est en ligne depuis le 16/11 : sur chaque compte Rollee
       d'Intégrations : saisir l'adresse publique de l'API, puis le popup
