@@ -131,10 +131,39 @@ export function fichesActives<T extends { statut: StatutImport }>(fiches: T[]): 
   return fiches.filter((fiche) => fiche.statut !== "ignore");
 }
 
+/** Entreprises dont chaque fiche liée est Ignoré : elles sortent de la liste. */
+export function dossiersIgnores(
+  fiches: { dossier_id: string | null; statut: StatutImport }[],
+): Set<string> {
+  const actifs = new Set<string>();
+  const ignores = new Set<string>();
+  for (const fiche of fiches) {
+    if (!fiche.dossier_id) continue;
+    if (fiche.statut === "ignore") ignores.add(fiche.dossier_id);
+    else actifs.add(fiche.dossier_id);
+  }
+  actifs.forEach((id) => ignores.delete(id));
+  return ignores;
+}
+
+/** Fiches actives qui n'ont pas encore d'entreprise dans la liste. */
+export function fichesSansDossier<T extends { dossier_id: string | null }>(
+  fiches: T[],
+  dossiers: { dossier_id: string }[],
+): T[] {
+  const presentes = new Set(dossiers.map((dossier) => dossier.dossier_id));
+  return fiches.filter((fiche) => fiche.dossier_id === null || !presentes.has(fiche.dossier_id));
+}
+
 /** « Karim Dupont », ou l'entreprise si le chauffeur n'a pas de nom. */
 export function nomChauffeur(fiche: Pick<FicheImportResume, "nom" | "prenom" | "denomination">): string {
   const nom = [fiche.prenom, fiche.nom].filter(Boolean).join(" ");
   return nom || fiche.denomination || "Chauffeur sans nom";
+}
+
+/** Le nom de la société dans Entreprises, ou le chauffeur s'il n'y en a pas. */
+export function nomEntreprise(fiche: Pick<FicheImportResume, "nom" | "prenom" | "denomination">): string {
+  return fiche.denomination || nomChauffeur(fiche);
 }
 
 export function etatSection(section: Pick<SectionImport, "complet" | "manquants">): string {

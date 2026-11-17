@@ -154,7 +154,7 @@ def test_la_fiche_complete_devient_une_ligne_d_import_valide() -> None:
         contact_digifactory="contact 22755",
     )
     assert manque_pour_creer(fiche) == []
-    assert len(manque_pour_creer(_fiche())) == 6
+    assert len(manque_pour_creer(_fiche())) == 4
     (ligne,) = rapport(T, [ligne_dossier(fiche)], []).lignes
     assert ligne.dossier is not None and ligne.erreurs == ()
     assert ligne.dossier.id == DossierId("DIGI_22755") == dossier_prevu(fiche)
@@ -226,6 +226,34 @@ def test_le_meme_siren_relie_la_fiche_sans_creer_un_second_dossier() -> None:
     fiche = _fiche(siren="552100554", denomination="MK DRIVING")
     reliee, a_creer, erreurs = relier_au_portefeuille(fiche, (deja,))
     assert (reliee.dossier_id, a_creer, erreurs) == (DossierId("DIGI_10"), None, ())
+
+
+def test_une_fiche_sans_regime_devient_un_dossier_a_confirmer() -> None:
+    fiche = _fiche(
+        siren="883828527",
+        denomination="DF TRANSPORTS",
+        forme_juridique="SASU",
+        exercice_debut="2026-01-01",
+    )
+    reliee, dossier, erreurs = relier_au_portefeuille(fiche, ())
+    assert erreurs == ()
+    assert dossier is not None
+    assert reliee.dossier_id == dossier.id == DossierId("SIREN_883828527")
+    assert (dossier.regime_imposition, dossier.regime_tva) == ("IS", "reel_normal")
+    assert dossier.a_confirmer == ("imposition",)
+
+
+def test_une_fiche_ignoree_ne_cree_pas_de_dossier() -> None:
+    fiche = replace(
+        _fiche(
+            siren="883828527",
+            denomination="DF TRANSPORTS",
+            forme_juridique="SASU",
+            exercice_debut="2026-01-01",
+        ),
+        statut="ignore",
+    )
+    assert relier_au_portefeuille(fiche, ()) == (fiche, None, ())
 
 
 # --- AXE-970 : tout exercice, depuis 2000 ---------------------------------

@@ -8775,6 +8775,10 @@ class NouvelleFicheEntree(BaseModel):
     siren: str = ""
 
 
+class RelierImportsVue(BaseModel):
+    creees: int
+
+
 class ChampsFicheEntree(BaseModel):
     champs: dict[str, str]
 
@@ -9301,6 +9305,29 @@ def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:
     """AXE-941 : la fiche ajoute le chauffeur au portefeuille, par le même
     chemin que l'import CSV (AXE-809). La création est immédiate : l'entreprise
     est dans les deux listes dès que les champs obligatoires sont là."""
+
+    @app.post("/portefeuille/imports/relier-dossiers", response_model=RelierImportsVue)
+    def relier_fiches_importees(
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+        dossiers: DossiersDep,
+    ) -> RelierImportsVue:
+        """Chaque fiche active qui a de quoi exister devient un dossier.
+        Une fiche Ignoré n'en crée pas."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        existants = list(dossiers.lister_par_tenant(tenant_id))
+        creees = 0
+        for fiche in fiches.toutes(tenant_id):
+            reliee, a_creer, _erreurs = relier_au_portefeuille(fiche, existants)
+            if a_creer is not None:
+                dossiers.enregistrer_lot((a_creer,))
+                existants.append(a_creer)
+                creees += 1
+            if reliee.dossier_id != fiche.dossier_id:
+                fiches.enregistrer(reliee)
+        return RelierImportsVue(creees=creees)
 
     @app.post("/portefeuille/imports/{fiche_id}/chauffeur", response_model=FicheImportVue)
     def creer_chauffeur_importe(
