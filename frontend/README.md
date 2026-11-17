@@ -95,10 +95,11 @@ chauffeur (mobile) est cadré dans [doc 19](../docs/19-parcours-utilisateur.md).
   sans compte (`app/(public)/page.tsx`, composants dans `components/landing/`,
   texte dans `lib/landing-contenu.ts`). Le formulaire « Demander un échange »
   envoie vers `POST /demandes-echange` (`lib/demande-echange.ts`) ; le pied de
-  page donne les cinq textes juridiques. Une personne déjà connectée est
-  renvoyée vers `/portefeuille` ou `/chauffeur` par `GardeAccueil`
-  (`lib/accueil.ts`) : la session est dans le navigateur, le serveur ne la lit
-  pas. Aucun traceur ni mesure d'audience. Les destinations par défaut après
+  page donne les cinq textes juridiques. La vitrine reste affichée même avec
+  une session : « Se connecter » ouvre le portefeuille d'un gestionnaire déjà
+  connecté, sinon `/connexion` (`LienSeConnecter`, `lib/accueil.ts`). Une
+  session chauffeur ne change pas ce lien. La session est dans le navigateur,
+  le serveur ne la lit pas. Aucun traceur ni mesure d'audience. Les destinations par défaut après
   connexion sont `/portefeuille`, plus `/`.
 - **V1 (doc 12, phase 3-4)** : Next.js complet sur `api/` (le vrai backend,
   auth/MFA, multi-tenant), design system (`DESIGN.md`), maquettes Figma

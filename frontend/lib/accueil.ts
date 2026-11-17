@@ -1,30 +1,29 @@
-/** Où va une personne qui ouvre l'accueil (AXE-949).
+/** Où « Se connecter » envoie un gestionnaire déjà connecté (AXE-949).
  *
- * Sans session, la page publique reste affichée. Une personne déjà connectée
- * n'y voit pas la vitrine : elle arrive là où elle travaille. Le gestionnaire
- * l'emporte quand les deux sessions existent. Le jeton n'est lu que pour
- * choisir une page : la vérification est celle du serveur, à chaque appel. */
+ * La vitrine est celle des cabinets et des centrales. Le lien va au
+ * portefeuille si une session gestionnaire est ouverte, sinon à
+ * `/connexion`. Une session chauffeur ne compte pas : l'espace chauffeur
+ * est une autre porte. Le jeton n'est lu que pour choisir la page. */
 
 import { coteOuverte } from "./cote-connexion";
 
-export type DestinationAccueil = "/portefeuille" | "/chauffeur" | null;
+export type DestinationAccueil = "/portefeuille" | null;
 
-export type Jetons = { gestionnaire: string | null; chauffeur: string | null };
+export type Jetons = { gestionnaire: string | null };
 
 type Decoder = (jeton: string) => Record<string, unknown>;
 
-function ouvre(jeton: string | null, cote: "gestionnaire" | "chauffeur", decoder: Decoder): boolean {
+function ouvrePortefeuille(jeton: string | null, decoder: Decoder): boolean {
   if (!jeton) return false;
   try {
-    return coteOuverte(decoder(jeton).app_metadata, cote) === cote;
+    return coteOuverte(decoder(jeton).app_metadata, "gestionnaire") === "gestionnaire";
   } catch {
-    // Un jeton illisible est une session perdue : la vitrine s'affiche.
+    // Un jeton illisible ne compte pas comme une session ouverte.
     return false;
   }
 }
 
 export function destinationAccueil(jetons: Jetons, decoder: Decoder): DestinationAccueil {
-  if (ouvre(jetons.gestionnaire, "gestionnaire", decoder)) return "/portefeuille";
-  if (ouvre(jetons.chauffeur, "chauffeur", decoder)) return "/chauffeur";
+  if (ouvrePortefeuille(jetons.gestionnaire, decoder)) return "/portefeuille";
   return null;
 }

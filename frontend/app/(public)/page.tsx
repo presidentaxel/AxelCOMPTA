@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 
 import { EnteteLanding } from "@/components/landing/EnteteLanding";
-import { GardeAccueil } from "@/components/landing/GardeAccueil";
 import { HeroLanding } from "@/components/landing/HeroLanding";
 import { PiedLanding } from "@/components/landing/PiedLanding";
 import { SectionEchange } from "@/components/landing/SectionEchange";
@@ -13,9 +12,10 @@ import {
   URL_PUBLIQUE,
 } from "@/lib/landing-contenu";
 
-/** La page publique (AXE-949) : la vitrine d'AxeLCompta, sur `/`. Lisible sans
- * compte ; une personne déjà connectée est renvoyée vers son espace par
- * `GardeAccueil`. Le texte vient de `lib/landing-contenu.ts`. */
+/** La page publique (AXE-949) : la vitrine d'AxeLCompta, sur `/`. Elle reste
+ * affichée même avec une session. « Se connecter » ouvre le portefeuille
+ * d'un gestionnaire déjà connecté, sinon la page de connexion. Le texte
+ * vient de `lib/landing-contenu.ts`. */
 export const metadata: Metadata = {
   metadataBase: new URL(URL_PUBLIQUE),
   title: { absolute: TITRE_PAGE },
@@ -41,7 +41,6 @@ export const metadata: Metadata = {
 export default function PagePublique() {
   return (
     <div className="flex min-h-dvh flex-col bg-canvas-app text-body">
-      <GardeAccueil />
       <EnteteLanding />
       <main className="flex-1">
         <HeroLanding />

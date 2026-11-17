@@ -1,8 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /** AXE-949 : la page publique sur `/`. Sans compte, on lit la vitrine, les
- * cinq textes juridiques et on demande un échange ; avec une session, on
- * arrive dans son espace. L'API est simulée. */
+ * cinq textes juridiques et on demande un échange. Une session ne quitte
+ * pas la vitrine. « Se connecter » ouvre le portefeuille d'un gestionnaire,
+ * et la page de connexion pour un chauffeur. L'API est simulée. */
 
 const API = "http://localhost:8000";
 
@@ -53,7 +54,9 @@ test("le texte de confidentialité garde ses blancs « À COMPLÉTER » visibles
   await expect(page.getByText("À COMPLÉTER").first()).toBeVisible();
 });
 
-test("un gestionnaire connecté arrive sur le portefeuille", async ({ page }) => {
+test("un gestionnaire connecté reste sur la vitrine, « Se connecter » ouvre le portefeuille", async ({
+  page,
+}) => {
   await page.route(`${API}/**`, (route) => route.abort());
   await ouvrirSession(page, "axelcompta_session_gestionnaire", {
     accessToken: jeton({ app_metadata: { tenant_id: "T1" } }),
@@ -62,10 +65,15 @@ test("un gestionnaire connecté arrive sur le portefeuille", async ({ page }) =>
     email: "gestionnaire@exemple.fr",
   });
   await page.goto("/");
+  expect(new URL(page.url()).pathname).toBe("/");
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await page.getByRole("link", { name: "Se connecter" }).click();
   await expect(page).toHaveURL(/\/portefeuille/u);
 });
 
-test("un chauffeur connecté arrive dans son espace", async ({ page }) => {
+test("un chauffeur connecté reste sur la vitrine, « Se connecter » va à la connexion gestionnaire", async ({
+  page,
+}) => {
   await page.route(`${API}/**`, (route) => route.abort());
   await ouvrirSession(page, "axelcompta_session_chauffeur", {
     accessToken: jeton({ app_metadata: { dossier_id: "D1" } }),
@@ -74,7 +82,10 @@ test("un chauffeur connecté arrive dans son espace", async ({ page }) => {
     email: "chauffeur@exemple.fr",
   });
   await page.goto("/");
-  await expect(page).toHaveURL(/\/chauffeur/u);
+  expect(new URL(page.url()).pathname).toBe("/");
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await page.getByRole("link", { name: "Se connecter" }).click();
+  await expect(page).toHaveURL(/\/connexion$/u);
 });
 
 test("l'aperçu de partage a un titre, une description et une image", async ({ page }) => {
