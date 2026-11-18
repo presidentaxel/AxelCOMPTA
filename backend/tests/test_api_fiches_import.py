@@ -665,7 +665,7 @@ def test_un_recapitulatif_reste_en_autre_est_reclasse_et_lu_au_redepot() -> None
     documents = [d for e in corps["emplacements"] for d in e["documents"]]
     (recap,) = documents
     assert (recap["categorie"], recap["statut_traitement"]) == ("releve_plateforme", "traite")
-    assert recap["resume"].startswith("Récapitulatif Uber de octobre 2025")
+    assert recap["resume"].startswith("Récapitulatif Uber d'octobre 2025")
     assert corps["doublons_ecartes"] == []
 
 

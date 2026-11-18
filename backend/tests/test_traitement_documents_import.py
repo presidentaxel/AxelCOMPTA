@@ -226,7 +226,7 @@ def test_un_recapitulatif_uber_est_range_et_lu() -> None:
     assert classer("uber_monthly_2025_10.pdf", contenu) == "releve_plateforme"
     lu = traiter("releve_plateforme", "uber_monthly_2025_10.pdf", contenu)
     assert lu.statut == "traite"
-    assert lu.resume.startswith("Récapitulatif Uber de octobre 2025 : courses 2 000,00 €")
+    assert lu.resume.startswith("Récapitulatif Uber d'octobre 2025 : courses 2 000,00 €")
     assert lu.donnees is not None and lu.donnees["mois"] == "2025-10"
     assert lu.exercice == 2025
 

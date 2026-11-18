@@ -187,6 +187,7 @@ from axelcompta.couverture_plateformes import couverture as couverture_plateform
 from axelcompta.couverture_plateformes import (
     jours_rollee,
     libelle_mois,
+    mois_avec_banque,
     recaps_deposes,
     virements_vus,
 )
@@ -9733,14 +9734,15 @@ def _couverture_plateformes(
     relie = instantane.dossier_cree and fiche.dossier_id
     dossier = DossierId(fiche.dossier_id) if relie and fiche.dossier_id else None
     jours = jours_rollee(settlements.lister(dossier)) if dossier else []
-    virements = virements_vus(ledger.grand_livre(dossier)) if dossier else []
+    grand_livre = ledger.grand_livre(dossier) if dossier else ()
     aujourd_hui = date.today()
     plateformes = couverture_plateformes(
         jours,
-        virements,
+        virements_vus(grand_livre),
         recaps_deposes(instantane.documents),
         debut_a_couvrir(fiche.champs, aujourd_hui),
         aujourd_hui,
+        mois_avec_banque(grand_livre) if dossier else None,
     )
     return CouverturePlateformesVue(
         plateformes=[

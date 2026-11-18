@@ -73,3 +73,36 @@ def test_un_debut_de_rollee_en_milieu_de_mois_laisse_les_semaines_d_avant() -> N
 def test_sans_donnee_rien_a_dire() -> None:
     assert couverture([], [], [], None, AUJOURD_HUI) == []
     assert libelle_mois("2025-08") == "août 2025"
+
+
+def test_ni_banque_ni_rollee_ce_n_est_pas_sans_activite() -> None:
+    """AXE-988 : SYBD n'a pas de banque connectée ; janvier et février 2026
+    n'ont ni banque ni Rollee : on ne sait pas, ce n'est pas « sans activité »."""
+    jours = [("uber", date(2026, 3, 29))]
+    (uber,) = couverture(jours, [], [], date(2026, 1, 1), date(2026, 3, 31), mois_banque=set())
+    assert {m.mois: m.etat for m in uber.mois} == {
+        "2026-01": "inconnu",
+        "2026-02": "inconnu",
+        "2026-03": "banque",
+    }
+    assert uber.a_completer == (
+        "Uber, de janvier 2026 à février 2026 : ni banque ni Rollee. Déposez les relevés "
+        "bancaires, ou les récapitulatifs de la plateforme.",
+    )
+
+
+def test_un_mois_avec_banque_sans_la_plateforme_est_sans_activite() -> None:
+    (uber,) = couverture(
+        [("uber", date(2026, 3, 3))], [], [], date(2026, 2, 1), date(2026, 3, 31), {"2026-02"}
+    )
+    assert uber.mois[0].etat == "sans_activite"
+
+
+def test_la_frise_commence_au_premier_recapitulatif_depose() -> None:
+    """Les récapitulatifs 2025 se voient, même si l'exercice tenu commence en 2026."""
+    (uber,) = couverture([], [], [("uber", "2025-11")], date(2026, 1, 1), date(2026, 1, 31))
+    assert [(m.mois, m.etat) for m in uber.mois] == [
+        ("2025-11", "document"),
+        ("2025-12", "sans_activite"),
+        ("2026-01", "sans_activite"),
+    ]

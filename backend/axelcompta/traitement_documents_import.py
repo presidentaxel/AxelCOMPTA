@@ -301,17 +301,18 @@ def _recap_plateforme(contenu: bytes) -> Traitement:
         return Traitement("a_traiter", A_LIRE)
     annee, mois = (int(x) for x in recap.mois.split("-"))
     nom_mois = f"{MOIS_FR[mois - 1]} {annee}"
+    de_mois = f"d'{nom_mois}" if nom_mois[0] in "aeiouéèêâô" else f"de {nom_mois}"
     if not recap.juste:
         return Traitement(
             "a_traiter",
-            f"Récapitulatif {recap.plateforme.capitalize()} de {nom_mois} : les montants ne "
+            f"Récapitulatif {recap.plateforme.capitalize()} {de_mois} : les montants ne "
             "tombent pas juste (courses + autres − frais ≠ net), à relire.",
             recap.donnees(),
             annee,
         )
     return Traitement(
         "traite",
-        f"Récapitulatif {recap.plateforme.capitalize()} de {nom_mois} : courses "
+        f"Récapitulatif {recap.plateforme.capitalize()} {de_mois} : courses "
         f"{_euros(recap.courses_cts)}, autres revenus {_euros(recap.autres_cts)}, frais "
         f"{_euros(recap.frais_cts)}, net {_euros(recap.net_cts)}.",
         recap.donnees(),
