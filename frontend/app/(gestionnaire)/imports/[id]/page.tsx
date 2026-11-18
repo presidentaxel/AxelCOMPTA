@@ -163,7 +163,7 @@ function EnTete({
             {fiche.denomination ?? "Entreprise à compléter"}
             {fiche.siren && ` · SIREN ${fiche.siren}`}
             {fiche.documents_a_lire > 0 &&
-              ` · ${fiche.documents_a_lire} document${fiche.documents_a_lire > 1 ? "s" : ""} à lire`}
+              ` · ${fiche.documents_a_lire} document${fiche.documents_a_lire > 1 ? "s" : ""} à lire pour la reprise`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

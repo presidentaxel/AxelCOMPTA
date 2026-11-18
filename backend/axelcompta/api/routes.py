@@ -379,6 +379,7 @@ from axelcompta.tenants.fiches_import_etat import (
     relier_toutes,
     statut_calcule,
 )
+from axelcompta.tenants.fiches_import_etat import documents_a_lire as a_lire_pour_la_reprise
 from axelcompta.tenants.fiches_import_etat import emplacements as emplacements_import
 from axelcompta.tenants.fiches_import_etat import exercices as exercices_import
 from axelcompta.tenants.fiches_import_postgres import PostgresFichesImport
@@ -8910,7 +8911,7 @@ def _resume_fiche(fiche: FicheImport, documents: list[DocumentImport]) -> FicheI
         statut=statut_calcule(fiche, documents, aujourd_hui),
         sections_completes=sum(1 for e in etats if e.complet),
         sections=len(etats),
-        documents_a_lire=sum(1 for d in documents if d.statut_traitement != "traite"),
+        documents_a_lire=len(a_lire_pour_la_reprise(fiche.champs, documents, aujourd_hui)),
         dossier_id=fiche.dossier_id,
         maj_par=fiche.maj_par,
         maj_le=(fiche.maj_le or fiche.cree_le).isoformat(),
