@@ -72,12 +72,14 @@ class PostgresJustificatifRepository:
         """Une lecture pour tout le dossier. Ne charge pas le contenu des photos."""
         with self._engine.connect() as connexion:
             appliquer_rls(connexion)
+            # Lu avant de rendre la connexion : un résultat parcouru après
+            # la fermeture lève « cursor already closed » (file expert, 500).
             lignes = connexion.execute(
                 select(table.c.ecriture_id).where(
                     table.c.tenant_id == tenant_id,
                     table.c.dossier_id == dossier_id,
                 )
-            )
+            ).all()
         return frozenset(EcritureId(ligne.ecriture_id) for ligne in lignes)
 
     def lire(
