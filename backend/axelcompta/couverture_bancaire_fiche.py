@@ -155,16 +155,14 @@ def _depuis_digifactory(
             )
 
 
-def couverture_de_la_fiche(
+def _reunir(
     fiche: FicheImport,
     documents: Sequence[DocumentImport],
     comptes: Sequence[CompteBancaire],
     ecritures: Sequence[Ecriture],
     aujourd_hui: date,
-) -> list[CompteCouvert]:
-    """Chaque compte de banque de la fiche et sa couverture, du jour de la
-    création (ou de la première donnée) à aujourd'hui pour un compte de
-    l'activité, à sa dernière donnée pour un compte d'archive."""
+) -> _Registre:
+    """Toutes les sources et tous les soldes connus de la fiche."""
     champs = fiche.champs
     registre = _Registre()
     for document in documents:
@@ -180,7 +178,22 @@ def couverture_de_la_fiche(
         registre.soldes += [
             Solde(cle, veille, 0, "Création de la société") for cle in registre.libelles
         ]
-    a_couvrir = debut_a_couvrir(champs, aujourd_hui)
+    return registre
+
+
+def couverture_de_la_fiche(
+    fiche: FicheImport,
+    documents: Sequence[DocumentImport],
+    comptes: Sequence[CompteBancaire],
+    ecritures: Sequence[Ecriture],
+    aujourd_hui: date,
+) -> list[CompteCouvert]:
+    """Chaque compte de banque de la fiche et sa couverture, du jour de la
+    création (ou de la première donnée) à aujourd'hui pour un compte de
+    l'activité, à sa dernière donnée pour un compte d'archive."""
+    registre = _reunir(fiche, documents, comptes, ecritures, aujourd_hui)
+    creation = fiche.champs.get("date_creation")
+    a_couvrir = debut_a_couvrir(fiche.champs, aujourd_hui)
     resultat = []
     for cle, (libelle, origine) in registre.libelles.items():
         siennes = [s for s in registre.sources if s.compte == cle]
