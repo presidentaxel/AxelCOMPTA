@@ -49,6 +49,7 @@ import type { FicheAnnuaireRollee, FicheRollee, RolleePortefeuille } from "./lie
 import type { AnalyseFec, OuvertureVue } from "./ouverture";
 import type {
   ComptesDigifactory,
+  CouvertureBanque,
   DigifactoryFiche,
   FicheImport,
   FicheImportResume,
@@ -1577,20 +1578,63 @@ export async function rangerDocumentImport(id: string, documentId: string, empla
   );
 }
 
+/** AXE-973 : la couverture bancaire de la fiche, compte par compte. */
+export async function lireCouvertureBanque(id: string): Promise<CouvertureBanque> {
+  const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/banque`);
+  if (reponse.status === 401) throw new ErreurAuthGestionnaire();
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as CouvertureBanque;
+}
+
+async function couvertureOuErreur(reponse: Response): Promise<CouvertureBanque> {
+  if (reponse.status === 401) throw new ErreurAuthGestionnaire();
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as CouvertureBanque;
+}
+
+/** AXE-973 (2/2) : le compte `source` (FEC, relevé) est le compte `cible` ;
+ * `null` le détache. */
+export async function rattacherCompteBanque(
+  id: string,
+  source: string,
+  cible: string | null,
+): Promise<CouvertureBanque> {
+  return couvertureOuErreur(
+    await requeteGestionnaire(`/portefeuille/imports/${id}/banque/rattachements`, jsonImport("PUT", { source, cible })),
+  );
+}
+
+/** AXE-973 (2/2) : un solde lu sur un relevé, en fin de journée. */
+export async function saisirSoldeBanque(
+  id: string,
+  solde: { compte: string; le: string; montant: string; source: string },
+): Promise<CouvertureBanque> {
+  return couvertureOuErreur(
+    await requeteGestionnaire(`/portefeuille/imports/${id}/banque/soldes`, jsonImport("POST", solde)),
+  );
+}
+
+export async function retirerSoldeBanque(id: string, rang: number): Promise<CouvertureBanque> {
+  return couvertureOuErreur(
+    await requeteGestionnaire(`/portefeuille/imports/${id}/banque/soldes/${rang}`, { method: "DELETE" }),
+  );
+}
+
 export async function retirerDocumentImport(id: string, documentId: string): Promise<FicheImport> {
   return ficheOuErreur(
     await requeteGestionnaire(`/portefeuille/imports/${id}/documents/${documentId}`, { method: "DELETE" }),
   );
 }
 
-/** Crée un dossier pour chaque fiche active qui peut en être un. */
-export async function relierFichesImport(): Promise<{ creees: number }> {
+/** Relie chaque fiche active à son dossier. Les dossiers à créer le sont
+ * par le worker dans la minute (AXE-974) : `en_creation` les compte. */
+export async function relierFichesImport(): Promise<{ creees: number; en_creation: number }> {
   const reponse = await requeteGestionnaire("/portefeuille/imports/relier-dossiers", {
     method: "POST",
   });
   if (reponse.status === 401) throw new ErreurAuthGestionnaire();
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
-  return (await reponse.json()) as { creees: number };
+  return (await reponse.json()) as { creees: number; en_creation: number };
 }
 
 /** Ajoute le chauffeur au portefeuille ; le worker crée le dossier. */

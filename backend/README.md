@@ -537,7 +537,11 @@ Menu **Imports** du gestionnaire : une fiche par chauffeur à reprendre. Mise
 en route : `alembic upgrade head` (migration `b7f3e2a91c40`). Le
 préremplissage par le SIREN utilise `INSEE_API_KEY` et le compte RNE ;
 sans eux, tout se saisit à la main. « Ajouter le chauffeur au portefeuille »
-dépose un job `import_dossiers` : le worker doit tourner.
+dépose un job `import_dossiers` : le worker doit tourner. AXE-974 : le rôle
+web de l'API ne crée jamais de dossier. Une fiche active complète est
+reliée tout de suite à son identifiant, et le worker (rôle propriétaire)
+crée son dossier dans la minute ; le passage horaire rattrape le reste.
+Une fiche Ignoré ou annulée n'en crée pas.
 
 **Tout l'historique comptable (AXE-970).** « Importer un exercice d'une
 autre année » ajoute n'importe quel exercice depuis 2000, même avec des
@@ -551,6 +555,19 @@ Un FEC est lu : période, SIREN, clôture, résultat et solde de chaque
 compte, gardés dans `documents_import.donnees` pour la reprise.
 Un fichier dont le contenu est déjà sur la fiche (même empreinte) n'est
 pas redéposé, seul ou sorti d'une archive déposée par-dessus (AXE-971).
+**Couverture bancaire (AXE-973).** Section Banque de la fiche, `GET
+/portefeuille/imports/{id}/banque` : pour chaque compte, une frise de ce que
+le solde prouve (solde au début + opérations = solde à la fin, au centime
+près), de ce qui est couvert sans preuve, des écarts chiffrés et des jours
+sans données. Sources : mouvements bancaires des FEC (à-nouveaux et
+clôture), relevés QIF (rattachés seuls au compte d'un FEC qu'ils
+recoupent), comptes Digifactory retenus (grand livre et dernier solde), et
+0 € la veille de la création. Des agrégats seulement : ni opération ni
+libellé. Un FEC ou un QIF déposé avant est relu en mémoire. Le gestionnaire
+rattache le compte d'un FEC ou d'un relevé à un compte connu (`PUT
+…/banque/rattachements`) et saisit un solde lu sur un relevé PDF (`POST
+…/banque/soldes`), gardés dans les champs `banque_rattachements` et
+`banque_soldes` de la fiche.
 Les relevés bancaires sont **obligatoires** tant que Digifactory ne couvre
 pas tout depuis le début du plus ancien exercice que nous tenons (à
 déclarer, ou en cours) ; facultatifs ensuite.

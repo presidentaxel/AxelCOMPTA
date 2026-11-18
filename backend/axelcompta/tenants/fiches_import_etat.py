@@ -527,6 +527,57 @@ def relier_au_portefeuille(
     return fiche, None, resultat.erreurs
 
 
+def relier_toutes(
+    fiches: Sequence[FicheImport], dossiers: Sequence[Dossier]
+) -> tuple[list[FicheImport], list[Dossier]]:
+    """AXE-974 : chaque fiche active complète a son dossier. Les fiches dont
+    le lien change, et les dossiers à créer (un seul par identifiant).
+    Rien n'est écrit : la création revient au worker (rôle propriétaire)."""
+    existants = list(dossiers)
+    changees: list[FicheImport] = []
+    a_creer: list[Dossier] = []
+    for fiche in fiches:
+        reliee, dossier, _erreurs = relier_au_portefeuille(fiche, existants)
+        if dossier is not None:
+            a_creer.append(dossier)
+            existants.append(dossier)
+        if reliee.dossier_id != fiche.dossier_id:
+            changees.append(reliee)
+    return changees, a_creer
+
+
+# AXE-975 : ce qu'il faut vraiment lire pour reprendre un dossier. Les
+# pièces, accusés, paiements et déclarations sont gardés, pas à lire.
+CATEGORIES_A_LIRE = frozenset(
+    {"liasse", "fec", "balance", "grand_livre", "comptes_annuels", "releve_bancaire"}
+)
+ROLES_A_LIRE = frozenset({"source", "a_declarer", "en_cours"})
+
+
+def documents_a_lire(
+    champs: Mapping[str, str], documents: Sequence[DocumentImport], aujourd_hui: date
+) -> list[DocumentImport]:
+    """Les documents qui attendent une lecture utile à la reprise : ceux des
+    exercices qui donnent le report à nouveau ou que nous déclarons (et les
+    relevés), dans les catégories qui portent des chiffres. Un document
+    illisible compte toujours : il faut le remplacer. L'impression PDF d'un
+    FEC ne compte pas : le FEC lui-même se lit."""
+    utiles = {e.annee for e in exercices(champs, aujourd_hui, documents) if e.role in ROLES_A_LIRE}
+    retenus = []
+    for d in documents:
+        if d.statut_traitement == "traite":
+            continue
+        if d.statut_traitement == "illisible":
+            retenus.append(d)
+            continue
+        impression = (d.donnees or {}).get("type") == "impression_fec"
+        if d.categorie not in CATEGORIES_A_LIRE or impression:
+            continue
+        if d.exercice is None or d.exercice in utiles:
+            retenus.append(d)
+    return retenus
+
+
 def dossier_prevu(fiche: FicheImport) -> str:
     ligne = ligne_dossier(fiche)
     return str(identifiant(ligne["siren"], ligne["contact_digifactory"]))

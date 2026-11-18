@@ -174,6 +174,14 @@ from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, 
 from axelcompta.core.libelles import categorie_du_suffixe, sans_categorie
 from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
 from axelcompta.core.rls import appliquer_rls, contexte_identite
+from axelcompta.couverture_bancaire_fiche import (
+    CompteCouvert,
+    comptes_connus,
+    couverture_de_la_fiche,
+)
+from axelcompta.couverture_bancaire_fiche import (
+    a_completer as a_completer_banque,
+)
 from axelcompta.depot_documents_import import Fichier as FichierImport
 from axelcompta.depot_documents_import import (
     depot_sur_emplacement,
@@ -338,6 +346,7 @@ from axelcompta.tenants.confirmation import (
 )
 from axelcompta.tenants.contacts_proposes import ContactsProposesRepository
 from axelcompta.tenants.contacts_proposes_postgres import PostgresContactsProposes
+from axelcompta.tenants.couverture_bancaire import phrase as phrase_periode
 from axelcompta.tenants.exercices import ExerciceRepository
 from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
 from axelcompta.tenants.fiches_import import (
@@ -354,6 +363,10 @@ from axelcompta.tenants.fiches_import import ignorer as ignorer_fiche
 from axelcompta.tenants.fiches_import import modifier as modifier_fiche
 from axelcompta.tenants.fiches_import import reclasser as reclasser_document
 from axelcompta.tenants.fiches_import import reprendre as reprendre_fiche
+from axelcompta.tenants.fiches_import_banque import SoldeSaisi, soldes_saisis
+from axelcompta.tenants.fiches_import_banque import ajouter_solde as ajouter_solde_banque
+from axelcompta.tenants.fiches_import_banque import rattacher as rattacher_banque
+from axelcompta.tenants.fiches_import_banque import retirer_solde as retirer_solde_banque
 from axelcompta.tenants.fiches_import_depot import FichesImportRepository, Instantane
 from axelcompta.tenants.fiches_import_etat import (
     ContactDigifactory,
@@ -363,11 +376,14 @@ from axelcompta.tenants.fiches_import_etat import (
     etat_sections,
     manque_pour_creer,
     relier_au_portefeuille,
+    relier_toutes,
     statut_calcule,
 )
+from axelcompta.tenants.fiches_import_etat import documents_a_lire as a_lire_pour_la_reprise
 from axelcompta.tenants.fiches_import_etat import emplacements as emplacements_import
 from axelcompta.tenants.fiches_import_etat import exercices as exercices_import
 from axelcompta.tenants.fiches_import_postgres import PostgresFichesImport
+from axelcompta.tenants.fiches_import_reprise import champs_lus_dans_un_fec, preremplir_reprise
 from axelcompta.tenants.franchise_tva import MillesimeInconnu, suivre_franchise
 from axelcompta.tenants.identite_json import identite_vers_json
 from axelcompta.tenants.identite_saisie import (
@@ -416,6 +432,7 @@ from axelcompta.tenants.tags import (
 )
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.tester_branchement import tester as tester_branchement
+from axelcompta.traitement_documents_import import traiter as traiter_document_import
 from axelcompta.webhooks_rollee import preparer as preparer_webhook
 from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT, ACTE_SEMAINE_TRANCHEE
 from axelcompta.workflow.avis_etages import avis_etages, proposition_affichee
@@ -8725,6 +8742,64 @@ class DocumentImportVue(BaseModel):
     resume: str
 
 
+class PeriodeBanqueVue(BaseModel):
+    debut: str
+    fin: str
+    etat: str  # complet | couvert | ecart | manquant
+    phrase: str
+    ecart_cts: int | None
+    sources: list[str]
+    indices: list[str]
+
+
+class SoldeBanqueVue(BaseModel):
+    le: str
+    cts: int
+    source: str
+    rang: int | None = None  # un solde saisi : son rang, pour le retirer
+
+
+class CompteConnuVue(BaseModel):
+    cle: str
+    libelle: str
+
+
+class RattachementBanqueVue(BaseModel):
+    """Le compte `source` (FEC, relevé) est le compte `cible` ; `None` le détache."""
+
+    source: str
+    cible: str | None
+
+
+class SoldeSaisiVue(BaseModel):
+    """Un solde lu sur un relevé, en fin de journée."""
+
+    compte: str
+    le: date
+    montant: str
+    source: str = "Relevé"
+
+
+class CompteBanqueVue(BaseModel):
+    cle: str
+    libelle: str
+    origine: str  # digifactory | fec | releve
+    suivi: bool
+    periodes: list[PeriodeBanqueVue]
+    soldes: list[SoldeBanqueVue]
+    incoherences: list[str]
+    a_completer: list[str]
+    reunit: list[CompteConnuVue] = []
+
+
+class CouvertureBanqueVue(BaseModel):
+    """AXE-973 : la couverture bancaire d'une fiche, compte par compte."""
+
+    comptes: list[CompteBanqueVue]
+    a_completer: list[str]
+    comptes_connus: list[CompteConnuVue] = []
+
+
 class RangementDocumentVue(BaseModel):
     """AXE-970 : où ranger un document déjà déposé (« reprise:fec:2019 »)."""
 
@@ -8764,6 +8839,8 @@ class FicheImportVue(FicheImportResumeVue):
     registre_lu_le: str | None
     registre_sources: list[str]
     depuis_registre: list[str]
+    # AXE-976 : champ → « FEC 2024 », pour les champs encore lus dans un FEC.
+    depuis_fec: dict[str, str] = {}
     manque_pour_creer: list[str]
     dossier_prevu: str | None
     dossier_cree: bool
@@ -8777,6 +8854,8 @@ class NouvelleFicheEntree(BaseModel):
 
 class RelierImportsVue(BaseModel):
     creees: int
+    # AXE-974 : dossiers que le worker crée dans la minute.
+    en_creation: int = 0
 
 
 class ChampsFicheEntree(BaseModel):
@@ -8832,7 +8911,7 @@ def _resume_fiche(fiche: FicheImport, documents: list[DocumentImport]) -> FicheI
         statut=statut_calcule(fiche, documents, aujourd_hui),
         sections_completes=sum(1 for e in etats if e.complet),
         sections=len(etats),
-        documents_a_lire=sum(1 for d in documents if d.statut_traitement != "traite"),
+        documents_a_lire=len(a_lire_pour_la_reprise(fiche.champs, documents, aujourd_hui)),
         dossier_id=fiche.dossier_id,
         maj_par=fiche.maj_par,
         maj_le=(fiche.maj_le or fiche.cree_le).isoformat(),
@@ -8914,6 +8993,7 @@ def _fiche_vue(instantane: Instantane) -> FicheImportVue:
         registre_lu_le=fiche.registre.lu_le.isoformat() if fiche.registre else None,
         registre_sources=list(fiche.registre.sources) if fiche.registre else [],
         depuis_registre=champs_du_registre(fiche),
+        depuis_fec=champs_lus_dans_un_fec(fiche),
         manque_pour_creer=manque_pour_creer(fiche),
         dossier_prevu=dossier_prevu(fiche) if fiche.champs.get("siren") else None,
         dossier_cree=instantane.dossier_cree,
@@ -8921,15 +9001,26 @@ def _fiche_vue(instantane: Instantane) -> FicheImportVue:
 
 
 def _poser_dossier(
-    fiche: FicheImport, dossiers: DossierRepository
+    fiche: FicheImport, dossiers: DossierRepository, demandes: DemandesDeJobs
 ) -> tuple[FicheImport, tuple[str, ...]]:
-    """Crée le dossier dès que la fiche a de quoi exister au portefeuille,
-    et la relie. Une fiche incomplète revient telle quelle, avec ce qui manque."""
+    """Relie la fiche à son dossier ; s'il est à créer, le worker le crée
+    dans la minute (AXE-974 : le rôle web de l'API ne crée pas de dossier,
+    le worker a le rôle propriétaire). Une fiche incomplète revient telle
+    quelle, avec ce qui manque."""
     existants = dossiers.lister_par_tenant(fiche.tenant_id)
     reliee, a_creer, erreurs = relier_au_portefeuille(fiche, existants)
     if a_creer is not None:
-        dossiers.enregistrer_lot((a_creer,))
+        _demander_creation_dossiers(fiche.tenant_id, demandes)
     return reliee, erreurs
+
+
+def _demander_creation_dossiers(tenant_id: TenantId, demandes: DemandesDeJobs) -> None:
+    """Un job `import_dossiers` sans ligne : le worker relie chaque fiche
+    active et crée les dossiers qui manquent. Pas de second job s'il y en a
+    déjà un en attente ou en cours."""
+    en_cours = demandes.dernier(str(tenant_id), TYPE_IMPORT_DOSSIERS)
+    if en_cours is None or not en_cours.actif:
+        demandes.demander(str(tenant_id), TYPE_IMPORT_DOSSIERS, json.dumps({"lignes": []}))
 
 
 def _lire_registres(fiche: FicheImport, lire: LireFicheOfficielle | None, par: str) -> FicheImport:
@@ -8960,6 +9051,7 @@ def _enregistrer_routes_fiches_import(app: FastAPI) -> None:
         fiches: FichesImportDep,
         lire: LireFicheOfficielleDep,
         dossiers: DossiersDep,
+        demandes: DemandesJobsDep,
     ) -> FicheImportVue:
         """Nom et prénom du chauffeur ; avec un SIREN ou un SIRET, l'INSEE et
         le RNE préremplissent l'entreprise et le dirigeant. Dès que la fiche
@@ -8976,7 +9068,7 @@ def _enregistrer_routes_fiches_import(app: FastAPI) -> None:
             datetime.now(UTC),
         )
         fiche = _lire_registres(fiche, lire, identite.email)
-        fiche, _erreurs = _poser_dossier(fiche, dossiers)
+        fiche, _erreurs = _poser_dossier(fiche, dossiers, demandes)
         return _fiche_vue(fiches.enregistrer(fiche))
 
     @app.get("/portefeuille/imports/{fiche_id}", response_model=FicheImportVue)
@@ -9010,6 +9102,7 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         fiches: FichesImportDep,
         lire: LireFicheOfficielleDep,
         dossiers: DossiersDep,
+        demandes: DemandesJobsDep,
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
@@ -9019,7 +9112,7 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         # (bouton « Relire les registres », AXE-951).
         if "siren" in entree.champs or fiche.champs.get("siren") != avant.champs.get("siren"):
             fiche = _lire_registres(fiche, lire, identite.email)
-        fiche, _erreurs = _poser_dossier(fiche, dossiers)
+        fiche, _erreurs = _poser_dossier(fiche, dossiers, demandes)
         return _fiche_vue(fiches.enregistrer(fiche))
 
     @app.post("/portefeuille/imports/{fiche_id}/registres", response_model=FicheImportVue)
@@ -9211,8 +9304,16 @@ def _deposer_sans_doublons(
             + ", ".join(ecartes[:5])
             + (f" et {len(ecartes) - 5} autre(s)." if len(ecartes) > 5 else "."),
         )
-    vue = _fiche_vue(fiches.deposer_lot(gardes))
+    vue = _fiche_vue(_reprise_relue(fiches, fiches.deposer_lot(gardes)))
     return vue.model_copy(update={"doublons_ecartes": ecartes})
+
+
+def _reprise_relue(fiches: FichesImportRepository, instantane: Instantane) -> Instantane:
+    """AXE-976 : après un dépôt, un reclassement ou un retrait, la reprise
+    comptable reprend ce que le dernier FEC donne (jamais par-dessus une
+    saisie)."""
+    fiche = preremplir_reprise(instantane.fiche, instantane.documents, date.today())
+    return instantane if fiche is instantane.fiche else fiches.enregistrer(fiche)
 
 
 async def _fichier_lu(fichier: UploadFile) -> FichierImport:
@@ -9280,7 +9381,208 @@ def _enregistrer_routes_exercices_import(app: FastAPI) -> None:
         )
         if document is None:
             raise HTTPException(status_code=404, detail="Document introuvable.")
-        return _fiche_vue(fiches.ranger(reclasser_document(document, corps.emplacement)))
+        rangee = fiches.ranger(reclasser_document(document, corps.emplacement))
+        return _fiche_vue(_reprise_relue(fiches, rangee))
+
+
+def _compte_banque_vue(compte: CompteCouvert, saisis: list[SoldeSaisi]) -> CompteBanqueVue:
+    manques = [
+        f"{compte.libelle} : du {d:%d/%m/%Y} au {f:%d/%m/%Y}"
+        + (" (écart au solde)" if etat == "ecart" else "")
+        for d, f, etat in a_completer_banque(compte)
+    ]
+    return CompteBanqueVue(
+        cle=compte.cle,
+        libelle=compte.libelle,
+        origine=compte.origine,
+        suivi=compte.suivi,
+        periodes=[
+            PeriodeBanqueVue(
+                debut=p.debut.isoformat(),
+                fin=p.fin.isoformat(),
+                etat=p.etat,
+                phrase=phrase_periode(p),
+                ecart_cts=p.ecart_cts,
+                sources=list(p.sources),
+                indices=list(p.indices),
+            )
+            for p in compte.couverture.periodes
+        ],
+        soldes=[
+            SoldeBanqueVue(
+                le=s.le.isoformat(),
+                cts=s.cts,
+                source=s.source,
+                rang=next(
+                    (
+                        i
+                        for i, saisi in enumerate(saisis)
+                        if (saisi.le, saisi.cts, saisi.source) == (s.le, s.cts, s.source)
+                    ),
+                    None,
+                ),
+            )
+            for s in compte.couverture.soldes
+        ],
+        incoherences=list(compte.couverture.incoherences),
+        a_completer=manques,
+        reunit=[CompteConnuVue(cle=c, libelle=lib) for c, lib in compte.reunit],
+    )
+
+
+def _avec_mouvements(
+    fiches: FichesImportRepository, tenant_id: TenantId, document: DocumentImport
+) -> DocumentImport:
+    """Un FEC ou un QIF lu avant AXE-973 n'a pas gardé ses mouvements : il
+    est relu, en mémoire seulement."""
+    donnees = document.donnees or {}
+    lu_avant = (donnees.get("type") == "fec" and "banque" not in donnees) or (
+        donnees.get("type") == "qif" and "mouvements" not in donnees
+    )
+    if not lu_avant:
+        return document
+    _document, contenu = fiches.contenu(tenant_id, document.id)
+    relu = traiter_document_import(document.categorie, document.nom_fichier, contenu)
+    return dataclasses.replace(document, donnees=relu.donnees or donnees)
+
+
+def _couverture_banque(
+    tenant_id: TenantId,
+    fiche_id: str,
+    fiches: FichesImportRepository,
+    comptes: CompteBancaireRepository,
+    ledger: LedgerService,
+) -> CouvertureBanqueVue:
+    instantane = fiches.instantane(tenant_id, fiche_id)
+    fiche = instantane.fiche
+    dossier = DossierId(fiche.dossier_id) if instantane.dossier_cree and fiche.dossier_id else None
+    les_comptes = comptes.lister(dossier) if dossier else ()
+    ecritures = ledger.grand_livre(dossier) if dossier and les_comptes else ()
+    documents = [_avec_mouvements(fiches, tenant_id, d) for d in instantane.documents]
+    saisis = soldes_saisis(fiche.champs)
+    vues = [
+        _compte_banque_vue(c, saisis)
+        for c in couverture_de_la_fiche(fiche, documents, les_comptes, ecritures, date.today())
+    ]
+    return CouvertureBanqueVue(
+        comptes=vues,
+        a_completer=[m for v in vues for m in v.a_completer],
+        comptes_connus=[
+            CompteConnuVue(cle=c, libelle=lib)
+            for c, lib in comptes_connus(fiche, documents, les_comptes)
+        ],
+    )
+
+
+def _regler(
+    tenant_id: TenantId,
+    fiche_id: str,
+    par: str,
+    fiches: FichesImportRepository,
+    changer: Callable[[Mapping[str, str]], dict[str, str]],
+) -> None:
+    fiche = fiches.lire(tenant_id, fiche_id)
+    fiches.enregistrer(
+        dataclasses.replace(
+            fiche, champs=changer(fiche.champs), maj_par=par, maj_le=datetime.now(UTC)
+        )
+    )
+
+
+def _enregistrer_route_couverture_banque(app: FastAPI) -> None:
+    """AXE-973 : ce qui est prouvé par le solde, ce qui manque et de combien,
+    compte par compte. Des agrégats seulement : ni opération ni libellé."""
+
+    @app.get("/portefeuille/imports/{fiche_id}/banque", response_model=CouvertureBanqueVue)
+    def lire_couverture_banque(
+        fiche_id: str,
+        identite: IdentiteDep,
+        fiches: FichesImportDep,
+        comptes: ComptesBancairesDep,
+        ledger: LedgerBaseDep,
+    ) -> CouvertureBanqueVue:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _couverture_banque(tenant_id, fiche_id, fiches, comptes, ledger)
+
+
+def _enregistrer_routes_reglages_banque(app: FastAPI) -> None:
+    """AXE-973 (2/2) : rattacher le compte d'un FEC ou d'un relevé à un
+    compte connu."""
+
+    @app.put(
+        "/portefeuille/imports/{fiche_id}/banque/rattachements",
+        response_model=CouvertureBanqueVue,
+    )
+    def rattacher_compte_banque(
+        fiche_id: str,
+        corps: RattachementBanqueVue,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+        comptes: ComptesBancairesDep,
+        ledger: LedgerBaseDep,
+    ) -> CouvertureBanqueVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        _regler(
+            tenant_id,
+            fiche_id,
+            identite.email,
+            fiches,
+            lambda champs: rattacher_banque(champs, corps.source, corps.cible),
+        )
+        return _couverture_banque(tenant_id, fiche_id, fiches, comptes, ledger)
+
+
+def _enregistrer_routes_soldes_banque(app: FastAPI) -> None:
+    """AXE-973 (2/2) : saisir ou retirer un solde lu sur un relevé."""
+
+    @app.post("/portefeuille/imports/{fiche_id}/banque/soldes", response_model=CouvertureBanqueVue)
+    def saisir_solde_banque(
+        fiche_id: str,
+        corps: SoldeSaisiVue,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+        comptes: ComptesBancairesDep,
+        ledger: LedgerBaseDep,
+    ) -> CouvertureBanqueVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        _regler(
+            tenant_id,
+            fiche_id,
+            identite.email,
+            fiches,
+            lambda champs: ajouter_solde_banque(
+                champs, corps.compte, corps.le, corps.montant, corps.source, date.today()
+            ),
+        )
+        return _couverture_banque(tenant_id, fiche_id, fiches, comptes, ledger)
+
+    @app.delete(
+        "/portefeuille/imports/{fiche_id}/banque/soldes/{rang}",
+        response_model=CouvertureBanqueVue,
+    )
+    def retirer_solde_banque_saisi(
+        fiche_id: str,
+        rang: int,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+        comptes: ComptesBancairesDep,
+        ledger: LedgerBaseDep,
+    ) -> CouvertureBanqueVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        _regler(
+            tenant_id,
+            fiche_id,
+            identite.email,
+            fiches,
+            lambda champs: retirer_solde_banque(champs, rang),
+        )
+        return _couverture_banque(tenant_id, fiche_id, fiches, comptes, ledger)
 
 
 def _enregistrer_route_retrait_document_import(app: FastAPI) -> None:
@@ -9298,7 +9600,7 @@ def _enregistrer_route_retrait_document_import(app: FastAPI) -> None:
     ) -> FicheImportVue:
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
-        return _fiche_vue(fiches.retirer(tenant_id, fiche_id, document_id))
+        return _fiche_vue(_reprise_relue(fiches, fiches.retirer(tenant_id, fiche_id, document_id)))
 
 
 def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:
@@ -9312,22 +9614,23 @@ def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:
         role: RoleMembreDep,
         fiches: FichesImportDep,
         dossiers: DossiersDep,
+        demandes: DemandesJobsDep,
     ) -> RelierImportsVue:
         """Chaque fiche active qui a de quoi exister devient un dossier.
         Une fiche Ignoré n'en crée pas."""
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
-        existants = list(dossiers.lister_par_tenant(tenant_id))
-        creees = 0
-        for fiche in fiches.toutes(tenant_id):
-            reliee, a_creer, _erreurs = relier_au_portefeuille(fiche, existants)
-            if a_creer is not None:
-                dossiers.enregistrer_lot((a_creer,))
-                existants.append(a_creer)
-                creees += 1
-            if reliee.dossier_id != fiche.dossier_id:
-                fiches.enregistrer(reliee)
-        return RelierImportsVue(creees=creees)
+        changees, a_creer = relier_toutes(
+            fiches.toutes(tenant_id), dossiers.lister_par_tenant(tenant_id)
+        )
+        # AXE-974 : relier une fiche à un dossier existant se fait ici ; créer
+        # un dossier revient au worker (rôle propriétaire), dans la minute.
+        for fiche in changees:
+            if fiche.dossier_id not in {d.id for d in a_creer}:
+                fiches.enregistrer(fiche)
+        if a_creer:
+            _demander_creation_dossiers(tenant_id, demandes)
+        return RelierImportsVue(creees=0, en_creation=len(a_creer))
 
     @app.post("/portefeuille/imports/{fiche_id}/chauffeur", response_model=FicheImportVue)
     def creer_chauffeur_importe(
@@ -9336,12 +9639,13 @@ def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:
         role: RoleMembreDep,
         fiches: FichesImportDep,
         dossiers: DossiersDep,
+        demandes: DemandesJobsDep,
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
         fiche = fiches.lire(tenant_id, fiche_id)
         fiche = dataclasses.replace(fiche, maj_par=identite.email, maj_le=datetime.now(UTC))
-        fiche, erreurs = _poser_dossier(fiche, dossiers)
+        fiche, erreurs = _poser_dossier(fiche, dossiers, demandes)
         if erreurs:
             detail = (
                 f"À compléter : {', '.join(erreurs)}."
@@ -9388,6 +9692,9 @@ def _enregistrer_routes_imports(app: FastAPI) -> None:
     _enregistrer_routes_documents_import(app)
     _enregistrer_route_retrait_document_import(app)
     _enregistrer_routes_exercices_import(app)
+    _enregistrer_route_couverture_banque(app)
+    _enregistrer_routes_reglages_banque(app)
+    _enregistrer_routes_soldes_banque(app)
     _enregistrer_route_chauffeur_importe(app)
 
 

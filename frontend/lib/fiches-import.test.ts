@@ -6,6 +6,9 @@ import {
   deplacerDocument,
   documentsVisibles,
   lireAnnee,
+  ciblesPossibles,
+  largeurs,
+  libelleEtatBanque,
   archiveDe,
   nomCourt,
   versions,
@@ -301,4 +304,30 @@ test("AXE-972 : deux versions d'un grand livre sont signalées, pas l'impression
   assert.equal(versions("grand_livre", [pdf, pdf]), 2);
   assert.equal(versions("fec", [{ resume: "FEC lu : 834 lignes" }, impression]), 1);
   assert.equal(versions("comptes_annuels", [pdf, pdf]), 0);
+});
+
+test("AXE-973 : la frise donne à chaque période sa part de la durée", () => {
+  const tailles = largeurs([
+    { debut: "2022-01-01", fin: "2022-12-31" },
+    { debut: "2023-01-01", fin: "2023-01-01" },
+    { debut: "2023-01-02", fin: "2025-12-31" },
+  ]);
+  assert.equal(tailles.length, 3);
+  assert.ok(tailles[1] >= 1, "une période d'un jour reste visible");
+  assert.ok(tailles[2] > tailles[0]);
+  assert.equal(libelleEtatBanque("ecart"), "Écart au solde");
+});
+
+test("AXE-973 : un compte ne se rattache ni à lui-même ni à ce qu'il réunit déjà", () => {
+  const compte = {
+    cle: "digi:1", libelle: "Bred", origine: "digifactory" as const, suivi: true,
+    periodes: [], soldes: [], incoherences: [], a_completer: [],
+    reunit: [{ cle: "fec:5120020", libelle: "Bred (FEC)" }],
+  };
+  const connus = [
+    { cle: "digi:1", libelle: "Bred" },
+    { cle: "fec:5120020", libelle: "Bred (FEC)" },
+    { cle: "fec:5120010", libelle: "Qonto" },
+  ];
+  assert.deepEqual(ciblesPossibles(compte, connus).map((c) => c.cle), ["fec:5120010"]);
 });

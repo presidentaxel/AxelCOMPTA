@@ -10,6 +10,7 @@ import { SqueletteLignes } from "@/components/Squelette";
 import { AssociesImport } from "@/components/fiche-import/AssociesImport";
 import { ChampAuto, type Enregistrer } from "@/components/fiche-import/ChampAuto";
 import { ComptesBancairesImport } from "@/components/fiche-import/ComptesBancairesImport";
+import { CouvertureBancaire } from "@/components/fiche-import/CouvertureBancaire";
 import { DigifactoryImport } from "@/components/fiche-import/DigifactoryImport";
 import { EmplacementsSection } from "@/components/fiche-import/DocumentsImport";
 import { EntrepriseImport } from "@/components/fiche-import/EntrepriseImport";
@@ -162,7 +163,7 @@ function EnTete({
             {fiche.denomination ?? "Entreprise à compléter"}
             {fiche.siren && ` · SIREN ${fiche.siren}`}
             {fiche.documents_a_lire > 0 &&
-              ` · ${fiche.documents_a_lire} document${fiche.documents_a_lire > 1 ? "s" : ""} à lire`}
+              ` · ${fiche.documents_a_lire} document${fiche.documents_a_lire > 1 ? "s" : ""} à lire pour la reprise`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -434,6 +435,7 @@ function ContenuSection({
         champ={c}
         modifiable={modifiable}
         duRegistre={fiche.depuis_registre.includes(c.cle)}
+        source={fiche.depuis_fec?.[c.cle]}
         enregistrer={enregistrer}
       />
     );
@@ -459,6 +461,11 @@ function ContenuSection({
         <div className="grid max-w-sm gap-5">
           {section.champs.filter((c) => c.cle === "debut_historique").map(champ)}
         </div>
+        <CouvertureBancaire
+          ficheId={fiche.id}
+          version={[fiche.maj_le, fiche.emplacements.reduce((n, e) => n + e.documents.length, 0)].join("|")}
+          modifiable={modifiable}
+        />
       </div>
     );
   }

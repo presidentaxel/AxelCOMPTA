@@ -103,6 +103,8 @@ export type FicheImport = FicheImportResume & {
   registre_lu_le: string | null;
   registre_sources: string[];
   depuis_registre: string[];
+  /** AXE-976 : champ → « FEC 2024 », pour les champs lus dans le dernier FEC. */
+  depuis_fec?: Record<string, string>;
   manque_pour_creer: string[];
   dossier_prevu: string | null;
   dossier_cree: boolean;
@@ -557,4 +559,68 @@ const UNIQUES = new Set(["liasse", "fec", "balance", "grand_livre"]);
 export function versions(categorie: string, documents: Pick<DocumentImport, "resume">[]): number {
   if (!UNIQUES.has(categorie)) return 0;
   return documents.filter((d) => !d.resume.startsWith("Impression PDF du FEC")).length;
+}
+
+// --- AXE-973 : couverture bancaire -------------------------------------------
+
+export type EtatPeriodeBanque = "complet" | "couvert" | "ecart" | "manquant";
+export type PeriodeBanque = {
+  debut: string;
+  fin: string;
+  etat: EtatPeriodeBanque;
+  phrase: string;
+  ecart_cts: number | null;
+  sources: string[];
+  indices: string[];
+};
+export type SoldeBanque = { le: string; cts: number; source: string; rang?: number | null };
+export type CompteConnu = { cle: string; libelle: string };
+export type CompteBanque = {
+  cle: string;
+  libelle: string;
+  origine: "digifactory" | "fec" | "releve";
+  suivi: boolean;
+  periodes: PeriodeBanque[];
+  soldes: SoldeBanque[];
+  incoherences: string[];
+  a_completer: string[];
+  /** AXE-973 (2/2) : les comptes de FEC ou de relevés rattachés à celui-ci. */
+  reunit?: CompteConnu[];
+};
+export type CouvertureBanque = {
+  comptes: CompteBanque[];
+  a_completer: string[];
+  comptes_connus?: CompteConnu[];
+};
+
+/** Les comptes auxquels un compte peut se rattacher : ni lui-même, ni un
+ * compte déjà rattaché à lui. */
+export function ciblesPossibles(compte: CompteBanque, connus: CompteConnu[]): CompteConnu[] {
+  const siens = new Set([compte.cle, ...(compte.reunit ?? []).map((c) => c.cle)]);
+  return connus.filter((c) => !siens.has(c.cle));
+}
+
+const JOUR_MS = 86_400_000;
+
+/** La largeur de chaque période sur la frise, en % de la durée totale ; une
+ * période très courte garde 1 % pour rester visible. */
+export function largeurs(periodes: Pick<PeriodeBanque, "debut" | "fin">[]): number[] {
+  const jours = periodes.map(
+    (p) => Math.max(1, (Date.parse(p.fin) - Date.parse(p.debut)) / JOUR_MS + 1),
+  );
+  const total = jours.reduce((a, b) => a + b, 0) || 1;
+  return jours.map((j) => Math.max(1, Math.round((j / total) * 1000) / 10));
+}
+
+export function libelleEtatBanque(etat: EtatPeriodeBanque): string {
+  return {
+    complet: "Prouvé par le solde",
+    couvert: "Données sans solde pour le prouver",
+    ecart: "Écart au solde",
+    manquant: "Manquant",
+  }[etat];
+}
+
+export function euros(centimes: number): string {
+  return (centimes / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
 }

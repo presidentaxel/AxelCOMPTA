@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from typing import Any, cast
 
@@ -18,11 +19,12 @@ from axelcompta.api.routes import (
     get_lire_fiche_officielle,
     get_lire_premiere_ecriture_digifactory,
 )
-from axelcompta.core.ids import DossierId
+from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.ingestion.comptes_bancaires import CompteDigifactory
 from axelcompta.jobs.file import FileMemoire
 from axelcompta.tenants.branchements import BranchementsMemoire
 from axelcompta.tenants.fiches_import_depot import FichesImportMemoire
+from axelcompta.tenants.fiches_import_etat import relier_toutes
 from axelcompta.tenants.registres import FicheOfficielle
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client_et_stubs,
@@ -167,25 +169,22 @@ def test_un_releve_qif_depose_est_lu_tout_de_suite() -> None:
     assert document["resume"].startswith("QIF lu : 1 opérations")
 
 
-def test_une_fiche_complete_est_tout_de_suite_au_portefeuille() -> None:
-    """Sans imposition ni TVA, le dossier est créé à l'IS au réel normal,
-    comme un contact Digifactory, avec l'imposition à confirmer (#234). Sans
-    SIREN, il manque de quoi le créer."""
+def test_une_fiche_complete_fait_creer_son_dossier_par_le_worker() -> None:
+    """AXE-974 : le rôle web de l'API ne crée pas de dossier. La fiche est
+    reliée tout de suite à son identifiant, et un seul job `import_dossiers`
+    fait créer le dossier par le worker (rôle propriétaire). Sans SIREN, il
+    manque de quoi le créer."""
     client, file = _client()
     fiche = _ouvrir(client)
     route = f"/portefeuille/imports/{fiche['id']}"
-    depot = cast(FastAPI, client.app).dependency_overrides[get_dossiers]()
+    app = cast(FastAPI, client.app)
+    depot = app.dependency_overrides[get_dossiers]()
+    fiches = app.dependency_overrides[get_fiches_import]()
 
     suppose = client.post(f"{route}/chauffeur", headers=EN_TETE)
     complete = client.patch(
         route,
-        json={
-            "champs": {
-                "regime_imposition": "IS",
-                "regime_tva": "reel_normal",
-                "exercice_debut": "2026-01-01",
-            }
-        },
+        json={"champs": {"regime_imposition": "IS", "regime_tva": "reel_normal"}},
         headers=EN_TETE,
     )
     sans_siren = _ouvrir(client, siren="")
@@ -194,15 +193,22 @@ def test_une_fiche_complete_est_tout_de_suite_au_portefeuille() -> None:
     assert suppose.status_code == 200, suppose.text
     assert (suppose.json()["dossier_id"], suppose.json()["dossier_cree"]) == (
         f"SIREN_{SIREN}",
-        True,
+        False,
     )
-    dossier = depot.obtenir(DossierId(f"SIREN_{SIREN}"))
-    assert dossier.nom == "MK DRIVING"
-    assert "imposition" in dossier.a_confirmer
     assert complete.status_code == 200, complete.text
-    assert complete.json()["dossier_cree"] is True
     assert incomplet.status_code == 422 and "SIREN" in incomplet.json()["detail"]
-    assert file.dernier("TENANT_DEMO", "import_dossiers") is None
+    job = file.dernier("TENANT_DEMO", "import_dossiers")
+    assert job is not None and json.loads(job.payload) == {"lignes": []}
+    assert len([j for j in file._jobs.values() if j.type == "import_dossiers"]) == 1
+
+    # Ce que fait le worker : relier chaque fiche et créer ce qui manque.
+    _changees, a_creer = relier_toutes(fiches.toutes(TenantId("TENANT_DEMO")), [])
+    depot.enregistrer_lot(a_creer)
+    relue = client.get(route, headers=EN_TETE).json()
+    assert relue["dossier_cree"] is True
+    # L'imposition a été saisie avant le passage du worker : rien à confirmer.
+    dossier = depot.obtenir(DossierId(f"SIREN_{SIREN}"))
+    assert (dossier.regime_imposition, dossier.a_confirmer) == ("IS", ())
 
 
 def test_ignorer_une_fiche_puis_la_remettre() -> None:
@@ -486,3 +492,104 @@ def test_une_archive_redeposee_est_refusee_comme_doublon() -> None:
     assert second.json()["detail"].startswith("Déjà sur la fiche : archive-2019.zip")
     tous = client.get(f"/portefeuille/imports/{fiche['id']}", headers=EN_TETE).json()
     assert sum(len(e["documents"]) for e in tous["emplacements"]) == 5
+
+
+def test_la_couverture_bancaire_dit_ce_qui_est_prouve_sans_rien_detailler() -> None:
+    """AXE-973 : un FEC 2024 déposé donne son compte de banque, prouvé par le
+    solde ; la route ne rend ni opération ni libellé."""
+    client, _file = _client()
+    fiche = _ouvrir(client)  # créée le 15/03/2023, clôture au 31/12
+    fec = (
+        b"JournalCode\tEcritureNum\tEcritureDate\tCompteNum\tCompteLib\tPieceRef"
+        b"\tEcritureLib\tDebit\tCredit\tValidDate\r\n"
+        b"AN\t1\t20240101\t512000\tBanque\tP\tA nouveau\t200,00\t0,00\t20240101\r\n"
+        b"AN\t1\t20240101\t101000\tCapital\tP\tA nouveau\t0,00\t200,00\t20240101\r\n"
+        b"BQ\t2\t20240310\t512000\tBanque\tP\tUber\t50,00\t0,00\t20240310\r\n"
+        b"BQ\t2\t20240310\t706000\tVentes\tP\tUber\t0,00\t50,00\t20240310\r\n"
+    )
+    client.post(
+        f"/portefeuille/imports/{fiche['id']}/exercices/2024/documents",
+        files=[("fichiers", ("55210055400010FEC20241231.csv", fec, "text/csv"))],
+        headers=EN_TETE,
+    )
+    reponse = client.get(f"/portefeuille/imports/{fiche['id']}/banque", headers=EN_TETE)
+
+    assert reponse.status_code == 200, reponse.text
+    (compte,) = reponse.json()["comptes"]
+    assert (compte["cle"], compte["origine"], compte["suivi"]) == ("fec:512000", "fec", False)
+    complet = [p for p in compte["periodes"] if p["etat"] == "complet"]
+    assert [(p["debut"], p["fin"]) for p in complet] == [("2024-01-01", "2024-12-31")]
+    assert {s["source"] for s in compte["soldes"]} >= {
+        "FEC 2024 (à-nouveaux)",
+        "FEC 2024 (clôture)",
+    }
+    assert "Uber" not in reponse.text  # des agrégats seulement
+
+
+def test_rattacher_un_compte_et_saisir_un_solde_depuis_la_fiche() -> None:
+    """AXE-973 (2/2) : un relevé QIF devient le compte du FEC, un solde saisi
+    se retire ; un lecteur ne règle rien."""
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    route = f"/portefeuille/imports/{fiche['id']}/banque"
+    qif = b"!Type:Bank\nD10/03/2025\nT80.00\nPBolt\n^\n"
+    depot = client.post(
+        f"/portefeuille/imports/{fiche['id']}/documents",
+        files={"fichier": ("bred.qif", qif, "text/plain")},
+        data={"emplacement": "banque:releve_bancaire"},
+        headers=EN_TETE,
+    )
+    (releve,) = [
+        d
+        for e in depot.json()["emplacements"]
+        for d in e["documents"]
+        if d["nom_fichier"] == "bred.qif"
+    ]
+    cle = f"doc:{releve['id']}"
+
+    solde = client.post(
+        f"{route}/soldes",
+        json={"compte": cle, "le": "2025-03-31", "montant": "80,00", "source": "Relevé mars"},
+        headers=EN_TETE,
+    )
+    assert solde.status_code == 200, solde.text
+    (compte,) = solde.json()["comptes"]
+    saisi = next(s for s in compte["soldes"] if s["source"] == "Relevé mars (saisi)")
+    assert (saisi["cts"], saisi["rang"]) == (8000, 0)
+    assert cle in [c["cle"] for c in solde.json()["comptes_connus"]]
+
+    retire = client.delete(f"{route}/soldes/0", headers=EN_TETE)
+    assert all(s["rang"] is None for s in retire.json()["comptes"][0]["soldes"])
+
+    refuse = client.put(
+        f"{route}/rattachements", json={"source": cle, "cible": cle}, headers=EN_TETE
+    )
+    assert refuse.status_code == 422
+    lecteur = _client(role="lecture")[0]
+    assert (
+        lecteur.put(
+            f"{route}/rattachements", json={"source": cle, "cible": None}, headers=EN_TETE
+        ).status_code
+        == 403
+    )
+
+
+def test_deposer_un_fec_preremplit_la_reprise_comptable() -> None:
+    """AXE-976 : le FEC déposé donne le véhicule, marqué « FEC 2024 »."""
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    fec = (
+        b"JournalCode\tEcritureNum\tEcritureDate\tCompteNum\tCompteLib\tPieceRef"
+        b"\tEcritureLib\tDebit\tCredit\tValidDate\r\n"
+        b"AC\t1\t20240210\t2182000\tVehicule\tP\tAchat\t20000,00\t0,00\t20240210\r\n"
+        b"AC\t1\t20240210\t512000\tBanque\tP\tAchat\t0,00\t20000,00\t20240210\r\n"
+    )
+    vue = client.post(
+        f"/portefeuille/imports/{fiche['id']}/exercices/2024/documents",
+        files=[("fichiers", ("55210055400010FEC20241231.csv", fec, "text/csv"))],
+        headers=EN_TETE,
+    ).json()
+    reprise = {c["cle"]: c["valeur"] for c in _section(vue, "reprise")["champs"]}
+    assert reprise["vehicule"] == "achat"
+    assert "acheté le 10/02/2024" in reprise["vehicule_detail"]
+    assert vue["depuis_fec"]["vehicule"] == "FEC 2024"

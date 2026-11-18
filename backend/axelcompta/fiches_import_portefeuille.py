@@ -24,7 +24,9 @@ from axelcompta.tenants.fiches_import_dossiers import (
     DonneesDossier,
     completer_portefeuille,
 )
+from axelcompta.tenants.fiches_import_etat import relier_toutes
 from axelcompta.tenants.fiches_import_postgres import PostgresFichesImport
+from axelcompta.tenants.fiches_import_reprise import preremplir_reprise
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.registres import FicheOfficielle
@@ -160,4 +162,29 @@ def completer_fiches(
     )
     for fiche in a_ouvrir:
         depot.enregistrer(_avec_registres(fiche, lire, le))
-    return resume(creees + len(a_ouvrir), completees)
+    # AXE-976 : la reprise comptable de chaque fiche suit son dernier FEC.
+    for fiche, documents in depot.lister(tenant_id):
+        relue = preremplir_reprise(fiche, documents, le.date())
+        if relue is not fiche:
+            depot.enregistrer(relue)
+    crees = relier_au_portefeuille_complet(engine, tenant_id)
+    texte = resume(creees + len(a_ouvrir), completees)
+    if crees:
+        ajout = f"{crees} dossier(s) créé(s) depuis Imports"
+        texte = f"{texte}, {ajout}" if texte else ajout
+    return texte
+
+
+def relier_au_portefeuille_complet(engine: Engine, tenant_id: TenantId) -> int:
+    """AXE-974 : chaque fiche active complète a son dossier, créé ici avec
+    le rôle propriétaire (le rôle web de l'API ne crée pas de dossier). Une
+    fiche Ignoré ou annulée n'en crée pas. Le nombre de dossiers créés."""
+    depot = PostgresFichesImport(engine)
+    dossiers = PostgresDossierRepository(engine)
+    changees, a_creer = relier_toutes(
+        depot.toutes(tenant_id), dossiers.lister_par_tenant(tenant_id)
+    )
+    crees = dossiers.enregistrer_lot(a_creer) if a_creer else 0
+    for fiche in changees:
+        depot.enregistrer(fiche)
+    return crees
