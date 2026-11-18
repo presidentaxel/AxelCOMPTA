@@ -16,6 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from axelcompta.core.ids import TenantId
+from axelcompta.ocr.passage_postgres import passer_ocr
 from axelcompta.tenants.contacts_proposes_postgres import PostgresContactsProposes
 from axelcompta.tenants.fiches_import import FicheImport, fiches_des_contacts, preremplir
 from axelcompta.tenants.fiches_import_dossiers import (
@@ -173,6 +174,10 @@ def completer_fiches(
     if crees:
         ajout = f"{crees} dossier(s) créé(s) depuis Imports"
         texte = f"{texte}, {ajout}" if texte else ajout
+    # AXE-943 : les documents déposés sont lus (rattrapage d'un job manqué).
+    lus = passer_ocr(engine, tenant_id)
+    if lus:
+        texte = f"{texte}, {lus}" if texte else lus
     # AXE-989 : un chauffeur importé a des données à jour, revues chaque heure.
     revues = valider_portefeuille(engine, tenant_id, le)
     if revues:
