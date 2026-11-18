@@ -115,8 +115,19 @@ def test_un_document_va_dans_son_emplacement_et_un_ancien_dans_celui_de_sa_categ
     assert places["documents:kbis"].documents == (ancien,)
 
 
+# AXE-989 : la reprise comptable renseignée, même à zéro.
+REPRISE_RENSEIGNEE = {"deficits": "0", "credit_tva": "0", "vehicule": "aucun", "emprunts": "aucun"}
+ASSOCIE = '[{"prenom": "Karim", "nom": "Dupont", "fonction": "president", "parts": "100"}]'
+
+
 def test_chaque_categorie_dit_ce_qui_lui_manque() -> None:
-    fiche = _fiche(**CREE_EN_2023, regime_imposition="option_IR", email="k@x.fr")
+    fiche = _fiche(
+        **CREE_EN_2023,
+        **REPRISE_RENSEIGNEE,
+        regime_imposition="option_IR",
+        email="k@x.fr",
+        associes=ASSOCIE,
+    )
     documents = [_document("reprise:liasse:2025"), _document("documents:kbis")]
     etats = {e.cle: e for e in etat_sections(fiche, documents, AUJOURD_HUI)}
 
@@ -199,7 +210,7 @@ def test_une_liasse_jamais_deposee_fait_remonter_a_l_exercice_d_avant() -> None:
     roles = {e.annee: (e.role, e.en_retard) for e in exercices(en_retard, AUJOURD_HUI)}
     assert roles[2025] == ("a_declarer", True)
     assert roles[2024] == ("source", False)
-    fiche = _fiche(**en_retard)
+    fiche = _fiche(**en_retard, **REPRISE_RENSEIGNEE)
     reprise = next(e for e in etat_sections(fiche, [], AUJOURD_HUI) if e.cle == "reprise")
     assert reprise.manquants == ("Liasse fiscale 2024", "FEC 2024")
 
@@ -210,7 +221,8 @@ def test_une_societe_dont_aucun_exercice_n_est_encore_du_n_a_rien_a_fournir() ->
         "cloture": "30/09",
     }  # premier exercice clos le 30/09/2026
     assert [e.role for e in exercices(jeune, AUJOURD_HUI)] == ["a_declarer", "en_cours"]
-    reprise = next(e for e in etat_sections(_fiche(**jeune), [], AUJOURD_HUI) if e.cle == "reprise")
+    fiche = _fiche(**jeune, **REPRISE_RENSEIGNEE)
+    reprise = next(e for e in etat_sections(fiche, [], AUJOURD_HUI) if e.cle == "reprise")
     assert reprise.complet
 
 
@@ -405,3 +417,41 @@ def test_seuls_les_documents_utiles_a_la_reprise_sont_a_lire() -> None:
     ]
     a_lire = documents_a_lire(champs, documents, aujourd_hui)
     assert [d.id for d in a_lire] == ["liasse-2025", "gl-2025", "fec-2024", "releve"]
+
+
+def _section(fiche: FicheImport, cle: str, documents: list[DocumentImport] | None = None):  # type: ignore[no-untyped-def]
+    return next(e for e in etat_sections(fiche, documents or [], AUJOURD_HUI) if e.cle == cle)
+
+
+def test_la_tva_deja_declaree_est_demandee_sauf_en_franchise() -> None:
+    """AXE-989."""
+    assert (
+        "Déclarations de TVA déjà déposées"
+        in _section(_fiche(**CLOTURE_30_09, regime_tva="reel_simplifie"), "fiscalite").manquants
+    )
+    franchise = _fiche(**CLOTURE_30_09, regime_tva="franchise")
+    assert "Déclarations de TVA déjà déposées" not in _section(franchise, "fiscalite").manquants
+    deposees = {**CLOTURE_30_09, "tva_declarations": "deposees"}
+    places = {e.cle: e for e in emplacements(deposees, [], AUJOURD_HUI)}
+    assert places["reprise:declaration_tva:2026"].attendu  # à déclarer
+    assert places["reprise:declaration_tva:2027"].attendu  # en cours
+
+
+def test_un_emprunt_demande_son_tableau_d_amortissement() -> None:
+    sans = {e.cle for e in emplacements({**CLOTURE_30_09, "emprunts": "Aucun"}, [], AUJOURD_HUI)}
+    assert "reprise:emprunt" not in sans
+    avec = {
+        e.cle: e
+        for e in emplacements({**CLOTURE_30_09, "emprunts": "Bred, 12 000 €"}, [], AUJOURD_HUI)
+    }
+    assert avec["reprise:emprunt"].attendu
+
+
+def test_un_vehicule_et_un_fec_imprime_ne_suffisent_pas() -> None:
+    fiche = _fiche(**CLOTURE_30_09, **{**REPRISE_RENSEIGNEE, "vehicule": "achat"})
+    impression = _document("reprise:fec:2025")
+    manquants = _section(fiche, "reprise", [impression]).manquants
+    assert "Véhicule : détail" in manquants
+    assert any(m.startswith("FEC 2025 lisible") for m in manquants)
+    lu = replace(impression, donnees={"type": "fec"})
+    assert not any(m.startswith("FEC 2025") for m in _section(fiche, "reprise", [lu]).manquants)

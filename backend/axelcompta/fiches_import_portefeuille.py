@@ -30,6 +30,7 @@ from axelcompta.tenants.fiches_import_reprise import preremplir_reprise
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.registres import FicheOfficielle
+from axelcompta.validation_fiches_service import valider_portefeuille
 
 LireRegistres = Callable[[str], FicheOfficielle | None]
 # Nom d'un compte Rollee (« uber.com-fleet-rev ») → plateforme de la fiche.
@@ -172,6 +173,10 @@ def completer_fiches(
     if crees:
         ajout = f"{crees} dossier(s) créé(s) depuis Imports"
         texte = f"{texte}, {ajout}" if texte else ajout
+    # AXE-989 : un chauffeur importé a des données à jour, revues chaque heure.
+    revues = valider_portefeuille(engine, tenant_id, le)
+    if revues:
+        texte = f"{texte}, {revues}" if texte else revues
     return texte
 
 

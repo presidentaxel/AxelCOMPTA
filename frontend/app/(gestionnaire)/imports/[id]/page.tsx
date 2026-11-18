@@ -12,6 +12,7 @@ import { ChampAuto, type Enregistrer } from "@/components/fiche-import/ChampAuto
 import { ComptesBancairesImport } from "@/components/fiche-import/ComptesBancairesImport";
 import { CouvertureBancaire } from "@/components/fiche-import/CouvertureBancaire";
 import { CouverturePlateformes } from "@/components/fiche-import/CouverturePlateformes";
+import { CriteresImport } from "@/components/fiche-import/CriteresImport";
 import { DigifactoryImport } from "@/components/fiche-import/DigifactoryImport";
 import { EmplacementsSection } from "@/components/fiche-import/DocumentsImport";
 import { EntrepriseImport } from "@/components/fiche-import/EntrepriseImport";
@@ -400,6 +401,11 @@ function PanneauSection({
   );
 }
 
+/** Ce qui change les données vues par les couvertures : la fiche et ses documents. */
+function versionDonnees(fiche: FicheImport): string {
+  return [fiche.maj_le, fiche.emplacements.reduce((n, e) => n + e.documents.length, 0)].join("|");
+}
+
 function ContenuSection({
   fiche,
   section,
@@ -444,6 +450,7 @@ function ContenuSection({
   if (section.cle === "banque") {
     return (
       <div className="space-y-8">
+        <CriteresImport ficheId={fiche.id} section="banque" version={versionDonnees(fiche)} />
         <DigifactoryImport
           ficheId={fiche.id}
           contactActuel={valeurChamp(fiche, "contact_digifactory")}
@@ -473,6 +480,7 @@ function ContenuSection({
   if (section.cle === "plateformes") {
     return (
       <div className="space-y-8">
+        <CriteresImport ficheId={fiche.id} section="plateformes" version={versionDonnees(fiche)} />
         <div className="grid gap-5 sm:grid-cols-2">{section.champs.map(champ)}</div>
         <CouverturePlateformes
           ficheId={fiche.id}

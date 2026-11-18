@@ -632,6 +632,10 @@ export function nomPlateforme(cle: string): string {
   return NOMS_PLATEFORMES[cle] ?? cle.charAt(0).toUpperCase() + cle.slice(1);
 }
 
+/** AXE-989 : les critères pour que le chauffeur soit importé. */
+export type CritereImport = { section: string; libelle: string; ok: boolean; detail: string };
+export type ValidationImport = { importe: boolean; dossier: boolean; criteres: CritereImport[] };
+
 export type CouvertureBanque = {
   comptes: CompteBanque[];
   a_completer: string[];
