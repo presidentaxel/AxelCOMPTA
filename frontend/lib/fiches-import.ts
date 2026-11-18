@@ -103,6 +103,8 @@ export type FicheImport = FicheImportResume & {
   registre_lu_le: string | null;
   registre_sources: string[];
   depuis_registre: string[];
+  /** AXE-976 : champ → « FEC 2024 », pour les champs lus dans le dernier FEC. */
+  depuis_fec?: Record<string, string>;
   manque_pour_creer: string[];
   dossier_prevu: string | null;
   dossier_cree: boolean;

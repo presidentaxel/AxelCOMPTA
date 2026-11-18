@@ -151,7 +151,27 @@ def _donnees_fec(lignes: tuple[LigneFec, ...], nom: str) -> dict[str, object]:
         "resultat_cts": -sum(s for c, s in soldes.items() if c.startswith(("6", "7"))),
         "soldes_cts": {c: s for c, s in sorted(soldes.items()) if s},
         "banque": _banque_fec(lignes),
+        "immobilisations": _immobilisations_fec(lignes),
     }
+
+
+def _immobilisations_fec(lignes: tuple[LigneFec, ...]) -> dict[str, dict[str, object]]:
+    """AXE-976 : par compte d'immobilisation (20…, 21…), son libellé et la
+    date de sa première entrée hors à-nouveaux (l'achat, s'il a eu lieu dans
+    l'exercice) ; le solde est déjà dans `soldes_cts`."""
+    immobilisations: dict[str, dict[str, object]] = {}
+    for lg in lignes:
+        if not lg.compte.startswith(("20", "21")) or lg.debit <= 0:
+            continue
+        if lg.journal.upper() in JOURNAUX_A_NOUVEAUX:
+            continue
+        deja = immobilisations.get(lg.compte)
+        if deja is None or str(deja["achat_le"]) > lg.date_ecriture.isoformat():
+            immobilisations[lg.compte] = {
+                "libelle": lg.libelle,
+                "achat_le": lg.date_ecriture.isoformat(),
+            }
+    return immobilisations
 
 
 JOURNAUX_A_NOUVEAUX = frozenset({"AN", "RAN", "ANO", "ANX"})
