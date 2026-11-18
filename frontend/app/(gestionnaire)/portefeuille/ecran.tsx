@@ -110,8 +110,10 @@ export function EcranEntreprises() {
   const [retires, setRetires] = useState<{ dossier_id: string; nom: string }[]>([]);
   const [fiches, setFiches] = useState<FicheImportResume[]>([]);
 
+  const [enCreation, setEnCreation] = useState(0);
   const charger = useCallback(() => {
     relierFichesImport()
+      .then((r) => setEnCreation(r.en_creation ?? 0))
       .catch((exception) => {
         if (exception instanceof ErreurAuthGestionnaire) throw exception;
       })
@@ -129,6 +131,12 @@ export function EcranEntreprises() {
       });
   }, [router]);
   const synchro = useSynchronisationPortefeuille(charger);
+  // AXE-974 : le worker crée les dossiers des fiches complètes dans la minute.
+  useEffect(() => {
+    if (enCreation === 0) return;
+    const minuterie = window.setTimeout(charger, 30_000);
+    return () => window.clearTimeout(minuterie);
+  }, [enCreation, charger]);
   const rechargerFiches = useCallback(() => {
     listerFichesImport()
       .then(setFiches)
@@ -763,6 +771,11 @@ export function EcranEntreprises() {
                 ))}
               </div>
               {infoRappel && <p className="mt-2 text-sm text-subtle">{infoRappel}</p>}
+              {enCreation > 0 && (
+                <p className="mt-2 text-sm text-subtle" role="status">
+                  {enCreation} entreprise(s) d&apos;Imports en cours d&apos;ajout : elles apparaissent dans la minute.
+                </p>
+              )}
               <SuiviEnvois dossierId={choisi.dossier_id} />
             </div>
 

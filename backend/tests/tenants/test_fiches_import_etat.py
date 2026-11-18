@@ -26,6 +26,7 @@ from axelcompta.tenants.fiches_import_etat import (
     ligne_dossier,
     manque_pour_creer,
     relier_au_portefeuille,
+    relier_toutes,
     statut_calcule,
 )
 from axelcompta.tenants.import_dossiers import rapport
@@ -353,3 +354,25 @@ def test_les_releves_restent_obligatoires_tant_que_l_exercice_a_declarer_n_est_p
         if e.cle == "banque:releve_bancaire"
     )
     assert inconnu.attendu and "du 01/10/2025 à aujourd'hui" in inconnu.explication
+
+
+def test_chaque_fiche_active_complete_a_son_dossier_sauf_ignoree_ou_annulee() -> None:
+    """AXE-974 : un dossier à créer par fiche active complète, un seul par
+    identifiant ; une fiche ignorée ou annulée n'en crée pas."""
+    base = {
+        "siren": "552100554",
+        "denomination": "MK DRIVING",
+        "forme_juridique": "SASU",
+        "exercice_debut": "2026-01-01",
+        "exercice_fin": "2026-12-31",
+    }
+    active = replace(nouvelle_fiche("a", TenantId("T"), "D", "K", "", "b", LE), champs=base)
+    doublon = replace(active, id="b")
+    ignoree = replace(active, id="c", champs={**base, "siren": "732829320"}, statut="ignore")
+    annulee = replace(active, id="d", champs={**base, "siren": "542107651"}, annulee_le=LE)
+    changees, a_creer = relier_toutes([active, doublon, ignoree, annulee], [])
+    assert [d.id for d in a_creer] == ["SIREN_552100554"]
+    assert {f.id: f.dossier_id for f in changees} == {
+        "a": "SIREN_552100554",
+        "b": "SIREN_552100554",
+    }

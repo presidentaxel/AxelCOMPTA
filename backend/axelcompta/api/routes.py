@@ -376,6 +376,7 @@ from axelcompta.tenants.fiches_import_etat import (
     etat_sections,
     manque_pour_creer,
     relier_au_portefeuille,
+    relier_toutes,
     statut_calcule,
 )
 from axelcompta.tenants.fiches_import_etat import emplacements as emplacements_import
@@ -8849,6 +8850,8 @@ class NouvelleFicheEntree(BaseModel):
 
 class RelierImportsVue(BaseModel):
     creees: int
+    # AXE-974 : dossiers que le worker crée dans la minute.
+    en_creation: int = 0
 
 
 class ChampsFicheEntree(BaseModel):
@@ -8993,15 +8996,26 @@ def _fiche_vue(instantane: Instantane) -> FicheImportVue:
 
 
 def _poser_dossier(
-    fiche: FicheImport, dossiers: DossierRepository
+    fiche: FicheImport, dossiers: DossierRepository, demandes: DemandesDeJobs
 ) -> tuple[FicheImport, tuple[str, ...]]:
-    """Crée le dossier dès que la fiche a de quoi exister au portefeuille,
-    et la relie. Une fiche incomplète revient telle quelle, avec ce qui manque."""
+    """Relie la fiche à son dossier ; s'il est à créer, le worker le crée
+    dans la minute (AXE-974 : le rôle web de l'API ne crée pas de dossier,
+    le worker a le rôle propriétaire). Une fiche incomplète revient telle
+    quelle, avec ce qui manque."""
     existants = dossiers.lister_par_tenant(fiche.tenant_id)
     reliee, a_creer, erreurs = relier_au_portefeuille(fiche, existants)
     if a_creer is not None:
-        dossiers.enregistrer_lot((a_creer,))
+        _demander_creation_dossiers(fiche.tenant_id, demandes)
     return reliee, erreurs
+
+
+def _demander_creation_dossiers(tenant_id: TenantId, demandes: DemandesDeJobs) -> None:
+    """Un job `import_dossiers` sans ligne : le worker relie chaque fiche
+    active et crée les dossiers qui manquent. Pas de second job s'il y en a
+    déjà un en attente ou en cours."""
+    en_cours = demandes.dernier(str(tenant_id), TYPE_IMPORT_DOSSIERS)
+    if en_cours is None or not en_cours.actif:
+        demandes.demander(str(tenant_id), TYPE_IMPORT_DOSSIERS, json.dumps({"lignes": []}))
 
 
 def _lire_registres(fiche: FicheImport, lire: LireFicheOfficielle | None, par: str) -> FicheImport:
@@ -9032,6 +9046,7 @@ def _enregistrer_routes_fiches_import(app: FastAPI) -> None:
         fiches: FichesImportDep,
         lire: LireFicheOfficielleDep,
         dossiers: DossiersDep,
+        demandes: DemandesJobsDep,
     ) -> FicheImportVue:
         """Nom et prénom du chauffeur ; avec un SIREN ou un SIRET, l'INSEE et
         le RNE préremplissent l'entreprise et le dirigeant. Dès que la fiche
@@ -9048,7 +9063,7 @@ def _enregistrer_routes_fiches_import(app: FastAPI) -> None:
             datetime.now(UTC),
         )
         fiche = _lire_registres(fiche, lire, identite.email)
-        fiche, _erreurs = _poser_dossier(fiche, dossiers)
+        fiche, _erreurs = _poser_dossier(fiche, dossiers, demandes)
         return _fiche_vue(fiches.enregistrer(fiche))
 
     @app.get("/portefeuille/imports/{fiche_id}", response_model=FicheImportVue)
@@ -9082,6 +9097,7 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         fiches: FichesImportDep,
         lire: LireFicheOfficielleDep,
         dossiers: DossiersDep,
+        demandes: DemandesJobsDep,
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
@@ -9091,7 +9107,7 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         # (bouton « Relire les registres », AXE-951).
         if "siren" in entree.champs or fiche.champs.get("siren") != avant.champs.get("siren"):
             fiche = _lire_registres(fiche, lire, identite.email)
-        fiche, _erreurs = _poser_dossier(fiche, dossiers)
+        fiche, _erreurs = _poser_dossier(fiche, dossiers, demandes)
         return _fiche_vue(fiches.enregistrer(fiche))
 
     @app.post("/portefeuille/imports/{fiche_id}/registres", response_model=FicheImportVue)
@@ -9584,22 +9600,23 @@ def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:
         role: RoleMembreDep,
         fiches: FichesImportDep,
         dossiers: DossiersDep,
+        demandes: DemandesJobsDep,
     ) -> RelierImportsVue:
         """Chaque fiche active qui a de quoi exister devient un dossier.
         Une fiche Ignoré n'en crée pas."""
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
-        existants = list(dossiers.lister_par_tenant(tenant_id))
-        creees = 0
-        for fiche in fiches.toutes(tenant_id):
-            reliee, a_creer, _erreurs = relier_au_portefeuille(fiche, existants)
-            if a_creer is not None:
-                dossiers.enregistrer_lot((a_creer,))
-                existants.append(a_creer)
-                creees += 1
-            if reliee.dossier_id != fiche.dossier_id:
-                fiches.enregistrer(reliee)
-        return RelierImportsVue(creees=creees)
+        changees, a_creer = relier_toutes(
+            fiches.toutes(tenant_id), dossiers.lister_par_tenant(tenant_id)
+        )
+        # AXE-974 : relier une fiche à un dossier existant se fait ici ; créer
+        # un dossier revient au worker (rôle propriétaire), dans la minute.
+        for fiche in changees:
+            if fiche.dossier_id not in {d.id for d in a_creer}:
+                fiches.enregistrer(fiche)
+        if a_creer:
+            _demander_creation_dossiers(tenant_id, demandes)
+        return RelierImportsVue(creees=0, en_creation=len(a_creer))
 
     @app.post("/portefeuille/imports/{fiche_id}/chauffeur", response_model=FicheImportVue)
     def creer_chauffeur_importe(
@@ -9608,12 +9625,13 @@ def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:
         role: RoleMembreDep,
         fiches: FichesImportDep,
         dossiers: DossiersDep,
+        demandes: DemandesJobsDep,
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
         fiche = fiches.lire(tenant_id, fiche_id)
         fiche = dataclasses.replace(fiche, maj_par=identite.email, maj_le=datetime.now(UTC))
-        fiche, erreurs = _poser_dossier(fiche, dossiers)
+        fiche, erreurs = _poser_dossier(fiche, dossiers, demandes)
         if erreurs:
             detail = (
                 f"À compléter : {', '.join(erreurs)}."
