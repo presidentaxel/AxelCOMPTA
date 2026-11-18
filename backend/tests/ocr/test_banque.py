@@ -38,7 +38,7 @@ def test_un_releve_prouve_par_ses_operations() -> None:
 
 
 def test_une_operation_oubliee_se_voit_au_centime() -> None:
-    oublie = {**RELEVE, "operations": RELEVE["operations"][:1]}  # type: ignore[index]
+    oublie = {**RELEVE, "operations": RELEVE["operations"][:1]}
     (erreur,) = RELEVE_BANCAIRE.controler(oublie, Contexte())
     assert erreur.endswith("(écart −122,22 €).")
 
