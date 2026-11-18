@@ -261,6 +261,7 @@ from axelcompta.jobs.file import (
     TYPE_IMPORT_DOSSIERS,
     TYPE_RAPPELS,
     TYPE_RAPPROCHEMENT_ROLLEE,
+    TYPE_RELEVES_FICHE,
     TYPE_SYNCHRO,
     DemandesDeJobs,
     Job,
@@ -309,6 +310,8 @@ from axelcompta.rapprochement_rollee_service import (
     rapprocher_dossier,
     retenir_avancement,
 )
+from axelcompta.releves_en_compta import Plan as PlanReleves
+from axelcompta.releves_en_compta import planifier as planifier_releves
 from axelcompta.revenus_rollee import delier_revenus, trancher_semaine_dossier
 from axelcompta.revenus_semaines import comparaison, debut_banque
 from axelcompta.stockage_documents import depot_documents
@@ -9503,6 +9506,69 @@ def _enregistrer_route_couverture_banque(app: FastAPI) -> None:
     ) -> CouvertureBanqueVue:
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
         return _couverture_banque(tenant_id, fiche_id, fiches, comptes, ledger)
+
+    @app.post("/portefeuille/imports/{fiche_id}/banque/ecrire", response_model=EcrireRelevesVue)
+    def ecrire_releves_en_compta(
+        fiche_id: str,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+        dossiers: DossiersDep,
+        comptes: ComptesBancairesDep,
+        ledger: LedgerBaseDep,
+        demandes: DemandesJobsDep,
+    ) -> EcrireRelevesVue:
+        """AXE-833 : les relevés rattachés à un compte Digifactory, pour les
+        mois de l'exercice d'avant Digifactory, prouvés par le solde. Le plan
+        se calcule ici (lecture seule) ; le worker écrit dans la minute."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        plan = _plan_releves(tenant_id, fiche_id, fiches, dossiers, comptes, ledger)
+        if plan.comptes:
+            demandes.demander(
+                str(tenant_id), TYPE_RELEVES_FICHE, json.dumps({"fiche_id": fiche_id})
+            )
+        return EcrireRelevesVue(
+            demande=bool(plan.comptes),
+            a_ecrire=[
+                f"{c.compte.nom or c.compte.compte_comptable} : du {c.depuis:%d/%m/%Y} "
+                f"au {c.avant:%d/%m/%Y} exclu"
+                for c in plan.comptes
+            ],
+            refus=list(plan.refus),
+        )
+
+
+class EcrireRelevesVue(BaseModel):
+    """AXE-833 : ce qui part en comptabilité, et pourquoi le reste n'y part pas."""
+
+    demande: bool
+    a_ecrire: list[str]
+    refus: list[str]
+
+
+def _plan_releves(
+    tenant_id: TenantId,
+    fiche_id: str,
+    fiches: FichesImportRepository,
+    dossiers: DossierRepository,
+    comptes: CompteBancaireRepository,
+    ledger: LedgerService,
+) -> PlanReleves:
+    instantane = fiches.instantane(tenant_id, fiche_id)
+    fiche = instantane.fiche
+    dossier = dossiers.obtenir(DossierId(fiche.dossier_id)) if fiche.dossier_id else None
+    if dossier is None or not instantane.dossier_cree:
+        return PlanReleves((), ("La fiche n'a pas encore de dossier.",))
+    documents = [_avec_mouvements(fiches, tenant_id, d) for d in instantane.documents]
+    return planifier_releves(
+        fiche,
+        documents,
+        comptes.lister(dossier.id),
+        ledger.grand_livre(dossier.id),
+        dossier.exercice_debut,
+        date.today(),
+    )
 
 
 def _enregistrer_routes_reglages_banque(app: FastAPI) -> None:

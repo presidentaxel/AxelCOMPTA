@@ -593,3 +593,22 @@ def test_deposer_un_fec_preremplit_la_reprise_comptable() -> None:
     assert reprise["vehicule"] == "achat"
     assert "acheté le 10/02/2024" in reprise["vehicule_detail"]
     assert vue["depuis_fec"]["vehicule"] == "FEC 2024"
+
+
+def test_ecrire_les_releves_d_une_fiche_sans_dossier_ne_demande_rien() -> None:
+    """AXE-833 : le plan se calcule à la demande ; sans dossier, rien ne part
+    au worker et l'écran dit pourquoi."""
+    client, file = _client()
+    fiche = _ouvrir(client, siren="")
+    reponse = client.post(f"/portefeuille/imports/{fiche['id']}/banque/ecrire", headers=EN_TETE)
+    assert reponse.status_code == 200, reponse.text
+    corps = reponse.json()
+    assert (corps["demande"], corps["a_ecrire"]) == (False, [])
+    assert corps["refus"] == ["La fiche n'a pas encore de dossier."]
+    assert not [j for j in file._jobs.values() if j.type == "releves_fiche"]
+
+
+def test_le_role_lecture_n_ecrit_pas_les_releves() -> None:
+    client, _file = _client(role="lecture")
+    reponse = client.post("/portefeuille/imports/inconnue/banque/ecrire", headers=EN_TETE)
+    assert reponse.status_code == 403

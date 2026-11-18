@@ -1586,6 +1586,18 @@ export async function lireCouvertureBanque(id: string): Promise<CouvertureBanque
   return (await reponse.json()) as CouvertureBanque;
 }
 
+/** AXE-833 : ce qui part en comptabilité depuis les relevés de la fiche. */
+export type EcrireReleves = { demande: boolean; a_ecrire: string[]; refus: string[] };
+
+export async function ecrireRelevesEnCompta(id: string): Promise<EcrireReleves> {
+  const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/banque/ecrire`, {
+    method: "POST",
+  });
+  if (reponse.status === 401) throw new ErreurAuthGestionnaire();
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as EcrireReleves;
+}
+
 async function couvertureOuErreur(reponse: Response): Promise<CouvertureBanque> {
   if (reponse.status === 401) throw new ErreurAuthGestionnaire();
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);

@@ -5,7 +5,9 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
+  ecrireRelevesEnCompta,
   lireCouvertureBanque,
+  type EcrireReleves,
   rattacherCompteBanque,
   retirerSoldeBanque,
   saisirSoldeBanque,
@@ -121,7 +123,62 @@ export function CouvertureBancaire({
           />
         ))
       )}
+      {modifiable && couverture.comptes.some((c) => c.origine === "digifactory") && (
+        <EcrireEnCompta ficheId={ficheId} />
+      )}
     </section>
+  );
+}
+
+/** AXE-833 : les mois de l'exercice d'avant Digifactory, pris des relevés
+ * rattachés à un compte Digifactory, s'ils sont prouvés par le solde. */
+function EcrireEnCompta({ ficheId }: { ficheId: string }) {
+  const [envoi, setEnvoi] = useState(false);
+  const [resultat, setResultat] = useState<EcrireReleves | null>(null);
+  const [erreur, setErreur] = useState("");
+
+  async function ecrire() {
+    setEnvoi(true);
+    setErreur("");
+    try {
+      setResultat(await ecrireRelevesEnCompta(ficheId));
+    } catch (e: unknown) {
+      setErreur(e instanceof Error ? e.message : "Erreur inattendue.");
+    } finally {
+      setEnvoi(false);
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-border p-3 text-sm text-ink">
+      <p className="font-medium">Écrire les relevés en comptabilité</p>
+      <p className="mt-0.5 text-xs text-subtle">
+        Les opérations des relevés rattachés à un compte Digifactory, de l&apos;exercice et d&apos;avant
+        la première opération de Digifactory. Seulement si le solde prouve la période ; une opération
+        n&apos;est jamais écrite deux fois.
+      </p>
+      <Button type="button" variant="secondary" size="sm" className="mt-2" disabled={envoi} onClick={() => void ecrire()}>
+        {envoi ? "Vérification…" : "Écrire les relevés"}
+      </Button>
+      {erreur && <p className="mt-2 text-danger">{erreur}</p>}
+      {resultat && (
+        <div className="mt-2 space-y-1 text-xs">
+          {resultat.demande && (
+            <p className="text-ink">
+              Écriture lancée, elle apparaît dans la minute : {resultat.a_ecrire.join(" ; ")}.
+            </p>
+          )}
+          {resultat.refus.map((r) => (
+            <p key={r} className="text-subtle">
+              {r}
+            </p>
+          ))}
+          {!resultat.demande && resultat.refus.length === 0 && (
+            <p className="text-subtle">Aucun relevé rattaché à un compte Digifactory.</p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
