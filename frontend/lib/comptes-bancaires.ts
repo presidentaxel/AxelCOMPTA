@@ -8,6 +8,7 @@ export type CompteAffiche = {
   solde_banque_cts: number | null;
   ecart_cts: number | null;
   retenu?: boolean | null;
+  propose_par_fiche?: boolean | null;
 };
 
 export type ChoixCompte = "retenu" | "ecarte" | "a_decider";
@@ -17,6 +18,18 @@ export function choixCompte(compte: CompteAffiche): ChoixCompte {
   if (compte.retenu === false) return "ecarte";
   if (compte.retenu === null) return "a_decider";
   return "retenu";
+}
+
+/** AXE-986 : ce que la fiche d'import dit du compte, à confirmer ou en
+ * désaccord avec le choix enregistré. `null` : rien à signaler. */
+export function phraseFiche(compte: CompteAffiche): string | null {
+  const propose = compte.propose_par_fiche;
+  if (propose === undefined || propose === null) return null;
+  const usage = propose ? "compte de l'activité" : "compte personnel";
+  const choix = choixCompte(compte);
+  if (choix === "a_decider") return `La fiche d'import propose : ${usage}.`;
+  if ((choix === "retenu") !== propose) return `La fiche d'import dit autre chose : ${usage}.`;
+  return null;
 }
 
 export type Rapprochement =
