@@ -139,6 +139,32 @@ def depot_sur_exercice(
     return lot
 
 
+def promus(lot: Lot, existants: Sequence[DocumentImport]) -> list[DocumentImport]:
+    """AXE-988 : un fichier déjà sur la fiche en « Autre », redéposé et cette
+    fois classé (un récapitulatif Uber déposé avant qu'on sache les lire) :
+    la copie déjà là prend le classement et la lecture du nouveau dépôt, au
+    lieu que celui-ci soit seulement écarté. Même contenu : même lecture."""
+    en_vrac = {d.empreinte: d for d in existants if d.categorie == "autre"}
+    sortie = []
+    for nouveau, _contenu in lot:
+        ancien = en_vrac.get(nouveau.empreinte)
+        if ancien is None or nouveau.categorie in ("autre", "archive"):
+            continue
+        del en_vrac[nouveau.empreinte]
+        sortie.append(
+            replace(
+                ancien,
+                categorie=nouveau.categorie,
+                emplacement=nouveau.emplacement,
+                exercice=nouveau.exercice or ancien.exercice,
+                statut_traitement=nouveau.statut_traitement,
+                resume=nouveau.resume,
+                donnees=nouveau.donnees,
+            )
+        )
+    return sortie
+
+
 def sans_doublons(lot: Lot, deja: Collection[str]) -> tuple[Lot, list[str]]:
     """AXE-971 : le lot sans ce qui est déjà sur la fiche (`deja` : les
     empreintes de ses documents) ni ce qui revient deux fois dans le dépôt.

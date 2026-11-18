@@ -234,6 +234,10 @@ class PostgresFichesImport:
                     exercice=document.exercice,
                     emplacement=document.emplacement,
                     cle_stockage=document.cle_stockage,
+                    # AXE-988 : un document reclassé est relu.
+                    statut_traitement=document.statut_traitement,
+                    resume=document.resume,
+                    donnees=document.donnees,
                 )
             )
             if resultat.rowcount == 0:

@@ -194,6 +194,7 @@ from axelcompta.depot_documents_import import Fichier as FichierImport
 from axelcompta.depot_documents_import import (
     depot_sur_emplacement,
     depot_sur_exercice,
+    promus,
     sans_doublons,
 )
 from axelcompta.documents.justificatifs import JustificatifRepository
@@ -9449,15 +9450,24 @@ def _deposer_sans_doublons(
     """AXE-971 : un contenu déjà sur la fiche n'est pas déposé une seconde
     fois. Tout le dépôt déjà présent : 409, avec les noms."""
     gardes, ecartes = sans_doublons(lot, {d.empreinte for d in avant.documents})
-    if not gardes:
+    # AXE-988 : un doublon d'un document resté en « Autre » le reclasse et le relit.
+    reclasses = promus(lot, avant.documents)
+    if not gardes and not reclasses:
         raise HTTPException(
             status_code=409,
             detail="Déjà sur la fiche : "
             + ", ".join(ecartes[:5])
             + (f" et {len(ecartes) - 5} autre(s)." if len(ecartes) > 5 else "."),
         )
-    vue = _fiche_vue(_reprise_relue(fiches, fiches.deposer_lot(gardes)))
-    return vue.model_copy(update={"doublons_ecartes": ecartes})
+    instantane = avant
+    for document in reclasses:
+        instantane = fiches.ranger(document)
+    if gardes:
+        instantane = fiches.deposer_lot(gardes)
+    empreintes = {d.empreinte for d in reclasses}
+    noms = {Path(d.nom_fichier).name for d, _c in lot if d.empreinte in empreintes}
+    vue = _fiche_vue(_reprise_relue(fiches, instantane))
+    return vue.model_copy(update={"doublons_ecartes": [n for n in ecartes if n not in noms]})
 
 
 def _reprise_relue(fiches: FichesImportRepository, instantane: Instantane) -> Instantane:
@@ -9533,8 +9543,21 @@ def _enregistrer_routes_exercices_import(app: FastAPI) -> None:
         )
         if document is None:
             raise HTTPException(status_code=404, detail="Document introuvable.")
-        rangee = fiches.ranger(reclasser_document(document, corps.emplacement))
+        rangee = fiches.ranger(_relu(fiches, reclasser_document(document, corps.emplacement)))
         return _fiche_vue(_reprise_relue(fiches, rangee))
+
+
+def _relu(fiches: FichesImportRepository, document: DocumentImport) -> DocumentImport:
+    """AXE-988 : un document reclassé est relu selon sa nouvelle catégorie
+    (un récapitulatif Uber rangé à la main est lu). Une archive garde son
+    résumé : ses fichiers sont déjà rangés à part."""
+    if document.categorie == "archive":
+        return document
+    _document, contenu = fiches.contenu(document.tenant_id, document.id)
+    lu = traiter_document_import(document.categorie, document.nom_fichier, contenu)
+    return dataclasses.replace(
+        document, statut_traitement=lu.statut, resume=lu.resume, donnees=lu.donnees
+    )
 
 
 def _compte_banque_vue(compte: CompteCouvert, saisis: list[SoldeSaisi]) -> CompteBanqueVue:
