@@ -81,7 +81,8 @@ def _releves_rattaches(
     return tuple(
         d.id
         for d in documents
-        if (d.donnees or {}).get("type") == "qif" and racine(f"doc:{d.id}", liens) == cle
+        if (d.donnees or {}).get("type") in ("qif", "releve")
+        and racine(f"doc:{d.id}", liens) == cle
     )
 
 
@@ -190,6 +191,23 @@ def lire_releves(
         except (QifIllisible, UnicodeDecodeError):
             continue
     return lus
+
+
+def operations_lues(document: DocumentImport) -> list[OperationQif]:
+    """Les opérations d'un relevé PDF lu par l'OCR (AXE-943), libellés
+    compris, gardés sur le document."""
+    lu = (document.donnees or {}).get("lu")
+    operations = lu.get("operations") if isinstance(lu, dict) else None
+    lues = []
+    for o in operations if isinstance(operations, list) else []:
+        try:
+            jour = date.fromisoformat(str(o.get("date")))
+        except (ValueError, AttributeError):
+            continue
+        montant = o.get("montant_cts")
+        if isinstance(montant, int):
+            lues.append(OperationQif(jour, montant, str(o.get("libelle") or "")))
+    return lues
 
 
 def avec_mouvements(document: DocumentImport, operations: Sequence[OperationQif]) -> DocumentImport:

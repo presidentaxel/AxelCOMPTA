@@ -35,6 +35,7 @@ from axelcompta.releves_en_compta import (
     SOURCE_RELEVE,
     avec_mouvements,
     lire_releves,
+    operations_lues,
     planifier,
     transactions,
 )
@@ -90,6 +91,12 @@ def ecrire_releves(
 
     qif = [d for d in instantane.documents if (d.donnees or {}).get("type") == "qif"]
     lus = dict(lire_releves([d.id for d in qif], contenu))
+    # AXE-943 : un relevé PDF lu par l'OCR garde ses opérations et libellés.
+    lus |= {
+        d.id: operations_lues(d)
+        for d in instantane.documents
+        if (d.donnees or {}).get("type") == "releve"
+    }
     documents = [avec_mouvements(d, lus[d.id]) if d.id in lus else d for d in instantane.documents]
     comptes = depots.comptes.lister(dossier.id)
     plan = planifier(
