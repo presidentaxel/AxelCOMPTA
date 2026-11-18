@@ -13,7 +13,8 @@ from axelcompta.ocr.lecture import HAIKU, SONNET
 
 class _Messages:
     def __init__(self, reponse: Any = None, erreur: Exception | None = None) -> None:
-        self.reponse, self.erreur, self.recus = reponse, erreur, []
+        self.reponse, self.erreur = reponse, erreur
+        self.recus: list[dict[str, Any]] = []
 
     def create(self, **kwargs: Any) -> Any:
         self.recus.append(kwargs)
