@@ -368,6 +368,12 @@ from axelcompta.tenants.fiches_import_banque import SoldeSaisi, soldes_saisis
 from axelcompta.tenants.fiches_import_banque import ajouter_solde as ajouter_solde_banque
 from axelcompta.tenants.fiches_import_banque import rattacher as rattacher_banque
 from axelcompta.tenants.fiches_import_banque import retirer_solde as retirer_solde_banque
+from axelcompta.tenants.fiches_import_comptes import (
+    CHAMP_COMPTES,
+    a_appliquer,
+    choix_de_la_fiche,
+    proposition,
+)
 from axelcompta.tenants.fiches_import_depot import FichesImportRepository, Instantane
 from axelcompta.tenants.fiches_import_etat import (
     ContactDigifactory,
@@ -473,6 +479,7 @@ from axelcompta.workflow.expert_comptable import (
     DecisionExpert,
     Engagement,
     ExpertActif,
+    ExpertNonHabilite,
     ExpertRepository,
     Habilitation,
     exiger_dossier,
@@ -755,6 +762,8 @@ class CompteBancaireVue(BaseModel):
     ecart_cts: int | None
     # AXE-729 : True comptabilisé, False écarté (personnel), None à décider.
     retenu: bool | None = True
+    # AXE-986 : ce que dit la fiche d'import (True pro, False perso), None rien.
+    propose_par_fiche: bool | None = None
 
 
 class DecisionCompteEntree(BaseModel):
@@ -4219,12 +4228,16 @@ def _enregistrer_routes_comptes_bancaires_expert(app: FastAPI) -> None:
         base: LedgerBaseDep,
         decisions: DecisionsDep,
         comptes: ComptesBancairesDep,
+        fiches: FichesImportDep,
     ) -> list[CompteBancaireVue]:
         """AXE-956 : l'expert-comptable habilité sur le dossier voit ses
         comptes, comme le dirigeant. Le gestionnaire non expert n'y a pas
         accès (doc 19 §2.4)."""
         ecritures = _ledger_avec_decisions(dossier, base, decisions).grand_livre(dossier.id)
-        return vues_comptes_bancaires(comptes.lister(dossier.id), ecritures)
+        liste = comptes.lister(dossier.id)
+        return _proposees_par_fiche(
+            vues_comptes_bancaires(liste, ecritures), liste, fiches, dossier
+        )
 
     @app.post(
         "/expert/dossiers/{dossier_id}/comptes-bancaires/{compte}/decision",
@@ -4238,15 +4251,17 @@ def _enregistrer_routes_comptes_bancaires_expert(app: FastAPI) -> None:
         decisions: DecisionsDep,
         comptes: ComptesBancairesDep,
         identite: IdentiteDep,
+        fiches: FichesImportDep,
     ) -> list[CompteBancaireVue]:
         """AXE-956 : l'expert retient ou écarte un compte à la place du
         dirigeant, avec les mêmes règles (AXE-729). Le choix est tracé au
         journal d'audit à son nom : il en porte la responsabilité (AXE-800)."""
         _tenant, identite_verifiee = _verifier_acces_gestionnaire(identite)
         ecritures = _ledger_avec_decisions(dossier, base, decisions).grand_livre(dossier.id)
-        return _decider_compte(
+        vues = _decider_compte(
             dossier.id, compte, corps.retenu, identite_verifiee.user_id, ecritures, comptes
         )
+        return _proposees_par_fiche(vues, comptes.lister(dossier.id), fiches, dossier)
 
 
 def _ecritures_sur_le_compte(ecritures: tuple[Ecriture, ...], compte: str) -> int:
@@ -9001,6 +9016,69 @@ def _fiche_vue(instantane: Instantane) -> FicheImportVue:
     )
 
 
+class PorterChoixFiche(Protocol):
+    def __call__(self, fiche: FicheImport, identite: IdentiteAuthentifiee, role: str) -> None: ...
+
+
+def get_porter_choix_fiche(
+    experts: ExpertsDep,
+    dossiers: DossiersDep,
+    comptes: ComptesBancairesDep,
+    base: LedgerBaseDep,
+    decisions: DecisionsDep,
+) -> PorterChoixFiche:
+    """AXE-986 : le choix Pro ou Perso d'une fiche, porté aux comptes « à
+    décider » de son dossier quand l'expert habilité sur ce dossier l'a fait.
+    Sinon rien : l'expert le voit comme une proposition (même règle
+    qu'AXE-729 et AXE-956, le gestionnaire seul ne décide pas)."""
+
+    def porter(fiche: FicheImport, identite: IdentiteAuthentifiee, role: str) -> None:
+        dossier = dossiers.obtenir(fiche.dossier_id) if fiche.dossier_id else None
+        if dossier is None:
+            return
+        try:
+            actif = expert_actif(
+                role,
+                experts.habilitation(fiche.tenant_id, identite.email),
+                experts.engagement(fiche.tenant_id, identite.email),
+            )
+            exiger_dossier(actif, dossier.id)
+        except ExpertNonHabilite:
+            return
+        a_faire = a_appliquer(comptes.lister(dossier.id), choix_de_la_fiche(fiche.champs))
+        ecritures: tuple[Ecriture, ...] | None = None
+        for compte, retenu in a_faire:
+            try:
+                if not retenu:
+                    if ecritures is None:
+                        ledger = _ledger_avec_decisions(dossier, base, decisions)
+                        ecritures = ledger.grand_livre(dossier.id)
+                    verifier_ecartable(_ecritures_sur_le_compte(ecritures, compte))
+                comptes.decider(dossier.id, compte, retenu, identite.user_id, datetime.now(UTC))
+            except (CompteInconnu, CompteDejaComptabilise):
+                continue  # reste à décider, visible comme proposition
+
+    return porter
+
+
+PorterChoixFicheDep = Annotated[PorterChoixFiche, Depends(get_porter_choix_fiche)]
+
+
+def _proposees_par_fiche(
+    vues: list[CompteBancaireVue],
+    comptes: tuple[CompteBancaire, ...],
+    fiches: FichesImportRepository,
+    dossier: Dossier,
+) -> list[CompteBancaireVue]:
+    """AXE-986 : chaque compte avec ce qu'en dit la fiche d'import du dossier."""
+    fiche = next((f for f in fiches.toutes(dossier.tenant_id) if f.dossier_id == dossier.id), None)
+    if fiche is None:
+        return vues
+    choix = choix_de_la_fiche(fiche.champs)
+    par_compte = {c.compte_comptable: proposition(c, choix) for c in comptes}
+    return [v.model_copy(update={"propose_par_fiche": par_compte.get(v.compte)}) for v in vues]
+
+
 def _poser_dossier(
     fiche: FicheImport, dossiers: DossierRepository, demandes: DemandesDeJobs
 ) -> tuple[FicheImport, tuple[str, ...]]:
@@ -9104,6 +9182,7 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         lire: LireFicheOfficielleDep,
         dossiers: DossiersDep,
         demandes: DemandesJobsDep,
+        porter: PorterChoixFicheDep,
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
@@ -9114,7 +9193,10 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         if "siren" in entree.champs or fiche.champs.get("siren") != avant.champs.get("siren"):
             fiche = _lire_registres(fiche, lire, identite.email)
         fiche, _erreurs = _poser_dossier(fiche, dossiers, demandes)
-        return _fiche_vue(fiches.enregistrer(fiche))
+        enregistree = fiches.enregistrer(fiche)
+        if CHAMP_COMPTES in entree.champs:
+            porter(fiche, identite, role)
+        return _fiche_vue(enregistree)
 
     @app.post("/portefeuille/imports/{fiche_id}/registres", response_model=FicheImportVue)
     def relire_registres_fiche(
