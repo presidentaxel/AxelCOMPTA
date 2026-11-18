@@ -1,8 +1,9 @@
 # 03 — Architecture technique
 
 > **État au 2026-11-17** (ajouté ; le reste du doc décrit la cible) :
-> - Modules ajoutés au découpage : `pseudonymize/` (seule porte vers un LLM)
->   et `jobs/` (file Postgres, ADR-002). Carte à jour dans le
+> - Modules ajoutés au découpage : `pseudonymize/` (seule porte vers un LLM),
+>   `jobs/` (file Postgres, ADR-002) et `prospection/` (les demandes
+>   d'échange de la page publique, AXE-949). Carte à jour dans le
 >   [doc 18](18-organisation-code.md).
 > - Point d'entrée HTTP : `axelcompta.api.app`. Les routes vivent dans
 >   `api/routes.py`, les jetons dans `api/auth.py` (AXE-840). Les

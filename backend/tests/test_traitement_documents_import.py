@@ -159,3 +159,37 @@ def test_une_archive_abimee_ou_trop_grosse_est_refusee() -> None:
     trop = _zip({f"f{i}.txt": b"" for i in range(MEMBRES_MAX + 1)})
     with pytest.raises(ArchiveIllisible, match="trop grosse"):
         deplier(trop)
+
+
+def test_les_fichiers_techniques_oneup_restent_dans_l_archive() -> None:
+    """AXE-972 : `info.txt` et `logs.txt` de l'archive fiscale OneUp ne
+    sortent pas ; un `info.txt` ordinaire, si."""
+    archive = _zip(
+        {
+            "archive.zip": _zip(
+                {
+                    "info.txt": b"Software\tOneUp\nGenerated at\t2023",
+                    "logs.txt": b'"JETNID","JETEVTNUM","JETEVTLIB"\n',
+                    "Grand Livre.pdf": b"%PDF gl",
+                }
+            ),
+            "notes/info.txt": b"Rappeler le comptable",
+        }
+    )
+    assert [m.chemin for m in deplier(archive)] == ["archive.zip/Grand Livre.pdf", "notes/info.txt"]
+
+
+def test_l_impression_du_fec_va_avec_le_fec_sans_se_lire() -> None:
+    nom = "archive.zip/FEC - Fichier à plat CSV.pdf"
+    assert classer(nom, b"%PDF-1.4") == "fec"
+    lu = traiter("fec", nom, b"%PDF-1.4")
+    assert lu.statut == "a_traiter" and lu.resume.startswith("Impression PDF du FEC")
+    # Un dossier nommé FEC ne fait pas de ses PDF des impressions.
+    assert classer("FEC/Balance.pdf", b"%PDF-1.4") == "balance"
+
+
+def test_la_synthese_de_la_declaration_de_resultat_est_la_liasse() -> None:
+    assert classer("Synthèse de la déclaration RESULTAT.pdf", b"%PDF") == "liasse"
+    assert classer("Accusé de réception de la déclaration RESULTAT.pdf", b"%PDF") == (
+        "accuse_reception"
+    )

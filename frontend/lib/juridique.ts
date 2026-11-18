@@ -75,7 +75,9 @@ export function lireTexte(markdown: string): Bloc[] {
     mode = null;
   }
 
-  const lignes = markdown.split("\n");
+  // Windows écrit les fichiers en \r\n (autocrlf) : sans cette reprise,
+  // « # Titre\r » n'est plus un titre et le texte s'affiche en brut.
+  const lignes = markdown.replace(/\r\n?/gu, "\n").split("\n");
   for (let i = 0; i < lignes.length; i += 1) {
     const ligne = lignes[i] ?? "";
     const titre = /^(#{1,3})\s+(.*)$/u.exec(ligne);

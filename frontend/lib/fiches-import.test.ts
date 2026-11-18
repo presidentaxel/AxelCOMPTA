@@ -6,6 +6,9 @@ import {
   deplacerDocument,
   documentsVisibles,
   lireAnnee,
+  archiveDe,
+  nomCourt,
+  versions,
   phraseDepot,
   badgeStatut,
   basculerChoix,
@@ -283,4 +286,19 @@ test("AXE-971 : après un dépôt, les doublons écartés sont nommés", () => {
     phraseDepot(1, ["a.pdf", "b.pdf", "c.pdf", "d.pdf"]),
     "1 fichier(s) déposé(s), rangés par catégorie. 4 déjà sur la fiche, écarté(s) : a.pdf, b.pdf, c.pdf….",
   );
+});
+
+test("AXE-972 : un document sorti d'une archive montre son nom et son archive", () => {
+  const nom = "Clôture 2021-2022.zip/Clôture 2021-2022/archive_2022.zip/archive.zip/Grand Livre.pdf";
+  assert.equal(nomCourt(nom), "Grand Livre.pdf");
+  assert.equal(archiveDe(nom), "Clôture 2021-2022.zip");
+  assert.equal(archiveDe("Grand Livre.pdf"), null);
+});
+
+test("AXE-972 : deux versions d'un grand livre sont signalées, pas l'impression du FEC", () => {
+  const pdf = { resume: "À lire" };
+  const impression = { resume: "Impression PDF du FEC : c'est le fichier texte du FEC qui se lit." };
+  assert.equal(versions("grand_livre", [pdf, pdf]), 2);
+  assert.equal(versions("fec", [{ resume: "FEC lu : 834 lignes" }, impression]), 1);
+  assert.equal(versions("comptes_annuels", [pdf, pdf]), 0);
 });

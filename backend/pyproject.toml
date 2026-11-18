@@ -115,6 +115,7 @@ forbidden_modules = [
     "axelcompta.api",
     "axelcompta.ml",
     "axelcompta.pseudonymize",
+    "axelcompta.prospection",
 ]
 
 [[tool.importlinter.contracts]]
@@ -141,6 +142,7 @@ source_modules = [
     "axelcompta.api",
     "axelcompta.pseudonymize",
     "axelcompta.jobs",
+    "axelcompta.prospection",
 ]
 forbidden_modules = ["axelcompta.ml"]
 
@@ -162,6 +164,27 @@ forbidden_modules = [
     "axelcompta.api",
     "axelcompta.ml",
     "axelcompta.pseudonymize",
+]
+
+[[tool.importlinter.contracts]]
+name = "prospection ne dépend que de core"
+type = "forbidden"
+source_modules = ["axelcompta.prospection"]
+forbidden_modules = [
+    "axelcompta.tenants",
+    "axelcompta.packs",
+    "axelcompta.ingestion",
+    "axelcompta.documents",
+    "axelcompta.categorize",
+    "axelcompta.anomaly",
+    "axelcompta.ledger",
+    "axelcompta.closing",
+    "axelcompta.filings",
+    "axelcompta.workflow",
+    "axelcompta.api",
+    "axelcompta.ml",
+    "axelcompta.pseudonymize",
+    "axelcompta.jobs",
 ]
 
 [[tool.importlinter.contracts]]

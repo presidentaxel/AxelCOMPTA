@@ -34,6 +34,7 @@ from axelcompta.closing.ouverture_fec import FecRefuse, LigneFec, lire_fec_exter
 from axelcompta.tenants.fiches_import import StatutDocument
 
 A_LIRE = "À lire : sera lu par l'OCR (AXE-943), ou compilé à la main."
+IMPRESSION_FEC = "Impression PDF du FEC : c'est le fichier texte du FEC qui se lit."
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,6 +210,8 @@ def traiter(
         return _qif(contenu)
     if est_fec(contenu) or (categorie == "fec" and extension in (".txt", ".csv")):
         return _fec(contenu, Path(nom_fichier).name, siren)
+    if categorie == "fec" and contenu.startswith(b"%PDF"):
+        return Traitement("a_traiter", IMPRESSION_FEC, {"type": "impression_fec"})
     if categorie == "archive" or extension == ".zip":
         return Traitement("traite", "Archive gardée intacte ; ses fichiers sont rangés à part.")
     return Traitement("a_traiter", A_LIRE)
@@ -224,7 +227,11 @@ _MOTIFS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
     for motif, categorie in (
         (r"paiement|ordre de prelevement|avis de prelevement", "paiement_impot"),
         (r"accuse", "accuse_reception"),
-        (r"liasse|\b(2065|2033|2031|2035|2050|2051|2052|2053)\b", "liasse"),
+        # « Synthèse de la déclaration RESULTAT » : la 2065 télédéclarée.
+        (
+            r"liasse|declaration (de )?resultat|\b(2065|2033|2031|2035|2050|2051|2052|2053)\b",
+            "liasse",
+        ),
         (r"\btva\b|\b3517\b|\bca3\b|\bca12\b|\b3310\b", "declaration_tva"),
         (r"\bis\b|\b257[12]\b|impot sur les societes|\bacompte", "declaration_is"),
         (r"grand[ ._-]?livre|\bgl\b", "grand_livre"),
@@ -254,6 +261,8 @@ def classer(nom_fichier: str, contenu: bytes) -> str:
     nom = _sans_accent(nom_fichier).replace("_", " ")
     if contenu[:4] == b"PK\x03\x04" or nom.endswith(".zip"):
         return "archive"
+    if est_impression_fec(nom_fichier, contenu):
+        return "fec"
     if est_fec(contenu) or (
         _FEC_NOM.search(nom.replace(" ", "")) and not contenu.startswith(b"%PDF")
     ):
@@ -262,6 +271,13 @@ def classer(nom_fichier: str, contenu: bytes) -> str:
         if motif.search(nom):
             return categorie
     return "autre"
+
+
+def est_impression_fec(nom_fichier: str, contenu: bytes) -> bool:
+    """Un PDF dont le nom dit FEC (« FEC - Fichier à plat CSV.pdf », OneUp) :
+    l'impression du FEC, rangée avec lui. Le nom seul, pas le chemin."""
+    base = _sans_accent(nom_fichier.rsplit("/", 1)[-1]).replace("_", " ")
+    return contenu.startswith(b"%PDF") and re.search(r"\bfec\b", base) is not None
 
 
 def annee_du_nom(nom_fichier: str, permises: set[int] | None = None) -> int | None:
@@ -279,6 +295,17 @@ MEMBRES_MAX = 5_000
 TAILLE_DEPLIEE_MAX = 1024 * 1024 * 1024  # 1 Go une fois dépliée, toutes profondeurs
 PROFONDEUR_MAX = 3
 _IGNORES = re.compile(r"(^|/)(__macosx|meta-inf)(/|$)|(^|/)\.|(^|/)(mimetype(\.txt)?|thumbs\.db)$")
+
+
+def est_technique(nom: str, contenu: bytes) -> bool:
+    """Les fichiers techniques d'une archive fiscale (OneUp) : `info.txt`
+    (logiciel, liste des fichiers) et `logs.txt` (journal des événements).
+    Reconnus à leur contenu ; ils restent dans le zip d'origine, signé."""
+    base = nom.rsplit("/", 1)[-1].lower()
+    tete = contenu[:40].lstrip(b"\xef\xbb\xbf")
+    return (base == "info.txt" and tete.startswith(b"Software\t")) or (
+        base == "logs.txt" and tete.startswith(b'"JETNID"')
+    )
 
 
 class ArchiveIllisible(ValueError):
@@ -304,8 +331,9 @@ def _nom_membre(info: zipfile.ZipInfo) -> str:
 def deplier(contenu: bytes) -> list[Membre]:
     """Chaque fichier de l'archive, zips imbriqués dépliés à leur tour (le zip
     intermédiaire n'est pas gardé : il est dans l'archive d'origine). Les
-    dossiers, fichiers cachés, `__MACOSX` et la signature `META-INF` sont
-    laissés : l'archive d'origine les garde intacts."""
+    dossiers, fichiers cachés, `__MACOSX`, la signature `META-INF` et les
+    fichiers techniques OneUp (`est_technique`) sont laissés : l'archive
+    d'origine les garde intacts."""
     membres: list[Membre] = []
     budget = [TAILLE_DEPLIEE_MAX]
 
@@ -332,7 +360,8 @@ def deplier(contenu: bytes) -> list[Membre]:
                 if donnee[:4] == b"PK\x03\x04" and profondeur < PROFONDEUR_MAX:
                     ouvrir(donnee, f"{chemin}/", profondeur + 1)
                     continue
-                membres.append(Membre(chemin, donnee))
+                if not est_technique(nom, donnee):
+                    membres.append(Membre(chemin, donnee))
 
     ouvrir(contenu, "", 1)
     return membres

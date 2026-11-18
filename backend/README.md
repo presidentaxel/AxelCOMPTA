@@ -599,30 +599,43 @@ reste sur Supabase.
   Le DNS A de ce nom pointe déjà vers le droplet. Sans ces URL, le lien
   d'invitation est refusé.
 - Modèles des e-mails d'authentification Supabase : `deploy/emails/`.
+- **Demandes d'échange de la page publique (AXE-949)** : poser
+  `AXELCOMPTA_SLACK_DEMANDES_WEBHOOK` dans `/opt/axelcompta/.env` (un
+  webhook entrant Slack, adresse en `https://hooks.slack.com/`), puis
+  relancer `api` et `worker`. Sans lui, les demandes sont gardées dans la
+  table `demandes_echange` et l'équipe n'est pas prévenue ; elles partent
+  dès qu'il est posé (les tâches planifiées réessaient chaque heure, trois
+  essais). Une demande dont les trois essais ont échoué part dans Sentry.
+  Pour relire les demandes : `SELECT cree_le, nom, email, organisation,
+  role, notifiee_le, tentatives FROM demandes_echange ORDER BY cree_le
+  DESC;` avec le rôle propriétaire (le rôle web ne lit pas les noms).
 - **Lancer une reprise** : depuis #225, les scripts sont dans l'image.
   Toujours en simulation d'abord, puis `--appliquer` après accord :
 
       cd /opt/axelcompta
       docker compose -f docker-compose.prod.yml exec worker python scripts/<script>.py --tenant TENANT
 
-- **Une PR mergée directement sur `prod`** (page publique, #217) doit être
-  remergée dans `main` avant la promotion suivante. Sinon la promotion
-  peut amener deux têtes Alembic (une migration de chaque côté, sur la
-  même révision) : le déploiement s'arrête aux migrations. Vérifier avec
-  `alembic heads` sur le résultat de la fusion.
+- **Une seule tête Alembic.** `e1c8a4f72b09` suit `b6e2f9a4c715`, puis
+  `f7a2c9e4b318`. `f7` n'ajoute une colonne que si elle manque : la base
+  réelle a déjà reçu ces colonnes à la main, avec `alembic_version` resté
+  sur `b6e2f9a4c715`. Vérifier `alembic heads` avant de merger.
 - Reste (AXE-811) : restauration chronométrée des sauvegardes et runbook.
 
 ## Mettre en route les tickets du 16 au 17/11 (PR #202 à #227)
 
-1. Remettre `main` et `prod` d'accord : merger `prod` dans `main`, puis
-   faire suivre `e1c8a4f72b09` (fiche ignorée) après `b6e2f9a4c715`
-   (demandes d'échange). La base réelle est à `b6e2f9a4c715` ; la
-   contrainte d'`e1c8a4f72b09` y est déjà posée, la rejouer est sans
-   effet. `d4b7e9a2c361` (`jobs.pris_le`) est déjà passée.
+1. Les migrations n'ont plus qu'une tête : `e1c8a4f72b09` suit
+   `b6e2f9a4c715`, puis `f7a2c9e4b318`. La base réelle est à
+   `b6e2f9a4c715` ; la contrainte d'ignore y est déjà posée, et les
+   colonnes d'archives aussi (posées à la main). `f7` ne les recrée pas.
+   `d4b7e9a2c361` (`jobs.pris_le`) est déjà passée. Après cette promotion,
+   remerger `prod` dans `main` pour que la prochaine n'oublie pas ce
+   rattachement.
 2. Dans `/opt/axelcompta/.env` : `AXELCOMPTA_URL_DOSSIER` (porte des
-   dossiers, plus haut) et `AXELCOMPTA_SLACK_DEMANDES_WEBHOOK` (demandes
-   d'échange). `DIGIFACTORY_TOKEN` et `DIGIFACTORY_BASE_URL` ne sont plus
-   lus : le jeton vient du branchement d'Intégrations (#226).
+   dossiers, plus haut) et `AXELCOMPTA_SLACK_DEMANDES_WEBHOOK` s'il n'y
+   est pas déjà. Créer le bucket privé `documents` (100 Mo minimum).
+   `DIGIFACTORY_TOKEN`, `DIGIFACTORY_BASE_URL`, `ROLLEE_JETON_SANDBOX`,
+   `ROLLEE_COMPTE_SANDBOX` et `ROLLEE_PLATEFORME_SANDBOX` ne sont plus lus :
+   on peut les retirer. Le jeton Digifactory vient d'Intégrations (#226).
 3. Promouvoir `main` vers `prod`. Au premier passage horaire, la ligne
    « virements internes : N paire(s) au 580 » apparaît au journal du
    worker, puis plus rien s'il n'y a rien de nouveau.
