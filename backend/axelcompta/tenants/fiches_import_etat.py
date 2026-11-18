@@ -54,6 +54,7 @@ SECTION_PAR_CATEGORIE = {
     "archive": "reprise",
     "releve_bancaire": "banque",
     "rib": "banque",
+    "releve_plateforme": "plateformes",
     "kbis": "documents",
     "statuts": "documents",
     "lettre_comptable": "documents",
@@ -334,6 +335,16 @@ def _vides(
         *_reprise(champs, aujourd_hui, documents),
         _releves(champs, aujourd_hui),
         Emplacement("banque:rib", "banque", "rib", None, "RIB", "Du compte professionnel.", True),
+        Emplacement(
+            "plateformes:releve_plateforme",
+            "plateformes",
+            "releve_plateforme",
+            None,
+            "Récapitulatifs de plateforme",
+            "Récapitulatifs mensuels ou relevés Uber, Bolt… pour les mois que Rollee ne couvre "
+            "pas : la couverture ci-dessus dit lesquels.",
+            False,
+        ),
         Emplacement(
             "documents:kbis", "documents", "kbis", None, "Kbis", "Extrait de moins de 3 mois.", True
         ),

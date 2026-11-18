@@ -50,6 +50,7 @@ import type { AnalyseFec, OuvertureVue } from "./ouverture";
 import type {
   ComptesDigifactory,
   CouvertureBanque,
+  CouverturePlateformes,
   DigifactoryFiche,
   FicheImport,
   FicheImportResume,
@@ -1601,6 +1602,14 @@ export async function rangerDocumentImport(id: string, documentId: string, empla
       body: JSON.stringify({ emplacement }),
     }),
   );
+}
+
+/** AXE-987 : la couverture des plateformes de la fiche, mois par mois. */
+export async function lireCouverturePlateformes(id: string): Promise<CouverturePlateformes> {
+  const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/plateformes`);
+  if (reponse.status === 401) throw new ErreurAuthGestionnaire();
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as CouverturePlateformes;
 }
 
 /** AXE-973 : la couverture bancaire de la fiche, compte par compte. */

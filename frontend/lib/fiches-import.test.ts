@@ -3,6 +3,8 @@ import { test } from "node:test";
 
 import {
   ajouterAnnee,
+  ETATS_MOIS_PLATEFORME,
+  nomPlateforme,
   deplacerDocument,
   documentsVisibles,
   lireAnnee,
@@ -330,4 +332,11 @@ test("AXE-973 : un compte ne se rattache ni à lui-même ni à ce qu'il réunit 
     { cle: "fec:5120010", libelle: "Qonto" },
   ];
   assert.deepEqual(ciblesPossibles(compte, connus).map((c) => c.cle), ["fec:5120010"]);
+});
+
+test("AXE-987 : le nom d'une plateforme et le sens de chaque état", () => {
+  assert.equal(nomPlateforme("uber"), "Uber");
+  assert.equal(nomPlateforme("freenow"), "Free Now");
+  assert.equal(nomPlateforme("marcel"), "Marcel");
+  assert.equal(ETATS_MOIS_PLATEFORME.a_completer, "À compléter : virements sans Rollee");
 });

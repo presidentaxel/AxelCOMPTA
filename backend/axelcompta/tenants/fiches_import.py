@@ -241,6 +241,8 @@ CATEGORIES_DOCUMENTS: dict[str, str] = {
     "rib": "RIB",
     "lettre_comptable": "Lettre de l'ancien expert-comptable",
     "releve_bancaire": "Relevé bancaire",
+    # AXE-987 : récapitulatifs Uber, Bolt…, pour les mois sans Rollee.
+    "releve_plateforme": "Récapitulatif de plateforme",
     "autre": "Autre document",
 }
 StatutDocument = Literal["a_traiter", "traite", "illisible"]
