@@ -85,6 +85,7 @@ from axelcompta.comptes import Invitation
 from axelcompta.comptes_memoire import InMemoryCompteRepository
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, UserId
 from axelcompta.core.money import Money
+from axelcompta.core.temps import aujourd_hui_paris
 from axelcompta.demo_chauffeurs_type import construire_ledger
 from axelcompta.demo_identites import IDENTITE_SOPHIE
 from axelcompta.documents.justificatifs import InMemoryJustificatifRepository
@@ -1939,7 +1940,7 @@ def test_verser_ses_dividendes_calcule_les_retenues_et_la_2777() -> None:
     assert apercu["applicable"] is True and apercu["declare"] is False
     assert apercu["brut_cts"] == maximum["dividendes_cts"]
 
-    aujourd_hui = date.today()
+    aujourd_hui = aujourd_hui_paris()
     corps = {"verse_le": aujourd_hui.isoformat(), "dispense_prelevement": True}
     declare = client.post(url, headers=en_tete, json=corps).json()
     assert declare["declare"] is True and declare["prelevement_forfaitaire_cts"] == 0

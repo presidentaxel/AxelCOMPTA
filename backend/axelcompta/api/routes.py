@@ -174,6 +174,7 @@ from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, 
 from axelcompta.core.libelles import categorie_du_suffixe, sans_categorie
 from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
 from axelcompta.core.rls import appliquer_rls, contexte_identite
+from axelcompta.core.temps import aujourd_hui_paris
 from axelcompta.couverture_bancaire_fiche import (
     CompteCouvert,
     comptes_connus,
@@ -1217,7 +1218,7 @@ def _frises(
     (année en cours, étape, année d'avant, étape)."""
     fin = dossier.fin_exercice()
     compte = "Suivi" if statut_invitation == "actif" else "Compte"
-    if fin < datetime.now(UTC).date():
+    if fin < aujourd_hui_paris():
         etape = etape_depuis_preuves(statut_invitation, preuves)
         return fin.year + 1, compte, fin.year, etape
     return fin.year, compte, fin.year - 1, "Sans exercice"
@@ -2575,7 +2576,7 @@ def _agregats_portefeuille(
     invitations = comptes.statuts(ids)
     preuves = _preuves_exercice(signatures, ids)
     a_choisir = comptes_bancaires.a_choisir(ids)
-    tva = _tva_a_declarer(signatures, dossiers, datetime.now(UTC).date())
+    tva = _tva_a_declarer(signatures, dossiers, aujourd_hui_paris())
     resultat: list[DossierAgregat] = []
     for dossier in dossiers:
         invitation = invitations.get(dossier.id)
@@ -4793,7 +4794,7 @@ def _enregistrer_routes_identite(app: FastAPI) -> None:
     ) -> ConfigurationDossierVue:
         identite = _verifier_acces_dossier(dossier.id, identite)
         saisie = _identite_depuis_modele(corps)
-        verifier_identite(saisie, dossier.forme_juridique, date.today())
+        verifier_identite(saisie, dossier.forme_juridique, aujourd_hui_paris())
         dossiers.enregistrer_identite(dossier.id, saisie, identite.user_id, datetime.now(UTC))
         return _vue_configuration(dataclasses.replace(dossier, identite=saisie))
 
@@ -5138,7 +5139,7 @@ def _preparer_cloture(
         ledger,
         decisions,
         avenants.lister(dossier.id),
-        datetime.now(UTC).date(),
+        aujourd_hui_paris(),
         provisions,
     )
 
@@ -5610,7 +5611,7 @@ def _proposer_affectation(
     exercices: ExerciceRepository,
     affectations: AffectationRepository,
 ) -> PropositionAffectation:
-    return proposer(dossier, ledger, exercices, affectations, datetime.now(UTC).date())
+    return proposer(dossier, ledger, exercices, affectations, aujourd_hui_paris())
 
 
 def _vue_affectation(proposition: PropositionAffectation) -> AffectationVue:
@@ -5777,7 +5778,7 @@ def _enregistrer_routes_dividendes_paie(app: FastAPI) -> None:
         try:
             decides = dividendes_decides(dossier, ledger, exercices, affectations)
             # Pas encore déclaré : aperçu au taux d'aujourd'hui, sans dispense.
-            detail = decides.declare or retenues(decides.brut, datetime.now(UTC).date(), False)
+            detail = decides.declare or retenues(decides.brut, aujourd_hui_paris(), False)
         except (AffectationImpossible, MillesimeDividendesInconnu) as exc:
             return DividendesVue(applicable=False, raison=str(exc))
         return _vue_dividendes(decides, detail)
@@ -5799,7 +5800,7 @@ def _enregistrer_routes_dividendes_paie(app: FastAPI) -> None:
             ledger,
             corps.verse_le,
             corps.dispense_prelevement,
-            datetime.now(UTC).date(),
+            aujourd_hui_paris(),
         )
         return _vue_dividendes(dataclasses.replace(decides, declare=detail), detail)
 
@@ -9637,7 +9638,7 @@ def _enregistrer_routes_soldes_banque(app: FastAPI) -> None:
             identite.email,
             fiches,
             lambda champs: ajouter_solde_banque(
-                champs, corps.compte, corps.le, corps.montant, corps.source, date.today()
+                champs, corps.compte, corps.le, corps.montant, corps.source, aujourd_hui_paris()
             ),
         )
         return _couverture_banque(tenant_id, fiche_id, fiches, comptes, ledger)
