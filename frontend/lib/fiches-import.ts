@@ -532,3 +532,29 @@ export function phraseDepot(envoyes: number, doublons: string[]): string {
   const noms = doublons.slice(0, 3).join(", ") + (doublons.length > 3 ? "…" : "");
   return `${ranges} ${doublons.length} déjà sur la fiche, écarté(s) : ${noms}.`;
 }
+
+// --- AXE-972 : archives OneUp, versions d'un même document ------------------
+
+/** « Clôture.zip/archive.zip/Grand Livre.pdf » → « Grand Livre.pdf ». */
+export function nomCourt(nom: string): string {
+  return nom.split("/").pop() || nom;
+}
+
+/** L'archive d'où sort un document, d'après son chemin (la plus extérieure). */
+export function archiveDe(nom: string): string | null {
+  const morceaux = nom.split("/");
+  const archive = morceaux.slice(0, -1).find((m) => m.toLowerCase().endsWith(".zip"));
+  return archive ?? null;
+}
+
+/** Une case qui ne garde qu'un document par exercice. Bilan et compte de
+ * résultat sont deux documents distincts : pas dans la liste. */
+const UNIQUES = new Set(["liasse", "fec", "balance", "grand_livre"]);
+
+/** Le nombre de versions d'un même document dans une case (deux exports d'un
+ * grand livre…), sans compter l'impression PDF d'un FEC. 0 ou 1 : rien à
+ * signaler. */
+export function versions(categorie: string, documents: Pick<DocumentImport, "resume">[]): number {
+  if (!UNIQUES.has(categorie)) return 0;
+  return documents.filter((d) => !d.resume.startsWith("Impression PDF du FEC")).length;
+}

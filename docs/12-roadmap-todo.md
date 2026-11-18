@@ -29,18 +29,14 @@ reconnus à chaque passage horaire, même quand les deux jambes arrivent à
 des synchros différentes (AXE-968). Les fiches d'import s'ignorent, et
 chaque compte d'une fiche se marque pro ou perso.
 
-**⚠️ `main` et `prod` ont divergé.** `prod` est à la PR #221 (tout `main`
-jusqu'à #220). #222 à #227 sont sur `main` seulement. À l'inverse, la page
-publique (AXE-949, #214 à #218) a été mergée directement sur `prod` et
-n'est pas sur `main` : module `prospection/`, migration `b6e2f9a4c715`,
-textes juridiques et docs. Les deux branches ont chacune une migration qui
-suit `d4b7e9a2c361` : `b6e2f9a4c715` sur `prod`, `e1c8a4f72b09` sur
-`main`. Promouvoir `main` tel quel donnerait **deux têtes Alembic** : le
-déploiement s'arrêterait aux migrations (l'API en service n'est pas
-arrêtée). Avant la prochaine promotion : merger `prod` dans `main`, puis
-faire suivre `e1c8a4f72b09` après `b6e2f9a4c715`. La contrainte
-d'`e1c8a4f72b09` est déjà posée à la main en prod (#224), donc la rejouer
-est sans effet.
+**⚠️ Cette promotion recolle `main` et `prod`.** `prod` était à la PR #221.
+#222 à #231 arrivent ici, avec la page publique déjà en production
+(AXE-949, migration `b6e2f9a4c715`). Les deux migrations qui suivaient
+`d4b7e9a2c361` sont remises en file : `e1c8a4f72b09` suit `b6e2f9a4c715`,
+puis `f7a2c9e4b318`. Une seule tête, le déploiement peut migrer. Après
+le merge, remerger `prod` dans `main` pour que la suite parte de là.
+La contrainte d'ignore et les colonnes d'archives sont déjà sur la base
+réelle : les migrations ne les recréent pas.
 
 **En une phrase (16/11) :** du 13 au 16/11, 16 PR (#166 à #185) ont fait tourner
 Rollee sur la base réelle. Le pilote a montré que le modèle « une période
@@ -680,11 +676,13 @@ sans Rollee. Les cinq tickets Rollee sont faits depuis le 12/11 (PR #132 à
 
 ### En cours (17/11)
 
-- Remettre `main` et `prod` d'accord (encadré ⚠️ en tête), puis promouvoir
-  #222 à #227. Au premier passage horaire qui suit, l'étape d'AXE-968
-  écrit les virements internes de tout l'historique (MK DRIVING : 212 OD
-  en simulation). À surveiller dans le journal du worker : « virements
-  internes : N paire(s) au 580 ».
+- Cette promotion amène #222 à #231. Au premier passage horaire qui suit,
+  l'étape d'AXE-968 écrit les virements internes de tout l'historique
+  (MK DRIVING : 212 OD en simulation). À surveiller dans le journal du
+  worker : « virements internes : N paire(s) au 580 ».
+- Page publique (AXE-949), déjà en production. Restent : le webhook Slack
+  dans le `.env` du droplet, la relecture du texte par Louis, la durée de
+  conservation des demandes, et l'analytics si Louis le veut.
 - Ventiler l'historique sur les 512x (AXE-832), une fois, après la
   promotion : simulation, puis `--appliquer` avec l'accord de Louis. Sans
   elle, deux virements entre comptes aux libellés différents ne se

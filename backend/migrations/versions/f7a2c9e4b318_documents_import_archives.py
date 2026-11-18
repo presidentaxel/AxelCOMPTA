@@ -24,27 +24,37 @@ _RECLASSEMENT = "categorie, exercice, emplacement, cle_stockage"
 
 
 def upgrade() -> None:
+    # La base réelle a déjà reçu ces colonnes à la main, avec alembic_version
+    # resté sur b6e2f9a4c715. Chaque ajout ne part que s'il manque.
+    bind = op.get_bind()
+    inspecteur = sa.inspect(bind)
+    colonnes = {c["name"] for c in inspecteur.get_columns("documents_import")}
     op.alter_column("documents_import", "contenu", existing_type=sa.LargeBinary(), nullable=True)
-    op.add_column("documents_import", sa.Column("origine_id", sa.String(), nullable=True))
-    op.create_foreign_key(
-        "documents_import_origine_id_fkey",
-        "documents_import",
-        "documents_import",
-        ["origine_id"],
-        ["id"],
-        ondelete="CASCADE",
-    )
-    op.create_index("ix_documents_import_origine_id", "documents_import", ["origine_id"])
-    op.add_column(
-        "documents_import",
-        sa.Column("cle_stockage", sa.String(), nullable=False, server_default=""),
-    )
-    op.add_column("documents_import", sa.Column("donnees", sa.JSON(), nullable=True))
-    op.create_check_constraint(
-        "documents_import_contenu_quelque_part",
-        "documents_import",
-        "contenu IS NOT NULL OR cle_stockage <> ''",
-    )
+    if "origine_id" not in colonnes:
+        op.add_column("documents_import", sa.Column("origine_id", sa.String(), nullable=True))
+        op.create_foreign_key(
+            "documents_import_origine_id_fkey",
+            "documents_import",
+            "documents_import",
+            ["origine_id"],
+            ["id"],
+            ondelete="CASCADE",
+        )
+        op.create_index("ix_documents_import_origine_id", "documents_import", ["origine_id"])
+    if "cle_stockage" not in colonnes:
+        op.add_column(
+            "documents_import",
+            sa.Column("cle_stockage", sa.String(), nullable=False, server_default=""),
+        )
+    if "donnees" not in colonnes:
+        op.add_column("documents_import", sa.Column("donnees", sa.JSON(), nullable=True))
+    controles = {c["name"] for c in inspecteur.get_check_constraints("documents_import")}
+    if "documents_import_contenu_quelque_part" not in controles:
+        op.create_check_constraint(
+            "documents_import_contenu_quelque_part",
+            "documents_import",
+            "contenu IS NOT NULL OR cle_stockage <> ''",
+        )
     op.execute(f"GRANT UPDATE ({_RECLASSEMENT}) ON documents_import TO axelcompta_web")
 
 

@@ -28,6 +28,7 @@ services:
     restart: unless-stopped
     volumes:
       - modeles:/opt/axelcompta/_AUDIT_DONNEES/modeles
+      - ./_AUDIT_DONNEES/packs_vtc:/opt/axelcompta/_AUDIT_DONNEES/packs_vtc:ro
     healthcheck:
       test:
         [
@@ -45,7 +46,8 @@ services:
     <<: *journaux
     image: axelcompta-web:prod
     build:
-      context: ./frontend
+      context: .
+      dockerfile: frontend/Dockerfile
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?NEXT_PUBLIC_API_BASE_URL manquant}
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?NEXT_PUBLIC_SUPABASE_URL manquant}
@@ -76,6 +78,7 @@ services:
     command: ["supercronic", "/opt/axelcompta/backend/docker/crontab"]
     volumes:
       - modeles:/opt/axelcompta/_AUDIT_DONNEES/modeles
+      - ./_AUDIT_DONNEES/packs_vtc:/opt/axelcompta/_AUDIT_DONNEES/packs_vtc:ro
 
   caddy:
     <<: *journaux

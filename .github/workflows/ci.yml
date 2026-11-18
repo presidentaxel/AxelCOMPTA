@@ -1,7 +1,7 @@
 name: CI
 
 # Barrière de qualité (doc 12 §1.1, doc 08 §4) — bloquante sur chaque PR
-# vers main et sur chaque push à main. Couvre ruff / mypy / import-linter /
+# vers main ou prod, et sur chaque push à main. Couvre ruff / mypy / import-linter /
 # pytest rapide + intégration Postgres / lint+build front.
 #
 # Lint, tests rapides, intégration Postgres et frontend partent ensemble.
@@ -19,7 +19,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, prod]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}

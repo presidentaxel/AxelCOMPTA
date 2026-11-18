@@ -1,6 +1,6 @@
 # 19 — Parcours utilisateur : gestionnaire et chauffeur
 
-> Statut : brouillon à valider — Dernière mise à jour : 2026-11-17 (portes, ci-dessous).
+> Statut : brouillon à valider — Dernière mise à jour : 2026-11-17 (portes et noms publics).
 > Né d'une discussion Louis / Claude Code le 2026-09-06 : décision de
 > cadrer et documenter l'accès chauffeur en libre-service **avant** tout
 > code, conformément à ce que prévoyait déjà [doc 12 §2.7](12-roadmap-todo.md).
@@ -29,6 +29,23 @@
 > rien de plus (§6 refaite). Recoupe doc 02 §2.3 (« l'utilisateur
 > professionnel valide ») : c'est l'indiv, cet utilisateur professionnel,
 > pas le gestionnaire.
+>
+> **Noms publics, décidé le 2026-11-17 (Louis).** Le produit sert plusieurs
+> marchés : un gestionnaire, et des dossiers en dessous. « Chauffeur » reste
+> un mot du pack VTC. Il ne va ni dans une adresse, ni dans un nom de domaine.
+>
+> - `compta.axelproject.fr` : la vitrine et l'espace gestionnaire. « Se
+>   connecter » n'ouvre que cet espace. La page publique reste affichée même
+>   si une session est déjà ouverte.
+> - `app.axelproject.fr` : la porte de la personne qui a un dossier. Les
+>   chemins publics visés sont `/dossier/…` (connexion, invitation, exercice).
+>   Le code sert encore `/chauffeur/…`, sur le même site que la vitrine.
+> - On dit « dossier » pour l'unité sous le gestionnaire. « Dirigeant »
+>   seulement quand une phrase doit nommer la personne.
+> - Un seul droplet. Brancher `app` plus tard : un DNS vers la même machine,
+>   puis Caddy qui demande le certificat et envoie ce nom vers le front.
+>   Pointer le DNS ne suffit pas. Ce branchement n'est pas dans la livraison
+>   de la vitrine : les routes sont encore `/chauffeur`.
 
 ## 1. Pourquoi ce doc
 

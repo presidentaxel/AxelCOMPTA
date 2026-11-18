@@ -29,6 +29,10 @@
   comme un appel direct. Depuis AXE-887, il vérifie aussi que le
   fournisseur d'IA n'est cité que dans la politique de confidentialité, avec
   la pseudonymisation, et que Rollee y figure.
+- La page publique (`/`) renvoie vers ces cinq textes dans son pied de page, et
+  son formulaire recueille un nom, un e-mail, une organisation et un message
+  (AXE-949). La confidentialité le dit, avec Slack comme sous-traitant : le
+  test vérifie que ces deux points y restent.
 - Le texte de l'engagement de l'expert-comptable fait foi dans le code
   (`backend/axelcompta/workflow/expert_comptable.py`, `TEXTE_ENGAGEMENT`) :
   c'est lui que l'expert accepte. Le fichier ici le reprend mot pour mot.

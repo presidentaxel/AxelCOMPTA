@@ -43,7 +43,12 @@ rsync -az --delete \
   --exclude frontend/.next \
   --exclude backend/.venv \
   --exclude backend/_demo_output \
-  --exclude _AUDIT_DONNEES \
+  --exclude _AUDIT_DONNEES/modeles \
+  --exclude _AUDIT_DONNEES/resultats \
+  --exclude _AUDIT_DONNEES/sortie \
+  --exclude '_AUDIT_DONNEES/*.csv' \
+  --exclude _AUDIT_DONNEES/rapport_audit_dataset.md \
+  --exclude _AUDIT_DONNEES/.venv \
   "${racine}/" "${cible}:${dest}/"
 
 script="$(printf '%q' "${dest}/deploy/mettre-a-jour.sh")"

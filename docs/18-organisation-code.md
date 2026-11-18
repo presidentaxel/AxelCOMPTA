@@ -2,7 +2,7 @@
 
 > Carte du code : où vit chaque module et quelles dépendances il a le droit
 > d'avoir. L'état d'avancement n'est pas ici, il est dans le
-> [doc 12](12-roadmap-todo.md). Dernière mise à jour : 2026-11-13.
+> [doc 12](12-roadmap-todo.md). Dernière mise à jour : 2026-11-16.
 
 Ce doc fait le lien entre l'arborescence réelle du repo (`backend/`,
 `frontend/`) et le découpage en modules défini en [doc 03 §3](03-architecture.md#3--découpage-en-modules-monolithe-modulaire).
@@ -38,8 +38,9 @@ AxeLCompta/
 │   ├── api/           # api.app (+ /sante, /metrics) ; routes dans api/routes.py, jetons dans api/auth.py
 │   ├── pseudonymize/  # seule porte vers un LLM : prompt pseudonymisé, fournisseur Anthropic (API Batch, AXE-887)
 │   ├── jobs/          # file de jobs Postgres (ADR-002), exécutée par worker.py depuis le 2026-11-09
+│   ├── prospection/   # demandes d'échange de la page publique, notifiées sur Slack (AXE-949) ; ne dépend que de core
 │   └── ml/            # V1 ; le modèle (v2) s'entraîne dans _AUDIT_DONNEES/entrainer_modele.py
-├── frontend/          # Next.js : écrans gestionnaire (web) et chauffeur (mobile), auth Supabase
+├── frontend/          # Next.js : page publique (/), écrans gestionnaire (web) et chauffeur (mobile), auth Supabase
 └── _AUDIT_DONNEES/    # audit du dataset historique, source pour packs/ et categorize/
 ```
 
@@ -72,6 +73,7 @@ graph TD
     workflow --> ledger
     pseudonymize["pseudonymize"] --> core
     jobs["jobs"] --> core
+    prospection["prospection"] --> core
     ml["ml"] -. artefact chargé, jamais importé .-> categorize
     api["api"] -. façades publiques seulement .-> tenants
     api -. façades publiques seulement .-> categorize

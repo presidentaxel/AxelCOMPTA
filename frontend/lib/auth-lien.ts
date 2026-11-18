@@ -173,7 +173,7 @@ export function ouvrirSessionDepuisJetons(
     } catch (exception) {
       throw new ErreurAuthGestionnaire(traduireExceptionAuth(exception));
     }
-    return "/";
+    return "/portefeuille";
   }
   throw new ErreurAuthChauffeur(MESSAGE_SANS_LIEN);
 }

@@ -3,13 +3,16 @@
 FROM node:20-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+# Le contexte est la racine du dépôt : les pages /legal lisent
+# ../docs/juridique depuis ce répertoire de travail.
+COPY frontend/ .
+COPY docs /docs
 
 ARG NEXT_PUBLIC_API_BASE_URL
 ARG NEXT_PUBLIC_SUPABASE_URL

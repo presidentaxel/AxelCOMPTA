@@ -96,7 +96,7 @@ export default function DoubleAuthentificationPage() {
         window.location.search,
         cote === "chauffeur" ? "/dossier/test" : "/",
       );
-      router.replace(retour === "/securite" || retour.startsWith("/securite?") ? "/" : retour);
+      router.replace(retour === "/securite" || retour.startsWith("/securite?") ? "/portefeuille" : retour);
     } catch (exception) {
       setRefus(messageErreurMfa(exception, "verification"));
     } finally {
