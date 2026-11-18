@@ -9,6 +9,7 @@ worker (job `releves_fiche`), qui a le rôle propriétaire.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 
@@ -40,11 +41,13 @@ from axelcompta.releves_en_compta import (
     transactions,
 )
 from axelcompta.stockage_documents import depot_documents
+from axelcompta.tenants.fiches_import import DocumentImport
 from axelcompta.tenants.fiches_import_depot import FichesImportRepository
 from axelcompta.tenants.fiches_import_postgres import PostgresFichesImport
 from axelcompta.tenants.models import Dossier
 from axelcompta.tenants.postgres import PostgresDossierRepository
 from axelcompta.tenants.repository import DossierRepository
+from axelcompta.traitement_documents_import import OperationQif
 from axelcompta.workflow.propositions import PropositionRepository
 from axelcompta.workflow.propositions_postgres import PostgresPropositionRepository
 from axelcompta.workflow.synchro import synchroniser_dossier
@@ -70,6 +73,19 @@ class Depots:
     propositions: PropositionRepository
 
 
+def _releves_lus(
+    documents: Sequence[DocumentImport], contenu: Callable[[str], bytes]
+) -> dict[str, list[OperationQif]]:
+    """Les opérations de chaque relevé : un QIF relu (les libellés ne sont pas
+    gardés, doc 03 §7), ou un relevé PDF lu par l'OCR (AXE-943), qui les garde."""
+    qif = [d.id for d in documents if (d.donnees or {}).get("type") == "qif"]
+    lus = dict(lire_releves(qif, contenu))
+    lus |= {
+        d.id: operations_lues(d) for d in documents if (d.donnees or {}).get("type") == "releve"
+    }
+    return lus
+
+
 def ecrire_releves(
     depots: Depots,
     tenant_id: TenantId,
@@ -89,14 +105,7 @@ def ecrire_releves(
     def contenu(document_id: str) -> bytes:
         return depots.fiches.contenu(tenant_id, document_id)[1]
 
-    qif = [d for d in instantane.documents if (d.donnees or {}).get("type") == "qif"]
-    lus = dict(lire_releves([d.id for d in qif], contenu))
-    # AXE-943 : un relevé PDF lu par l'OCR garde ses opérations et libellés.
-    lus |= {
-        d.id: operations_lues(d)
-        for d in instantane.documents
-        if (d.donnees or {}).get("type") == "releve"
-    }
+    lus = _releves_lus(instantane.documents, contenu)
     documents = [avec_mouvements(d, lus[d.id]) if d.id in lus else d for d in instantane.documents]
     comptes = depots.comptes.lister(dossier.id)
     plan = planifier(
