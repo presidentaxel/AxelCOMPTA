@@ -26,7 +26,7 @@ import re
 import unicodedata
 import zipfile
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -150,7 +150,36 @@ def _donnees_fec(lignes: tuple[LigneFec, ...], nom: str) -> dict[str, object]:
         "equilibre": sum(x.debit - x.credit for x in lignes) == 0,
         "resultat_cts": -sum(s for c, s in soldes.items() if c.startswith(("6", "7"))),
         "soldes_cts": {c: s for c, s in sorted(soldes.items()) if s},
+        "banque": _banque_fec(lignes),
     }
+
+
+JOURNAUX_A_NOUVEAUX = frozenset({"AN", "RAN", "ANO", "ANX"})
+
+
+def _banque_fec(lignes: tuple[LigneFec, ...]) -> dict[str, object]:
+    """AXE-973 : par compte de banque (512…), son libellé, le solde
+    d'ouverture lu dans les à-nouveaux (en fin de veille de leur date) et
+    chaque mouvement de l'exercice (jour, montant signé), pour vérifier la
+    couverture bancaire par le solde."""
+    banque: dict[str, dict[str, object]] = {}
+    for lg in lignes:
+        if not lg.compte.startswith("512"):
+            continue
+        compte = banque.setdefault(
+            lg.compte,
+            {"libelle": lg.libelle, "ouverture_le": None, "ouverture_cts": None, "operations": []},
+        )
+        montant = lg.debit - lg.credit
+        if lg.journal.upper() in JOURNAUX_A_NOUVEAUX:
+            veille = (lg.date_ecriture - timedelta(days=1)).isoformat()
+            compte["ouverture_le"] = veille
+            compte["ouverture_cts"] = int(str(compte["ouverture_cts"] or 0)) + montant
+        else:
+            operations = compte["operations"]
+            assert isinstance(operations, list)
+            operations.append([lg.date_ecriture.isoformat(), montant])
+    return dict(banque)
 
 
 def _fec(contenu: bytes, nom: str, siren: str | None) -> Traitement:
@@ -194,6 +223,8 @@ def _qif(contenu: bytes) -> Traitement:
             "fin": fin.isoformat(),
             "operations": len(operations),
             "solde_mouvements_cts": total,
+            # AXE-973 : chaque mouvement, pour la couverture bancaire.
+            "mouvements": [[o.jour.isoformat(), o.montant_cts] for o in operations],
         },
         fin.year,
     )

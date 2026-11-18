@@ -551,6 +551,15 @@ Un FEC est lu : période, SIREN, clôture, résultat et solde de chaque
 compte, gardés dans `documents_import.donnees` pour la reprise.
 Un fichier dont le contenu est déjà sur la fiche (même empreinte) n'est
 pas redéposé, seul ou sorti d'une archive déposée par-dessus (AXE-971).
+**Couverture bancaire (AXE-973).** Section Banque de la fiche, `GET
+/portefeuille/imports/{id}/banque` : pour chaque compte, une frise de ce que
+le solde prouve (solde au début + opérations = solde à la fin, au centime
+près), de ce qui est couvert sans preuve, des écarts chiffrés et des jours
+sans données. Sources : mouvements bancaires des FEC (à-nouveaux et
+clôture), relevés QIF (rattachés seuls au compte d'un FEC qu'ils
+recoupent), comptes Digifactory retenus (grand livre et dernier solde), et
+0 € la veille de la création. Des agrégats seulement : ni opération ni
+libellé. Un FEC ou un QIF déposé avant est relu en mémoire.
 Les relevés bancaires sont **obligatoires** tant que Digifactory ne couvre
 pas tout depuis le début du plus ancien exercice que nous tenons (à
 déclarer, ou en cours) ; facultatifs ensuite.
