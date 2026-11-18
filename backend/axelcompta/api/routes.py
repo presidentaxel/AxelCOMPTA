@@ -310,7 +310,11 @@ from axelcompta.rapprochement_rollee_service import (
     rapprocher_dossier,
     retenir_avancement,
 )
-from axelcompta.revenus_rollee import delier_revenus, trancher_semaine_dossier
+from axelcompta.revenus_rollee import (
+    delier_revenus,
+    imputer_ecart_dossier,
+    trancher_semaine_dossier,
+)
 from axelcompta.revenus_semaines import comparaison, debut_banque
 from axelcompta.stockage_documents import depot_documents
 from axelcompta.tenants.affectations import AffectationRepository
@@ -6709,8 +6713,10 @@ def lire_manques_rapprochement_expert(
 class DecisionSemaineEntree(BaseModel):
     plateforme: str
     lundi: date
-    decision: Literal["ecrire", "ecarter"]
+    # AXE-969 : `imputer` écrit la semaine puis solde son écart sur `compte`.
+    decision: Literal["ecrire", "ecarter", "imputer"]
     motif: str
+    compte: str | None = Field(default=None, max_length=8, pattern=r"^\d{3,8}$")
 
 
 class DecisionSemaineVue(BaseModel):
@@ -6730,18 +6736,20 @@ def trancher_semaine_expert(
     la plateforme) ou écartée. Le motif est obligatoire et tracé."""
     _tenant, identite_verifiee = _verifier_acces_gestionnaire(identite)
     motif = motif_valide(corps.motif)
-    resume = trancher_semaine_dossier(
-        settlements,
-        base,
-        dossier,
-        (corps.plateforme, corps.lundi),
-        corps.decision,
-        motif,
-    )
+    semaine = (corps.plateforme, corps.lundi)
+    if corps.decision == "imputer":
+        if not corps.compte:
+            raise HTTPException(status_code=422, detail="Choisissez le compte d'imputation.")
+        resume = imputer_ecart_dossier(settlements, base, dossier, semaine, corps.compte, motif)
+    else:
+        resume = trancher_semaine_dossier(
+            settlements, base, dossier, semaine, corps.decision, motif
+        )
+    quoi = corps.decision + (f" {corps.compte}" if corps.decision == "imputer" else "")
     journal.noter(
         dossier.id,
         ACTE_SEMAINE_TRANCHEE,
-        f"{corps.decision} {corps.plateforme} {corps.lundi.isoformat()} : {motif}"[:300],
+        f"{quoi} {corps.plateforme} {corps.lundi.isoformat()} : {motif}"[:300],
         identite_verifiee.user_id,
         datetime.now(UTC),
     )

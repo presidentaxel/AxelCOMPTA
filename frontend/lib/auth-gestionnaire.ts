@@ -542,7 +542,14 @@ export async function lireRapprochementsExpert(dossierId: string): Promise<Semai
  * reste dû par la plateforme) ou en écarte les jours. Motif obligatoire. */
 export async function trancherSemaineExpert(
   dossierId: string,
-  entree: { plateforme: string; lundi: string; decision: "ecrire" | "ecarter"; motif: string },
+  entree: {
+    plateforme: string;
+    lundi: string;
+    decision: "ecrire" | "ecarter" | "imputer";
+    motif: string;
+    /** AXE-969 : le compte d'imputation de l'écart. */
+    compte?: string;
+  },
 ): Promise<string> {
   const reponse = await requeteGestionnaire(`/expert/dossiers/${dossierId}/rapprochements/decision`, {
     method: "POST",
