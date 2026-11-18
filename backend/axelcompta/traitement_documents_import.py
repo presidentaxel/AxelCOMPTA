@@ -30,7 +30,10 @@ from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from pypdf import PdfReader
+
 from axelcompta.closing.ouverture_fec import FecRefuse, LigneFec, lire_fec_externe, lire_nom
+from axelcompta.ingestion.recaps_plateforme import lire_recap
 from axelcompta.tenants.fiches_import import StatutDocument
 
 A_LIRE = "À lire : sera lu par l'OCR (AXE-943), ou compilé à la main."
@@ -263,9 +266,57 @@ def traiter(
         return _fec(contenu, Path(nom_fichier).name, siren)
     if categorie == "fec" and contenu.startswith(b"%PDF"):
         return Traitement("a_traiter", IMPRESSION_FEC, {"type": "impression_fec"})
+    if categorie == "releve_plateforme" and contenu.startswith(b"%PDF"):
+        return _recap_plateforme(contenu)
     if categorie == "archive" or extension == ".zip":
         return Traitement("traite", "Archive gardée intacte ; ses fichiers sont rangés à part.")
     return Traitement("a_traiter", A_LIRE)
+
+
+MOIS_FR = (
+    "janvier",
+    "février",
+    "mars",
+    "avril",
+    "mai",
+    "juin",
+    "juillet",
+    "août",
+    "septembre",
+    "octobre",
+    "novembre",
+    "décembre",
+)
+
+
+def _recap_plateforme(contenu: bytes) -> Traitement:
+    """AXE-987 : un récapitulatif mensuel Uber se lit sans OCR (PDF texte)."""
+    try:
+        lecteur = PdfReader(io.BytesIO(contenu))
+        texte = "\n".join(page.extract_text() or "" for page in lecteur.pages)
+    except Exception:  # noqa: BLE001 — un PDF abîmé reste à lire, sans erreur
+        return Traitement("a_traiter", A_LIRE)
+    recap = lire_recap(texte)
+    if recap is None:
+        return Traitement("a_traiter", A_LIRE)
+    annee, mois = (int(x) for x in recap.mois.split("-"))
+    nom_mois = f"{MOIS_FR[mois - 1]} {annee}"
+    if not recap.juste:
+        return Traitement(
+            "a_traiter",
+            f"Récapitulatif {recap.plateforme.capitalize()} de {nom_mois} : les montants ne "
+            "tombent pas juste (courses + autres − frais ≠ net), à relire.",
+            recap.donnees(),
+            annee,
+        )
+    return Traitement(
+        "traite",
+        f"Récapitulatif {recap.plateforme.capitalize()} de {nom_mois} : courses "
+        f"{_euros(recap.courses_cts)}, autres revenus {_euros(recap.autres_cts)}, frais "
+        f"{_euros(recap.frais_cts)}, net {_euros(recap.net_cts)}.",
+        recap.donnees(),
+        annee,
+    )
 
 
 # --- AXE-970 : classer un fichier déposé en vrac ------------------------------
@@ -288,6 +339,8 @@ _MOTIFS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"grand[ ._-]?livre|\bgl\b", "grand_livre"),
         (r"balance", "balance"),
         (r"bilan|compte de resultat|comptes annuels|\bannexe", "comptes_annuels"),
+        # AXE-987 : avant « relevé » : un relevé Uber n'est pas un relevé bancaire.
+        (r"\b(uber|bolt|heetch|freenow|free now|allocab)\b", "releve_plateforme"),
         (r"releve|\.qif$|\.ofx$", "releve_bancaire"),
         (r"k-?bis|extrait", "kbis"),
         (r"statuts", "statuts"),

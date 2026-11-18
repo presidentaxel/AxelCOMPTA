@@ -182,6 +182,13 @@ from axelcompta.couverture_bancaire_fiche import (
 from axelcompta.couverture_bancaire_fiche import (
     a_completer as a_completer_banque,
 )
+from axelcompta.couverture_plateformes import couverture as couverture_plateformes
+from axelcompta.couverture_plateformes import (
+    jours_rollee,
+    libelle_mois,
+    recaps_deposes,
+    virements_vus,
+)
 from axelcompta.depot_documents_import import Fichier as FichierImport
 from axelcompta.depot_documents_import import (
     depot_sur_emplacement,
@@ -372,6 +379,7 @@ from axelcompta.tenants.fiches_import_etat import (
     ContactDigifactory,
     cle_du_document,
     contacts_correspondants,
+    debut_a_couvrir,
     dossier_prevu,
     etat_sections,
     manque_pour_creer,
@@ -9503,6 +9511,78 @@ def _enregistrer_route_couverture_banque(app: FastAPI) -> None:
     ) -> CouvertureBanqueVue:
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
         return _couverture_banque(tenant_id, fiche_id, fiches, comptes, ledger)
+
+    @app.get(
+        "/portefeuille/imports/{fiche_id}/plateformes", response_model=CouverturePlateformesVue
+    )
+    def lire_couverture_plateformes(
+        fiche_id: str,
+        identite: IdentiteDep,
+        fiches: FichesImportDep,
+        ledger: LedgerBaseDep,
+        settlements: SettlementsDep,
+    ) -> CouverturePlateformesVue:
+        """AXE-987 : mois par mois, ce que Rollee, la banque et les documents
+        disent de chaque plateforme. Des agrégats seulement."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _couverture_plateformes(fiches.instantane(tenant_id, fiche_id), ledger, settlements)
+
+
+def _couverture_plateformes(
+    instantane: Instantane, ledger: LedgerService, settlements: SettlementsRepository
+) -> CouverturePlateformesVue:
+    fiche = instantane.fiche
+    relie = instantane.dossier_cree and fiche.dossier_id
+    dossier = DossierId(fiche.dossier_id) if relie and fiche.dossier_id else None
+    jours = jours_rollee(settlements.lister(dossier)) if dossier else []
+    virements = virements_vus(ledger.grand_livre(dossier)) if dossier else []
+    aujourd_hui = date.today()
+    plateformes = couverture_plateformes(
+        jours,
+        virements,
+        recaps_deposes(instantane.documents),
+        debut_a_couvrir(fiche.champs, aujourd_hui),
+        aujourd_hui,
+    )
+    return CouverturePlateformesVue(
+        plateformes=[
+            PlateformeCouverteVue(
+                plateforme=p.plateforme,
+                mois=[
+                    MoisPlateformeVue(
+                        mois=m.mois,
+                        libelle=libelle_mois(m.mois),
+                        etat=m.etat,
+                        virements=m.virements,
+                        verse_cts=m.verse_cts,
+                    )
+                    for m in p.mois
+                ],
+            )
+            for p in plateformes
+        ],
+        a_completer=[phrase for p in plateformes for phrase in p.a_completer],
+        dossier=dossier is not None,
+    )
+
+
+class MoisPlateformeVue(BaseModel):
+    mois: str
+    libelle: str
+    etat: str
+    virements: int
+    verse_cts: int
+
+
+class PlateformeCouverteVue(BaseModel):
+    plateforme: str
+    mois: list[MoisPlateformeVue]
+
+
+class CouverturePlateformesVue(BaseModel):
+    plateformes: list[PlateformeCouverteVue]
+    a_completer: list[str]
+    dossier: bool
 
 
 def _enregistrer_routes_reglages_banque(app: FastAPI) -> None:

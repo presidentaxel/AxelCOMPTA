@@ -18,9 +18,11 @@ from axelcompta.api.routes import (
     get_lire_contacts_digifactory,
     get_lire_fiche_officielle,
     get_lire_premiere_ecriture_digifactory,
+    get_settlements,
 )
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.ingestion.comptes_bancaires import CompteDigifactory
+from axelcompta.ingestion.settlements_plateforme import SettlementsMemoire
 from axelcompta.jobs.file import FileMemoire
 from axelcompta.tenants.branchements import BranchementsMemoire
 from axelcompta.tenants.fiches_import_depot import FichesImportMemoire
@@ -593,3 +595,21 @@ def test_deposer_un_fec_preremplit_la_reprise_comptable() -> None:
     assert reprise["vehicule"] == "achat"
     assert "acheté le 10/02/2024" in reprise["vehicule_detail"]
     assert vue["depuis_fec"]["vehicule"] == "FEC 2024"
+
+
+def test_la_couverture_des_plateformes_d_une_fiche_sans_dossier_est_vide() -> None:
+    """AXE-987 : sans dossier, ni Rollee ni banque : rien à comparer."""
+    client, _file = _client()
+    settlements = SettlementsMemoire()
+    cast(FastAPI, client.app).dependency_overrides[get_settlements] = lambda: settlements
+    fiche = _ouvrir(client, siren="")
+    reponse = client.get(f"/portefeuille/imports/{fiche['id']}/plateformes", headers=EN_TETE)
+    assert reponse.status_code == 200, reponse.text
+    assert reponse.json() == {"plateformes": [], "a_completer": [], "dossier": False}
+
+
+def test_la_fiche_propose_une_carte_pour_les_recapitulatifs_de_plateforme() -> None:
+    client, _file = _client()
+    fiche = _ouvrir(client, siren="")
+    cles = {e["cle"] for e in fiche["emplacements"]}
+    assert "plateformes:releve_plateforme" in cles
