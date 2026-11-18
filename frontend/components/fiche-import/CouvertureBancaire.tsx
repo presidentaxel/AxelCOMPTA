@@ -1,14 +1,22 @@
 "use client";
 
-import { AlertTriangle, LoaderCircle } from "lucide-react";
+import { AlertTriangle, LoaderCircle, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { lireCouvertureBanque } from "@/lib/auth-gestionnaire";
+import { Button } from "@/components/ui/button";
 import {
+  lireCouvertureBanque,
+  rattacherCompteBanque,
+  retirerSoldeBanque,
+  saisirSoldeBanque,
+} from "@/lib/auth-gestionnaire";
+import {
+  ciblesPossibles,
   euros,
   largeurs,
   libelleEtatBanque,
   type CompteBanque,
+  type CompteConnu,
   type CouvertureBanque,
   type EtatPeriodeBanque,
 } from "@/lib/fiches-import";
@@ -23,7 +31,15 @@ const COULEURS: Record<EtatPeriodeBanque, string> = {
 
 /** La couverture bancaire de la fiche : pour chaque compte, ce que le solde
  * prouve, ce qui manque et de combien. Relue à chaque dépôt (`version`). */
-export function CouvertureBancaire({ ficheId, version }: { ficheId: string; version: string }) {
+export function CouvertureBancaire({
+  ficheId,
+  version,
+  modifiable,
+}: {
+  ficheId: string;
+  version: string;
+  modifiable: boolean;
+}) {
   const [couverture, setCouverture] = useState<CouvertureBanque | null>(null);
   const [erreur, setErreur] = useState("");
 
@@ -41,7 +57,17 @@ export function CouvertureBancaire({ ficheId, version }: { ficheId: string; vers
     };
   }, [ficheId, version]);
 
-  if (erreur) return <p className="text-sm text-danger">{erreur}</p>;
+  /** Un réglage rend la couverture recalculée ; une erreur s'affiche. */
+  async function regler(appel: Promise<CouvertureBanque>): Promise<void> {
+    try {
+      setCouverture(await appel);
+      setErreur("");
+    } catch (e: unknown) {
+      setErreur(e instanceof Error ? e.message : "Erreur inattendue.");
+    }
+  }
+
+  if (erreur && !couverture) return <p className="text-sm text-danger">{erreur}</p>;
   if (!couverture) {
     return (
       <p className="flex items-center gap-2 text-sm text-subtle">
@@ -60,6 +86,7 @@ export function CouvertureBancaire({ ficheId, version }: { ficheId: string; vers
           fin, au centime près. Les jours sans opération sont alors des jours calmes.
         </p>
       </div>
+      {erreur && <p className="text-sm text-danger">{erreur}</p>}
       {couverture.a_completer.length > 0 && (
         <div className="rounded-md border border-danger-border bg-danger-subtle p-3 text-sm text-ink">
           <p className="flex items-center gap-2 font-medium">
@@ -77,13 +104,42 @@ export function CouvertureBancaire({ ficheId, version }: { ficheId: string; vers
           Aucune donnée bancaire : déposez un FEC, un relevé QIF, ou reliez Digifactory.
         </p>
       ) : (
-        couverture.comptes.map((c) => <Compte key={c.cle} compte={c} />)
+        couverture.comptes.map((c) => (
+          <Compte
+            key={c.cle}
+            compte={c}
+            connus={couverture.comptes_connus ?? []}
+            reglages={
+              modifiable
+                ? {
+                    rattacher: (source, cible) => regler(rattacherCompteBanque(ficheId, source, cible)),
+                    saisir: (solde) => regler(saisirSoldeBanque(ficheId, solde)),
+                    retirer: (rang) => regler(retirerSoldeBanque(ficheId, rang)),
+                  }
+                : null
+            }
+          />
+        ))
       )}
     </section>
   );
 }
 
-function Compte({ compte }: { compte: CompteBanque }) {
+type Reglages = {
+  rattacher: (source: string, cible: string | null) => Promise<void>;
+  saisir: (solde: { compte: string; le: string; montant: string; source: string }) => Promise<void>;
+  retirer: (rang: number) => Promise<void>;
+};
+
+function Compte({
+  compte,
+  connus,
+  reglages,
+}: {
+  compte: CompteBanque;
+  connus: CompteConnu[];
+  reglages: Reglages | null;
+}) {
   const tailles = largeurs(compte.periodes);
   const debut = compte.periodes[0]?.debut;
   const fin = compte.periodes.at(-1)?.fin;
@@ -128,8 +184,20 @@ function Compte({ compte }: { compte: CompteBanque }) {
           <summary className="cursor-pointer">Soldes connus ({compte.soldes.length})</summary>
           <ul className="mt-1 space-y-0.5">
             {compte.soldes.map((s) => (
-              <li key={`${s.le}-${s.source}`}>
-                {new Date(s.le).toLocaleDateString("fr-FR")} : {euros(s.cts)} · {s.source}
+              <li key={`${s.le}-${s.source}`} className="flex items-center gap-2">
+                <span>
+                  {new Date(s.le).toLocaleDateString("fr-FR")} : {euros(s.cts)} · {s.source}
+                </span>
+                {reglages && s.rang != null && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Retirer le solde du ${new Date(s.le).toLocaleDateString("fr-FR")}`}
+                    onClick={() => void reglages.retirer(s.rang as number)}
+                  >
+                    <Trash2 className="size-3.5" aria-hidden />
+                  </Button>
+                )}
               </li>
             ))}
           </ul>
@@ -138,6 +206,78 @@ function Compte({ compte }: { compte: CompteBanque }) {
       {compte.incoherences.map((i) => (
         <p key={i} className="text-xs text-danger">{i}</p>
       ))}
+      {(compte.reunit ?? []).length > 0 && (
+        <ul className="text-xs text-subtle">
+          {(compte.reunit ?? []).map((r) => (
+            <li key={r.cle} className="flex items-center gap-2">
+              Réunit : {r.libelle}
+              {reglages && (
+                <Button size="sm" variant="ghost" onClick={() => void reglages.rattacher(r.cle, null)}>
+                  Détacher
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {reglages && compte.origine !== "digifactory" && (
+        <label className="flex flex-wrap items-center gap-2 text-xs text-subtle">
+          C&apos;est en fait le compte
+          <select
+            value=""
+            onChange={(e) => e.target.value && void reglages.rattacher(compte.cle, e.target.value)}
+            className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-ink"
+            aria-label={`Rattacher ${compte.libelle} à un autre compte`}
+          >
+            <option value="">— choisir —</option>
+            {ciblesPossibles(compte, connus).map((c) => (
+              <option key={c.cle} value={c.cle}>
+                {c.libelle}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {reglages && <SaisieSolde compte={compte.cle} saisir={reglages.saisir} />}
     </div>
+  );
+}
+
+/** Un solde lu sur un relevé PDF, en fin de journée, en attendant l'OCR. */
+function SaisieSolde({ compte, saisir }: { compte: string; saisir: Reglages["saisir"] }) {
+  const [le, setLe] = useState("");
+  const [montant, setMontant] = useState("");
+  const [source, setSource] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+  return (
+    <form
+      className="flex flex-wrap items-end gap-2 border-t border-border pt-2 text-xs"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setEnvoi(true);
+        try {
+          await saisir({ compte, le, montant, source: source || "Relevé" });
+          setLe("");
+          setMontant("");
+          setSource("");
+        } finally {
+          setEnvoi(false);
+        }
+      }}
+    >
+      <span className="w-full text-subtle">Ajouter un solde lu sur un relevé (fin de journée)</span>
+      <input type="date" required value={le} onChange={(e) => setLe(e.target.value)}
+        className="h-9 rounded-md border border-border bg-surface px-2 text-ink" aria-label="Date du solde" />
+      <input required inputMode="decimal" placeholder="1 367,16" value={montant}
+        onChange={(e) => setMontant(e.target.value)}
+        className="h-9 w-28 rounded-md border border-border bg-surface px-2 text-ink" aria-label="Solde en euros" />
+      <input placeholder="Relevé Bred septembre 2025" value={source} onChange={(e) => setSource(e.target.value)}
+        className="h-9 min-w-40 flex-1 rounded-md border border-border bg-surface px-2 text-ink"
+        aria-label="Relevé d'où vient le solde" />
+      <Button type="submit" size="sm" disabled={envoi || !le || !montant}>
+        {envoi && <LoaderCircle className="size-3.5 animate-spin" aria-hidden />}
+        Ajouter
+      </Button>
+    </form>
   );
 }

@@ -559,7 +559,11 @@ sans données. Sources : mouvements bancaires des FEC (à-nouveaux et
 clôture), relevés QIF (rattachés seuls au compte d'un FEC qu'ils
 recoupent), comptes Digifactory retenus (grand livre et dernier solde), et
 0 € la veille de la création. Des agrégats seulement : ni opération ni
-libellé. Un FEC ou un QIF déposé avant est relu en mémoire.
+libellé. Un FEC ou un QIF déposé avant est relu en mémoire. Le gestionnaire
+rattache le compte d'un FEC ou d'un relevé à un compte connu (`PUT
+…/banque/rattachements`) et saisit un solde lu sur un relevé PDF (`POST
+…/banque/soldes`), gardés dans les champs `banque_rattachements` et
+`banque_soldes` de la fiche.
 Les relevés bancaires sont **obligatoires** tant que Digifactory ne couvre
 pas tout depuis le début du plus ancien exercice que nous tenons (à
 déclarer, ou en cours) ; facultatifs ensuite.

@@ -14,7 +14,10 @@ Sources d'opérations et soldes connus :
   reste un compte à part (`doc:<id>`) ;
 - **Digifactory** (dossier créé) : chaque compte retenu (`digi:<id>`), ses
   opérations au grand livre et son dernier solde connu ;
-- **la création de la société** : tout compte vaut 0 € la veille.
+- **la création de la société** : tout compte vaut 0 € la veille ;
+- **ce que le gestionnaire a dit** (`tenants/fiches_import_banque.py`) : le
+  compte d'un FEC ou d'un relevé rattaché à un compte connu, et les soldes
+  lus sur un relevé PDF.
 
 Seuls des agrégats sortent d'ici (périodes, soldes, écarts) : jamais une
 opération ni un libellé (doc 03 §7).
@@ -23,7 +26,7 @@ opération ni un libellé (doc 03 §7).
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 
 from axelcompta.ingestion.comptes_bancaires import CompteBancaire
@@ -36,6 +39,7 @@ from axelcompta.tenants.couverture_bancaire import (
     couverture,
 )
 from axelcompta.tenants.fiches_import import DocumentImport, FicheImport
+from axelcompta.tenants.fiches_import_banque import racine, rattachements, soldes_saisis
 from axelcompta.tenants.fiches_import_calculs import bornes_de
 from axelcompta.tenants.fiches_import_etat import debut_a_couvrir
 
@@ -50,7 +54,7 @@ class CompteCouvert:
     origine: str  # digifactory | fec | releve
     suivi: bool  # compte de l'activité à tenir jusqu'à aujourd'hui
     couverture: Couverture
-    reunit: tuple[str, ...] = ()  # les autres sources rattachées à ce compte
+    reunit: tuple[tuple[str, str], ...] = ()  # (clé, libellé) des comptes rattachés
     a_completer_depuis: date | None = None
 
 
@@ -161,8 +165,9 @@ def _reunir(
     comptes: Sequence[CompteBancaire],
     ecritures: Sequence[Ecriture],
     aujourd_hui: date,
-) -> _Registre:
-    """Toutes les sources et tous les soldes connus de la fiche."""
+) -> tuple[_Registre, dict[str, str]]:
+    """Toutes les sources et tous les soldes, ramenés au compte auquel le
+    gestionnaire les a rattachés."""
     champs = fiche.champs
     registre = _Registre()
     for document in documents:
@@ -172,13 +177,27 @@ def _reunir(
         if (document.donnees or {}).get("type") == "qif":
             _depuis_qif(registre, document)
     _depuis_digifactory(registre, comptes, ecritures, champs, aujourd_hui)
+    # Un rattachement vers un compte qui n'est plus là (écarté, document
+    # retiré) est ignoré : la source redevient un compte à part.
+    liens = {
+        source: cible
+        for source, cible in rattachements(champs).items()
+        if source in registre.libelles and cible in registre.libelles
+    }
+    registre.sources = [replace(s, compte=racine(s.compte, liens)) for s in registre.sources]
+    registre.soldes = [replace(s, compte=racine(s.compte, liens)) for s in registre.soldes]
+    registre.soldes += [
+        Solde(racine(s.compte, liens), s.le, s.cts, s.source) for s in soldes_saisis(champs)
+    ]
     creation = champs.get("date_creation")
     if creation:
         veille = date.fromisoformat(creation) - UN_JOUR
         registre.soldes += [
-            Solde(cle, veille, 0, "Création de la société") for cle in registre.libelles
+            Solde(cle, veille, 0, "Création de la société")
+            for cle in registre.libelles
+            if racine(cle, liens) == cle
         ]
-    return registre
+    return registre, liens
 
 
 def couverture_de_la_fiche(
@@ -191,17 +210,22 @@ def couverture_de_la_fiche(
     """Chaque compte de banque de la fiche et sa couverture, du jour de la
     création (ou de la première donnée) à aujourd'hui pour un compte de
     l'activité, à sa dernière donnée pour un compte d'archive."""
-    registre = _reunir(fiche, documents, comptes, ecritures, aujourd_hui)
+    registre, liens = _reunir(fiche, documents, comptes, ecritures, aujourd_hui)
     creation = fiche.champs.get("date_creation")
     a_couvrir = debut_a_couvrir(fiche.champs, aujourd_hui)
     resultat = []
     for cle, (libelle, origine) in registre.libelles.items():
         siennes = [s for s in registre.sources if s.compte == cle]
-        if not siennes:
+        if racine(cle, liens) != cle or not siennes:
             continue
         debut = date.fromisoformat(creation) if creation else min(s.debut for s in siennes)
         suivi = cle in registre.suivis
         fin = aujourd_hui if suivi else max(s.fin for s in siennes)
+        reunit = tuple(
+            (autre, nom)
+            for autre, (nom, _o) in registre.libelles.items()
+            if autre != cle and racine(autre, liens) == cle
+        )
         resultat.append(
             CompteCouvert(
                 cle,
@@ -209,11 +233,21 @@ def couverture_de_la_fiche(
                 origine,
                 suivi,
                 couverture(cle, siennes, registre.soldes, min(debut, fin), fin),
-                a_completer_depuis=a_couvrir if suivi else None,
+                reunit,
+                a_couvrir if suivi else None,
             )
         )
     # Les comptes de l'activité d'abord, puis les archives, les plus récentes d'abord.
     return sorted(resultat, key=lambda c: (not c.suivi, -c.couverture.periodes[-1].fin.toordinal()))
+
+
+def comptes_connus(
+    fiche: FicheImport, documents: Sequence[DocumentImport], comptes: Sequence[CompteBancaire]
+) -> list[tuple[str, str]]:
+    """(clé, libellé) de chaque compte que la fiche connaît, rattaché ou
+    non : les choix possibles d'un rattachement."""
+    registre, _liens = _reunir(fiche, documents, comptes, (), date.today())
+    return [(cle, libelle) for cle, (libelle, _origine) in registre.libelles.items()]
 
 
 def a_completer(compte: CompteCouvert) -> list[tuple[date, date, str]]:

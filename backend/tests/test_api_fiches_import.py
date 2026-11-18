@@ -518,3 +518,51 @@ def test_la_couverture_bancaire_dit_ce_qui_est_prouve_sans_rien_detailler() -> N
         "FEC 2024 (clôture)",
     }
     assert "Uber" not in reponse.text  # des agrégats seulement
+
+
+def test_rattacher_un_compte_et_saisir_un_solde_depuis_la_fiche() -> None:
+    """AXE-973 (2/2) : un relevé QIF devient le compte du FEC, un solde saisi
+    se retire ; un lecteur ne règle rien."""
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    route = f"/portefeuille/imports/{fiche['id']}/banque"
+    qif = b"!Type:Bank\nD10/03/2025\nT80.00\nPBolt\n^\n"
+    depot = client.post(
+        f"/portefeuille/imports/{fiche['id']}/documents",
+        files={"fichier": ("bred.qif", qif, "text/plain")},
+        data={"emplacement": "banque:releve_bancaire"},
+        headers=EN_TETE,
+    )
+    (releve,) = [
+        d
+        for e in depot.json()["emplacements"]
+        for d in e["documents"]
+        if d["nom_fichier"] == "bred.qif"
+    ]
+    cle = f"doc:{releve['id']}"
+
+    solde = client.post(
+        f"{route}/soldes",
+        json={"compte": cle, "le": "2025-03-31", "montant": "80,00", "source": "Relevé mars"},
+        headers=EN_TETE,
+    )
+    assert solde.status_code == 200, solde.text
+    (compte,) = solde.json()["comptes"]
+    saisi = next(s for s in compte["soldes"] if s["source"] == "Relevé mars (saisi)")
+    assert (saisi["cts"], saisi["rang"]) == (8000, 0)
+    assert cle in [c["cle"] for c in solde.json()["comptes_connus"]]
+
+    retire = client.delete(f"{route}/soldes/0", headers=EN_TETE)
+    assert all(s["rang"] is None for s in retire.json()["comptes"][0]["soldes"])
+
+    refuse = client.put(
+        f"{route}/rattachements", json={"source": cle, "cible": cle}, headers=EN_TETE
+    )
+    assert refuse.status_code == 422
+    lecteur = _client(role="lecture")[0]
+    assert (
+        lecteur.put(
+            f"{route}/rattachements", json={"source": cle, "cible": None}, headers=EN_TETE
+        ).status_code
+        == 403
+    )

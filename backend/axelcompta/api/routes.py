@@ -176,6 +176,7 @@ from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
 from axelcompta.core.rls import appliquer_rls, contexte_identite
 from axelcompta.couverture_bancaire_fiche import (
     CompteCouvert,
+    comptes_connus,
     couverture_de_la_fiche,
 )
 from axelcompta.couverture_bancaire_fiche import (
@@ -362,6 +363,10 @@ from axelcompta.tenants.fiches_import import ignorer as ignorer_fiche
 from axelcompta.tenants.fiches_import import modifier as modifier_fiche
 from axelcompta.tenants.fiches_import import reclasser as reclasser_document
 from axelcompta.tenants.fiches_import import reprendre as reprendre_fiche
+from axelcompta.tenants.fiches_import_banque import SoldeSaisi, soldes_saisis
+from axelcompta.tenants.fiches_import_banque import ajouter_solde as ajouter_solde_banque
+from axelcompta.tenants.fiches_import_banque import rattacher as rattacher_banque
+from axelcompta.tenants.fiches_import_banque import retirer_solde as retirer_solde_banque
 from axelcompta.tenants.fiches_import_depot import FichesImportRepository, Instantane
 from axelcompta.tenants.fiches_import_etat import (
     ContactDigifactory,
@@ -8748,6 +8753,28 @@ class SoldeBanqueVue(BaseModel):
     le: str
     cts: int
     source: str
+    rang: int | None = None  # un solde saisi : son rang, pour le retirer
+
+
+class CompteConnuVue(BaseModel):
+    cle: str
+    libelle: str
+
+
+class RattachementBanqueVue(BaseModel):
+    """Le compte `source` (FEC, relevé) est le compte `cible` ; `None` le détache."""
+
+    source: str
+    cible: str | None
+
+
+class SoldeSaisiVue(BaseModel):
+    """Un solde lu sur un relevé, en fin de journée."""
+
+    compte: str
+    le: date
+    montant: str
+    source: str = "Relevé"
 
 
 class CompteBanqueVue(BaseModel):
@@ -8759,6 +8786,7 @@ class CompteBanqueVue(BaseModel):
     soldes: list[SoldeBanqueVue]
     incoherences: list[str]
     a_completer: list[str]
+    reunit: list[CompteConnuVue] = []
 
 
 class CouvertureBanqueVue(BaseModel):
@@ -8766,6 +8794,7 @@ class CouvertureBanqueVue(BaseModel):
 
     comptes: list[CompteBanqueVue]
     a_completer: list[str]
+    comptes_connus: list[CompteConnuVue] = []
 
 
 class RangementDocumentVue(BaseModel):
@@ -9326,7 +9355,7 @@ def _enregistrer_routes_exercices_import(app: FastAPI) -> None:
         return _fiche_vue(fiches.ranger(reclasser_document(document, corps.emplacement)))
 
 
-def _compte_banque_vue(compte: CompteCouvert) -> CompteBanqueVue:
+def _compte_banque_vue(compte: CompteCouvert, saisis: list[SoldeSaisi]) -> CompteBanqueVue:
     manques = [
         f"{compte.libelle} : du {d:%d/%m/%Y} au {f:%d/%m/%Y}"
         + (" (écart au solde)" if etat == "ecart" else "")
@@ -9350,11 +9379,24 @@ def _compte_banque_vue(compte: CompteCouvert) -> CompteBanqueVue:
             for p in compte.couverture.periodes
         ],
         soldes=[
-            SoldeBanqueVue(le=s.le.isoformat(), cts=s.cts, source=s.source)
+            SoldeBanqueVue(
+                le=s.le.isoformat(),
+                cts=s.cts,
+                source=s.source,
+                rang=next(
+                    (
+                        i
+                        for i, saisi in enumerate(saisis)
+                        if (saisi.le, saisi.cts, saisi.source) == (s.le, s.cts, s.source)
+                    ),
+                    None,
+                ),
+            )
             for s in compte.couverture.soldes
         ],
         incoherences=list(compte.couverture.incoherences),
         a_completer=manques,
+        reunit=[CompteConnuVue(cle=c, libelle=lib) for c, lib in compte.reunit],
     )
 
 
@@ -9387,11 +9429,34 @@ def _couverture_banque(
     les_comptes = comptes.lister(dossier) if dossier else ()
     ecritures = ledger.grand_livre(dossier) if dossier and les_comptes else ()
     documents = [_avec_mouvements(fiches, tenant_id, d) for d in instantane.documents]
+    saisis = soldes_saisis(fiche.champs)
     vues = [
-        _compte_banque_vue(c)
+        _compte_banque_vue(c, saisis)
         for c in couverture_de_la_fiche(fiche, documents, les_comptes, ecritures, date.today())
     ]
-    return CouvertureBanqueVue(comptes=vues, a_completer=[m for v in vues for m in v.a_completer])
+    return CouvertureBanqueVue(
+        comptes=vues,
+        a_completer=[m for v in vues for m in v.a_completer],
+        comptes_connus=[
+            CompteConnuVue(cle=c, libelle=lib)
+            for c, lib in comptes_connus(fiche, documents, les_comptes)
+        ],
+    )
+
+
+def _regler(
+    tenant_id: TenantId,
+    fiche_id: str,
+    par: str,
+    fiches: FichesImportRepository,
+    changer: Callable[[Mapping[str, str]], dict[str, str]],
+) -> None:
+    fiche = fiches.lire(tenant_id, fiche_id)
+    fiches.enregistrer(
+        dataclasses.replace(
+            fiche, champs=changer(fiche.champs), maj_par=par, maj_le=datetime.now(UTC)
+        )
+    )
 
 
 def _enregistrer_route_couverture_banque(app: FastAPI) -> None:
@@ -9407,6 +9472,86 @@ def _enregistrer_route_couverture_banque(app: FastAPI) -> None:
         ledger: LedgerBaseDep,
     ) -> CouvertureBanqueVue:
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _couverture_banque(tenant_id, fiche_id, fiches, comptes, ledger)
+
+
+def _enregistrer_routes_reglages_banque(app: FastAPI) -> None:
+    """AXE-973 (2/2) : rattacher le compte d'un FEC ou d'un relevé à un
+    compte connu."""
+
+    @app.put(
+        "/portefeuille/imports/{fiche_id}/banque/rattachements",
+        response_model=CouvertureBanqueVue,
+    )
+    def rattacher_compte_banque(
+        fiche_id: str,
+        corps: RattachementBanqueVue,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+        comptes: ComptesBancairesDep,
+        ledger: LedgerBaseDep,
+    ) -> CouvertureBanqueVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        _regler(
+            tenant_id,
+            fiche_id,
+            identite.email,
+            fiches,
+            lambda champs: rattacher_banque(champs, corps.source, corps.cible),
+        )
+        return _couverture_banque(tenant_id, fiche_id, fiches, comptes, ledger)
+
+
+def _enregistrer_routes_soldes_banque(app: FastAPI) -> None:
+    """AXE-973 (2/2) : saisir ou retirer un solde lu sur un relevé."""
+
+    @app.post("/portefeuille/imports/{fiche_id}/banque/soldes", response_model=CouvertureBanqueVue)
+    def saisir_solde_banque(
+        fiche_id: str,
+        corps: SoldeSaisiVue,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+        comptes: ComptesBancairesDep,
+        ledger: LedgerBaseDep,
+    ) -> CouvertureBanqueVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        _regler(
+            tenant_id,
+            fiche_id,
+            identite.email,
+            fiches,
+            lambda champs: ajouter_solde_banque(
+                champs, corps.compte, corps.le, corps.montant, corps.source, date.today()
+            ),
+        )
+        return _couverture_banque(tenant_id, fiche_id, fiches, comptes, ledger)
+
+    @app.delete(
+        "/portefeuille/imports/{fiche_id}/banque/soldes/{rang}",
+        response_model=CouvertureBanqueVue,
+    )
+    def retirer_solde_banque_saisi(
+        fiche_id: str,
+        rang: int,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+        comptes: ComptesBancairesDep,
+        ledger: LedgerBaseDep,
+    ) -> CouvertureBanqueVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        _regler(
+            tenant_id,
+            fiche_id,
+            identite.email,
+            fiches,
+            lambda champs: retirer_solde_banque(champs, rang),
+        )
         return _couverture_banque(tenant_id, fiche_id, fiches, comptes, ledger)
 
 
@@ -9516,6 +9661,8 @@ def _enregistrer_routes_imports(app: FastAPI) -> None:
     _enregistrer_route_retrait_document_import(app)
     _enregistrer_routes_exercices_import(app)
     _enregistrer_route_couverture_banque(app)
+    _enregistrer_routes_reglages_banque(app)
+    _enregistrer_routes_soldes_banque(app)
     _enregistrer_route_chauffeur_importe(app)
 
 
