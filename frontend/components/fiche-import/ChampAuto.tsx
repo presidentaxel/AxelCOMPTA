@@ -25,11 +25,14 @@ export function ChampAuto({
   champ,
   modifiable,
   duRegistre,
+  source,
   enregistrer,
 }: {
   champ: ChampImport;
   modifiable: boolean;
   duRegistre: boolean;
+  /** AXE-976 : d'où vient la valeur (« FEC 2024 »), si elle n'a pas été saisie. */
+  source?: string;
   enregistrer: Enregistrer;
 }) {
   // `null` : le champ suit la fiche (registre, déductions) ; sinon la saisie
@@ -68,7 +71,7 @@ export function ChampAuto({
           {champ.libelle}
           {champ.obligatoire && !champ.valeur && <span className="ml-1 font-normal text-muted">· attendu</span>}
         </label>
-        <EtatChamp etat={etat} duRegistre={duRegistre} />
+        <EtatChamp etat={etat} source={source ?? (duRegistre ? "Registre" : undefined)} />
       </div>
       <div className="mt-1.5">
         <Saisie
@@ -93,7 +96,7 @@ export function ChampAuto({
   );
 }
 
-function EtatChamp({ etat, duRegistre }: { etat: Etat; duRegistre: boolean }) {
+function EtatChamp({ etat, source }: { etat: Etat; source?: string }) {
   if (etat === "envoi") {
     return <LoaderCircle aria-label="Enregistrement" className="size-3.5 animate-spin text-muted" />;
   }
@@ -104,7 +107,7 @@ function EtatChamp({ etat, duRegistre }: { etat: Etat; duRegistre: boolean }) {
       </span>
     );
   }
-  return duRegistre ? <span className="text-xs text-muted">Registre</span> : null;
+  return source ? <span className="text-xs text-muted">{source}</span> : null;
 }
 
 function Saisie({

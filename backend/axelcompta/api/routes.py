@@ -383,6 +383,7 @@ from axelcompta.tenants.fiches_import_etat import documents_a_lire as a_lire_pou
 from axelcompta.tenants.fiches_import_etat import emplacements as emplacements_import
 from axelcompta.tenants.fiches_import_etat import exercices as exercices_import
 from axelcompta.tenants.fiches_import_postgres import PostgresFichesImport
+from axelcompta.tenants.fiches_import_reprise import champs_lus_dans_un_fec, preremplir_reprise
 from axelcompta.tenants.franchise_tva import MillesimeInconnu, suivre_franchise
 from axelcompta.tenants.identite_json import identite_vers_json
 from axelcompta.tenants.identite_saisie import (
@@ -8838,6 +8839,8 @@ class FicheImportVue(FicheImportResumeVue):
     registre_lu_le: str | None
     registre_sources: list[str]
     depuis_registre: list[str]
+    # AXE-976 : champ → « FEC 2024 », pour les champs encore lus dans un FEC.
+    depuis_fec: dict[str, str] = {}
     manque_pour_creer: list[str]
     dossier_prevu: str | None
     dossier_cree: bool
@@ -8990,6 +8993,7 @@ def _fiche_vue(instantane: Instantane) -> FicheImportVue:
         registre_lu_le=fiche.registre.lu_le.isoformat() if fiche.registre else None,
         registre_sources=list(fiche.registre.sources) if fiche.registre else [],
         depuis_registre=champs_du_registre(fiche),
+        depuis_fec=champs_lus_dans_un_fec(fiche),
         manque_pour_creer=manque_pour_creer(fiche),
         dossier_prevu=dossier_prevu(fiche) if fiche.champs.get("siren") else None,
         dossier_cree=instantane.dossier_cree,
@@ -9300,8 +9304,16 @@ def _deposer_sans_doublons(
             + ", ".join(ecartes[:5])
             + (f" et {len(ecartes) - 5} autre(s)." if len(ecartes) > 5 else "."),
         )
-    vue = _fiche_vue(fiches.deposer_lot(gardes))
+    vue = _fiche_vue(_reprise_relue(fiches, fiches.deposer_lot(gardes)))
     return vue.model_copy(update={"doublons_ecartes": ecartes})
+
+
+def _reprise_relue(fiches: FichesImportRepository, instantane: Instantane) -> Instantane:
+    """AXE-976 : après un dépôt, un reclassement ou un retrait, la reprise
+    comptable reprend ce que le dernier FEC donne (jamais par-dessus une
+    saisie)."""
+    fiche = preremplir_reprise(instantane.fiche, instantane.documents, date.today())
+    return instantane if fiche is instantane.fiche else fiches.enregistrer(fiche)
 
 
 async def _fichier_lu(fichier: UploadFile) -> FichierImport:
@@ -9369,7 +9381,8 @@ def _enregistrer_routes_exercices_import(app: FastAPI) -> None:
         )
         if document is None:
             raise HTTPException(status_code=404, detail="Document introuvable.")
-        return _fiche_vue(fiches.ranger(reclasser_document(document, corps.emplacement)))
+        rangee = fiches.ranger(reclasser_document(document, corps.emplacement))
+        return _fiche_vue(_reprise_relue(fiches, rangee))
 
 
 def _compte_banque_vue(compte: CompteCouvert, saisis: list[SoldeSaisi]) -> CompteBanqueVue:
@@ -9587,7 +9600,7 @@ def _enregistrer_route_retrait_document_import(app: FastAPI) -> None:
     ) -> FicheImportVue:
         tenant_id, _identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
-        return _fiche_vue(fiches.retirer(tenant_id, fiche_id, document_id))
+        return _fiche_vue(_reprise_relue(fiches, fiches.retirer(tenant_id, fiche_id, document_id)))
 
 
 def _enregistrer_route_chauffeur_importe(app: FastAPI) -> None:

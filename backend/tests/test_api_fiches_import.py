@@ -572,3 +572,24 @@ def test_rattacher_un_compte_et_saisir_un_solde_depuis_la_fiche() -> None:
         ).status_code
         == 403
     )
+
+
+def test_deposer_un_fec_preremplit_la_reprise_comptable() -> None:
+    """AXE-976 : le FEC déposé donne le véhicule, marqué « FEC 2024 »."""
+    client, _file = _client()
+    fiche = _ouvrir(client)
+    fec = (
+        b"JournalCode\tEcritureNum\tEcritureDate\tCompteNum\tCompteLib\tPieceRef"
+        b"\tEcritureLib\tDebit\tCredit\tValidDate\r\n"
+        b"AC\t1\t20240210\t2182000\tVehicule\tP\tAchat\t20000,00\t0,00\t20240210\r\n"
+        b"AC\t1\t20240210\t512000\tBanque\tP\tAchat\t0,00\t20000,00\t20240210\r\n"
+    )
+    vue = client.post(
+        f"/portefeuille/imports/{fiche['id']}/exercices/2024/documents",
+        files=[("fichiers", ("55210055400010FEC20241231.csv", fec, "text/csv"))],
+        headers=EN_TETE,
+    ).json()
+    reprise = {c["cle"]: c["valeur"] for c in _section(vue, "reprise")["champs"]}
+    assert reprise["vehicule"] == "achat"
+    assert "acheté le 10/02/2024" in reprise["vehicule_detail"]
+    assert vue["depuis_fec"]["vehicule"] == "FEC 2024"

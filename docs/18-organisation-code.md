@@ -147,6 +147,7 @@ AXE-808). Depuis le 2026-11-11 (complété le 2026-11-17) :
 | `prevenir_admins.py` | mail aux admins d'un cabinet par son SMTP par défaut (AXE-911) |
 | `depot_documents_import.py` | ce qui entre sur une fiche d'import : dépôt sur une carte ou en vrac sur un exercice, archives zip dépliées (AXE-970) |
 | `couverture_bancaire_fiche.py` | la couverture bancaire d'une fiche d'import, de toutes ses sources (FEC, QIF, Digifactory) ; le calcul pur est dans `tenants/couverture_bancaire.py`, les rattachements et soldes saisis dans `tenants/fiches_import_banque.py` (AXE-973) |
+| `tenants/fiches_import_reprise.py` | la reprise comptable d'une fiche préremplie par le dernier FEC clos : crédit de TVA, véhicule, emprunts (AXE-976) |
 | `stockage_documents.py` | le bucket S3 privé des documents d'import (`DOCUMENTS_BUCKET`, AXE-970) |
 | `fiches_import_portefeuille.py` | la synchro complète les fiches d'import du portefeuille avec ce qu'on sait de chaque dossier ; la décision est dans `tenants/fiches_import_dossiers.py` (AXE-952) |
 | `traitement_documents_import.py` | lit les documents déposés sur une fiche d'import : FEC et QIF lus, les autres restent « à lire » (AXE-947) |

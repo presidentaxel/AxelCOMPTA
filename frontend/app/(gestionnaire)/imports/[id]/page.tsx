@@ -435,6 +435,7 @@ function ContenuSection({
         champ={c}
         modifiable={modifiable}
         duRegistre={fiche.depuis_registre.includes(c.cle)}
+        source={fiche.depuis_fec?.[c.cle]}
         enregistrer={enregistrer}
       />
     );
