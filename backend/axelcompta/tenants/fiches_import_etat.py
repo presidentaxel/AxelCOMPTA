@@ -36,6 +36,7 @@ from .fiches_import import (
 )
 from .fiches_import_calculs import bornes, bornes_de, date_limite_liasse
 from .fiches_import_listes import lire_associes, total_parts
+from .fiches_import_validation import manques_de_section
 from .import_dossiers import identifiant, rapport
 from .models import Dossier
 
@@ -439,6 +440,8 @@ def etat_sections(
     for section in SECTIONS:
         manquants = _manquants_champs(section, fiche.champs)
         manquants += [e.libelle for e in vides if e.section == section.cle]
+        # AXE-989 : la banque et les plateformes ont aussi leurs critères.
+        manquants += manques_de_section(fiche.champs, section.cle)
         etats.append(EtatSection(section.cle, section.libelle, not manquants, tuple(manquants)))
     return etats
 

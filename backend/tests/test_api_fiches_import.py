@@ -689,3 +689,16 @@ def test_un_document_reclasse_a_la_main_est_relu() -> None:
     assert range_.status_code == 200, range_.text
     (relu,) = [d for e in range_.json()["emplacements"] for d in e["documents"]]
     assert (relu["categorie"], relu["statut_traitement"]) == ("releve_plateforme", "traite")
+
+
+def test_les_criteres_d_import_d_une_fiche_sans_dossier() -> None:
+    """AXE-989 : sans dossier, rien à vérifier ; la fiche n'est pas importée."""
+    client, _file = _client()
+    settlements = SettlementsMemoire()
+    cast(FastAPI, client.app).dependency_overrides[get_settlements] = lambda: settlements
+    fiche = _ouvrir(client, siren="")
+    reponse = client.get(f"/portefeuille/imports/{fiche['id']}/validation", headers=EN_TETE)
+    assert reponse.status_code == 200, reponse.text
+    assert reponse.json() == {"importe": False, "dossier": False, "criteres": []}
+    banque = next(s for s in fiche["sections_detail"] if s["cle"] == "banque")
+    assert not banque["complet"]

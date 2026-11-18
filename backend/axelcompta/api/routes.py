@@ -461,6 +461,7 @@ from axelcompta.tenants.tags import (
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.tester_branchement import tester as tester_branchement
 from axelcompta.traitement_documents_import import traiter as traiter_document_import
+from axelcompta.validation_fiches_service import valider_fiche
 from axelcompta.webhooks_rollee import preparer as preparer_webhook
 from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT, ACTE_SEMAINE_TRANCHEE
 from axelcompta.workflow.avis_etages import avis_etages, proposition_affichee
@@ -9766,6 +9767,66 @@ def _couverture_plateformes(
     )
 
 
+def _enregistrer_route_validation_import(app: FastAPI) -> None:
+    @app.get("/portefeuille/imports/{fiche_id}/validation", response_model=ValidationImportVue)
+    def lire_validation_import(
+        fiche_id: str,
+        identite: IdentiteDep,
+        fiches: FichesImportDep,
+        comptes: ComptesBancairesDep,
+        ledger: LedgerBaseDep,
+        settlements: SettlementsDep,
+    ) -> ValidationImportVue:
+        """AXE-989 : les critères pour que le chauffeur soit importé, calculés
+        maintenant (le passage horaire les garde sur la fiche)."""
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _validation_import(tenant_id, fiche_id, fiches, comptes, ledger, settlements)
+
+
+def _validation_import(
+    tenant_id: TenantId,
+    fiche_id: str,
+    fiches: FichesImportRepository,
+    comptes: CompteBancaireRepository,
+    ledger: LedgerService,
+    settlements: SettlementsRepository,
+) -> ValidationImportVue:
+    instantane = fiches.instantane(tenant_id, fiche_id)
+    fiche = instantane.fiche
+    if not (instantane.dossier_cree and fiche.dossier_id):
+        return ValidationImportVue(importe=False, dossier=False, criteres=[])
+    dossier = DossierId(fiche.dossier_id)
+    validation = valider_fiche(
+        fiche,
+        [_avec_mouvements(fiches, tenant_id, d) for d in instantane.documents],
+        comptes.lister(dossier),
+        ledger.grand_livre(dossier),
+        settlements.lister(dossier),
+        datetime.now(UTC),
+    )
+    return ValidationImportVue(
+        importe=validation.importe,
+        dossier=True,
+        criteres=[
+            CritereImportVue(section=c.section, libelle=c.libelle, ok=c.ok, detail=c.detail)
+            for c in validation.criteres
+        ],
+    )
+
+
+class CritereImportVue(BaseModel):
+    section: str
+    libelle: str
+    ok: bool
+    detail: str
+
+
+class ValidationImportVue(BaseModel):
+    importe: bool
+    dossier: bool
+    criteres: list[CritereImportVue]
+
+
 class MoisPlateformeVue(BaseModel):
     mois: str
     libelle: str
@@ -10005,6 +10066,7 @@ def _enregistrer_routes_imports(app: FastAPI) -> None:
     _enregistrer_route_retrait_document_import(app)
     _enregistrer_routes_exercices_import(app)
     _enregistrer_route_couverture_banque(app)
+    _enregistrer_route_validation_import(app)
     _enregistrer_routes_reglages_banque(app)
     _enregistrer_routes_soldes_banque(app)
     _enregistrer_route_chauffeur_importe(app)

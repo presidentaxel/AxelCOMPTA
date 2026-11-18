@@ -51,6 +51,7 @@ import type {
   ComptesDigifactory,
   CouvertureBanque,
   CouverturePlateformes,
+  ValidationImport,
   DigifactoryFiche,
   FicheImport,
   FicheImportResume,
@@ -1602,6 +1603,14 @@ export async function rangerDocumentImport(id: string, documentId: string, empla
       body: JSON.stringify({ emplacement }),
     }),
   );
+}
+
+/** AXE-989 : les critères d'import de la fiche, calculés maintenant. */
+export async function lireValidationImport(id: string): Promise<ValidationImport> {
+  const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/validation`);
+  if (reponse.status === 401) throw new ErreurAuthGestionnaire();
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as ValidationImport;
 }
 
 /** AXE-987 : la couverture des plateformes de la fiche, mois par mois. */
