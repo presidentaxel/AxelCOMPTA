@@ -44,6 +44,8 @@ from axelcompta.tenants.fiches_import_calculs import bornes_de
 from axelcompta.tenants.fiches_import_etat import debut_a_couvrir
 
 SEUIL_RATTACHEMENT = 0.8
+# Un relevé QIF, ou un relevé PDF lu par l'OCR (AXE-943).
+TYPES_RELEVE = frozenset({"qif", "releve"})
 UN_JOUR = timedelta(days=1)
 
 
@@ -103,9 +105,11 @@ def _depuis_fec(registre: _Registre, document: DocumentImport, champs: Mapping[s
 def _depuis_qif(registre: _Registre, document: DocumentImport) -> None:
     donnees = document.donnees or {}
     operations = _operations(donnees.get("mouvements"))
-    if not operations:
+    periode = _periode_lue(donnees)
+    if not operations and periode is None:
         return
-    debut, fin = min(j for j, _ in operations), max(j for j, _ in operations)
+    # AXE-943 : un relevé lu par l'OCR dit sa période, jours calmes compris.
+    debut, fin = periode or (min(j for j, _ in operations), max(j for j, _ in operations))
     # Le compte d'un FEC qu'il recoupe, sinon un compte à part.
     candidats = {
         s.compte: correspondance(operations, s.operations)
@@ -119,11 +123,31 @@ def _depuis_qif(registre: _Registre, document: DocumentImport) -> None:
         cle = f"doc:{document.id}"
         nom = document.nom_fichier.rsplit("/", 1)[-1]
         registre.libelles[cle] = (f"Relevé {nom}", "releve")
-    registre.sources.append(
-        SourceOperations(
-            cle, f"Relevé {document.nom_fichier.rsplit('/', 1)[-1]}", debut, fin, operations
-        )
-    )
+    nom = f"Relevé {document.nom_fichier.rsplit('/', 1)[-1]}"
+    registre.sources.append(SourceOperations(cle, nom, debut, fin, operations))
+    registre.soldes += _soldes_lus(cle, nom, donnees, debut, fin)
+
+
+def _periode_lue(donnees: Mapping[str, object]) -> tuple[date, date] | None:
+    try:
+        debut = date.fromisoformat(str(donnees.get("periode_debut") or ""))
+        fin = date.fromisoformat(str(donnees.get("periode_fin") or ""))
+    except ValueError:
+        return None
+    return (debut, fin) if debut <= fin else None
+
+
+def _soldes_lus(
+    cle: str, nom: str, donnees: Mapping[str, object], debut: date, fin: date
+) -> list[Solde]:
+    """Les soldes imprimés sur un relevé lu par l'OCR : l'ancien solde est
+    celui de la veille du début, le nouveau celui du dernier jour."""
+    soldes = []
+    if isinstance(donnees.get("solde_debut_cts"), int):
+        soldes.append(Solde(cle, debut - UN_JOUR, int(donnees["solde_debut_cts"]), nom))  # type: ignore[call-overload]
+    if isinstance(donnees.get("solde_fin_cts"), int):
+        soldes.append(Solde(cle, fin, int(donnees["solde_fin_cts"]), nom))  # type: ignore[call-overload]
+    return soldes
 
 
 def _depuis_digifactory(
@@ -174,7 +198,7 @@ def _reunir(
         if document.categorie == "fec":
             _depuis_fec(registre, document, champs)
     for document in documents:
-        if (document.donnees or {}).get("type") == "qif":
+        if (document.donnees or {}).get("type") in TYPES_RELEVE:
             _depuis_qif(registre, document)
     _depuis_digifactory(registre, comptes, ecritures, champs, aujourd_hui)
     # Un rattachement vers un compte qui n'est plus là (écarté, document

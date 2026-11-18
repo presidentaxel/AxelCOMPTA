@@ -52,6 +52,9 @@ class RecapPlateforme:
     autres_cts: int  # primes, parrainages, divers
     frais_cts: int  # frais de service de la plateforme
     net_cts: int
+    # TVA comprise dans les courses, quand la société la facture (3 colonnes :
+    # HT, TVA, total ; AXE-943). 0 sinon.
+    tva_cts: int = 0
 
     @property
     def juste(self) -> bool:
@@ -67,6 +70,7 @@ class RecapPlateforme:
             "autres_cts": self.autres_cts,
             "frais_cts": self.frais_cts,
             "net_cts": self.net_cts,
+            "tva_cts": self.tva_cts,
         }
 
 
@@ -102,11 +106,26 @@ def _ancien_format(texte: str) -> RecapPlateforme | None:
     )
 
 
+def _colonnes(texte: str, libelle: str) -> list[int]:
+    """Les montants d'une ligne : HT, TVA et total, ou total seul."""
+    lu = re.search(re.escape(libelle) + r" ((?:" + _EURO_FR + r" ?){1,3})", texte)
+    return [_cts(m) for m in re.findall(_EURO_FR, lu.group(1))] if lu else []
+
+
+def _total(colonnes: list[int]) -> int:
+    """Trois colonnes : HT, TVA, total. Deux (sans TVA facturée) : le
+    montant, puis la TVA à 0 ou le même montant ; le premier compte."""
+    return colonnes[-1] if len(colonnes) == 3 else colonnes[0]
+
+
 def _nouveau_format(texte: str) -> RecapPlateforme | None:
+    """Depuis 2025 : une ligne par revenu ou frais, avec HT, TVA et total.
+    Le total compte (le montant net en est la somme) ; la TVA des courses
+    est gardée à part."""
     periode = re.search(r"\d{2}-\d{2} ([A-Za-zéûÉ]+) (\d{4})", texte)
-    courses = re.search(r"Revenus issus de courses " + _EURO_FR, texte)
-    autres = re.search(r"Revenus issus d'autres services " + _EURO_FR, texte)
-    frais = re.search(r"Frais de service Uber " + _EURO_FR, texte)
+    courses = _colonnes(texte, "Revenus issus de courses")
+    autres = _colonnes(texte, "Revenus issus d'autres services")
+    frais = _colonnes(texte, "Frais de service Uber")
     net = re.search(r"Montant total " + _EURO_FR, texte)
     if not (periode and courses and frais and net):
         return None
@@ -117,10 +136,11 @@ def _nouveau_format(texte: str) -> RecapPlateforme | None:
         "uber",
         f"{periode.group(2)}-{mois:02d}",
         _siren(texte),
-        _cts(courses.group(1)),
-        _cts(autres.group(1)) if autres else 0,
-        _cts(frais.group(1)),
+        _total(courses),
+        _total(autres) if autres else 0,
+        _total(frais),
         _cts(net.group(1)),
+        courses[1] if len(courses) == 3 else 0,
     )
 
 

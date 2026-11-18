@@ -31,6 +31,7 @@ from axelcompta.fiches_import_portefeuille import completer_fiches
 from axelcompta.jobs.file import (
     ERREUR_ABANDON,
     TYPE_IMPORT_DOSSIERS,
+    TYPE_OCR,
     TYPE_RAPPELS,
     TYPE_RAPPROCHEMENT_ROLLEE,
     TYPE_RELEVES_FICHE,
@@ -47,6 +48,7 @@ from axelcompta.nouveaux_contacts import (
     fiche_sirene,
     proposer,
 )
+from axelcompta.ocr.passage_postgres import passer_ocr
 from axelcompta.plateformes_rollee import suivi_postgres, traiter_evenements
 from axelcompta.rappels import envoyer
 from axelcompta.rapprochement_rollee_service import (
@@ -111,6 +113,8 @@ class Dependances:
     completer_fiches: Callable[[TenantId], str] | None = None
     # AXE-833 : écrit en comptabilité les relevés d'une fiche (tenant, fiche).
     ecrire_releves: Callable[[TenantId, str], str] | None = None
+    # AXE-943 : lit les documents déposés sur les fiches du portefeuille.
+    lire_documents: Callable[[TenantId], str] | None = None
 
 
 def _stockee(proposition: Proposition, maintenant: datetime) -> PropositionStockee:
@@ -260,6 +264,18 @@ def _dossier_demande(job: Job) -> str | None:
     return str(valeur) if valeur else None
 
 
+def _job_des_fiches(job: Job, deps: Dependances) -> str | None:
+    """Les jobs des fiches d'import : OCR (AXE-943), relevés (AXE-833)."""
+    if job.type == TYPE_OCR and deps.lire_documents is not None:
+        return deps.lire_documents(TenantId(job.tenant_id)) or "OCR : rien à lire"
+    if job.type == TYPE_RELEVES_FICHE and deps.ecrire_releves is not None:
+        fiche_id = str(json.loads(job.payload).get("fiche_id") or "")
+        if not fiche_id:
+            raise ValueError("demande d'écriture des relevés sans fiche")
+        return deps.ecrire_releves(TenantId(job.tenant_id), fiche_id)
+    return None
+
+
 def executer_job(job: Job, deps: Dependances, aujourd_hui: date) -> str:
     if job.type == TYPE_IMPORT_DOSSIERS:
         texte = importer_dossiers(job, deps.dossiers)
@@ -274,11 +290,9 @@ def executer_job(job: Job, deps: Dependances, aujourd_hui: date) -> str:
         return deps.traiter_rollee(TenantId(job.tenant_id))
     if job.type == TYPE_RAPPROCHEMENT_ROLLEE and deps.rapprocher_rollee is not None:
         return deps.rapprocher_rollee(TenantId(job.tenant_id), _dossier_demande(job))
-    if job.type == TYPE_RELEVES_FICHE and deps.ecrire_releves is not None:
-        fiche_id = str(json.loads(job.payload).get("fiche_id") or "")
-        if not fiche_id:
-            raise ValueError("demande d'écriture des relevés sans fiche")
-        return deps.ecrire_releves(TenantId(job.tenant_id), fiche_id)
+    des_fiches = _job_des_fiches(job, deps)
+    if des_fiches is not None:
+        return des_fiches
     if job.type != TYPE_SYNCHRO:
         raise ValueError(f"type de job non pris en charge : {job.type}")
     return synchroniser_portefeuille_suivi(TenantId(job.tenant_id), deps, aujourd_hui)
@@ -333,6 +347,7 @@ def dependances_reelles() -> Dependances:
         relever_rollee=lambda t: relever_portefeuille_postgres(engine, t),
         completer_fiches=lambda t: completer_fiches(engine, t, lecteur_depuis_env()),
         ecrire_releves=lambda t, f: ecrire_releves_postgres(engine, t, f),
+        lire_documents=lambda t: passer_ocr(engine, t),
     )
 
 

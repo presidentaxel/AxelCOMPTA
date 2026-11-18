@@ -67,6 +67,9 @@ export type DocumentImport = {
   depose_le: string;
   statut_traitement: StatutDocument;
   resume: string;
+  /** AXE-943 : l'OCR (Haiku puis Sonnet) n'a pas pu valider sa lecture. */
+  a_verifier?: boolean;
+  controles?: string[];
 };
 
 /** AXE-947 : un document attendu, son explication et ce qui y est déposé. */

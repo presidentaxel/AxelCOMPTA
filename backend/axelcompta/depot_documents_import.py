@@ -59,7 +59,7 @@ def _lu(document: DocumentImport, contenu: bytes, siren: str | None) -> Document
     return replace(document, statut_traitement=lu.statut, resume=lu.resume, donnees=lu.donnees)
 
 
-def _emplacement_classe(categorie: str, exercice: int | None, repli: str) -> str:
+def emplacement_classe(categorie: str, exercice: int | None, repli: str) -> str:
     """Où ranger un fichier classé : la reprise de son exercice pour une
     pièce comptable, la banque ou les documents administratifs sinon ; un
     fichier que rien ne classe reste dans la section du dépôt (`repli`)."""
@@ -83,7 +83,7 @@ def _membres(
     for membre in membres:
         categorie = classer(membre.chemin, membre.contenu)
         exercice = archive.exercice or annee_du_nom(membre.chemin)
-        emplacement = _emplacement_classe(categorie, exercice, section)
+        emplacement = emplacement_classe(categorie, exercice, section)
         nom = f"{Path(archive.nom_fichier).name}/{membre.chemin}"[-200:]
         document = document_import(
             uuid.uuid4().hex,
@@ -136,7 +136,7 @@ def depot_sur_exercice(
     lot: Lot = []
     for fichier in fichiers:
         categorie = classer(fichier.nom, fichier.contenu)
-        emplacement = _emplacement_classe(categorie, annee, "reprise")
+        emplacement = emplacement_classe(categorie, annee, "reprise")
         lot += _un_fichier(fiche, emplacement, fichier, par, le)
     return lot
 

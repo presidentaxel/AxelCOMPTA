@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import date
 from typing import Any, cast
 
@@ -702,3 +703,30 @@ def test_les_criteres_d_import_d_une_fiche_sans_dossier() -> None:
     assert reponse.json() == {"importe": False, "dossier": False, "criteres": []}
     banque = next(s for s in fiche["sections_detail"] if s["cle"] == "banque")
     assert not banque["complet"]
+
+
+def _toutes(fiches: FichesImportMemoire) -> list[Any]:
+    tenants = {f.tenant_id for f in fiches.fiches.values()}
+    return [ligne for t in tenants for ligne in fiches.lister(t)]
+
+
+def test_un_document_que_l_ocr_n_a_pas_valide_est_signale() -> None:
+    """AXE-943 : l'écran reçoit la raison, pour un message en rouge."""
+    client, _file = _client()
+    fiche = _ouvrir(client, siren="")
+    route = f"/portefeuille/imports/{fiche['id']}/documents"
+    depose = client.post(
+        route,
+        files={"fichier": ("kbis.pdf", b"%PDF-1.4", "application/pdf")},
+        data={"emplacement": "documents:kbis"},
+        headers=EN_TETE,
+    ).json()
+    (document,) = [d for e in depose["emplacements"] for d in e["documents"]]
+    assert document["a_verifier"] is False
+    fiches = cast(FastAPI, client.app).dependency_overrides[get_fiches_import]()
+    stocke = next(d for f, docs in _toutes(fiches) for d in docs if f.id == fiche["id"])
+    ocr = {"version": "ocr-1", "a_verifier": True, "controles": ["SIREN : non lu."]}
+    fiches.ranger(replace(stocke, donnees={"ocr": ocr}))
+    relue = client.get(f"/portefeuille/imports/{fiche['id']}", headers=EN_TETE).json()
+    (document,) = [d for e in relue["emplacements"] for d in e["documents"]]
+    assert (document["a_verifier"], document["controles"]) == (True, ["SIREN : non lu."])
