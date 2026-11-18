@@ -571,7 +571,8 @@ export type PeriodeBanque = {
   sources: string[];
   indices: string[];
 };
-export type SoldeBanque = { le: string; cts: number; source: string };
+export type SoldeBanque = { le: string; cts: number; source: string; rang?: number | null };
+export type CompteConnu = { cle: string; libelle: string };
 export type CompteBanque = {
   cle: string;
   libelle: string;
@@ -581,8 +582,21 @@ export type CompteBanque = {
   soldes: SoldeBanque[];
   incoherences: string[];
   a_completer: string[];
+  /** AXE-973 (2/2) : les comptes de FEC ou de relevés rattachés à celui-ci. */
+  reunit?: CompteConnu[];
 };
-export type CouvertureBanque = { comptes: CompteBanque[]; a_completer: string[] };
+export type CouvertureBanque = {
+  comptes: CompteBanque[];
+  a_completer: string[];
+  comptes_connus?: CompteConnu[];
+};
+
+/** Les comptes auxquels un compte peut se rattacher : ni lui-même, ni un
+ * compte déjà rattaché à lui. */
+export function ciblesPossibles(compte: CompteBanque, connus: CompteConnu[]): CompteConnu[] {
+  const siens = new Set([compte.cle, ...(compte.reunit ?? []).map((c) => c.cle)]);
+  return connus.filter((c) => !siens.has(c.cle));
+}
 
 const JOUR_MS = 86_400_000;
 

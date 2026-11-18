@@ -463,6 +463,7 @@ function ContenuSection({
         <CouvertureBancaire
           ficheId={fiche.id}
           version={[fiche.maj_le, fiche.emplacements.reduce((n, e) => n + e.documents.length, 0)].join("|")}
+          modifiable={modifiable}
         />
       </div>
     );

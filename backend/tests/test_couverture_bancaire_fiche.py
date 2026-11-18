@@ -96,3 +96,38 @@ def test_fec_qif_et_digifactory_disent_ce_qui_manque_et_ce_qui_est_prouve() -> N
     # Seul ce qui touche l'exercice tenu est demandé : depuis le 01/10/2025.
     assert a_completer(bred) == [(date(2025, 10, 1), date(2026, 8, 19), "manquant")]
     assert a_completer(qonto) == []
+
+
+def test_le_compte_d_un_fec_rattache_a_la_bred_et_un_solde_saisi_comblent_la_frise() -> None:
+    """Le FEC 2024 de KERFICE porte la banque sur 5120020 : rattaché à la
+    Bred, ses mouvements et ses soldes rejoignent ceux de Digifactory. Un
+    solde saisi au 19/08/2026 prouve la période qui manquait."""
+    fec_2024 = (
+        b"JournalCode\tEcritureNum\tEcritureDate\tCompteNum\tCompteLib\tPieceRef\tEcritureLib"
+        b"\tDebit\tCredit\tValidDate\r\n"
+        b"BQ2\t1\t20240115\t5120020\tBred\tP\tUber\t100,00\t0,00\t20240115\r\n"
+        b"BQ2\t1\t20240115\t706\tVentes\tP\tUber\t0,00\t100,00\t20240115\r\n"
+    )
+    fiche = replace(
+        FICHE,
+        champs={
+            **FICHE.champs,
+            "banque_rattachements": '{"fec:5120020": "digi:67499359"}',
+            "banque_soldes": '[{"compte": "digi:67499359", "le": "2026-08-19", '
+            '"cts": 840360, "source": "Relevé Bred (saisi)"}]',
+        },
+    )
+    documents = [_document("d", "reprise:fec:2024", "90877103300010FEC20240930.csv", fec_2024)]
+    ecritures = [_ecriture(date(2026, 8, 20), 50000), _ecriture(date(2026, 10, 1), -20000)]
+
+    (bred,) = couverture_de_la_fiche(fiche, documents, [BRED], ecritures, AUJOURD_HUI)
+
+    assert bred.reunit == (("fec:5120020", "Bred"),)
+    dernieres = bred.couverture.periodes[-1]
+    # 8 403,60 € au 19/08/2026 + 300 € de Digifactory = 8 703,60 € au 18/11.
+    assert (dernieres.etat, dernieres.debut) == ("complet", date(2026, 8, 20))
+    assert {s.source for s in bred.couverture.soldes} >= {
+        "FEC 2024 (clôture)",
+        "Relevé Bred (saisi)",
+        "Digifactory",
+    }
