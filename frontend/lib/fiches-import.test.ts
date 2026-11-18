@@ -6,6 +6,8 @@ import {
   deplacerDocument,
   documentsVisibles,
   lireAnnee,
+  largeurs,
+  libelleEtatBanque,
   archiveDe,
   nomCourt,
   versions,
@@ -301,4 +303,16 @@ test("AXE-972 : deux versions d'un grand livre sont signalées, pas l'impression
   assert.equal(versions("grand_livre", [pdf, pdf]), 2);
   assert.equal(versions("fec", [{ resume: "FEC lu : 834 lignes" }, impression]), 1);
   assert.equal(versions("comptes_annuels", [pdf, pdf]), 0);
+});
+
+test("AXE-973 : la frise donne à chaque période sa part de la durée", () => {
+  const tailles = largeurs([
+    { debut: "2022-01-01", fin: "2022-12-31" },
+    { debut: "2023-01-01", fin: "2023-01-01" },
+    { debut: "2023-01-02", fin: "2025-12-31" },
+  ]);
+  assert.equal(tailles.length, 3);
+  assert.ok(tailles[1] >= 1, "une période d'un jour reste visible");
+  assert.ok(tailles[2] > tailles[0]);
+  assert.equal(libelleEtatBanque("ecart"), "Écart au solde");
 });

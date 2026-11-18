@@ -486,3 +486,35 @@ def test_une_archive_redeposee_est_refusee_comme_doublon() -> None:
     assert second.json()["detail"].startswith("Déjà sur la fiche : archive-2019.zip")
     tous = client.get(f"/portefeuille/imports/{fiche['id']}", headers=EN_TETE).json()
     assert sum(len(e["documents"]) for e in tous["emplacements"]) == 5
+
+
+def test_la_couverture_bancaire_dit_ce_qui_est_prouve_sans_rien_detailler() -> None:
+    """AXE-973 : un FEC 2024 déposé donne son compte de banque, prouvé par le
+    solde ; la route ne rend ni opération ni libellé."""
+    client, _file = _client()
+    fiche = _ouvrir(client)  # créée le 15/03/2023, clôture au 31/12
+    fec = (
+        b"JournalCode\tEcritureNum\tEcritureDate\tCompteNum\tCompteLib\tPieceRef"
+        b"\tEcritureLib\tDebit\tCredit\tValidDate\r\n"
+        b"AN\t1\t20240101\t512000\tBanque\tP\tA nouveau\t200,00\t0,00\t20240101\r\n"
+        b"AN\t1\t20240101\t101000\tCapital\tP\tA nouveau\t0,00\t200,00\t20240101\r\n"
+        b"BQ\t2\t20240310\t512000\tBanque\tP\tUber\t50,00\t0,00\t20240310\r\n"
+        b"BQ\t2\t20240310\t706000\tVentes\tP\tUber\t0,00\t50,00\t20240310\r\n"
+    )
+    client.post(
+        f"/portefeuille/imports/{fiche['id']}/exercices/2024/documents",
+        files=[("fichiers", ("55210055400010FEC20241231.csv", fec, "text/csv"))],
+        headers=EN_TETE,
+    )
+    reponse = client.get(f"/portefeuille/imports/{fiche['id']}/banque", headers=EN_TETE)
+
+    assert reponse.status_code == 200, reponse.text
+    (compte,) = reponse.json()["comptes"]
+    assert (compte["cle"], compte["origine"], compte["suivi"]) == ("fec:512000", "fec", False)
+    complet = [p for p in compte["periodes"] if p["etat"] == "complet"]
+    assert [(p["debut"], p["fin"]) for p in complet] == [("2024-01-01", "2024-12-31")]
+    assert {s["source"] for s in compte["soldes"]} >= {
+        "FEC 2024 (à-nouveaux)",
+        "FEC 2024 (clôture)",
+    }
+    assert "Uber" not in reponse.text  # des agrégats seulement

@@ -10,6 +10,7 @@ import { SqueletteLignes } from "@/components/Squelette";
 import { AssociesImport } from "@/components/fiche-import/AssociesImport";
 import { ChampAuto, type Enregistrer } from "@/components/fiche-import/ChampAuto";
 import { ComptesBancairesImport } from "@/components/fiche-import/ComptesBancairesImport";
+import { CouvertureBancaire } from "@/components/fiche-import/CouvertureBancaire";
 import { DigifactoryImport } from "@/components/fiche-import/DigifactoryImport";
 import { EmplacementsSection } from "@/components/fiche-import/DocumentsImport";
 import { EntrepriseImport } from "@/components/fiche-import/EntrepriseImport";
@@ -459,6 +460,10 @@ function ContenuSection({
         <div className="grid max-w-sm gap-5">
           {section.champs.filter((c) => c.cle === "debut_historique").map(champ)}
         </div>
+        <CouvertureBancaire
+          ficheId={fiche.id}
+          version={[fiche.maj_le, fiche.emplacements.reduce((n, e) => n + e.documents.length, 0)].join("|")}
+        />
       </div>
     );
   }

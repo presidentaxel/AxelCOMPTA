@@ -49,6 +49,7 @@ import type { FicheAnnuaireRollee, FicheRollee, RolleePortefeuille } from "./lie
 import type { AnalyseFec, OuvertureVue } from "./ouverture";
 import type {
   ComptesDigifactory,
+  CouvertureBanque,
   DigifactoryFiche,
   FicheImport,
   FicheImportResume,
@@ -1575,6 +1576,14 @@ export async function rangerDocumentImport(id: string, documentId: string, empla
       body: JSON.stringify({ emplacement }),
     }),
   );
+}
+
+/** AXE-973 : la couverture bancaire de la fiche, compte par compte. */
+export async function lireCouvertureBanque(id: string): Promise<CouvertureBanque> {
+  const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/banque`);
+  if (reponse.status === 401) throw new ErreurAuthGestionnaire();
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as CouvertureBanque;
 }
 
 export async function retirerDocumentImport(id: string, documentId: string): Promise<FicheImport> {

@@ -174,6 +174,13 @@ from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, 
 from axelcompta.core.libelles import categorie_du_suffixe, sans_categorie
 from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
 from axelcompta.core.rls import appliquer_rls, contexte_identite
+from axelcompta.couverture_bancaire_fiche import (
+    CompteCouvert,
+    couverture_de_la_fiche,
+)
+from axelcompta.couverture_bancaire_fiche import (
+    a_completer as a_completer_banque,
+)
 from axelcompta.depot_documents_import import Fichier as FichierImport
 from axelcompta.depot_documents_import import (
     depot_sur_emplacement,
@@ -338,6 +345,7 @@ from axelcompta.tenants.confirmation import (
 )
 from axelcompta.tenants.contacts_proposes import ContactsProposesRepository
 from axelcompta.tenants.contacts_proposes_postgres import PostgresContactsProposes
+from axelcompta.tenants.couverture_bancaire import phrase as phrase_periode
 from axelcompta.tenants.exercices import ExerciceRepository
 from axelcompta.tenants.exercices_postgres import PostgresExerciceRepository
 from axelcompta.tenants.fiches_import import (
@@ -416,6 +424,7 @@ from axelcompta.tenants.tags import (
 )
 from axelcompta.tenants.tags_postgres import PostgresTagsRepository
 from axelcompta.tester_branchement import tester as tester_branchement
+from axelcompta.traitement_documents_import import traiter as traiter_document_import
 from axelcompta.webhooks_rollee import preparer as preparer_webhook
 from axelcompta.workflow.audit import ACTE_CONNEXION, ACTE_EXPORT, ACTE_SEMAINE_TRANCHEE
 from axelcompta.workflow.avis_etages import avis_etages, proposition_affichee
@@ -8725,6 +8734,40 @@ class DocumentImportVue(BaseModel):
     resume: str
 
 
+class PeriodeBanqueVue(BaseModel):
+    debut: str
+    fin: str
+    etat: str  # complet | couvert | ecart | manquant
+    phrase: str
+    ecart_cts: int | None
+    sources: list[str]
+    indices: list[str]
+
+
+class SoldeBanqueVue(BaseModel):
+    le: str
+    cts: int
+    source: str
+
+
+class CompteBanqueVue(BaseModel):
+    cle: str
+    libelle: str
+    origine: str  # digifactory | fec | releve
+    suivi: bool
+    periodes: list[PeriodeBanqueVue]
+    soldes: list[SoldeBanqueVue]
+    incoherences: list[str]
+    a_completer: list[str]
+
+
+class CouvertureBanqueVue(BaseModel):
+    """AXE-973 : la couverture bancaire d'une fiche, compte par compte."""
+
+    comptes: list[CompteBanqueVue]
+    a_completer: list[str]
+
+
 class RangementDocumentVue(BaseModel):
     """AXE-970 : où ranger un document déjà déposé (« reprise:fec:2019 »)."""
 
@@ -9283,6 +9326,90 @@ def _enregistrer_routes_exercices_import(app: FastAPI) -> None:
         return _fiche_vue(fiches.ranger(reclasser_document(document, corps.emplacement)))
 
 
+def _compte_banque_vue(compte: CompteCouvert) -> CompteBanqueVue:
+    manques = [
+        f"{compte.libelle} : du {d:%d/%m/%Y} au {f:%d/%m/%Y}"
+        + (" (écart au solde)" if etat == "ecart" else "")
+        for d, f, etat in a_completer_banque(compte)
+    ]
+    return CompteBanqueVue(
+        cle=compte.cle,
+        libelle=compte.libelle,
+        origine=compte.origine,
+        suivi=compte.suivi,
+        periodes=[
+            PeriodeBanqueVue(
+                debut=p.debut.isoformat(),
+                fin=p.fin.isoformat(),
+                etat=p.etat,
+                phrase=phrase_periode(p),
+                ecart_cts=p.ecart_cts,
+                sources=list(p.sources),
+                indices=list(p.indices),
+            )
+            for p in compte.couverture.periodes
+        ],
+        soldes=[
+            SoldeBanqueVue(le=s.le.isoformat(), cts=s.cts, source=s.source)
+            for s in compte.couverture.soldes
+        ],
+        incoherences=list(compte.couverture.incoherences),
+        a_completer=manques,
+    )
+
+
+def _avec_mouvements(
+    fiches: FichesImportRepository, tenant_id: TenantId, document: DocumentImport
+) -> DocumentImport:
+    """Un FEC ou un QIF lu avant AXE-973 n'a pas gardé ses mouvements : il
+    est relu, en mémoire seulement."""
+    donnees = document.donnees or {}
+    lu_avant = (donnees.get("type") == "fec" and "banque" not in donnees) or (
+        donnees.get("type") == "qif" and "mouvements" not in donnees
+    )
+    if not lu_avant:
+        return document
+    _document, contenu = fiches.contenu(tenant_id, document.id)
+    relu = traiter_document_import(document.categorie, document.nom_fichier, contenu)
+    return dataclasses.replace(document, donnees=relu.donnees or donnees)
+
+
+def _couverture_banque(
+    tenant_id: TenantId,
+    fiche_id: str,
+    fiches: FichesImportRepository,
+    comptes: CompteBancaireRepository,
+    ledger: LedgerService,
+) -> CouvertureBanqueVue:
+    instantane = fiches.instantane(tenant_id, fiche_id)
+    fiche = instantane.fiche
+    dossier = DossierId(fiche.dossier_id) if instantane.dossier_cree and fiche.dossier_id else None
+    les_comptes = comptes.lister(dossier) if dossier else ()
+    ecritures = ledger.grand_livre(dossier) if dossier and les_comptes else ()
+    documents = [_avec_mouvements(fiches, tenant_id, d) for d in instantane.documents]
+    vues = [
+        _compte_banque_vue(c)
+        for c in couverture_de_la_fiche(fiche, documents, les_comptes, ecritures, date.today())
+    ]
+    return CouvertureBanqueVue(comptes=vues, a_completer=[m for v in vues for m in v.a_completer])
+
+
+def _enregistrer_route_couverture_banque(app: FastAPI) -> None:
+    """AXE-973 : ce qui est prouvé par le solde, ce qui manque et de combien,
+    compte par compte. Des agrégats seulement : ni opération ni libellé."""
+
+    @app.get("/portefeuille/imports/{fiche_id}/banque", response_model=CouvertureBanqueVue)
+    def lire_couverture_banque(
+        fiche_id: str,
+        identite: IdentiteDep,
+        fiches: FichesImportDep,
+        comptes: ComptesBancairesDep,
+        ledger: LedgerBaseDep,
+    ) -> CouvertureBanqueVue:
+        tenant_id, _identite = _verifier_acces_gestionnaire(identite)
+        return _couverture_banque(tenant_id, fiche_id, fiches, comptes, ledger)
+
+
 def _enregistrer_route_retrait_document_import(app: FastAPI) -> None:
     """AXE-941 : retirer un document déposé par erreur."""
 
@@ -9388,6 +9515,7 @@ def _enregistrer_routes_imports(app: FastAPI) -> None:
     _enregistrer_routes_documents_import(app)
     _enregistrer_route_retrait_document_import(app)
     _enregistrer_routes_exercices_import(app)
+    _enregistrer_route_couverture_banque(app)
     _enregistrer_route_chauffeur_importe(app)
 
 
