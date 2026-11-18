@@ -537,7 +537,11 @@ Menu **Imports** du gestionnaire : une fiche par chauffeur à reprendre. Mise
 en route : `alembic upgrade head` (migration `b7f3e2a91c40`). Le
 préremplissage par le SIREN utilise `INSEE_API_KEY` et le compte RNE ;
 sans eux, tout se saisit à la main. « Ajouter le chauffeur au portefeuille »
-dépose un job `import_dossiers` : le worker doit tourner.
+dépose un job `import_dossiers` : le worker doit tourner. AXE-974 : le rôle
+web de l'API ne crée jamais de dossier. Une fiche active complète est
+reliée tout de suite à son identifiant, et le worker (rôle propriétaire)
+crée son dossier dans la minute ; le passage horaire rattrape le reste.
+Une fiche Ignoré ou annulée n'en crée pas.
 
 **Tout l'historique comptable (AXE-970).** « Importer un exercice d'une
 autre année » ajoute n'importe quel exercice depuis 2000, même avec des

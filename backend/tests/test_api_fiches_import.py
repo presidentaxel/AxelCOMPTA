@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from typing import Any, cast
 
@@ -18,11 +19,12 @@ from axelcompta.api.routes import (
     get_lire_fiche_officielle,
     get_lire_premiere_ecriture_digifactory,
 )
-from axelcompta.core.ids import DossierId
+from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.ingestion.comptes_bancaires import CompteDigifactory
 from axelcompta.jobs.file import FileMemoire
 from axelcompta.tenants.branchements import BranchementsMemoire
 from axelcompta.tenants.fiches_import_depot import FichesImportMemoire
+from axelcompta.tenants.fiches_import_etat import relier_toutes
 from axelcompta.tenants.registres import FicheOfficielle
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client_et_stubs,
@@ -167,25 +169,22 @@ def test_un_releve_qif_depose_est_lu_tout_de_suite() -> None:
     assert document["resume"].startswith("QIF lu : 1 opérations")
 
 
-def test_une_fiche_complete_est_tout_de_suite_au_portefeuille() -> None:
-    """Sans imposition ni TVA, le dossier est créé à l'IS au réel normal,
-    comme un contact Digifactory, avec l'imposition à confirmer (#234). Sans
-    SIREN, il manque de quoi le créer."""
+def test_une_fiche_complete_fait_creer_son_dossier_par_le_worker() -> None:
+    """AXE-974 : le rôle web de l'API ne crée pas de dossier. La fiche est
+    reliée tout de suite à son identifiant, et un seul job `import_dossiers`
+    fait créer le dossier par le worker (rôle propriétaire). Sans SIREN, il
+    manque de quoi le créer."""
     client, file = _client()
     fiche = _ouvrir(client)
     route = f"/portefeuille/imports/{fiche['id']}"
-    depot = cast(FastAPI, client.app).dependency_overrides[get_dossiers]()
+    app = cast(FastAPI, client.app)
+    depot = app.dependency_overrides[get_dossiers]()
+    fiches = app.dependency_overrides[get_fiches_import]()
 
     suppose = client.post(f"{route}/chauffeur", headers=EN_TETE)
     complete = client.patch(
         route,
-        json={
-            "champs": {
-                "regime_imposition": "IS",
-                "regime_tva": "reel_normal",
-                "exercice_debut": "2026-01-01",
-            }
-        },
+        json={"champs": {"regime_imposition": "IS", "regime_tva": "reel_normal"}},
         headers=EN_TETE,
     )
     sans_siren = _ouvrir(client, siren="")
@@ -194,15 +193,22 @@ def test_une_fiche_complete_est_tout_de_suite_au_portefeuille() -> None:
     assert suppose.status_code == 200, suppose.text
     assert (suppose.json()["dossier_id"], suppose.json()["dossier_cree"]) == (
         f"SIREN_{SIREN}",
-        True,
+        False,
     )
-    dossier = depot.obtenir(DossierId(f"SIREN_{SIREN}"))
-    assert dossier.nom == "MK DRIVING"
-    assert "imposition" in dossier.a_confirmer
     assert complete.status_code == 200, complete.text
-    assert complete.json()["dossier_cree"] is True
     assert incomplet.status_code == 422 and "SIREN" in incomplet.json()["detail"]
-    assert file.dernier("TENANT_DEMO", "import_dossiers") is None
+    job = file.dernier("TENANT_DEMO", "import_dossiers")
+    assert job is not None and json.loads(job.payload) == {"lignes": []}
+    assert len([j for j in file._jobs.values() if j.type == "import_dossiers"]) == 1
+
+    # Ce que fait le worker : relier chaque fiche et créer ce qui manque.
+    _changees, a_creer = relier_toutes(fiches.toutes(TenantId("TENANT_DEMO")), [])
+    depot.enregistrer_lot(a_creer)
+    relue = client.get(route, headers=EN_TETE).json()
+    assert relue["dossier_cree"] is True
+    # L'imposition a été saisie avant le passage du worker : rien à confirmer.
+    dossier = depot.obtenir(DossierId(f"SIREN_{SIREN}"))
+    assert (dossier.regime_imposition, dossier.a_confirmer) == ("IS", ())
 
 
 def test_ignorer_une_fiche_puis_la_remettre() -> None:

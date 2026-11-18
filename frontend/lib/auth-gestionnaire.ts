@@ -1626,14 +1626,15 @@ export async function retirerDocumentImport(id: string, documentId: string): Pro
   );
 }
 
-/** Crée un dossier pour chaque fiche active qui peut en être un. */
-export async function relierFichesImport(): Promise<{ creees: number }> {
+/** Relie chaque fiche active à son dossier. Les dossiers à créer le sont
+ * par le worker dans la minute (AXE-974) : `en_creation` les compte. */
+export async function relierFichesImport(): Promise<{ creees: number; en_creation: number }> {
   const reponse = await requeteGestionnaire("/portefeuille/imports/relier-dossiers", {
     method: "POST",
   });
   if (reponse.status === 401) throw new ErreurAuthGestionnaire();
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
-  return (await reponse.json()) as { creees: number };
+  return (await reponse.json()) as { creees: number; en_creation: number };
 }
 
 /** Ajoute le chauffeur au portefeuille ; le worker crée le dossier. */

@@ -527,6 +527,25 @@ def relier_au_portefeuille(
     return fiche, None, resultat.erreurs
 
 
+def relier_toutes(
+    fiches: Sequence[FicheImport], dossiers: Sequence[Dossier]
+) -> tuple[list[FicheImport], list[Dossier]]:
+    """AXE-974 : chaque fiche active complète a son dossier. Les fiches dont
+    le lien change, et les dossiers à créer (un seul par identifiant).
+    Rien n'est écrit : la création revient au worker (rôle propriétaire)."""
+    existants = list(dossiers)
+    changees: list[FicheImport] = []
+    a_creer: list[Dossier] = []
+    for fiche in fiches:
+        reliee, dossier, _erreurs = relier_au_portefeuille(fiche, existants)
+        if dossier is not None:
+            a_creer.append(dossier)
+            existants.append(dossier)
+        if reliee.dossier_id != fiche.dossier_id:
+            changees.append(reliee)
+    return changees, a_creer
+
+
 def dossier_prevu(fiche: FicheImport) -> str:
     ligne = ligne_dossier(fiche)
     return str(identifiant(ligne["siren"], ligne["contact_digifactory"]))
