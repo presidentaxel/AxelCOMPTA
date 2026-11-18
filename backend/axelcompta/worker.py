@@ -33,6 +33,7 @@ from axelcompta.jobs.file import (
     TYPE_IMPORT_DOSSIERS,
     TYPE_RAPPELS,
     TYPE_RAPPROCHEMENT_ROLLEE,
+    TYPE_RELEVES_FICHE,
     TYPE_ROLLEE,
     TYPE_SYNCHRO,
     Job,
@@ -53,6 +54,7 @@ from axelcompta.rapprochement_rollee_service import (
     relever_portefeuille_postgres,
 )
 from axelcompta.registres_officiels import lecteur_depuis_env
+from axelcompta.releves_en_compta_service import ecrire_releves_postgres
 from axelcompta.surveillance import Sentinelle, sentinelle_sentry
 from axelcompta.synchro_digifactory import (
     TYPE_DIGIFACTORY,
@@ -107,6 +109,8 @@ class Dependances:
     relever_rollee: Callable[[TenantId], str] | None = None
     # AXE-952 : une fiche d'import par dossier, complétée de ce qu'on sait.
     completer_fiches: Callable[[TenantId], str] | None = None
+    # AXE-833 : écrit en comptabilité les relevés d'une fiche (tenant, fiche).
+    ecrire_releves: Callable[[TenantId, str], str] | None = None
 
 
 def _stockee(proposition: Proposition, maintenant: datetime) -> PropositionStockee:
@@ -270,6 +274,11 @@ def executer_job(job: Job, deps: Dependances, aujourd_hui: date) -> str:
         return deps.traiter_rollee(TenantId(job.tenant_id))
     if job.type == TYPE_RAPPROCHEMENT_ROLLEE and deps.rapprocher_rollee is not None:
         return deps.rapprocher_rollee(TenantId(job.tenant_id), _dossier_demande(job))
+    if job.type == TYPE_RELEVES_FICHE and deps.ecrire_releves is not None:
+        fiche_id = str(json.loads(job.payload).get("fiche_id") or "")
+        if not fiche_id:
+            raise ValueError("demande d'écriture des relevés sans fiche")
+        return deps.ecrire_releves(TenantId(job.tenant_id), fiche_id)
     if job.type != TYPE_SYNCHRO:
         raise ValueError(f"type de job non pris en charge : {job.type}")
     return synchroniser_portefeuille_suivi(TenantId(job.tenant_id), deps, aujourd_hui)
@@ -323,6 +332,7 @@ def dependances_reelles() -> Dependances:
         rapprocher_rollee=lambda t, d: rapprocher_maintenant(engine, t, d),
         relever_rollee=lambda t: relever_portefeuille_postgres(engine, t),
         completer_fiches=lambda t: completer_fiches(engine, t, lecteur_depuis_env()),
+        ecrire_releves=lambda t, f: ecrire_releves_postgres(engine, t, f),
     )
 
 
