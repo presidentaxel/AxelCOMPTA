@@ -36,6 +36,15 @@ TYPES_RANGES = (
 )
 
 
+def _champs_identite(lu: Mapping[str, object], textes: tuple[str, ...]) -> dict[str, str]:
+    """Capital (et siège, NAF pour un Kbis), pour une fiche qui ne les a pas."""
+    champs = {t: texte(lu, t) for t in textes if texte(lu, t)}
+    capital = montants(lu).get("capital_cts")
+    if capital and capital > 0:
+        champs["capital"] = f"{capital / 100:.2f}"
+    return champs
+
+
 def _kbis(lu: Mapping[str, object], ctx: Contexte) -> list[str]:
     erreurs = controle_siren(lu, ctx.siren)
     if not texte(lu, "siren"):
@@ -81,6 +90,7 @@ KBIS = Categorie(
     montants=("capital_cts",),
     controler=_kbis,
     resumer=_resume_kbis,
+    champs_fiche=lambda lu: _champs_identite(lu, ("siege", "code_naf")),
 )
 
 
@@ -127,6 +137,7 @@ STATUTS = Categorie(
     listes={"associes": {"nom": "string", "prenom": "string", "parts": "integer"}},
     controler=_statuts,
     resumer=_resume_statuts,
+    champs_fiche=lambda lu: _champs_identite(lu, ()),
 )
 
 

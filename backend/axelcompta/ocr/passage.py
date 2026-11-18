@@ -30,6 +30,7 @@ from axelcompta.tenants.fiches_import import (
     reclasser,
 )
 from axelcompta.tenants.fiches_import_depot import FichesImportRepository
+from axelcompta.tenants.fiches_import_etat import exercices
 
 from .categories import Contexte
 from .client import MEDIA_LISIBLES
@@ -208,4 +209,37 @@ def passer(
             lu = lire_document(fiche, documents, document, contenu, appeler, maintenant, bilan)
             if lu is not document:
                 fiches.ranger(lu)
+                complete = completer_fiche(fiche, documents, lu, maintenant)
+                if complete is not None:
+                    fiche = fiches.enregistrer(complete).fiche
     return bilan
+
+
+def completer_fiche(
+    fiche: FicheImport,
+    documents: Sequence[DocumentImport],
+    lu: DocumentImport,
+    maintenant: datetime,
+) -> FicheImport | None:
+    """La fiche avec les champs vides que la lecture remplit ; `None` si
+    rien ne change. Une saisie n'est jamais écrasée."""
+    categorie = REGISTRE.get(lu.categorie)
+    lecture = (lu.donnees or {}).get("lu")
+    if categorie is None or lu.statut_traitement != "traite" or not isinstance(lecture, dict):
+        return None
+    if categorie.exercice_source_seul:
+        sources = [
+            e.annee
+            for e in exercices(fiche.champs, maintenant.date(), documents)
+            if e.role == "source"
+        ]
+        if lu.exercice not in sources:
+            return None
+    nouveaux = {
+        champ: valeur
+        for champ, valeur in categorie.champs_fiche(lecture).items()
+        if valeur and not (fiche.champs.get(champ) or "").strip()
+    }
+    if not nouveaux:
+        return None
+    return replace(fiche, champs={**fiche.champs, **nouveaux}, maj_le=maintenant)

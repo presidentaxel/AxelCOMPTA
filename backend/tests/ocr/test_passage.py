@@ -112,3 +112,25 @@ def test_un_document_illisible_par_l_ocr_n_est_pas_envoye() -> None:
     passer(fiches, T, _appeler, LE, plafond_usd=5.0)
     reste = next(d for d in fiches.instantane(T, fiche_id).documents if d.id == "xlsx")
     assert reste == replace(tableur, statut_traitement=reste.statut_traitement)
+
+
+def test_la_liasse_de_l_exercice_source_remplit_les_deficits_vides() -> None:
+    """AXE-943 : jamais par-dessus une saisie, seulement depuis l'exercice source."""
+    from axelcompta.ocr.passage import completer_fiche
+
+    fiche = replace(
+        nouvelle_fiche("f", T, "K", "K", "", "b", LE),
+        champs={"date_creation": "2022-10-01", "cloture": "30/09"},
+    )
+    lu = {"montants": [{"nom": "deficits_reportables_cts", "valeur_cts": 123456}]}
+    liasse = replace(
+        document_import("l", fiche, "reprise:liasse:2025", "liasse.pdf", "", PDF, "b", LE),
+        statut_traitement="traite",
+        donnees={"lu": lu},
+    )
+    complete = completer_fiche(fiche, [liasse], liasse, LE)
+    assert complete is not None and complete.champs["deficits"] == "1234.56"
+    saisie = replace(fiche, champs={**fiche.champs, "deficits": "0"})
+    assert completer_fiche(saisie, [liasse], liasse, LE) is None
+    ancienne = replace(liasse, exercice=2023, emplacement="reprise:liasse:2023")
+    assert completer_fiche(fiche, [ancienne], ancienne, LE) is None

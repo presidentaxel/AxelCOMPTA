@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from .categories import Categorie
 from .documents import CLASSEMENT, DOCUMENTS
+from .reprise import REPRISE
 
-REGISTRE: dict[str, Categorie] = {**DOCUMENTS}
+REGISTRE: dict[str, Categorie] = {**DOCUMENTS, **REPRISE}
 
 
 def categorie_ocr(cle: str) -> Categorie | None:
