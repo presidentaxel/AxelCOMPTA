@@ -613,3 +613,22 @@ def test_la_fiche_propose_une_carte_pour_les_recapitulatifs_de_plateforme() -> N
     fiche = _ouvrir(client, siren="")
     cles = {e["cle"] for e in fiche["emplacements"]}
     assert "plateformes:releve_plateforme" in cles
+
+
+def test_ecrire_les_releves_d_une_fiche_sans_dossier_ne_demande_rien() -> None:
+    """AXE-833 : le plan se calcule à la demande ; sans dossier, rien ne part
+    au worker et l'écran dit pourquoi."""
+    client, file = _client()
+    fiche = _ouvrir(client, siren="")
+    reponse = client.post(f"/portefeuille/imports/{fiche['id']}/banque/ecrire", headers=EN_TETE)
+    assert reponse.status_code == 200, reponse.text
+    corps = reponse.json()
+    assert (corps["demande"], corps["a_ecrire"]) == (False, [])
+    assert corps["refus"] == ["La fiche n'a pas encore de dossier."]
+    assert not [j for j in file._jobs.values() if j.type == "releves_fiche"]
+
+
+def test_le_role_lecture_n_ecrit_pas_les_releves() -> None:
+    client, _file = _client(role="lecture")
+    reponse = client.post("/portefeuille/imports/inconnue/banque/ecrire", headers=EN_TETE)
+    assert reponse.status_code == 403

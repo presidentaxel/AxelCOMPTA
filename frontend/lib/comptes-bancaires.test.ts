@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { choixCompte, rapprochement, titreCompte, type CompteAffiche } from "./comptes-bancaires";
+import {
+  choixCompte,
+  phraseFiche,
+  rapprochement,
+  titreCompte,
+  type CompteAffiche,
+} from "./comptes-bancaires";
 
 const base: CompteAffiche = {
   compte: "5121",
@@ -47,4 +53,18 @@ test("choix d'un compte : retenu, écarté ou à décider (AXE-729)", () => {
   assert.equal(choixCompte({ ...base, retenu: null }), "a_decider");
   assert.equal(choixCompte({ ...base, retenu: false }), "ecarte");
   assert.deepEqual(rapprochement({ ...base, retenu: null }), { etat: "jamais_releve" });
+});
+
+test("AXE-986 : la fiche d'import propose pour un compte à décider", () => {
+  const compte = { ...base, retenu: null, propose_par_fiche: false };
+  assert.equal(phraseFiche(compte), "La fiche d'import propose : compte personnel.");
+  assert.equal(phraseFiche({ ...base, retenu: null }), null);
+});
+
+test("AXE-986 : un désaccord entre la fiche et le choix enregistré se voit", () => {
+  assert.equal(
+    phraseFiche({ ...base, retenu: true, propose_par_fiche: false }),
+    "La fiche d'import dit autre chose : compte personnel.",
+  );
+  assert.equal(phraseFiche({ ...base, retenu: true, propose_par_fiche: true }), null);
 });

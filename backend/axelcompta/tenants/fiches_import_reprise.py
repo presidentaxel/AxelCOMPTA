@@ -40,7 +40,8 @@ def _somme(soldes: Mapping[str, object], prefixe: str) -> int:
     return sum(int(str(v)) for c, v in soldes.items() if c.startswith(prefixe))
 
 
-def _dernier_fec(documents: Sequence[DocumentImport], aujourd_hui: date) -> DocumentImport | None:
+def dernier_fec(documents: Sequence[DocumentImport], aujourd_hui: date) -> DocumentImport | None:
+    """Le FEC lu de l'exercice clos le plus récent : il donne les à-nouveaux."""
     lus = [
         d
         for d in documents
@@ -88,7 +89,7 @@ def _vehicule(
 
 def lecture(documents: Sequence[DocumentImport], aujourd_hui: date) -> tuple[dict[str, str], str]:
     """Les valeurs que le dernier FEC clos donne, et sa source (« FEC 2024 »)."""
-    fec = _dernier_fec(documents, aujourd_hui)
+    fec = dernier_fec(documents, aujourd_hui)
     if fec is None:
         return {}, ""
     donnees = fec.donnees or {}

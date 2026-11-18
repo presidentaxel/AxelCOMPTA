@@ -4,16 +4,24 @@ d'ouverture depuis le FEC de l'outil précédent ; un faux est refusé."""
 from __future__ import annotations
 
 import dataclasses
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 from fastapi.testclient import TestClient
 
-from axelcompta.api.routes import get_dossiers, get_experts, get_ledger, get_ouvertures
+from axelcompta.api.routes import (
+    get_dossiers,
+    get_experts,
+    get_fiches_import,
+    get_ledger,
+    get_ouvertures,
+)
 from axelcompta.closing.ouverture import id_a_nouveaux
 from axelcompta.closing.ouverture_depot import OuverturesMemoire
 from axelcompta.core.ids import DossierId
 from axelcompta.demo_identites import IDENTITE_KARIM
+from axelcompta.tenants.fiches_import import document_import, nouvelle_fiche
+from axelcompta.tenants.fiches_import_depot import FichesImportMemoire
 from tests.closing.fec_externe import ECRITURES, NOM, fec
 from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
     _client,
@@ -27,6 +35,7 @@ from tests.test_demo_api import (  # noqa: F401  (fixtures autouse)
 
 KARIM = "DEMO_karim"
 REPRISE = "DEMO_reprise"
+LE = datetime(2026, 11, 18, tzinfo=UTC)
 
 
 def _avec_dossier_a_reprendre(client: TestClient) -> OuverturesMemoire:
@@ -182,3 +191,66 @@ def test_l_expert_habilite_reprend_avec_un_motif() -> None:
     importee = ouvertures.obtenir(DossierId(REPRISE))
     assert importee is not None
     assert (importee.role, importee.auteur_nom) == ("expert_comptable", "Claire Expert")
+
+
+def _fiche_avec_fec(client: TestClient) -> FichesImportMemoire:
+    """AXE-942 : la fiche d'import du dossier, avec le FEC 2025 déposé et lu."""
+    depot = client.app.dependency_overrides[get_dossiers]()  # type: ignore[attr-defined]
+    dossier = depot.obtenir(DossierId(REPRISE))
+    fiches = FichesImportMemoire()
+    client.app.dependency_overrides[get_fiches_import] = lambda: fiches  # type: ignore[attr-defined]
+    fiche = nouvelle_fiche("fiche-reprise", dossier.tenant_id, "Dupont", "Karim", "", "b", LE)
+    fiche = dataclasses.replace(
+        fiche, dossier_id=dossier.id, champs={**fiche.champs, "deficits": "1 200"}
+    )
+    fiches.enregistrer(fiche)
+    contenu = fec().encode()
+    document = document_import("fec-2025", fiche, "reprise:fec:2025", NOM, "", contenu, "b", LE)
+    lu = {"type": "fec", "cloture": "2025-12-31", "fin": "2025-12-31", "soldes_cts": {}}
+    fiches.deposer(dataclasses.replace(document, donnees=lu), contenu)
+    return fiches
+
+
+def test_l_expert_reprend_le_fec_depose_sur_la_fiche_d_import() -> None:
+    client = _client_expert()
+    _avec_dossier_a_reprendre(client)
+    experts = client.app.dependency_overrides[get_experts]()  # type: ignore[attr-defined]
+    experts.habilitations.clear()
+    _expert_habilite(experts, dossiers=(DossierId(REPRISE),))
+    entete = _en_tete_gestionnaire()
+    url = f"/expert/dossiers/{REPRISE}/ouverture/fiche"
+    vide = FichesImportMemoire()
+    client.app.dependency_overrides[get_fiches_import] = lambda: vide  # type: ignore[attr-defined]
+    assert client.get(url, headers=entete).json() == {
+        "trouve": False,
+        "fiche_id": None,
+        "document_id": None,
+        "nom_fichier": None,
+        "exercice": None,
+        "deficits": None,
+    }
+
+    _fiche_avec_fec(client)
+    propose = client.get(url, headers=entete).json()
+    assert (propose["trouve"], propose["exercice"], propose["deficits"]) == (True, 2025, "1 200")
+    telecharge = client.get(
+        f"/portefeuille/imports/{propose['fiche_id']}/documents/{propose['document_id']}",
+        headers=entete,
+    )
+    assert telecharge.status_code == 200
+    analyse = client.post(
+        f"/expert/dossiers/{REPRISE}/ouverture/fec/analyse",
+        files={"fichier": (propose["nom_fichier"], telecharge.content, "text/plain")},
+        headers=entete,
+    ).json()
+    assert analyse["possible"] is True
+
+
+def test_un_dossier_hors_lettre_de_mission_ne_montre_pas_le_fec_de_sa_fiche() -> None:
+    client = _client_expert()
+    _avec_dossier_a_reprendre(client)
+    _fiche_avec_fec(client)
+    reponse = client.get(
+        f"/expert/dossiers/{REPRISE}/ouverture/fiche", headers=_en_tete_gestionnaire()
+    )
+    assert reponse.status_code == 403
