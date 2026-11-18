@@ -53,6 +53,12 @@ class Categorie:
     # Ce que la fiche garde du document, au-delà de la lecture brute
     # (`donnees` d'un document : un récapitulatif devient `recap_plateforme`).
     donnees: Callable[[Mapping[str, object]], dict[str, object]] = lambda _lu: {}
+    # Les champs de la fiche que la lecture remplit s'ils sont vides
+    # (capital d'un Kbis, déficits d'une liasse), en texte comme une saisie.
+    champs_fiche: Callable[[Mapping[str, object]], dict[str, str]] = lambda _lu: {}
+    # Pour une pièce d'un exercice : ne remplir la fiche que depuis l'exercice
+    # source (la dernière liasse déposée donne les déficits à reporter).
+    exercice_source_seul: bool = False
     max_tokens: int = 8_000
 
     def schema(self) -> dict[str, Any]:

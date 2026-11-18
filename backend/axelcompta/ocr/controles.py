@@ -26,6 +26,11 @@ def montants(lu: Mapping[str, object]) -> dict[str, int]:
     }
 
 
+def entier(valeur: object) -> int:
+    """Un entier lu dans une liste d'objets ; 0 s'il manque."""
+    return valeur if isinstance(valeur, int) else 0
+
+
 def texte(lu: Mapping[str, object], champ: str) -> str:
     valeur = lu.get(champ)
     return valeur.strip() if isinstance(valeur, str) else ""
