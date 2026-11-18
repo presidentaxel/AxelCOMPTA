@@ -8,7 +8,7 @@ import {
   deciderCompteBancaireExpert,
   lireComptesBancairesExpert,
 } from "@/lib/auth-gestionnaire";
-import { choixCompte, estNonVentile, titreCompte } from "@/lib/comptes-bancaires";
+import { choixCompte, estNonVentile, phraseFiche, titreCompte } from "@/lib/comptes-bancaires";
 import type { CompteBancaireVue } from "@/lib/types";
 
 type Etat =
@@ -125,6 +125,8 @@ function ListeComptes({
       <ul className="mt-2 divide-y divide-hairline">
         {comptes.map((compte) => {
           const choix = choixCompte(compte);
+          const fiche = phraseFiche(compte);
+          const propose = choix === "a_decider" ? compte.propose_par_fiche : null;
           return (
             <li key={compte.compte} className="py-2.5">
               <div className="flex items-baseline justify-between gap-3">
@@ -138,11 +140,12 @@ function ListeComptes({
                   {LIBELLE_CHOIX[choix]}
                 </span>
               </div>
+              {fiche && <p className="mt-1 text-xs text-subtle">{fiche}</p>}
               {choix !== "retenu" && (
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Button
                     type="button"
-                    variant="secondary"
+                    variant={propose === true ? "primary" : "secondary"}
                     size="sm"
                     disabled={enCours !== null}
                     onClick={() => decider(compte.compte, true)}
@@ -152,7 +155,7 @@ function ListeComptes({
                   {choix === "a_decider" && (
                     <Button
                       type="button"
-                      variant="ghost"
+                      variant={propose === false ? "primary" : "ghost"}
                       size="sm"
                       disabled={enCours !== null}
                       onClick={() => decider(compte.compte, false)}

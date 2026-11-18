@@ -28,6 +28,15 @@ type Props = {
   reprendre: (fichier: File, champs: ChampsReprise) => Promise<OuvertureVue>;
   /** L'expert-comptable motive chacun de ses changements (AXE-800). */
   avecMotif?: boolean;
+  /** AXE-942 : le FEC déjà déposé sur la fiche d'import du dossier. */
+  propose?: FecPropose | null;
+};
+
+export type FecPropose = {
+  libelle: string;
+  /** Déficits saisis sur la fiche, pour préremplir. */
+  deficits: string | null;
+  charger: () => Promise<File>;
 };
 
 function message(exception: unknown, repli: string): string {
@@ -37,7 +46,7 @@ function message(exception: unknown, repli: string): string {
 /** AXE-804 : reprise du bilan d'ouverture d'une société existante depuis le
  * FEC de son outil précédent. Analyse d'abord (rien n'est écrit), puis
  * reprise après attestation. Une seule fois : ensuite, on le dit. */
-export function RepriseFec({ lire, analyser, reprendre, avecMotif = false }: Props) {
+export function RepriseFec({ lire, analyser, reprendre, avecMotif = false, propose = null }: Props) {
   const [ouverture, setOuverture] = useState<OuvertureVue | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -69,13 +78,22 @@ export function RepriseFec({ lire, analyser, reprendre, avecMotif = false }: Pro
       </p>
     );
   }
-  return <Formulaire analyser={analyser} reprendre={reprendre} avecMotif={avecMotif} onFait={setOuverture} />;
+  return (
+    <Formulaire
+      analyser={analyser}
+      reprendre={reprendre}
+      avecMotif={avecMotif}
+      propose={propose}
+      onFait={setOuverture}
+    />
+  );
 }
 
 function Formulaire({
   analyser,
   reprendre,
   avecMotif,
+  propose,
   onFait,
 }: Omit<Props, "lire"> & { onFait: (ouverture: OuvertureVue) => void }) {
   const [fichier, setFichier] = useState<File | null>(null);
@@ -98,6 +116,21 @@ function Formulaire({
       setAnalyse(null);
       setRefus(message(exception, "Le fichier n'a pas pu être lu."));
     } finally {
+      setEnvoi(false);
+    }
+  }
+
+  async function utiliserPropose() {
+    if (!propose) return;
+    setEnvoi(true);
+    setRefus(null);
+    try {
+      const charge = await propose.charger();
+      setFichier(charge);
+      if (propose.deficits && !deficits) setDeficits(propose.deficits.replace(/\s/g, ""));
+      await lancerAnalyse(charge);
+    } catch (exception) {
+      setRefus(message(exception, "Le FEC de la fiche n'a pas pu être lu."));
       setEnvoi(false);
     }
   }
@@ -130,8 +163,26 @@ function Formulaire({
         Déposez le FEC de l&apos;exercice précédent, tel que l&apos;outil de l&apos;ancien comptable l&apos;a produit
         (nom en SIRENFECAAAAMMJJ). Rien n&apos;est écrit avant votre validation.
       </p>
+      {propose && (
+        <div className="rounded-md border border-border bg-canvas-app p-3">
+          <p>
+            {propose.libelle} est déposé sur la fiche d&apos;import de ce dossier.
+            {fichier === null ? "" : ` Fichier : ${fichier.name}.`}
+          </p>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="mt-2"
+            disabled={envoi}
+            onClick={() => void utiliserPropose()}
+          >
+            Utiliser ce FEC
+          </Button>
+        </div>
+      )}
       <label className="block">
-        Fichier FEC
+        {propose ? "Ou un autre fichier FEC" : "Fichier FEC"}
         <input
           type="file"
           accept=".txt,.csv,text/plain"
