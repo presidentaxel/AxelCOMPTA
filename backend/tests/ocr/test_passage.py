@@ -15,7 +15,7 @@ from axelcompta.tenants.fiches_import_depot import FichesImportMemoire
 T = TenantId("T")
 LE = datetime(2026, 11, 18, 12, tzinfo=UTC)
 PDF = b"%PDF-1.4 un document"
-KBIS_LU = {
+KBIS_LU: dict[str, object] = {
     "siren": "908771033",
     "denomination": "KERFICE SERVICE",
     "forme_juridique": "SASU",
@@ -24,7 +24,7 @@ KBIS_LU = {
     "date_immatriculation": "",
     "montants": [],
 }
-STATUTS_LU = {
+STATUTS_LU: dict[str, object] = {
     "forme_juridique": "SASU",
     "denomination": "",
     "siege": "",
