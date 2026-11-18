@@ -17,6 +17,7 @@ const COULEURS: Record<EtatMoisPlateforme, string> = {
   document: "bg-success/60",
   a_completer: "bg-danger",
   banque: "bg-warning",
+  inconnu: "bg-danger/40",
   sans_activite: "bg-border",
 };
 

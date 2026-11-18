@@ -589,7 +589,13 @@ export type CompteBanque = {
 };
 /** AXE-987 : ce que Rollee, la banque et les documents disent d'une
  * plateforme, mois par mois. */
-export type EtatMoisPlateforme = "rollee" | "document" | "a_completer" | "banque" | "sans_activite";
+export type EtatMoisPlateforme =
+  | "rollee"
+  | "document"
+  | "a_completer"
+  | "banque"
+  | "inconnu"
+  | "sans_activite";
 
 export type MoisPlateforme = {
   mois: string;
@@ -610,6 +616,7 @@ export const ETATS_MOIS_PLATEFORME: Record<EtatMoisPlateforme, string> = {
   document: "Couvert par un document",
   a_completer: "À compléter : virements sans Rollee",
   banque: "Rollee sans virement : voir la banque",
+  inconnu: "Ni banque ni Rollee",
   sans_activite: "Sans activité",
 };
 

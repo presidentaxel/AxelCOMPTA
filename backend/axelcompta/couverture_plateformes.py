@@ -16,7 +16,10 @@ Un mois est :
   et aucun document : il manque des informations ;
 * `banque` : des jours Rollee mais aucun virement en banque. C'est un manque
   côté banque, que la couverture bancaire (AXE-973) traite ;
-* `sans_activite` : ni l'un ni l'autre.
+* `inconnu` : ni banque (aucune opération du dossier ce mois-là), ni Rollee,
+  ni document : on ne sait pas s'il y a eu de l'activité (AXE-988) ;
+* `sans_activite` : la banque a des opérations ce mois-là, mais aucune de la
+  plateforme, et Rollee ne dit rien.
 
 Seuls des agrégats sortent d'ici : nombre de virements et total du mois.
 """
@@ -30,11 +33,11 @@ from typing import Literal
 
 from axelcompta.ingestion.semaines_plateforme import lundi
 from axelcompta.ingestion.settlements_plateforme import SettlementStocke
-from axelcompta.ledger.models import Ecriture
+from axelcompta.ledger.models import Ecriture, Journal
 from axelcompta.revenus_semaines import virements_de_plateforme
 from axelcompta.tenants.fiches_import import DocumentImport
 
-EtatMois = Literal["rollee", "document", "a_completer", "banque", "sans_activite"]
+EtatMois = Literal["rollee", "document", "a_completer", "banque", "inconnu", "sans_activite"]
 NOMS = {
     "uber": "Uber",
     "bolt": "Bolt",
@@ -81,12 +84,20 @@ class PlateformeCouverte:
     @property
     def a_completer(self) -> tuple[str, ...]:
         nom = NOMS.get(self.plateforme, self.plateforme.capitalize())
-        return tuple(
+        phrases = [
             f"{nom}, {libelle_mois(m.mois)} : {m.virements} virement(s) en banque "
             f"({_euros(m.verse_cts)}) sans jour Rollee. Déposez le récapitulatif du mois."
             for m in self.mois
             if m.etat == "a_completer"
-        )
+        ]
+        inconnus = [libelle_mois(m.mois) for m in self.mois if m.etat == "inconnu"]
+        if inconnus:
+            periode = inconnus[0] if len(inconnus) == 1 else f"de {inconnus[0]} à {inconnus[-1]}"
+            phrases.append(
+                f"{nom}, {periode} : ni banque ni Rollee. Déposez les relevés bancaires, "
+                "ou les récapitulatifs de la plateforme."
+            )
+        return tuple(phrases)
 
 
 def _euros(centimes: int) -> str:
@@ -116,18 +127,25 @@ def couverture(
     documents: Iterable[tuple[str, str]],
     depuis: date | None,
     aujourd_hui: date,
+    mois_banque: Iterable[str] | None = None,
 ) -> list[PlateformeCouverte]:
     """`jours` : (plateforme, jour Rollee) ; `documents` : (plateforme,
-    mois) des récapitulatifs lus. Mois par mois, de `depuis` (ou de la
+    mois) des récapitulatifs lus ; `mois_banque` : les mois où la banque du
+    dossier a des opérations (`None` : on ne sait pas, rien n'est « inconnu »).
+    Mois par mois, du plus tôt de `depuis` et des documents déposés (ou de la
     première donnée) au mois en cours."""
     jours, virements, documents = list(jours), list(virements), set(documents)
-    plateformes = sorted({p for p, _ in jours} | {v.plateforme for v in virements})
+    banque = None if mois_banque is None else set(mois_banque)
+    plateformes = sorted(
+        {p for p, _ in jours} | {v.plateforme for v in virements} | {p for p, _ in documents}
+    )
     semaines_rollee = {(p, lundi(j)) for p, j in jours}
     mois_rollee = {(p, _mois(j)) for p, j in jours}
     debuts = [j for _p, j in jours] + [v.semaine for v in virements]
+    debuts += [date.fromisoformat(f"{m}-01") for _p, m in documents]
     if not plateformes or (depuis is None and not debuts):
         return []
-    debut = depuis or min(debuts)
+    debut = min([depuis, *debuts]) if depuis else min(debuts)
     resultat = []
     for plateforme in plateformes:
         siens = [v for v in virements if v.plateforme == plateforme]
@@ -145,6 +163,8 @@ def couverture(
                 etat = "banque"
             elif (plateforme, m) in documents:
                 etat = "document"
+            elif banque is not None and m not in banque:
+                etat = "inconnu"
             else:
                 etat = "sans_activite"
             mois.append(MoisPlateforme(m, etat, len(sans), sum(v.montant_cts for v in sans)))
@@ -159,6 +179,11 @@ def jours_rollee(stockes: Sequence[SettlementStocke]) -> list[tuple[str, date]]:
         for s in stockes
         if s.settlement.period_start == s.settlement.period_end and s.etat != "delie"
     ]
+
+
+def mois_avec_banque(grand_livre: Sequence[Ecriture]) -> set[str]:
+    """Les mois où le dossier a des opérations bancaires (journal BQ)."""
+    return {_mois(e.date) for e in grand_livre if e.journal is Journal.BQ}
 
 
 def virements_vus(grand_livre: Sequence[Ecriture]) -> list[VirementVu]:

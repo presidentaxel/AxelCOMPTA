@@ -301,17 +301,18 @@ def _recap_plateforme(contenu: bytes) -> Traitement:
         return Traitement("a_traiter", A_LIRE)
     annee, mois = (int(x) for x in recap.mois.split("-"))
     nom_mois = f"{MOIS_FR[mois - 1]} {annee}"
+    de_mois = f"d'{nom_mois}" if nom_mois[0] in "aeiouéèêâô" else f"de {nom_mois}"
     if not recap.juste:
         return Traitement(
             "a_traiter",
-            f"Récapitulatif {recap.plateforme.capitalize()} de {nom_mois} : les montants ne "
+            f"Récapitulatif {recap.plateforme.capitalize()} {de_mois} : les montants ne "
             "tombent pas juste (courses + autres − frais ≠ net), à relire.",
             recap.donnees(),
             annee,
         )
     return Traitement(
         "traite",
-        f"Récapitulatif {recap.plateforme.capitalize()} de {nom_mois} : courses "
+        f"Récapitulatif {recap.plateforme.capitalize()} {de_mois} : courses "
         f"{_euros(recap.courses_cts)}, autres revenus {_euros(recap.autres_cts)}, frais "
         f"{_euros(recap.frais_cts)}, net {_euros(recap.net_cts)}.",
         recap.donnees(),
@@ -341,7 +342,11 @@ _MOTIFS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"bilan|compte de resultat|comptes annuels|\bannexe", "comptes_annuels"),
         # AXE-987 : avant « relevé » : un relevé Uber n'est pas un relevé bancaire.
         (r"\b(uber|bolt|heetch|freenow|free now|allocab)\b", "releve_plateforme"),
-        (r"releve|\.qif$|\.ofx$", "releve_bancaire"),
+        # « SG 10-2025.pdf » : un relevé Société Générale du mois (AXE-988).
+        (
+            r"releve|\.qif$|\.ofx$|societe generale|\bsg \d{1,2}[ -]\d{4}\b",
+            "releve_bancaire",
+        ),
         (r"k-?bis|extrait", "kbis"),
         (r"statuts", "statuts"),
         (r"\brib\b|\biban\b", "rib"),
@@ -358,12 +363,41 @@ def _sans_accent(texte: str) -> str:
     return "".join(c for c in decompose if not unicodedata.combining(c)).lower()
 
 
+# AXE-988 : un classeur ou un document Office est un zip, mais un seul
+# fichier : il n'est pas déplié (13 XML internes sinon).
+EXTENSIONS_OFFICE = frozenset(
+    {
+        ".xlsx",
+        ".xlsm",
+        ".xltx",
+        ".docx",
+        ".docm",
+        ".dotx",
+        ".pptx",
+        ".ppsx",
+        ".ods",
+        ".odt",
+        ".odp",
+        ".odg",
+        ".numbers",
+        ".pages",
+        ".key",
+        ".epub",
+    }
+)
+
+
+def est_zip(nom: str, contenu: bytes) -> bool:
+    """Une archive à déplier : un contenu zip qui n'est pas un fichier Office."""
+    return contenu[:4] == b"PK\x03\x04" and Path(nom.lower()).suffix not in EXTENSIONS_OFFICE
+
+
 def classer(nom_fichier: str, contenu: bytes) -> str:
     """La catégorie d'un fichier d'après son contenu (FEC, archive) puis son
     nom, chemin compris (« Encaissements de Vente/ENC-117.pdf » : une pièce) ;
     « autre » si rien ne parle. Une impression PDF du FEC n'est pas un FEC."""
     nom = _sans_accent(nom_fichier).replace("_", " ")
-    if contenu[:4] == b"PK\x03\x04" or nom.endswith(".zip"):
+    if nom.endswith(".zip") or est_zip(nom, contenu):
         return "archive"
     if est_impression_fec(nom_fichier, contenu):
         return "fec"
@@ -461,7 +495,7 @@ def deplier(contenu: bytes) -> list[Membre]:
                     )
                 donnee = archive.read(info)
                 chemin = f"{prefixe}{nom}"
-                if donnee[:4] == b"PK\x03\x04" and profondeur < PROFONDEUR_MAX:
+                if est_zip(nom, donnee) and profondeur < PROFONDEUR_MAX:
                     ouvrir(donnee, f"{chemin}/", profondeur + 1)
                     continue
                 if not est_technique(nom, donnee):

@@ -898,8 +898,16 @@ def test_une_archive_d_import_vit_dans_le_bucket_et_part_avec_ses_fichiers(
         assert lu["fec-a"].donnees == {"type": "fec", "soldes_cts": {"512": 100}}
         assert lu["fec-a"].cle_stockage == "tenant-a/imports/fiche-z/2022/autre/fec-a-x.csv"
         assert web.contenu(TenantId("tenant-a"), "fec-a")[1] == b"FEC"
-        range_ = dataclasses.replace(lu["fec-a"], categorie="fec", emplacement="reprise:fec:2022")
-        web.ranger(range_)
+        range_ = dataclasses.replace(
+            lu["fec-a"],
+            categorie="fec",
+            emplacement="reprise:fec:2022",
+            statut_traitement="traite",
+            resume="relu",
+        )
+        relu = {d.id: d for d in web.ranger(range_).documents}["fec-a"]
+        # AXE-988 : la relecture est enregistrée (colonnes accordées).
+        assert (relu.statut_traitement, relu.resume) == ("traite", "relu")
         assert web.contenu(TenantId("tenant-a"), "fec-a")[1] == b"FEC"
         assert "tenant-a/imports/fiche-z/2022/fec/fec-a-x.csv" in bucket.objets
         assert web.retirer(TenantId("tenant-a"), "fiche-z", "zip-a").documents == []

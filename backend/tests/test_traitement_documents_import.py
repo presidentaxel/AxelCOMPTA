@@ -226,7 +226,7 @@ def test_un_recapitulatif_uber_est_range_et_lu() -> None:
     assert classer("uber_monthly_2025_10.pdf", contenu) == "releve_plateforme"
     lu = traiter("releve_plateforme", "uber_monthly_2025_10.pdf", contenu)
     assert lu.statut == "traite"
-    assert lu.resume.startswith("Récapitulatif Uber de octobre 2025 : courses 2 000,00 €")
+    assert lu.resume.startswith("Récapitulatif Uber d'octobre 2025 : courses 2 000,00 €")
     assert lu.donnees is not None and lu.donnees["mois"] == "2025-10"
     assert lu.exercice == 2025
 
@@ -234,3 +234,18 @@ def test_un_recapitulatif_uber_est_range_et_lu() -> None:
 def test_un_pdf_de_plateforme_inconnu_reste_a_lire() -> None:
     lu = traiter("releve_plateforme", "bolt.pdf", _pdf(["Bolt Operations", "Weekly report"]))
     assert lu.statut == "a_traiter"
+
+
+def test_un_classeur_excel_dans_une_archive_reste_un_fichier() -> None:
+    """AXE-988 : un .xlsx est un zip, mais un seul fichier."""
+    classeur = _zip({"[Content_Types].xml": b"<x/>", "xl/workbook.xml": b"<w/>"})
+    membres = deplier(_zip({"RECAPS/CA 2025.xlsx": classeur, "RECAPS/a.pdf": b"%PDF"}))
+    assert sorted(m.chemin for m in membres) == ["RECAPS/CA 2025.xlsx", "RECAPS/a.pdf"]
+    assert classer("CA 2025.xlsx", classeur) == "autre"
+    assert classer("rien.bin", _zip({"a.txt": b"a"})) == "archive"
+
+
+def test_un_releve_societe_generale_du_mois_est_un_releve_bancaire() -> None:
+    assert classer("RC/SG 10-2025.pdf", b"%PDF") == "releve_bancaire"
+    assert classer("Relevé Societe Generale.pdf", b"%PDF") == "releve_bancaire"
+    assert classer("RC/SG TARIFS.pdf", b"%PDF") == "autre"

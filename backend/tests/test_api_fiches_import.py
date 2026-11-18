@@ -632,3 +632,60 @@ def test_le_role_lecture_n_ecrit_pas_les_releves() -> None:
     client, _file = _client(role="lecture")
     reponse = client.post("/portefeuille/imports/inconnue/banque/ecrire", headers=EN_TETE)
     assert reponse.status_code == 403
+
+
+def _recap_uber_pdf() -> bytes:
+    from tests.test_traitement_documents_import import RECAP_UBER, _pdf
+
+    return _pdf(RECAP_UBER)
+
+
+def test_un_recapitulatif_reste_en_autre_est_reclasse_et_lu_au_redepot() -> None:
+    """AXE-988 : déposé en « Autre » (avant qu'on sache le lire), puis
+    redéposé dans les récapitulatifs : la copie déjà là est reclassée et lue,
+    au lieu d'un refus « déjà sur la fiche »."""
+    client, _file = _client()
+    fiche = _ouvrir(client, siren="")
+    route = f"/portefeuille/imports/{fiche['id']}/documents"
+    pdf = _recap_uber_pdf()
+    client.post(
+        route,
+        files={"fichier": ("recap.pdf", pdf, "application/pdf")},
+        data={"emplacement": "documents:autre"},
+        headers=EN_TETE,
+    )
+    reponse = client.post(
+        route,
+        files={"fichier": ("uber_monthly_2025_10.pdf", pdf, "application/pdf")},
+        data={"emplacement": "plateformes:releve_plateforme"},
+        headers=EN_TETE,
+    )
+    assert reponse.status_code == 200, reponse.text
+    corps = reponse.json()
+    documents = [d for e in corps["emplacements"] for d in e["documents"]]
+    (recap,) = documents
+    assert (recap["categorie"], recap["statut_traitement"]) == ("releve_plateforme", "traite")
+    assert recap["resume"].startswith("Récapitulatif Uber d'octobre 2025")
+    assert corps["doublons_ecartes"] == []
+
+
+def test_un_document_reclasse_a_la_main_est_relu() -> None:
+    client, _file = _client()
+    fiche = _ouvrir(client, siren="")
+    route = f"/portefeuille/imports/{fiche['id']}/documents"
+    depose = client.post(
+        route,
+        files={"fichier": ("scan.pdf", _recap_uber_pdf(), "application/pdf")},
+        data={"emplacement": "documents:autre"},
+        headers=EN_TETE,
+    ).json()
+    (document,) = [d for e in depose["emplacements"] for d in e["documents"]]
+    assert document["statut_traitement"] == "a_traiter"
+    range_ = client.patch(
+        f"{route}/{document['id']}",
+        json={"emplacement": "plateformes:releve_plateforme"},
+        headers=EN_TETE,
+    )
+    assert range_.status_code == 200, range_.text
+    (relu,) = [d for e in range_.json()["emplacements"] for d in e["documents"]]
+    assert (relu["categorie"], relu["statut_traitement"]) == ("releve_plateforme", "traite")
