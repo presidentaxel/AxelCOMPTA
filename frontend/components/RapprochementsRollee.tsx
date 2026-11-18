@@ -15,6 +15,7 @@ import {
 } from "@/lib/auth-gestionnaire";
 import { changer, type EtatClassees } from "@/lib/classees";
 import { formatDate, formatMontant } from "@/lib/format";
+import { AUTRE_BANQUE, compteAEnvoyer, comptesImputation, sensEcart } from "@/lib/imputation-ecart";
 import { messageEchecChargement } from "@/lib/session";
 import type { SemaineRapprochement } from "@/lib/types";
 
@@ -194,10 +195,15 @@ function DecisionSemaine({
   onTranchee: () => void;
 }) {
   const [motif, setMotif] = useState("");
+  const comptes = comptesImputation(semaine.ecart_cts);
+  const [compte, setCompte] = useState(comptes[0]?.value ?? "");
+  const [banque, setBanque] = useState("");
   const [enCours, setEnCours] = useState(false);
   const [message, setMessage] = useState<{ texte: string; erreur: boolean } | null>(null);
 
-  async function decider(decision: "ecrire" | "ecarter") {
+  const aEnvoyer = compteAEnvoyer(compte, banque);
+
+  async function decider(decision: "ecrire" | "ecarter" | "imputer") {
     setEnCours(true);
     setMessage(null);
     try {
@@ -206,6 +212,7 @@ function DecisionSemaine({
         lundi: semaine.du,
         decision,
         motif,
+        ...(decision === "imputer" && aEnvoyer ? { compte: aEnvoyer } : {}),
       });
       setMessage({ texte: resume, erreur: false });
       onTranchee();
@@ -253,6 +260,42 @@ function DecisionSemaine({
           Écarter ces jours
         </Button>
       </div>
+      {comptes.length > 0 && (
+        <div className="mt-3 border-t border-hairline pt-3">
+          <p className="text-sm text-ink">
+            <strong>Imputer l&apos;écart</strong> : {formatMontant(Math.abs(semaine.ecart_cts))}{" "}
+            {sensEcart(semaine.ecart_cts, semaine.plateforme)}. La semaine est écrite, puis une OD
+            solde l&apos;écart sur le compte choisi, avec votre motif.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Select
+              aria-label="Compte d'imputation de l'écart"
+              value={compte}
+              onValueChange={setCompte}
+              options={comptes}
+              className="w-80"
+            />
+            {compte === AUTRE_BANQUE && (
+              <Input
+                className="w-28"
+                value={banque}
+                onChange={(evenement) => setBanque(evenement.target.value)}
+                placeholder="5123"
+                aria-label="Sous-compte bancaire"
+              />
+            )}
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              disabled={enCours || !motif.trim() || aEnvoyer === null}
+              onClick={() => decider("imputer")}
+            >
+              Imputer l&apos;écart
+            </Button>
+          </div>
+        </div>
+      )}
       {message && (
         <p className={`mt-2 text-sm ${message.erreur ? "text-danger" : "text-subtle"}`}>{message.texte}</p>
       )}

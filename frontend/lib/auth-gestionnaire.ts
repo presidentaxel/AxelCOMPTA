@@ -50,6 +50,8 @@ import type { AnalyseFec, OuvertureVue } from "./ouverture";
 import type {
   ComptesDigifactory,
   CouvertureBanque,
+  CouverturePlateformes,
+  ValidationImport,
   DigifactoryFiche,
   FicheImport,
   FicheImportResume,
@@ -542,7 +544,14 @@ export async function lireRapprochementsExpert(dossierId: string): Promise<Semai
  * reste dû par la plateforme) ou en écarte les jours. Motif obligatoire. */
 export async function trancherSemaineExpert(
   dossierId: string,
-  entree: { plateforme: string; lundi: string; decision: "ecrire" | "ecarter"; motif: string },
+  entree: {
+    plateforme: string;
+    lundi: string;
+    decision: "ecrire" | "ecarter" | "imputer";
+    motif: string;
+    /** AXE-969 : le compte d'imputation de l'écart. */
+    compte?: string;
+  },
 ): Promise<string> {
   const reponse = await requeteGestionnaire(`/expert/dossiers/${dossierId}/rapprochements/decision`, {
     method: "POST",
@@ -1354,6 +1363,24 @@ function corpsFec(fichier: File, champs: Record<string, string>): FormData {
   return corps;
 }
 
+/** AXE-942 : le FEC qui donne les à-nouveaux, déposé sur la fiche
+ * d'import du dossier. */
+export type FecDeLaFiche = {
+  trouve: boolean;
+  fiche_id: string | null;
+  document_id: string | null;
+  nom_fichier: string | null;
+  exercice: number | null;
+  deficits: string | null;
+};
+
+export async function lireFecDeLaFicheExpert(dossierId: string): Promise<FecDeLaFiche> {
+  return lireJson(
+    await requeteGestionnaire(`/expert/dossiers/${dossierId}/ouverture/fiche`),
+    "La fiche d'import n'a pas pu être lue.",
+  );
+}
+
 export async function analyserFecExpert(
   dossierId: string,
   fichier: File,
@@ -1578,12 +1605,40 @@ export async function rangerDocumentImport(id: string, documentId: string, empla
   );
 }
 
+/** AXE-989 : les critères d'import de la fiche, calculés maintenant. */
+export async function lireValidationImport(id: string): Promise<ValidationImport> {
+  const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/validation`);
+  if (reponse.status === 401) throw new ErreurAuthGestionnaire();
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as ValidationImport;
+}
+
+/** AXE-987 : la couverture des plateformes de la fiche, mois par mois. */
+export async function lireCouverturePlateformes(id: string): Promise<CouverturePlateformes> {
+  const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/plateformes`);
+  if (reponse.status === 401) throw new ErreurAuthGestionnaire();
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as CouverturePlateformes;
+}
+
 /** AXE-973 : la couverture bancaire de la fiche, compte par compte. */
 export async function lireCouvertureBanque(id: string): Promise<CouvertureBanque> {
   const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/banque`);
   if (reponse.status === 401) throw new ErreurAuthGestionnaire();
   if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
   return (await reponse.json()) as CouvertureBanque;
+}
+
+/** AXE-833 : ce qui part en comptabilité depuis les relevés de la fiche. */
+export type EcrireReleves = { demande: boolean; a_ecrire: string[]; refus: string[] };
+
+export async function ecrireRelevesEnCompta(id: string): Promise<EcrireReleves> {
+  const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/banque/ecrire`, {
+    method: "POST",
+  });
+  if (reponse.status === 401) throw new ErreurAuthGestionnaire();
+  if (!reponse.ok) throw erreurApi(await lireCorps(reponse), reponse);
+  return (await reponse.json()) as EcrireReleves;
 }
 
 async function couvertureOuErreur(reponse: Response): Promise<CouvertureBanque> {

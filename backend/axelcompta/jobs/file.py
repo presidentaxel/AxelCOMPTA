@@ -20,6 +20,8 @@ TYPE_RAPPELS = "rappels"
 TYPE_ROLLEE = "rollee"
 # Remplir la carte Rollee et relier les users, hors de la requête HTTP.
 TYPE_RAPPROCHEMENT_ROLLEE = "rapprochement_rollee"
+# Écrire en comptabilité les relevés d'une fiche d'import (AXE-833).
+TYPE_RELEVES_FICHE = "releves_fiche"
 TYPES = frozenset(
     {
         TYPE_SYNCHRO,
@@ -27,6 +29,7 @@ TYPES = frozenset(
         TYPE_RAPPELS,
         TYPE_ROLLEE,
         TYPE_RAPPROCHEMENT_ROLLEE,
+        TYPE_RELEVES_FICHE,
         "notifier",
         "ml",
     }

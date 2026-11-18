@@ -13,6 +13,7 @@ from axelcompta.api.routes import (
     get_ecrire_role,
     get_experts,
     get_journal_acces,
+    get_ledger,
     get_lire_role,
     get_services_rollee,
     get_settlements,
@@ -416,3 +417,39 @@ def test_une_semaine_sans_rien_a_trancher_est_refusee() -> None:
     reponse = _decider_semaine(client, "ecrire", "Écart accepté")
     assert 400 <= reponse.status_code < 500
     assert "Rien à trancher" in reponse.json()["detail"]
+
+
+def test_l_expert_impute_l_ecart_d_une_semaine_en_un_clic() -> None:
+    """AXE-969 : la semaine est écrite, puis son écart va au compte choisi."""
+    client = _client_expert()
+    app = cast(FastAPI, client.app)
+    settlements, identifiant = _jour_de_sophie()
+    app.dependency_overrides[get_settlements] = lambda: settlements
+    reponse = client.post(
+        "/expert/dossiers/DEMO_sophie/rapprochements/decision",
+        json={
+            "plateforme": "uber",
+            "lundi": "2026-10-05",
+            "decision": "imputer",
+            "compte": "658",
+            "motif": "Écart de règlement Uber",
+        },
+        headers=EN_TETE,
+    )
+    assert reponse.status_code == 200, reponse.text
+    assert "imputé au 658" in reponse.json()["resume"]
+    assert settlements.stockes[identifiant].etat == "reconcilie"
+    ledger = app.dependency_overrides[get_ledger]()
+    (od,) = [e for e in ledger.grand_livre(DossierId("DEMO_sophie")) if "imputation" in e.id]
+    assert {x.compte for x in od.lignes} == {"658", "4671"}
+
+
+def test_imputer_demande_un_compte_qui_convient() -> None:
+    client = _client_expert()
+    settlements, _identifiant = _jour_de_sophie()
+    cast(FastAPI, client.app).dependency_overrides[get_settlements] = lambda: settlements
+    corps = {"plateforme": "uber", "lundi": "2026-10-05", "decision": "imputer", "motif": "Écart"}
+    url = "/expert/dossiers/DEMO_sophie/rapprochements/decision"
+    assert client.post(url, json=corps, headers=EN_TETE).status_code == 422
+    corps["compte"] = "758"  # un encore dû ne va pas en produit
+    assert client.post(url, json=corps, headers=EN_TETE).status_code == 422

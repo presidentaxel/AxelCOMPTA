@@ -98,6 +98,10 @@ REGIMES_TVA = (
     ("reel_normal", "Réel normal"),
 )
 VEHICULES = (("aucun", "Aucun"), ("achat", "Acheté"), ("loa", "LOA"), ("lld", "LLD"))
+DECLARATIONS_TVA = (
+    ("aucune", "Aucune déposée"),
+    ("deposees", "Déposées : à ajouter sur la fiche"),
+)
 PLATEFORMES = (
     ("uber", "Uber"),
     ("bolt", "Bolt"),
@@ -118,7 +122,7 @@ SECTIONS: tuple[Section, ...] = (
             Champ("denomination", "Dénomination", obligatoire=True),
             Champ("forme_juridique", "Forme juridique", "choix", True, FORMES),
             Champ("siege", "Adresse du siège", obligatoire=True),
-            Champ("capital", "Capital (€)", "montant"),
+            Champ("capital", "Capital (€)", "montant", True),
             Champ("code_naf", "Code NAF"),
             Champ("date_creation", "Date de création", "date", True),
             Champ("cloture", "Date de clôture (JJ/MM)", "jour_mois", True),
@@ -138,6 +142,7 @@ SECTIONS: tuple[Section, ...] = (
                 "associes",
                 "Associés",
                 "associes",
+                True,
                 choix=tuple(FONCTIONS.items()),
                 aide="Fonction et part du capital de chacun.",
             ),
@@ -154,6 +159,14 @@ SECTIONS: tuple[Section, ...] = (
             Champ("numero_tva", "Numéro de TVA intracommunautaire"),
             Champ("exercice_debut", "Début de l'exercice en cours", "date", True),
             Champ("exercice_fin", "Fin de l'exercice en cours", "date"),
+            # AXE-989 : pour ne pas redéclarer, et recouper à la clôture.
+            Champ(
+                "tva_declarations",
+                "Déclarations de TVA déjà déposées",
+                "choix",
+                choix=DECLARATIONS_TVA,
+                aide="Sur l'exercice en cours et celui à déclarer (CA3, acomptes CA12).",
+            ),
         ),
     ),
     Section(
@@ -161,9 +174,23 @@ SECTIONS: tuple[Section, ...] = (
         "Reprise comptable",
         "Les exercices à reprendre et leurs pièces, d'après la création et la clôture.",
         (
-            Champ("deficits", "Déficits reportables (€)", "montant"),
-            Champ("credit_tva", "Crédit de TVA à reporter (€)", "montant"),
-            Champ("vehicule", "Véhicule", "choix", choix=VEHICULES),
+            # AXE-989 : connus seulement de l'ancien comptable ; 0 ou « aucun »
+            # si rien, mais jamais vides : la clôture en a besoin.
+            Champ(
+                "deficits",
+                "Déficits reportables (€)",
+                "montant",
+                True,
+                aide="Sur la dernière liasse (2033-B, 2058-B) ; 0 s'il n'y en a pas.",
+            ),
+            Champ(
+                "credit_tva",
+                "Crédit de TVA à reporter (€)",
+                "montant",
+                True,
+                aide="0 s'il n'y en a pas.",
+            ),
+            Champ("vehicule", "Véhicule", "choix", True, VEHICULES),
             Champ(
                 "vehicule_detail",
                 "Véhicule : détail",
@@ -171,7 +198,11 @@ SECTIONS: tuple[Section, ...] = (
                 aide="Date et prix d'achat, ou contrat de LOA/LLD.",
             ),
             Champ(
-                "emprunts", "Emprunts en cours", "long", aide="Banque, capital restant, échéances."
+                "emprunts",
+                "Emprunts en cours",
+                "long",
+                True,
+                aide="« Aucun », ou banque, capital restant dû, échéances.",
             ),
             # AXE-950 : exercices dont la date limite est passée mais dont la
             # liasse n'a jamais été déposée. Rendu sur chaque exercice.
@@ -241,6 +272,10 @@ CATEGORIES_DOCUMENTS: dict[str, str] = {
     "rib": "RIB",
     "lettre_comptable": "Lettre de l'ancien expert-comptable",
     "releve_bancaire": "Relevé bancaire",
+    # AXE-989 : sans lui, on ne sépare pas capital et intérêts.
+    "emprunt": "Tableau d'amortissement d'emprunt",
+    # AXE-987 : récapitulatifs Uber, Bolt…, pour les mois sans Rollee.
+    "releve_plateforme": "Récapitulatif de plateforme",
     "autre": "Autre document",
 }
 StatutDocument = Literal["a_traiter", "traite", "illisible"]

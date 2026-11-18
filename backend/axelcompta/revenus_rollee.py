@@ -45,6 +45,7 @@ from axelcompta.ingestion.ecritures_settlement import (
     ecriture_de_ventilation,
     id_ventilation_plateforme,
 )
+from axelcompta.ingestion.imputation_ecart import ecriture_imputation
 from axelcompta.ingestion.journal import JournalIngestion
 from axelcompta.ingestion.journal_postgres import PostgresJournalIngestion
 from axelcompta.ingestion.providers.base import NormalizedTransaction, PlatformSettlement
@@ -62,7 +63,7 @@ from axelcompta.ingestion.settlements_plateforme import (
 from axelcompta.ingestion.settlements_plateforme_postgres import PostgresSettlements
 from axelcompta.ledger.contrepassation import annulees, contrepasser, id_contrepassation
 from axelcompta.ledger.models import Ecriture, Journal, Sens
-from axelcompta.ledger.periodes import Periode
+from axelcompta.ledger.periodes import Periode, date_de_report
 from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
 from axelcompta.packs.vtc_demo import charger_plateformes
@@ -75,6 +76,8 @@ from axelcompta.plateformes_rollee import (
 from axelcompta.revenus_semaines import (
     Contexte,
     Decision,
+    Passage,
+    RienATrancher,
     rapprocher_semaines,
     trancher_semaine,
 )
@@ -504,3 +507,61 @@ def trancher_semaine_dossier(
         else f"{len(passage.stockes)} jour(s) écarté(s)"
     )
     return f"{plateforme.capitalize()}, semaine du {lundi_:%d/%m/%Y} : {quoi}"
+
+
+def imputer_ecart_dossier(
+    settlements: SettlementsRepository,
+    ledger: LedgerService,
+    dossier: Dossier,
+    semaine: tuple[str, date],
+    compte: str,
+    motif: str,
+) -> str:
+    """AXE-969 : l'expert écrit la semaine (si elle attend encore), puis
+    solde son écart sur `compte` par une OD qui garde son motif. Une semaine
+    déjà écrite n'est pas réécrite ; un écart déjà imputé n'écrit rien."""
+    plateforme, lundi_ = semaine
+    ecrites = 0
+    try:
+        ecrites = len(
+            _ecrire_passage(
+                settlements,
+                ledger,
+                trancher_semaine(
+                    settlements.lister(dossier.id),
+                    ledger.grand_livre(dossier.id),
+                    _contexte(ledger, dossier),
+                    semaine,
+                    "ecrire",
+                    motif,
+                ),
+            )
+        )
+    except RienATrancher:
+        pass  # déjà écrite : seul l'écart reste
+    periodes = tuple(ledger.periodes_closes(dossier.id))
+    dimanche = lundi_ + timedelta(days=6)
+    le = date_de_report(min(dimanche, date.today()), periodes, dossier.exercice_debut)
+    od = ecriture_imputation(
+        ledger.grand_livre(dossier.id), dossier.id, plateforme, lundi_, compte, motif, le
+    )
+    debut = f"{plateforme.capitalize()}, semaine du {lundi_:%d/%m/%Y} : "
+    if od is None:
+        return f"{debut}{ecrites} écriture(s), aucun écart à imputer"
+    ledger.enregistrer(od)
+    euros = f"{od.lignes[0].montant.centimes / 100:.2f}".replace(".", ",")
+    return f"{debut}{ecrites} écriture(s), écart de {euros} € imputé au {compte}"
+
+
+def _contexte(ledger: LedgerService, dossier: Dossier) -> Contexte:
+    return Contexte(dossier, tuple(ledger.periodes_closes(dossier.id)), datetime.now(UTC))
+
+
+def _ecrire_passage(
+    settlements: SettlementsRepository, ledger: LedgerService, passage: Passage
+) -> list[Ecriture]:
+    """Les écritures d'abord : un refus du grand livre laisse les jours."""
+    for od in passage.ecritures:
+        ledger.enregistrer(od)
+    settlements.enregistrer(passage.stockes)
+    return passage.ecritures

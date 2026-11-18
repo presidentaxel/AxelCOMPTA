@@ -353,6 +353,8 @@ export type CompteBancaireVue = {
   ecart_cts: number | null;
   /** AXE-729 : true comptabilisé, false écarté (personnel), null à décider. */
   retenu?: boolean | null;
+  /** AXE-986 : ce que dit la fiche d'import (true pro, false perso), null rien. */
+  propose_par_fiche?: boolean | null;
 };
 
 /** AXE-823 : une opération déjà classée, et par qui ou quoi. */

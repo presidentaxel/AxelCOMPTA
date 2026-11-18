@@ -18,9 +18,11 @@ from axelcompta.api.routes import (
     get_lire_contacts_digifactory,
     get_lire_fiche_officielle,
     get_lire_premiere_ecriture_digifactory,
+    get_settlements,
 )
 from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.ingestion.comptes_bancaires import CompteDigifactory
+from axelcompta.ingestion.settlements_plateforme import SettlementsMemoire
 from axelcompta.jobs.file import FileMemoire
 from axelcompta.tenants.branchements import BranchementsMemoire
 from axelcompta.tenants.fiches_import_depot import FichesImportMemoire
@@ -593,3 +595,110 @@ def test_deposer_un_fec_preremplit_la_reprise_comptable() -> None:
     assert reprise["vehicule"] == "achat"
     assert "acheté le 10/02/2024" in reprise["vehicule_detail"]
     assert vue["depuis_fec"]["vehicule"] == "FEC 2024"
+
+
+def test_la_couverture_des_plateformes_d_une_fiche_sans_dossier_est_vide() -> None:
+    """AXE-987 : sans dossier, ni Rollee ni banque : rien à comparer."""
+    client, _file = _client()
+    settlements = SettlementsMemoire()
+    cast(FastAPI, client.app).dependency_overrides[get_settlements] = lambda: settlements
+    fiche = _ouvrir(client, siren="")
+    reponse = client.get(f"/portefeuille/imports/{fiche['id']}/plateformes", headers=EN_TETE)
+    assert reponse.status_code == 200, reponse.text
+    assert reponse.json() == {"plateformes": [], "a_completer": [], "dossier": False}
+
+
+def test_la_fiche_propose_une_carte_pour_les_recapitulatifs_de_plateforme() -> None:
+    client, _file = _client()
+    fiche = _ouvrir(client, siren="")
+    cles = {e["cle"] for e in fiche["emplacements"]}
+    assert "plateformes:releve_plateforme" in cles
+
+
+def test_ecrire_les_releves_d_une_fiche_sans_dossier_ne_demande_rien() -> None:
+    """AXE-833 : le plan se calcule à la demande ; sans dossier, rien ne part
+    au worker et l'écran dit pourquoi."""
+    client, file = _client()
+    fiche = _ouvrir(client, siren="")
+    reponse = client.post(f"/portefeuille/imports/{fiche['id']}/banque/ecrire", headers=EN_TETE)
+    assert reponse.status_code == 200, reponse.text
+    corps = reponse.json()
+    assert (corps["demande"], corps["a_ecrire"]) == (False, [])
+    assert corps["refus"] == ["La fiche n'a pas encore de dossier."]
+    assert not [j for j in file._jobs.values() if j.type == "releves_fiche"]
+
+
+def test_le_role_lecture_n_ecrit_pas_les_releves() -> None:
+    client, _file = _client(role="lecture")
+    reponse = client.post("/portefeuille/imports/inconnue/banque/ecrire", headers=EN_TETE)
+    assert reponse.status_code == 403
+
+
+def _recap_uber_pdf() -> bytes:
+    from tests.test_traitement_documents_import import RECAP_UBER, _pdf
+
+    return _pdf(RECAP_UBER)
+
+
+def test_un_recapitulatif_reste_en_autre_est_reclasse_et_lu_au_redepot() -> None:
+    """AXE-988 : déposé en « Autre » (avant qu'on sache le lire), puis
+    redéposé dans les récapitulatifs : la copie déjà là est reclassée et lue,
+    au lieu d'un refus « déjà sur la fiche »."""
+    client, _file = _client()
+    fiche = _ouvrir(client, siren="")
+    route = f"/portefeuille/imports/{fiche['id']}/documents"
+    pdf = _recap_uber_pdf()
+    client.post(
+        route,
+        files={"fichier": ("recap.pdf", pdf, "application/pdf")},
+        data={"emplacement": "documents:autre"},
+        headers=EN_TETE,
+    )
+    reponse = client.post(
+        route,
+        files={"fichier": ("uber_monthly_2025_10.pdf", pdf, "application/pdf")},
+        data={"emplacement": "plateformes:releve_plateforme"},
+        headers=EN_TETE,
+    )
+    assert reponse.status_code == 200, reponse.text
+    corps = reponse.json()
+    documents = [d for e in corps["emplacements"] for d in e["documents"]]
+    (recap,) = documents
+    assert (recap["categorie"], recap["statut_traitement"]) == ("releve_plateforme", "traite")
+    assert recap["resume"].startswith("Récapitulatif Uber d'octobre 2025")
+    assert corps["doublons_ecartes"] == []
+
+
+def test_un_document_reclasse_a_la_main_est_relu() -> None:
+    client, _file = _client()
+    fiche = _ouvrir(client, siren="")
+    route = f"/portefeuille/imports/{fiche['id']}/documents"
+    depose = client.post(
+        route,
+        files={"fichier": ("scan.pdf", _recap_uber_pdf(), "application/pdf")},
+        data={"emplacement": "documents:autre"},
+        headers=EN_TETE,
+    ).json()
+    (document,) = [d for e in depose["emplacements"] for d in e["documents"]]
+    assert document["statut_traitement"] == "a_traiter"
+    range_ = client.patch(
+        f"{route}/{document['id']}",
+        json={"emplacement": "plateformes:releve_plateforme"},
+        headers=EN_TETE,
+    )
+    assert range_.status_code == 200, range_.text
+    (relu,) = [d for e in range_.json()["emplacements"] for d in e["documents"]]
+    assert (relu["categorie"], relu["statut_traitement"]) == ("releve_plateforme", "traite")
+
+
+def test_les_criteres_d_import_d_une_fiche_sans_dossier() -> None:
+    """AXE-989 : sans dossier, rien à vérifier ; la fiche n'est pas importée."""
+    client, _file = _client()
+    settlements = SettlementsMemoire()
+    cast(FastAPI, client.app).dependency_overrides[get_settlements] = lambda: settlements
+    fiche = _ouvrir(client, siren="")
+    reponse = client.get(f"/portefeuille/imports/{fiche['id']}/validation", headers=EN_TETE)
+    assert reponse.status_code == 200, reponse.text
+    assert reponse.json() == {"importe": False, "dossier": False, "criteres": []}
+    banque = next(s for s in fiche["sections_detail"] if s["cle"] == "banque")
+    assert not banque["complet"]

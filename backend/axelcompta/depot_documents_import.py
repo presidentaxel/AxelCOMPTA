@@ -64,7 +64,9 @@ def _emplacement_classe(categorie: str, exercice: int | None, repli: str) -> str
     pièce comptable, la banque ou les documents administratifs sinon ; un
     fichier que rien ne classe reste dans la section du dépôt (`repli`)."""
     section = repli if categorie == "autre" else SECTION_PAR_CATEGORIE.get(categorie, repli)
-    return emplacement_de(section, categorie, exercice if section == "reprise" else None)
+    # Un emprunt court sur plusieurs exercices : une seule carte (AXE-989).
+    par_exercice = section == "reprise" and categorie != "emprunt"
+    return emplacement_de(section, categorie, exercice if par_exercice else None)
 
 
 def _membres(
@@ -137,6 +139,32 @@ def depot_sur_exercice(
         emplacement = _emplacement_classe(categorie, annee, "reprise")
         lot += _un_fichier(fiche, emplacement, fichier, par, le)
     return lot
+
+
+def promus(lot: Lot, existants: Sequence[DocumentImport]) -> list[DocumentImport]:
+    """AXE-988 : un fichier déjà sur la fiche en « Autre », redéposé et cette
+    fois classé (un récapitulatif Uber déposé avant qu'on sache les lire) :
+    la copie déjà là prend le classement et la lecture du nouveau dépôt, au
+    lieu que celui-ci soit seulement écarté. Même contenu : même lecture."""
+    en_vrac = {d.empreinte: d for d in existants if d.categorie == "autre"}
+    sortie = []
+    for nouveau, _contenu in lot:
+        ancien = en_vrac.get(nouveau.empreinte)
+        if ancien is None or nouveau.categorie in ("autre", "archive"):
+            continue
+        del en_vrac[nouveau.empreinte]
+        sortie.append(
+            replace(
+                ancien,
+                categorie=nouveau.categorie,
+                emplacement=nouveau.emplacement,
+                exercice=nouveau.exercice or ancien.exercice,
+                statut_traitement=nouveau.statut_traitement,
+                resume=nouveau.resume,
+                donnees=nouveau.donnees,
+            )
+        )
+    return sortie
 
 
 def sans_doublons(lot: Lot, deja: Collection[str]) -> tuple[Lot, list[str]]:

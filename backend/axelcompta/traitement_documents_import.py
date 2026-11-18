@@ -30,7 +30,10 @@ from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from pypdf import PdfReader
+
 from axelcompta.closing.ouverture_fec import FecRefuse, LigneFec, lire_fec_externe, lire_nom
+from axelcompta.ingestion.recaps_plateforme import lire_recap
 from axelcompta.tenants.fiches_import import StatutDocument
 
 A_LIRE = "À lire : sera lu par l'OCR (AXE-943), ou compilé à la main."
@@ -263,9 +266,58 @@ def traiter(
         return _fec(contenu, Path(nom_fichier).name, siren)
     if categorie == "fec" and contenu.startswith(b"%PDF"):
         return Traitement("a_traiter", IMPRESSION_FEC, {"type": "impression_fec"})
+    if categorie == "releve_plateforme" and contenu.startswith(b"%PDF"):
+        return _recap_plateforme(contenu)
     if categorie == "archive" or extension == ".zip":
         return Traitement("traite", "Archive gardée intacte ; ses fichiers sont rangés à part.")
     return Traitement("a_traiter", A_LIRE)
+
+
+MOIS_FR = (
+    "janvier",
+    "février",
+    "mars",
+    "avril",
+    "mai",
+    "juin",
+    "juillet",
+    "août",
+    "septembre",
+    "octobre",
+    "novembre",
+    "décembre",
+)
+
+
+def _recap_plateforme(contenu: bytes) -> Traitement:
+    """AXE-987 : un récapitulatif mensuel Uber se lit sans OCR (PDF texte)."""
+    try:
+        lecteur = PdfReader(io.BytesIO(contenu))
+        texte = "\n".join(page.extract_text() or "" for page in lecteur.pages)
+    except Exception:  # noqa: BLE001 — un PDF abîmé reste à lire, sans erreur
+        return Traitement("a_traiter", A_LIRE)
+    recap = lire_recap(texte)
+    if recap is None:
+        return Traitement("a_traiter", A_LIRE)
+    annee, mois = (int(x) for x in recap.mois.split("-"))
+    nom_mois = f"{MOIS_FR[mois - 1]} {annee}"
+    de_mois = f"d'{nom_mois}" if nom_mois[0] in "aeiouéèêâô" else f"de {nom_mois}"
+    if not recap.juste:
+        return Traitement(
+            "a_traiter",
+            f"Récapitulatif {recap.plateforme.capitalize()} {de_mois} : les montants ne "
+            "tombent pas juste (courses + autres − frais ≠ net), à relire.",
+            recap.donnees(),
+            annee,
+        )
+    return Traitement(
+        "traite",
+        f"Récapitulatif {recap.plateforme.capitalize()} {de_mois} : courses "
+        f"{_euros(recap.courses_cts)}, autres revenus {_euros(recap.autres_cts)}, frais "
+        f"{_euros(recap.frais_cts)}, net {_euros(recap.net_cts)}.",
+        recap.donnees(),
+        annee,
+    )
 
 
 # --- AXE-970 : classer un fichier déposé en vrac ------------------------------
@@ -288,10 +340,18 @@ _MOTIFS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"grand[ ._-]?livre|\bgl\b", "grand_livre"),
         (r"balance", "balance"),
         (r"bilan|compte de resultat|comptes annuels|\bannexe", "comptes_annuels"),
-        (r"releve|\.qif$|\.ofx$", "releve_bancaire"),
+        # AXE-987 : avant « relevé » : un relevé Uber n'est pas un relevé bancaire.
+        (r"\b(uber|bolt|heetch|freenow|free now|allocab)\b", "releve_plateforme"),
+        # « SG 10-2025.pdf » : un relevé Société Générale du mois (AXE-988).
+        (
+            r"releve|\.qif$|\.ofx$|societe generale|\bsg \d{1,2}[ -]\d{4}\b",
+            "releve_bancaire",
+        ),
         (r"k-?bis|extrait", "kbis"),
         (r"statuts", "statuts"),
         (r"\brib\b|\biban\b", "rib"),
+        # AXE-989 : l'échéancier d'un prêt, avant « pièce ».
+        (r"tableau d.?amortissement|echeancier|\bemprunt\b|\bpret\b", "emprunt"),
         (
             r"encaissement|\b(enc|fac|fa|av)-?\d+|facture|\brecu\b|ticket|note de frais",
             "piece",
@@ -305,12 +365,41 @@ def _sans_accent(texte: str) -> str:
     return "".join(c for c in decompose if not unicodedata.combining(c)).lower()
 
 
+# AXE-988 : un classeur ou un document Office est un zip, mais un seul
+# fichier : il n'est pas déplié (13 XML internes sinon).
+EXTENSIONS_OFFICE = frozenset(
+    {
+        ".xlsx",
+        ".xlsm",
+        ".xltx",
+        ".docx",
+        ".docm",
+        ".dotx",
+        ".pptx",
+        ".ppsx",
+        ".ods",
+        ".odt",
+        ".odp",
+        ".odg",
+        ".numbers",
+        ".pages",
+        ".key",
+        ".epub",
+    }
+)
+
+
+def est_zip(nom: str, contenu: bytes) -> bool:
+    """Une archive à déplier : un contenu zip qui n'est pas un fichier Office."""
+    return contenu[:4] == b"PK\x03\x04" and Path(nom.lower()).suffix not in EXTENSIONS_OFFICE
+
+
 def classer(nom_fichier: str, contenu: bytes) -> str:
     """La catégorie d'un fichier d'après son contenu (FEC, archive) puis son
     nom, chemin compris (« Encaissements de Vente/ENC-117.pdf » : une pièce) ;
     « autre » si rien ne parle. Une impression PDF du FEC n'est pas un FEC."""
     nom = _sans_accent(nom_fichier).replace("_", " ")
-    if contenu[:4] == b"PK\x03\x04" or nom.endswith(".zip"):
+    if nom.endswith(".zip") or est_zip(nom, contenu):
         return "archive"
     if est_impression_fec(nom_fichier, contenu):
         return "fec"
@@ -408,7 +497,7 @@ def deplier(contenu: bytes) -> list[Membre]:
                     )
                 donnee = archive.read(info)
                 chemin = f"{prefixe}{nom}"
-                if donnee[:4] == b"PK\x03\x04" and profondeur < PROFONDEUR_MAX:
+                if est_zip(nom, donnee) and profondeur < PROFONDEUR_MAX:
                     ouvrir(donnee, f"{chemin}/", profondeur + 1)
                     continue
                 if not est_technique(nom, donnee):

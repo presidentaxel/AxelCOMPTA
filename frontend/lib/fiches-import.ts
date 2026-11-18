@@ -587,6 +587,55 @@ export type CompteBanque = {
   /** AXE-973 (2/2) : les comptes de FEC ou de relevés rattachés à celui-ci. */
   reunit?: CompteConnu[];
 };
+/** AXE-987 : ce que Rollee, la banque et les documents disent d'une
+ * plateforme, mois par mois. */
+export type EtatMoisPlateforme =
+  | "rollee"
+  | "document"
+  | "a_completer"
+  | "banque"
+  | "inconnu"
+  | "sans_activite";
+
+export type MoisPlateforme = {
+  mois: string;
+  libelle: string;
+  etat: EtatMoisPlateforme;
+  virements: number;
+  verse_cts: number;
+};
+
+export type CouverturePlateformes = {
+  plateformes: { plateforme: string; mois: MoisPlateforme[] }[];
+  a_completer: string[];
+  dossier: boolean;
+};
+
+export const ETATS_MOIS_PLATEFORME: Record<EtatMoisPlateforme, string> = {
+  rollee: "Couvert par Rollee",
+  document: "Couvert par un document",
+  a_completer: "À compléter : virements sans Rollee",
+  banque: "Rollee sans virement : voir la banque",
+  inconnu: "Ni banque ni Rollee",
+  sans_activite: "Sans activité",
+};
+
+const NOMS_PLATEFORMES: Record<string, string> = {
+  uber: "Uber",
+  bolt: "Bolt",
+  heetch: "Heetch",
+  allocab: "Allocab",
+  freenow: "Free Now",
+};
+
+export function nomPlateforme(cle: string): string {
+  return NOMS_PLATEFORMES[cle] ?? cle.charAt(0).toUpperCase() + cle.slice(1);
+}
+
+/** AXE-989 : les critères pour que le chauffeur soit importé. */
+export type CritereImport = { section: string; libelle: string; ok: boolean; detail: string };
+export type ValidationImport = { importe: boolean; dossier: boolean; criteres: CritereImport[] };
+
 export type CouvertureBanque = {
   comptes: CompteBanque[];
   a_completer: string[];
