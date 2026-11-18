@@ -174,6 +174,7 @@ from axelcompta.core.ids import DossierId, EcritureId, TenantId, TransactionId, 
 from axelcompta.core.libelles import categorie_du_suffixe, sans_categorie
 from axelcompta.core.pcg import COMPTE_BANQUE, est_compte_banque
 from axelcompta.core.rls import appliquer_rls, contexte_identite
+from axelcompta.core.temps import aujourd_hui_paris
 from axelcompta.couverture_bancaire_fiche import (
     CompteCouvert,
     comptes_connus,
@@ -316,7 +317,11 @@ from axelcompta.rapprochement_rollee_service import (
     rapprocher_dossier,
     retenir_avancement,
 )
-from axelcompta.revenus_rollee import delier_revenus, trancher_semaine_dossier
+from axelcompta.revenus_rollee import (
+    delier_revenus,
+    imputer_ecart_dossier,
+    trancher_semaine_dossier,
+)
 from axelcompta.revenus_semaines import comparaison, debut_banque
 from axelcompta.stockage_documents import depot_documents
 from axelcompta.tenants.affectations import AffectationRepository
@@ -374,6 +379,12 @@ from axelcompta.tenants.fiches_import_banque import SoldeSaisi, soldes_saisis
 from axelcompta.tenants.fiches_import_banque import ajouter_solde as ajouter_solde_banque
 from axelcompta.tenants.fiches_import_banque import rattacher as rattacher_banque
 from axelcompta.tenants.fiches_import_banque import retirer_solde as retirer_solde_banque
+from axelcompta.tenants.fiches_import_comptes import (
+    CHAMP_COMPTES,
+    a_appliquer,
+    choix_de_la_fiche,
+    proposition,
+)
 from axelcompta.tenants.fiches_import_depot import FichesImportRepository, Instantane
 from axelcompta.tenants.fiches_import_etat import (
     ContactDigifactory,
@@ -391,7 +402,11 @@ from axelcompta.tenants.fiches_import_etat import documents_a_lire as a_lire_pou
 from axelcompta.tenants.fiches_import_etat import emplacements as emplacements_import
 from axelcompta.tenants.fiches_import_etat import exercices as exercices_import
 from axelcompta.tenants.fiches_import_postgres import PostgresFichesImport
-from axelcompta.tenants.fiches_import_reprise import champs_lus_dans_un_fec, preremplir_reprise
+from axelcompta.tenants.fiches_import_reprise import (
+    champs_lus_dans_un_fec,
+    dernier_fec,
+    preremplir_reprise,
+)
 from axelcompta.tenants.franchise_tva import MillesimeInconnu, suivre_franchise
 from axelcompta.tenants.identite_json import identite_vers_json
 from axelcompta.tenants.identite_saisie import (
@@ -480,6 +495,7 @@ from axelcompta.workflow.expert_comptable import (
     DecisionExpert,
     Engagement,
     ExpertActif,
+    ExpertNonHabilite,
     ExpertRepository,
     Habilitation,
     exiger_dossier,
@@ -762,6 +778,8 @@ class CompteBancaireVue(BaseModel):
     ecart_cts: int | None
     # AXE-729 : True comptabilisé, False écarté (personnel), None à décider.
     retenu: bool | None = True
+    # AXE-986 : ce que dit la fiche d'import (True pro, False perso), None rien.
+    propose_par_fiche: bool | None = None
 
 
 class DecisionCompteEntree(BaseModel):
@@ -1216,7 +1234,7 @@ def _frises(
     (année en cours, étape, année d'avant, étape)."""
     fin = dossier.fin_exercice()
     compte = "Suivi" if statut_invitation == "actif" else "Compte"
-    if fin < datetime.now(UTC).date():
+    if fin < aujourd_hui_paris():
         etape = etape_depuis_preuves(statut_invitation, preuves)
         return fin.year + 1, compte, fin.year, etape
     return fin.year, compte, fin.year - 1, "Sans exercice"
@@ -2574,7 +2592,7 @@ def _agregats_portefeuille(
     invitations = comptes.statuts(ids)
     preuves = _preuves_exercice(signatures, ids)
     a_choisir = comptes_bancaires.a_choisir(ids)
-    tva = _tva_a_declarer(signatures, dossiers, datetime.now(UTC).date())
+    tva = _tva_a_declarer(signatures, dossiers, aujourd_hui_paris())
     resultat: list[DossierAgregat] = []
     for dossier in dossiers:
         invitation = invitations.get(dossier.id)
@@ -4226,12 +4244,16 @@ def _enregistrer_routes_comptes_bancaires_expert(app: FastAPI) -> None:
         base: LedgerBaseDep,
         decisions: DecisionsDep,
         comptes: ComptesBancairesDep,
+        fiches: FichesImportDep,
     ) -> list[CompteBancaireVue]:
         """AXE-956 : l'expert-comptable habilité sur le dossier voit ses
         comptes, comme le dirigeant. Le gestionnaire non expert n'y a pas
         accès (doc 19 §2.4)."""
         ecritures = _ledger_avec_decisions(dossier, base, decisions).grand_livre(dossier.id)
-        return vues_comptes_bancaires(comptes.lister(dossier.id), ecritures)
+        liste = comptes.lister(dossier.id)
+        return _proposees_par_fiche(
+            vues_comptes_bancaires(liste, ecritures), liste, fiches, dossier
+        )
 
     @app.post(
         "/expert/dossiers/{dossier_id}/comptes-bancaires/{compte}/decision",
@@ -4245,15 +4267,17 @@ def _enregistrer_routes_comptes_bancaires_expert(app: FastAPI) -> None:
         decisions: DecisionsDep,
         comptes: ComptesBancairesDep,
         identite: IdentiteDep,
+        fiches: FichesImportDep,
     ) -> list[CompteBancaireVue]:
         """AXE-956 : l'expert retient ou écarte un compte à la place du
         dirigeant, avec les mêmes règles (AXE-729). Le choix est tracé au
         journal d'audit à son nom : il en porte la responsabilité (AXE-800)."""
         _tenant, identite_verifiee = _verifier_acces_gestionnaire(identite)
         ecritures = _ledger_avec_decisions(dossier, base, decisions).grand_livre(dossier.id)
-        return _decider_compte(
+        vues = _decider_compte(
             dossier.id, compte, corps.retenu, identite_verifiee.user_id, ecritures, comptes
         )
+        return _proposees_par_fiche(vues, comptes.lister(dossier.id), fiches, dossier)
 
 
 def _ecritures_sur_le_compte(ecritures: tuple[Ecriture, ...], compte: str) -> int:
@@ -4786,7 +4810,7 @@ def _enregistrer_routes_identite(app: FastAPI) -> None:
     ) -> ConfigurationDossierVue:
         identite = _verifier_acces_dossier(dossier.id, identite)
         saisie = _identite_depuis_modele(corps)
-        verifier_identite(saisie, dossier.forme_juridique, date.today())
+        verifier_identite(saisie, dossier.forme_juridique, aujourd_hui_paris())
         dossiers.enregistrer_identite(dossier.id, saisie, identite.user_id, datetime.now(UTC))
         return _vue_configuration(dataclasses.replace(dossier, identite=saisie))
 
@@ -5063,10 +5087,56 @@ def _enregistrer_routes_ouverture(app: FastAPI) -> None:
     _enregistrer_routes_ouverture_expert(app)
 
 
+class FecDeLaFicheVue(BaseModel):
+    """AXE-942 : le FEC qui donne les à-nouveaux, déposé sur la fiche
+    d'import du dossier. `trouve` faux : aucune fiche, ou aucun FEC lu."""
+
+    trouve: bool
+    fiche_id: str | None = None
+    document_id: str | None = None
+    nom_fichier: str | None = None
+    exercice: int | None = None
+    deficits: str | None = None
+
+
+def fec_de_la_fiche(
+    dossier: Dossier, fiches: FichesImportRepository, aujourd_hui: date
+) -> FecDeLaFicheVue:
+    fiche = next(
+        (
+            f
+            for f in fiches.toutes(dossier.tenant_id)
+            if f.dossier_id == dossier.id and f.statut != "ignore"
+        ),
+        None,
+    )
+    if fiche is None:
+        return FecDeLaFicheVue(trouve=False)
+    documents = fiches.instantane(dossier.tenant_id, fiche.id).documents
+    fec = dernier_fec(documents, aujourd_hui)
+    if fec is None:
+        return FecDeLaFicheVue(trouve=False, fiche_id=fiche.id)
+    return FecDeLaFicheVue(
+        trouve=True,
+        fiche_id=fiche.id,
+        document_id=fec.id,
+        nom_fichier=fec.nom_fichier,
+        exercice=fec.exercice,
+        deficits=(fiche.champs.get("deficits") or "").strip() or None,
+    )
+
+
 def _enregistrer_routes_ouverture_expert(app: FastAPI) -> None:
     @app.get("/expert/dossiers/{dossier_id}/ouverture", response_model=OuvertureVue)
     def lire_ouverture_expert(dossier: DossierExpertDep, ouvertures: OuverturesDep) -> OuvertureVue:
         return _vue_ouverture(ouvertures.obtenir(dossier.id))
+
+    @app.get("/expert/dossiers/{dossier_id}/ouverture/fiche", response_model=FecDeLaFicheVue)
+    def lire_fec_de_la_fiche(dossier: DossierExpertDep, fiches: FichesImportDep) -> FecDeLaFicheVue:
+        """AXE-942 : le FEC déposé sur la fiche d'import, proposé pour le
+        bilan d'ouverture. Il passe ensuite par la même analyse, la même
+        attestation et le même motif qu'un FEC envoyé à la main."""
+        return fec_de_la_fiche(dossier, fiches, date.today())
 
     @app.post("/expert/dossiers/{dossier_id}/ouverture/fec/analyse", response_model=AnalyseFecVue)
     async def analyser_ouverture_expert(
@@ -5131,7 +5201,7 @@ def _preparer_cloture(
         ledger,
         decisions,
         avenants.lister(dossier.id),
-        datetime.now(UTC).date(),
+        aujourd_hui_paris(),
         provisions,
     )
 
@@ -5603,7 +5673,7 @@ def _proposer_affectation(
     exercices: ExerciceRepository,
     affectations: AffectationRepository,
 ) -> PropositionAffectation:
-    return proposer(dossier, ledger, exercices, affectations, datetime.now(UTC).date())
+    return proposer(dossier, ledger, exercices, affectations, aujourd_hui_paris())
 
 
 def _vue_affectation(proposition: PropositionAffectation) -> AffectationVue:
@@ -5770,7 +5840,7 @@ def _enregistrer_routes_dividendes_paie(app: FastAPI) -> None:
         try:
             decides = dividendes_decides(dossier, ledger, exercices, affectations)
             # Pas encore déclaré : aperçu au taux d'aujourd'hui, sans dispense.
-            detail = decides.declare or retenues(decides.brut, datetime.now(UTC).date(), False)
+            detail = decides.declare or retenues(decides.brut, aujourd_hui_paris(), False)
         except (AffectationImpossible, MillesimeDividendesInconnu) as exc:
             return DividendesVue(applicable=False, raison=str(exc))
         return _vue_dividendes(decides, detail)
@@ -5792,7 +5862,7 @@ def _enregistrer_routes_dividendes_paie(app: FastAPI) -> None:
             ledger,
             corps.verse_le,
             corps.dispense_prelevement,
-            datetime.now(UTC).date(),
+            aujourd_hui_paris(),
         )
         return _vue_dividendes(dataclasses.replace(decides, declare=detail), detail)
 
@@ -6701,8 +6771,10 @@ def lire_manques_rapprochement_expert(
 class DecisionSemaineEntree(BaseModel):
     plateforme: str
     lundi: date
-    decision: Literal["ecrire", "ecarter"]
+    # AXE-969 : `imputer` écrit la semaine puis solde son écart sur `compte`.
+    decision: Literal["ecrire", "ecarter", "imputer"]
     motif: str
+    compte: str | None = Field(default=None, max_length=8, pattern=r"^\d{3,8}$")
 
 
 class DecisionSemaineVue(BaseModel):
@@ -6722,18 +6794,20 @@ def trancher_semaine_expert(
     la plateforme) ou écartée. Le motif est obligatoire et tracé."""
     _tenant, identite_verifiee = _verifier_acces_gestionnaire(identite)
     motif = motif_valide(corps.motif)
-    resume = trancher_semaine_dossier(
-        settlements,
-        base,
-        dossier,
-        (corps.plateforme, corps.lundi),
-        corps.decision,
-        motif,
-    )
+    semaine = (corps.plateforme, corps.lundi)
+    if corps.decision == "imputer":
+        if not corps.compte:
+            raise HTTPException(status_code=422, detail="Choisissez le compte d'imputation.")
+        resume = imputer_ecart_dossier(settlements, base, dossier, semaine, corps.compte, motif)
+    else:
+        resume = trancher_semaine_dossier(
+            settlements, base, dossier, semaine, corps.decision, motif
+        )
+    quoi = corps.decision + (f" {corps.compte}" if corps.decision == "imputer" else "")
     journal.noter(
         dossier.id,
         ACTE_SEMAINE_TRANCHEE,
-        f"{corps.decision} {corps.plateforme} {corps.lundi.isoformat()} : {motif}"[:300],
+        f"{quoi} {corps.plateforme} {corps.lundi.isoformat()} : {motif}"[:300],
         identite_verifiee.user_id,
         datetime.now(UTC),
     )
@@ -9008,6 +9082,69 @@ def _fiche_vue(instantane: Instantane) -> FicheImportVue:
     )
 
 
+class PorterChoixFiche(Protocol):
+    def __call__(self, fiche: FicheImport, identite: IdentiteAuthentifiee, role: str) -> None: ...
+
+
+def get_porter_choix_fiche(
+    experts: ExpertsDep,
+    dossiers: DossiersDep,
+    comptes: ComptesBancairesDep,
+    base: LedgerBaseDep,
+    decisions: DecisionsDep,
+) -> PorterChoixFiche:
+    """AXE-986 : le choix Pro ou Perso d'une fiche, porté aux comptes « à
+    décider » de son dossier quand l'expert habilité sur ce dossier l'a fait.
+    Sinon rien : l'expert le voit comme une proposition (même règle
+    qu'AXE-729 et AXE-956, le gestionnaire seul ne décide pas)."""
+
+    def porter(fiche: FicheImport, identite: IdentiteAuthentifiee, role: str) -> None:
+        dossier = dossiers.obtenir(fiche.dossier_id) if fiche.dossier_id else None
+        if dossier is None:
+            return
+        try:
+            actif = expert_actif(
+                role,
+                experts.habilitation(fiche.tenant_id, identite.email),
+                experts.engagement(fiche.tenant_id, identite.email),
+            )
+            exiger_dossier(actif, dossier.id)
+        except ExpertNonHabilite:
+            return
+        a_faire = a_appliquer(comptes.lister(dossier.id), choix_de_la_fiche(fiche.champs))
+        ecritures: tuple[Ecriture, ...] | None = None
+        for compte, retenu in a_faire:
+            try:
+                if not retenu:
+                    if ecritures is None:
+                        ledger = _ledger_avec_decisions(dossier, base, decisions)
+                        ecritures = ledger.grand_livre(dossier.id)
+                    verifier_ecartable(_ecritures_sur_le_compte(ecritures, compte))
+                comptes.decider(dossier.id, compte, retenu, identite.user_id, datetime.now(UTC))
+            except (CompteInconnu, CompteDejaComptabilise):
+                continue  # reste à décider, visible comme proposition
+
+    return porter
+
+
+PorterChoixFicheDep = Annotated[PorterChoixFiche, Depends(get_porter_choix_fiche)]
+
+
+def _proposees_par_fiche(
+    vues: list[CompteBancaireVue],
+    comptes: tuple[CompteBancaire, ...],
+    fiches: FichesImportRepository,
+    dossier: Dossier,
+) -> list[CompteBancaireVue]:
+    """AXE-986 : chaque compte avec ce qu'en dit la fiche d'import du dossier."""
+    fiche = next((f for f in fiches.toutes(dossier.tenant_id) if f.dossier_id == dossier.id), None)
+    if fiche is None:
+        return vues
+    choix = choix_de_la_fiche(fiche.champs)
+    par_compte = {c.compte_comptable: proposition(c, choix) for c in comptes}
+    return [v.model_copy(update={"propose_par_fiche": par_compte.get(v.compte)}) for v in vues]
+
+
 def _poser_dossier(
     fiche: FicheImport, dossiers: DossierRepository, demandes: DemandesDeJobs
 ) -> tuple[FicheImport, tuple[str, ...]]:
@@ -9111,6 +9248,7 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         lire: LireFicheOfficielleDep,
         dossiers: DossiersDep,
         demandes: DemandesJobsDep,
+        porter: PorterChoixFicheDep,
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
@@ -9121,7 +9259,10 @@ def _enregistrer_routes_fiches_import_saisie(app: FastAPI) -> None:
         if "siren" in entree.champs or fiche.champs.get("siren") != avant.champs.get("siren"):
             fiche = _lire_registres(fiche, lire, identite.email)
         fiche, _erreurs = _poser_dossier(fiche, dossiers, demandes)
-        return _fiche_vue(fiches.enregistrer(fiche))
+        enregistree = fiches.enregistrer(fiche)
+        if CHAMP_COMPTES in entree.champs:
+            porter(fiche, identite, role)
+        return _fiche_vue(enregistree)
 
     @app.post("/portefeuille/imports/{fiche_id}/registres", response_model=FicheImportVue)
     def relire_registres_fiche(
@@ -9635,7 +9776,7 @@ def _enregistrer_routes_soldes_banque(app: FastAPI) -> None:
             identite.email,
             fiches,
             lambda champs: ajouter_solde_banque(
-                champs, corps.compte, corps.le, corps.montant, corps.source, date.today()
+                champs, corps.compte, corps.le, corps.montant, corps.source, aujourd_hui_paris()
             ),
         )
         return _couverture_banque(tenant_id, fiche_id, fiches, comptes, ledger)
