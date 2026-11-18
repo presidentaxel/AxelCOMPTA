@@ -383,7 +383,11 @@ from axelcompta.tenants.fiches_import_etat import documents_a_lire as a_lire_pou
 from axelcompta.tenants.fiches_import_etat import emplacements as emplacements_import
 from axelcompta.tenants.fiches_import_etat import exercices as exercices_import
 from axelcompta.tenants.fiches_import_postgres import PostgresFichesImport
-from axelcompta.tenants.fiches_import_reprise import champs_lus_dans_un_fec, preremplir_reprise
+from axelcompta.tenants.fiches_import_reprise import (
+    champs_lus_dans_un_fec,
+    dernier_fec,
+    preremplir_reprise,
+)
 from axelcompta.tenants.franchise_tva import MillesimeInconnu, suivre_franchise
 from axelcompta.tenants.identite_json import identite_vers_json
 from axelcompta.tenants.identite_saisie import (
@@ -5055,10 +5059,56 @@ def _enregistrer_routes_ouverture(app: FastAPI) -> None:
     _enregistrer_routes_ouverture_expert(app)
 
 
+class FecDeLaFicheVue(BaseModel):
+    """AXE-942 : le FEC qui donne les à-nouveaux, déposé sur la fiche
+    d'import du dossier. `trouve` faux : aucune fiche, ou aucun FEC lu."""
+
+    trouve: bool
+    fiche_id: str | None = None
+    document_id: str | None = None
+    nom_fichier: str | None = None
+    exercice: int | None = None
+    deficits: str | None = None
+
+
+def fec_de_la_fiche(
+    dossier: Dossier, fiches: FichesImportRepository, aujourd_hui: date
+) -> FecDeLaFicheVue:
+    fiche = next(
+        (
+            f
+            for f in fiches.toutes(dossier.tenant_id)
+            if f.dossier_id == dossier.id and f.statut != "ignore"
+        ),
+        None,
+    )
+    if fiche is None:
+        return FecDeLaFicheVue(trouve=False)
+    documents = fiches.instantane(dossier.tenant_id, fiche.id).documents
+    fec = dernier_fec(documents, aujourd_hui)
+    if fec is None:
+        return FecDeLaFicheVue(trouve=False, fiche_id=fiche.id)
+    return FecDeLaFicheVue(
+        trouve=True,
+        fiche_id=fiche.id,
+        document_id=fec.id,
+        nom_fichier=fec.nom_fichier,
+        exercice=fec.exercice,
+        deficits=(fiche.champs.get("deficits") or "").strip() or None,
+    )
+
+
 def _enregistrer_routes_ouverture_expert(app: FastAPI) -> None:
     @app.get("/expert/dossiers/{dossier_id}/ouverture", response_model=OuvertureVue)
     def lire_ouverture_expert(dossier: DossierExpertDep, ouvertures: OuverturesDep) -> OuvertureVue:
         return _vue_ouverture(ouvertures.obtenir(dossier.id))
+
+    @app.get("/expert/dossiers/{dossier_id}/ouverture/fiche", response_model=FecDeLaFicheVue)
+    def lire_fec_de_la_fiche(dossier: DossierExpertDep, fiches: FichesImportDep) -> FecDeLaFicheVue:
+        """AXE-942 : le FEC déposé sur la fiche d'import, proposé pour le
+        bilan d'ouverture. Il passe ensuite par la même analyse, la même
+        attestation et le même motif qu'un FEC envoyé à la main."""
+        return fec_de_la_fiche(dossier, fiches, date.today())
 
     @app.post("/expert/dossiers/{dossier_id}/ouverture/fec/analyse", response_model=AnalyseFecVue)
     async def analyser_ouverture_expert(

@@ -1354,6 +1354,24 @@ function corpsFec(fichier: File, champs: Record<string, string>): FormData {
   return corps;
 }
 
+/** AXE-942 : le FEC qui donne les à-nouveaux, déposé sur la fiche
+ * d'import du dossier. */
+export type FecDeLaFiche = {
+  trouve: boolean;
+  fiche_id: string | null;
+  document_id: string | null;
+  nom_fichier: string | null;
+  exercice: number | null;
+  deficits: string | null;
+};
+
+export async function lireFecDeLaFicheExpert(dossierId: string): Promise<FecDeLaFiche> {
+  return lireJson(
+    await requeteGestionnaire(`/expert/dossiers/${dossierId}/ouverture/fiche`),
+    "La fiche d'import n'a pas pu être lue.",
+  );
+}
+
 export async function analyserFecExpert(
   dossierId: string,
   fichier: File,
