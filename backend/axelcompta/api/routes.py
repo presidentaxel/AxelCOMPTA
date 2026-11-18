@@ -269,6 +269,7 @@ from axelcompta.ingestion.settlements_plateforme import (
 from axelcompta.ingestion.settlements_plateforme_postgres import PostgresSettlements
 from axelcompta.jobs.file import (
     TYPE_IMPORT_DOSSIERS,
+    TYPE_OCR,
     TYPE_RAPPELS,
     TYPE_RAPPROCHEMENT_ROLLEE,
     TYPE_RELEVES_FICHE,
@@ -291,6 +292,8 @@ from axelcompta.ledger.repository import PostgresLedgerService
 from axelcompta.ledger.service import LedgerService
 from axelcompta.manques_rollee import manques as manques_rollee
 from axelcompta.nouveaux_contacts import fiche_sirene, recherche_entreprises
+from axelcompta.ocr.lecture import a_verifier as a_verifier_ocr
+from axelcompta.ocr.passage import ocr_actif
 from axelcompta.packs.vtc_demo import (
     charger_categories_banque,
     charger_compte_par_categorie,
@@ -8828,6 +8831,9 @@ class DocumentImportVue(BaseModel):
     depose_le: str
     statut_traitement: str  # traite | a_traiter | illisible
     resume: str
+    # AXE-943 : l'OCR n'a pas pu valider sa lecture ; un humain tranche.
+    a_verifier: bool = False
+    controles: list[str] = []
 
 
 class PeriodeBanqueVue(BaseModel):
@@ -9033,6 +9039,7 @@ def _sections_vue(fiche: FicheImport, documents: list[DocumentImport]) -> list[S
 
 
 def _document_vue(d: DocumentImport) -> DocumentImportVue:
+    verifier, controles = a_verifier_ocr(d.donnees)
     return DocumentImportVue(
         id=d.id,
         origine_id=d.origine_id,
@@ -9046,6 +9053,8 @@ def _document_vue(d: DocumentImport) -> DocumentImportVue:
         depose_le=d.depose_le.isoformat(),
         statut_traitement=d.statut_traitement,
         resume=d.resume,
+        a_verifier=verifier,
+        controles=controles,
     )
 
 
@@ -9426,6 +9435,7 @@ def _enregistrer_routes_documents_import(app: FastAPI) -> None:
         identite: IdentiteDep,
         role: RoleMembreDep,
         fiches: FichesImportDep,
+        demandes: DemandesJobsDep,
         emplacement: Annotated[str, Form()],
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
@@ -9433,7 +9443,7 @@ def _enregistrer_routes_documents_import(app: FastAPI) -> None:
         avant = fiches.instantane(tenant_id, fiche_id)
         lu = await _fichier_lu(fichier)
         lot = depot_sur_emplacement(avant.fiche, emplacement, lu, identite.email, datetime.now(UTC))
-        return _deposer_sans_doublons(fiches, avant, lot)
+        return _deposer_sans_doublons(fiches, avant, lot, demandes)
 
     @app.get("/portefeuille/imports/{fiche_id}/documents/{document_id}")
     def lire_document_import(
@@ -9447,7 +9457,10 @@ def _enregistrer_routes_documents_import(app: FastAPI) -> None:
 
 
 def _deposer_sans_doublons(
-    fiches: FichesImportRepository, avant: Instantane, lot: list[tuple[DocumentImport, bytes]]
+    fiches: FichesImportRepository,
+    avant: Instantane,
+    lot: list[tuple[DocumentImport, bytes]],
+    demandes: DemandesDeJobs | None = None,
 ) -> FicheImportVue:
     """AXE-971 : un contenu déjà sur la fiche n'est pas déposé une seconde
     fois. Tout le dépôt déjà présent : 409, avec les noms."""
@@ -9466,6 +9479,9 @@ def _deposer_sans_doublons(
         instantane = fiches.ranger(document)
     if gardes:
         instantane = fiches.deposer_lot(gardes)
+        # AXE-943 : le worker lit les nouveaux documents dans la minute.
+        if demandes is not None and ocr_actif():
+            demandes.demander(str(avant.fiche.tenant_id), TYPE_OCR)
     empreintes = {d.empreinte for d in reclasses}
     noms = {Path(d.nom_fichier).name for d, _c in lot if d.empreinte in empreintes}
     vue = _fiche_vue(_reprise_relue(fiches, instantane))
@@ -9506,6 +9522,7 @@ def _enregistrer_routes_exercices_import(app: FastAPI) -> None:
         identite: IdentiteDep,
         role: RoleMembreDep,
         fiches: FichesImportDep,
+        demandes: DemandesJobsDep,
     ) -> FicheImportVue:
         tenant_id, identite = _verifier_acces_gestionnaire(identite)
         _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
@@ -9523,7 +9540,7 @@ def _enregistrer_routes_exercices_import(app: FastAPI) -> None:
         )
         avant = fiches.enregistrer(fiche)
         lot = depot_sur_exercice(avant.fiche, annee, lus, identite.email, maintenant)
-        return _deposer_sans_doublons(fiches, avant, lot)
+        return _deposer_sans_doublons(fiches, avant, lot, demandes)
 
     @app.patch(
         "/portefeuille/imports/{fiche_id}/documents/{document_id}",

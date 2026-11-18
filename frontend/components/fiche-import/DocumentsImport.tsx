@@ -515,11 +515,27 @@ function LigneDocument({
           </Button>
         )}
       </div>
-      <p className={`mt-1 flex items-center gap-1 text-xs ${couleur}`}>
-        {document.statut_traitement === "traite" && <Check className="size-3.5" aria-hidden />}
-        <span className="font-medium">{libelleTraitement(document.statut_traitement)}</span>
-        {document.resume && <span className="text-subtle">· {document.resume}</span>}
-      </p>
+      {document.a_verifier ? (
+        <div role="alert" className="mt-1 rounded-sm border border-danger-border bg-danger-subtle px-2 py-1 text-xs text-danger">
+          <p className="flex items-center gap-1 font-medium">
+            <AlertTriangle className="size-3.5" aria-hidden /> À vérifier : l&apos;OCR n&apos;a pas pu valider sa
+            lecture (relue par deux modèles).
+          </p>
+          {(document.controles ?? []).length > 0 && (
+            <ul className="mt-0.5 list-disc pl-5">
+              {(document.controles ?? []).map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : (
+        <p className={`mt-1 flex items-center gap-1 text-xs ${couleur}`}>
+          {document.statut_traitement === "traite" && <Check className="size-3.5" aria-hidden />}
+          <span className="font-medium">{libelleTraitement(document.statut_traitement)}</span>
+          {document.resume && <span className="text-subtle">· {document.resume}</span>}
+        </p>
+      )}
       {modifiable && document.exercice !== null && document.emplacement.startsWith("reprise:") && (
         <RangerDocument document={document} erreur={erreur} onRanger={onRanger} />
       )}
