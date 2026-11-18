@@ -546,6 +546,38 @@ def relier_toutes(
     return changees, a_creer
 
 
+# AXE-975 : ce qu'il faut vraiment lire pour reprendre un dossier. Les
+# pièces, accusés, paiements et déclarations sont gardés, pas à lire.
+CATEGORIES_A_LIRE = frozenset(
+    {"liasse", "fec", "balance", "grand_livre", "comptes_annuels", "releve_bancaire"}
+)
+ROLES_A_LIRE = frozenset({"source", "a_declarer", "en_cours"})
+
+
+def documents_a_lire(
+    champs: Mapping[str, str], documents: Sequence[DocumentImport], aujourd_hui: date
+) -> list[DocumentImport]:
+    """Les documents qui attendent une lecture utile à la reprise : ceux des
+    exercices qui donnent le report à nouveau ou que nous déclarons (et les
+    relevés), dans les catégories qui portent des chiffres. Un document
+    illisible compte toujours : il faut le remplacer. L'impression PDF d'un
+    FEC ne compte pas : le FEC lui-même se lit."""
+    utiles = {e.annee for e in exercices(champs, aujourd_hui, documents) if e.role in ROLES_A_LIRE}
+    retenus = []
+    for d in documents:
+        if d.statut_traitement == "traite":
+            continue
+        if d.statut_traitement == "illisible":
+            retenus.append(d)
+            continue
+        impression = (d.donnees or {}).get("type") == "impression_fec"
+        if d.categorie not in CATEGORIES_A_LIRE or impression:
+            continue
+        if d.exercice is None or d.exercice in utiles:
+            retenus.append(d)
+    return retenus
+
+
 def dossier_prevu(fiche: FicheImport) -> str:
     ligne = ligne_dossier(fiche)
     return str(identifiant(ligne["siren"], ligne["contact_digifactory"]))

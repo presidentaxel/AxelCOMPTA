@@ -10,6 +10,7 @@ from axelcompta.core.ids import DossierId, TenantId
 from axelcompta.tenants.fiches_import import (
     DocumentImport,
     FicheImport,
+    StatutDocument,
     cle_archive,
     document_import,
     modifier,
@@ -19,6 +20,7 @@ from axelcompta.tenants.fiches_import_depot import ContenusMemoire, FichesImport
 from axelcompta.tenants.fiches_import_etat import (
     ContactDigifactory,
     contacts_correspondants,
+    documents_a_lire,
     dossier_prevu,
     emplacements,
     etat_sections,
@@ -376,3 +378,30 @@ def test_chaque_fiche_active_complete_a_son_dossier_sauf_ignoree_ou_annulee() ->
         "a": "SIREN_552100554",
         "b": "SIREN_552100554",
     }
+
+
+def test_seuls_les_documents_utiles_a_la_reprise_sont_a_lire() -> None:
+    """AXE-975 : une pièce, un accusé ou la liasse d'un exercice ancien ne
+    sont pas « à lire » ; la liasse de l'exercice qui donne le report à
+    nouveau, si ; un document illisible toujours."""
+    champs = {"date_creation": "2022-01-03", "cloture": "30/09"}
+    aujourd_hui = date(2026, 11, 18)  # source : 2025 ; à déclarer : 2026
+    fiche = nouvelle_fiche("f", TenantId("T"), "D", "K", "", "b", LE)
+
+    def doc(id_: str, emplacement: str, statut: StatutDocument = "a_traiter") -> DocumentImport:
+        d = document_import(id_, fiche, emplacement, f"{id_}.pdf", "", id_.encode(), "b", LE)
+        return replace(d, statut_traitement=statut)
+
+    documents = [
+        doc("liasse-2025", "reprise:liasse:2025"),
+        doc("gl-2025", "reprise:grand_livre:2025"),
+        doc("liasse-2022", "reprise:liasse:2022"),
+        doc("piece-2025", "reprise:piece:2025"),
+        doc("accuse-2025", "reprise:accuse_reception:2025"),
+        doc("fec-2024", "reprise:fec:2024", "illisible"),
+        doc("fec-2025", "reprise:fec:2025", "traite"),
+        replace(doc("impression", "reprise:fec:2025"), donnees={"type": "impression_fec"}),
+        doc("releve", "banque:releve_bancaire"),
+    ]
+    a_lire = documents_a_lire(champs, documents, aujourd_hui)
+    assert [d.id for d in a_lire] == ["liasse-2025", "gl-2025", "fec-2024", "releve"]
