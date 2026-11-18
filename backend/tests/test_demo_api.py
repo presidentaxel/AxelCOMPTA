@@ -58,6 +58,7 @@ from axelcompta.api.routes import (
     get_ecrire_role,
     get_exercices,
     get_experts,
+    get_fiches_import,
     get_journal_acces,
     get_journal_ingestion,
     get_journal_portefeuille,
@@ -84,6 +85,7 @@ from axelcompta.comptes import Invitation
 from axelcompta.comptes_memoire import InMemoryCompteRepository
 from axelcompta.core.ids import DossierId, EcritureId, TenantId, UserId
 from axelcompta.core.money import Money
+from axelcompta.core.temps import aujourd_hui_paris
 from axelcompta.demo_chauffeurs_type import construire_ledger
 from axelcompta.demo_identites import IDENTITE_SOPHIE
 from axelcompta.documents.justificatifs import InMemoryJustificatifRepository
@@ -101,6 +103,7 @@ from axelcompta.tenants.affectations import InMemoryAffectationRepository
 from axelcompta.tenants.agregats import AgregatStocke, InMemoryAgregatsRepository
 from axelcompta.tenants.avenants import InMemoryAvenantRegimeRepository, programmer_bascules
 from axelcompta.tenants.exercices import InMemoryExerciceRepository
+from axelcompta.tenants.fiches_import_depot import FichesImportMemoire
 from axelcompta.tenants.journal_portefeuille import JournalPortefeuilleMemoire
 from axelcompta.tenants.memory import InMemoryDossierRepository
 from axelcompta.tenants.models import Dossier, Tenant
@@ -219,6 +222,8 @@ def _surcharger_depots_simples(app: FastAPI) -> None:
     (comme la base : ce qu'une requête écrit, la suivante le relit)."""
     comptes_bancaires_stub = CompteBancaireMemoire()
     app.dependency_overrides[get_comptes_bancaires] = lambda: comptes_bancaires_stub
+    fiches_stub = FichesImportMemoire()
+    app.dependency_overrides[get_fiches_import] = lambda: fiches_stub
     # Une seule instance par client, comme la base : une qualification reste
     # visible aux requêtes suivantes.
     registre_stub = RegistreInstructions()
@@ -1935,7 +1940,7 @@ def test_verser_ses_dividendes_calcule_les_retenues_et_la_2777() -> None:
     assert apercu["applicable"] is True and apercu["declare"] is False
     assert apercu["brut_cts"] == maximum["dividendes_cts"]
 
-    aujourd_hui = date.today()
+    aujourd_hui = aujourd_hui_paris()
     corps = {"verse_le": aujourd_hui.isoformat(), "dispense_prelevement": True}
     declare = client.post(url, headers=en_tete, json=corps).json()
     assert declare["declare"] is True and declare["prelevement_forfaitaire_cts"] == 0

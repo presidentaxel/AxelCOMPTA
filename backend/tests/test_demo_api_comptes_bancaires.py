@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
@@ -9,7 +10,10 @@ from httpx import Response
 
 from axelcompta.api.routes import (
     get_comptes_bancaires,
+    get_demandes_jobs,
+    get_dossiers,
     get_experts,
+    get_fiches_import,
     get_ledger,
     get_notifications,
     libelles_banques,
@@ -23,8 +27,10 @@ from axelcompta.ingestion.comptes_bancaires import (
     CompteReleve,
     relever_comptes,
 )
+from axelcompta.jobs.file import FileMemoire
 from axelcompta.ledger.models import Ecriture, Journal, LigneEcriture, Sens
 from axelcompta.ledger.service import LedgerService
+from axelcompta.tenants.fiches_import import FicheImport
 from axelcompta.workflow.expert_comptable import ROLE_EXPERT
 from axelcompta.workflow.notifications import notifier_comptes_a_choisir
 from tests.test_demo_api import (  # noqa: F401 — fixtures autouse réutilisées
@@ -293,3 +299,61 @@ def test_l_expert_hors_lettre_de_mission_ne_decide_pas() -> None:
     _expert_habilite(experts, dossiers=(DossierId("DEMO_sophie"),))
     assert _decider_expert(client, "5122", True).status_code == 403
     assert [d[1] for d in comptes.decisions] == ["5121"]
+
+
+def _fiche_de_karim(client: TestClient) -> str:
+    """AXE-986 : une fiche d'import reliée au dossier de Karim."""
+    overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
+    dossier = overrides[get_dossiers]().obtenir(KARIM)
+    fiche = FicheImport(
+        "fiche-karim", dossier.tenant_id, "Dupont", "Karim", "admin@x", LE, dossier_id=KARIM
+    )
+    overrides[get_fiches_import]().enregistrer(fiche)
+    file = FileMemoire()
+    overrides[get_demandes_jobs] = lambda: file
+    return fiche.id
+
+
+def _choisir_sur_la_fiche(client: TestClient, fiche_id: str, usage: str) -> None:
+    comptes = [{"id": "pro", "nom": "Compte PRO", "usage": "pro"}]
+    comptes.append({"id": "perso", "nom": "Livret", "usage": usage})
+    reponse = client.patch(
+        f"/portefeuille/imports/{fiche_id}",
+        json={"champs": {"comptes_bancaires": json.dumps(comptes)}},
+        headers=_en_tete_gestionnaire(),
+    )
+    assert reponse.status_code == 200, reponse.text
+
+
+def test_le_choix_de_l_expert_sur_la_fiche_passe_au_dossier() -> None:
+    client, comptes = _client_expert_pro_et_perso()
+    _choisir_sur_la_fiche(client, _fiche_de_karim(client), "perso")
+    livret = next(c for c in comptes.lister(KARIM) if c.compte_comptable == "5122")
+    assert livret.retenu is False
+    assert comptes.decisions[-1][1:4] == ("5122", False, UserId("gestionnaire-1"))
+
+
+def test_le_choix_d_un_gestionnaire_reste_une_proposition() -> None:
+    """Enregistrée par quelqu'un qui n'est pas l'expert habilité sur ce
+    dossier, la fiche propose ; l'expert le voit et confirme."""
+    client, comptes = _client_expert_pro_et_perso()
+    experts = client.app.dependency_overrides[get_experts]()  # type: ignore[attr-defined]
+    experts.habilitations.clear()
+    _choisir_sur_la_fiche(client, _fiche_de_karim(client), "perso")
+    assert [d[1] for d in comptes.decisions] == ["5121"]  # rien de plus
+    _expert_habilite(experts)
+    vues = client.get(
+        "/expert/dossiers/DEMO_karim/comptes-bancaires", headers=_en_tete_gestionnaire()
+    ).json()
+    par_compte = {v["compte"]: v for v in vues}
+    assert (par_compte["5122"]["retenu"], par_compte["5122"]["propose_par_fiche"]) == (None, False)
+    assert par_compte["5121"]["propose_par_fiche"] is True
+
+
+def test_la_fiche_ne_change_jamais_un_compte_deja_decide() -> None:
+    client, comptes = _client_expert_pro_et_perso()
+    _choisir_sur_la_fiche(client, _fiche_de_karim(client), "perso")
+    _decider_expert(client, "5122", True)
+    _choisir_sur_la_fiche(client, "fiche-karim", "perso")
+    livret = next(c for c in comptes.lister(KARIM) if c.compte_comptable == "5122")
+    assert livret.retenu is True
