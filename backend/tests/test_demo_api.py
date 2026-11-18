@@ -58,6 +58,7 @@ from axelcompta.api.routes import (
     get_ecrire_role,
     get_exercices,
     get_experts,
+    get_fiches_import,
     get_journal_acces,
     get_journal_ingestion,
     get_journal_portefeuille,
@@ -101,6 +102,7 @@ from axelcompta.tenants.affectations import InMemoryAffectationRepository
 from axelcompta.tenants.agregats import AgregatStocke, InMemoryAgregatsRepository
 from axelcompta.tenants.avenants import InMemoryAvenantRegimeRepository, programmer_bascules
 from axelcompta.tenants.exercices import InMemoryExerciceRepository
+from axelcompta.tenants.fiches_import_depot import FichesImportMemoire
 from axelcompta.tenants.journal_portefeuille import JournalPortefeuilleMemoire
 from axelcompta.tenants.memory import InMemoryDossierRepository
 from axelcompta.tenants.models import Dossier, Tenant
@@ -219,6 +221,8 @@ def _surcharger_depots_simples(app: FastAPI) -> None:
     (comme la base : ce qu'une requête écrit, la suivante le relit)."""
     comptes_bancaires_stub = CompteBancaireMemoire()
     app.dependency_overrides[get_comptes_bancaires] = lambda: comptes_bancaires_stub
+    fiches_stub = FichesImportMemoire()
+    app.dependency_overrides[get_fiches_import] = lambda: fiches_stub
     # Une seule instance par client, comme la base : une qualification reste
     # visible aux requêtes suivantes.
     registre_stub = RegistreInstructions()
