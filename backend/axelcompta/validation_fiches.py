@@ -92,6 +92,17 @@ def valider_banque(
             else "Aucun compte Digifactory retenu : il faut Digifactory pour l'exercice en cours.",
         )
     ]
+    a_decider = [c.nom or c.compte_comptable for c in comptes if c.retenu is None]
+    criteres.append(
+        Critere(
+            "banque",
+            "Chaque compte décidé (Pro ou Perso)",
+            not a_decider,
+            f"À décider : {', '.join(a_decider)}. Ses opérations ne sont pas importées."
+            if a_decider
+            else "",
+        )
+    )
     for compte in retenus:
         nom = compte.nom or compte.compte_comptable
         dernier = compte.solde_releve_le.date() if compte.solde_releve_le else None

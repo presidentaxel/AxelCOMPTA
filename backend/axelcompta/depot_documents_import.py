@@ -64,7 +64,9 @@ def _emplacement_classe(categorie: str, exercice: int | None, repli: str) -> str
     pièce comptable, la banque ou les documents administratifs sinon ; un
     fichier que rien ne classe reste dans la section du dépôt (`repli`)."""
     section = repli if categorie == "autre" else SECTION_PAR_CATEGORIE.get(categorie, repli)
-    return emplacement_de(section, categorie, exercice if section == "reprise" else None)
+    # Un emprunt court sur plusieurs exercices : une seule carte (AXE-989).
+    par_exercice = section == "reprise" and categorie != "emprunt"
+    return emplacement_de(section, categorie, exercice if par_exercice else None)
 
 
 def _membres(

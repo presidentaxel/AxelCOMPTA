@@ -249,3 +249,8 @@ def test_un_releve_societe_generale_du_mois_est_un_releve_bancaire() -> None:
     assert classer("RC/SG 10-2025.pdf", b"%PDF") == "releve_bancaire"
     assert classer("Relevé Societe Generale.pdf", b"%PDF") == "releve_bancaire"
     assert classer("RC/SG TARIFS.pdf", b"%PDF") == "autre"
+
+
+def test_un_tableau_d_amortissement_est_un_emprunt() -> None:
+    assert classer("Tableau d'amortissement prêt Bred.pdf", b"%PDF") == "emprunt"
+    assert classer("echeancier_credit.pdf", b"%PDF") == "emprunt"

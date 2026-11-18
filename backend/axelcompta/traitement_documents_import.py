@@ -350,6 +350,8 @@ _MOTIFS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"k-?bis|extrait", "kbis"),
         (r"statuts", "statuts"),
         (r"\brib\b|\biban\b", "rib"),
+        # AXE-989 : l'échéancier d'un prêt, avant « pièce ».
+        (r"tableau d.?amortissement|echeancier|\bemprunt\b|\bpret\b", "emprunt"),
         (
             r"encaissement|\b(enc|fac|fa|av)-?\d+|facture|\brecu\b|ticket|note de frais",
             "piece",

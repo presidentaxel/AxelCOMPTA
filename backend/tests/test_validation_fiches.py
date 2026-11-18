@@ -115,3 +115,12 @@ def test_les_plateformes_declarees_et_les_manques_gardes() -> None:
     assert (
         validation.manques("plateformes")[0] == "Exercice en cours : Bolt couvert : Aucune donnée."
     )
+
+
+def test_un_compte_a_decider_bloque_la_banque() -> None:
+    """AXE-989 : ses opérations ne sont pas importées tant qu'on n'a pas dit
+    Pro ou Perso."""
+    livret = CompteBancaire(D, "999", "5122", "Livret", retenu=None)
+    criteres = valider_banque(EXERCICES, [_bred(), livret], [TOUT_PROUVE], AUJOURD_HUI)
+    (echec,) = [c for c in criteres if not c.ok]
+    assert echec.detail == "À décider : Livret. Ses opérations ne sont pas importées."

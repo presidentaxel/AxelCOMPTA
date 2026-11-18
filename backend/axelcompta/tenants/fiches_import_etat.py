@@ -52,6 +52,7 @@ SECTION_PAR_CATEGORIE = {
     "accuse_reception": "reprise",
     "paiement_impot": "reprise",
     "piece": "reprise",
+    "emprunt": "reprise",
     "archive": "reprise",
     "releve_bancaire": "banque",
     "rib": "banque",
@@ -268,6 +269,7 @@ def _reprise(
     for i, e in enumerate(liste):
         if e.role != "en_cours":
             emplacements += _emplacements_exercice(e, liste[i + 1] if i + 1 < len(liste) else None)
+    emplacements += _attendus_cloture(champs, liste)
     emplacements.append(
         Emplacement(
             "reprise:autre",
@@ -280,6 +282,69 @@ def _reprise(
         )
     )
     return emplacements
+
+
+SANS_EMPRUNT = frozenset({"", "aucun", "aucune", "non", "0", "néant", "neant"})
+
+
+def a_des_emprunts(champs: Mapping[str, str]) -> bool:
+    return " ".join((champs.get("emprunts") or "").split()).lower() not in SANS_EMPRUNT
+
+
+def _attendus_cloture(champs: Mapping[str, str], liste: Sequence[Exercice]) -> list[Emplacement]:
+    """AXE-989 : ce que la clôture demandera et que seul l'ancien comptable
+    ou le chauffeur a : le tableau d'amortissement d'un emprunt, et les
+    déclarations de TVA déjà déposées sur les exercices que nous tenons."""
+    attendus = []
+    if a_des_emprunts(champs):
+        attendus.append(
+            Emplacement(
+                "reprise:emprunt",
+                "reprise",
+                "emprunt",
+                None,
+                "Tableau d'amortissement de l'emprunt",
+                "La banque ne montre que l'échéance : il sépare le capital des intérêts.",
+                True,
+            )
+        )
+    if champs.get("tva_declarations") == "deposees":
+        attendus += [
+            Emplacement(
+                f"reprise:declaration_tva:{e.annee}",
+                "reprise",
+                "declaration_tva",
+                e.annee,
+                f"Déclarations de TVA {e.annee}",
+                "Celles déjà déposées sur cet exercice (CA3, acomptes CA12) : ne pas "
+                "redéclarer, et recouper à la clôture.",
+                True,
+            )
+            for e in liste
+            if e.role in ("a_declarer", "en_cours")
+        ]
+    return attendus
+
+
+def _manques_import(
+    champs: Mapping[str, str], documents: Sequence[DocumentImport], aujourd_hui: date
+) -> dict[str, list[str]]:
+    """AXE-989 : ce qui manque au-delà des champs et des cartes attendus."""
+    manques: dict[str, list[str]] = {"fiscalite": [], "reprise": []}
+    if champs.get("regime_tva") != "franchise" and not champs.get("tva_declarations"):
+        manques["fiscalite"].append("Déclarations de TVA déjà déposées")
+    if champs.get("vehicule") in ("achat", "loa", "lld") and not champs.get("vehicule_detail"):
+        manques["reprise"].append("Véhicule : détail")
+    for e in exercices(champs, aujourd_hui, documents):
+        if e.role != "source":
+            continue
+        siens = [d for d in documents if d.categorie == "fec" and d.exercice == e.annee]
+        lus = [d for d in siens if (d.donnees or {}).get("type") == "fec"]
+        if siens and not lus:
+            manques["reprise"].append(
+                f"FEC {e.annee} lisible : l'impression PDF ne suffit pas pour le report à nouveau"
+            )
+    return manques
 
 
 def debut_a_couvrir(champs: Mapping[str, str], aujourd_hui: date) -> date | None:
@@ -436,12 +501,14 @@ def etat_sections(
     vides = [
         e for e in emplacements(fiche.champs, documents, aujourd_hui) if e.attendu and not e.rempli
     ]
+    supplements = _manques_import(fiche.champs, documents, aujourd_hui)
     etats = []
     for section in SECTIONS:
         manquants = _manquants_champs(section, fiche.champs)
         manquants += [e.libelle for e in vides if e.section == section.cle]
         # AXE-989 : la banque et les plateformes ont aussi leurs critères.
         manquants += manques_de_section(fiche.champs, section.cle)
+        manquants += supplements.get(section.cle, [])
         etats.append(EtatSection(section.cle, section.libelle, not manquants, tuple(manquants)))
     return etats
 
