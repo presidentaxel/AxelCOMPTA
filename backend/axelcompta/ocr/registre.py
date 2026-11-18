@@ -5,9 +5,10 @@ from __future__ import annotations
 from .banque import BANQUE
 from .categories import Categorie
 from .documents import CLASSEMENT, DOCUMENTS
+from .plateformes import PLATEFORMES_OCR
 from .reprise import REPRISE
 
-REGISTRE: dict[str, Categorie] = {**DOCUMENTS, **REPRISE, **BANQUE}
+REGISTRE: dict[str, Categorie] = {**DOCUMENTS, **REPRISE, **BANQUE, **PLATEFORMES_OCR}
 
 
 def categorie_ocr(cle: str) -> Categorie | None:

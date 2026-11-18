@@ -88,3 +88,18 @@ def test_la_plateforme_se_lit_dans_le_nom() -> None:
     assert plateforme_du_nom("uber_monthly_2025_9.pdf") == "uber"
     assert plateforme_du_nom("Bolt - octobre.pdf") == "bolt"
     assert plateforme_du_nom("releve.pdf") is None
+
+
+def test_le_recap_a_trois_colonnes_prend_le_total_et_garde_la_tva() -> None:
+    """AXE-943 : une société qui facture la TVA ; le lecteur prenait le HT
+    des courses et le récapitulatif ne tombait pas juste."""
+    texte = (
+        "Uber B.V. SIREN/SIRET: 841512346 01-31 Juillet 2025 Récapitulatif fiscal "
+        "Revenus issus de courses 7 227,36 € 650,27 € 7 877,63 € "
+        "Revenus issus d'autres services 150,45 € 150,45 € "
+        "Revenus totaux 7 377,81 € 650,27 € 8 028,08 € "
+        "Frais de service Uber 2 094,84 € 0,00 € 2 094,84 € Montant total 5 933,24 €"
+    )
+    recap = lire_recap(texte)
+    assert recap is not None and recap.juste
+    assert (recap.courses_cts, recap.tva_cts, recap.autres_cts) == (787_763, 65_027, 15_045)
