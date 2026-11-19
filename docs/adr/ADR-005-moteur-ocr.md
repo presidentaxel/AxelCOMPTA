@@ -11,7 +11,8 @@
 > documents partent **sans pseudonymisation**, contrairement à l'étage 4
 > ci-dessous. Les justificatifs du quotidien ne sont toujours pas lus. Le
 > 19/11, Louis a acté l'exception et un passage progressif à la
-> pseudonymisation (AXE-994) : cet ADR est à réécrire en conséquence.
+> pseudonymisation : voir l'**ADR-009** (AXE-994). Cet ADR-ci reste celui
+> des justificatifs du quotidien, toujours pseudonymisés avant un LLM.
 
 **Date :** 2026-06-16  
 **Mis à jour :** 2026-06-25  

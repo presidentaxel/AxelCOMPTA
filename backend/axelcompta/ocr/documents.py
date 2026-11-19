@@ -16,28 +16,10 @@ from collections.abc import Mapping
 from axelcompta.core.errors import SaisieInvalide
 from axelcompta.tenants.fiches_import_listes import ranger_associes
 
-from .categories import Categorie, Contexte
+from .categories import DESCRIPTION_NATURES, NATURES, Categorie, Contexte
 from .controles import controle_date, controle_siren, entier, euros, liste, montants, texte
 
-TYPES_RANGES = (
-    "liasse",
-    "comptes_annuels",
-    "balance",
-    "grand_livre",
-    "declaration_tva",
-    "declaration_is",
-    "accuse_reception",
-    "paiement_impot",
-    "piece",
-    "emprunt",
-    "releve_bancaire",
-    "rib",
-    "releve_plateforme",
-    "kbis",
-    "statuts",
-    "lettre_comptable",
-    "autre",
-)
+TYPES_RANGES = NATURES
 
 
 def _champs_identite(lu: Mapping[str, object], textes: tuple[str, ...]) -> dict[str, str]:
@@ -199,22 +181,16 @@ def _classement(lu: Mapping[str, object], _ctx: Contexte) -> list[str]:
 
 CLASSEMENT = Categorie(
     "classement",
-    """Range ce document : dis ce que c'est.
-- type_document, parmi : liasse (liasse fiscale 2033, 2050, 2065, 2031, ou leur synthèse),
-  comptes_annuels (bilan et compte de résultat), balance, grand_livre, declaration_tva (CA3, CA12,
-  3517), declaration_is (2571, 2572, relevé d'acompte ou de solde), accuse_reception (accusé de
-  dépôt d'une déclaration), paiement_impot (ordre ou avis de paiement d'un impôt), piece (facture,
-  reçu, ticket, note de frais), emprunt (tableau d'amortissement, échéancier de prêt),
-  releve_bancaire (relevé de compte), rib, releve_plateforme (récapitulatif ou relevé Uber, Bolt,
-  Heetch, Free Now…), kbis, statuts, lettre_comptable (courrier de l'ancien expert-comptable),
-  autre.
-- annee_exercice : l'année de clôture de l'exercice que le document concerne (pour une pièce,
+    "Range ce document : dis ce que c'est.\n"
+    f"- type_document, parmi : {DESCRIPTION_NATURES}.\n"
+    """- annee_exercice : l'année de clôture de l'exercice que le document concerne (pour une pièce,
   l'année de sa date), "" si aucune.
 - siren, denomination : la société concernée.""",
     textes=("type_document", "annee_exercice", "siren", "denomination"),
     controler=_classement,
     resumer=lambda lu: f"Rangé par l'OCR : {texte(lu, 'type_document')}.",
     max_tokens=2_000,
+    constater_nature=False,
 )
 
 DOCUMENTS: dict[str, Categorie] = {c.cle: c for c in (KBIS, STATUTS, LETTRE_COMPTABLE)}

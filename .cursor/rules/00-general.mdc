@@ -20,7 +20,7 @@ Docs de référence :
 2. **Le module `ledger` est pur.** Aucun import de `categorize`, `ml`, `api`, `anomaly`. Aucun appel réseau, aucune I/O. Entrée → sortie reproductible.
 3. **Toute table métier porte `tenant_id`.** Toute requête filtre sur `tenant_id`. Le RLS PostgreSQL est actif ET la couche applicative vérifie aussi (défense en profondeur).
 4. **Les écritures comptables sont append-only.** Jamais de UPDATE ou DELETE sur une écriture validée. Les corrections sont des contre-passations.
-5. **Avant tout appel LLM : pseudonymisation obligatoire.** Le module de pseudonymisation est la seule porte d'entrée vers un LLM. Jamais de données brutes (libellés, noms, IBAN) dans un prompt LLM.
+5. **Avant tout appel LLM : pseudonymisation obligatoire.** Le module de pseudonymisation est la seule porte d'entrée vers un LLM. Jamais de données brutes (libellés, noms, IBAN) dans un prompt LLM. **Une seule exception, actée par l'ADR-009 (AXE-994)** : l'OCR des documents déposés sur une fiche d'import (`ocr/`) les envoie en entier. Elle ne s'étend à aucun autre usage ; tout nouvel envoi en clair demande un ADR.
 
 ## Architecture — règles de dépendance des modules
 
