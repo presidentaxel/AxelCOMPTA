@@ -17,6 +17,7 @@ from __future__ import annotations
 import functools
 import io
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, cast
@@ -2286,7 +2287,10 @@ def test_les_agregats_gardes_sont_ceux_que_calculait_le_resume() -> None:
             True,
             _provisions_saisies(dossier, provisions),
         )
-        assert calculer_agregat(dossier, base, decisions, provisions) == AgregatStocke(
+        calcule = calculer_agregat(dossier, base, decisions, provisions)
+        # AXE-1013 : les non-classés n'existent pas dans `_resume`.
+        sans_non_classes = replace(calcule, entrees_non_classees_cts=0, sorties_non_classees_cts=0)
+        assert sans_non_classes == AgregatStocke(
             ca_ht_cts=reference.ca_ht_cts,
             charges_cts=reference.charges_cts,
             resultat_cts=reference.resultat_cts,

@@ -647,9 +647,18 @@ export function EcranEntreprises() {
                 libelle="Résultat"
                 valeur={formatMontant(choisi.resultat_cts)}
                 montant={choisi.resultat_cts}
+                nonClasse={(choisi.entrees_non_classees_cts ?? 0) - (choisi.sorties_non_classees_cts ?? 0)}
               />
-              <Chiffre libelle="CA HT" valeur={formatMontant(choisi.ca_ht_cts)} />
-              <Chiffre libelle="Charges" valeur={formatMontant(choisi.charges_cts)} />
+              <Chiffre
+                libelle="CA HT"
+                valeur={formatMontant(choisi.ca_ht_cts)}
+                nonClasse={choisi.entrees_non_classees_cts ?? 0}
+              />
+              <Chiffre
+                libelle="Charges"
+                valeur={formatMontant(choisi.charges_cts)}
+                nonClasse={choisi.sorties_non_classees_cts ?? 0}
+              />
             </dl>
 
             <section className="mt-5" aria-labelledby="titre-plateformes-fiche">
@@ -968,13 +977,29 @@ function Ligne({ libelle, valeur }: { libelle: string; valeur: string }) {
   );
 }
 
-function Chiffre({ libelle, valeur, montant }: { libelle: string; valeur: string; montant?: number }) {
+function Chiffre({
+  libelle,
+  valeur,
+  montant,
+  nonClasse = 0,
+}: {
+  libelle: string;
+  valeur: string;
+  montant?: number;
+  /** AXE-1013 : ce qui attend encore au 471, sous le chiffre classé. */
+  nonClasse?: number;
+}) {
   const couleur =
     montant === undefined ? "text-ink" : montant < 0 ? "text-amount-negative" : "text-amount-positive";
   return (
     <div className="min-w-0">
       <dt className="text-xs text-subtle">{libelle}</dt>
       <dd className={`mt-0.5 truncate text-sm font-semibold tabular-nums ${couleur}`}>{valeur}</dd>
+      {nonClasse !== 0 && (
+        <dd className="mt-0.5 truncate text-xs tabular-nums text-warning" title="Encore au compte d'attente (471)">
+          {formatMontant(nonClasse)} non classé
+        </dd>
+      )}
     </div>
   );
 }

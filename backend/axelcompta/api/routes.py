@@ -534,6 +534,7 @@ from axelcompta.workflow.journal_acces import (
 )
 from axelcompta.workflow.lots_llm import LotsLlm, LotsLlmMemoire
 from axelcompta.workflow.lots_llm_postgres import PostgresLotsLlm
+from axelcompta.workflow.non_classes import non_classes
 from axelcompta.workflow.notifications import (
     NotificationRepository,
     ecritures_a_trancher,
@@ -712,6 +713,9 @@ class DossierAgregat(BaseModel):
     ca_ht_cts: int
     charges_cts: int
     resultat_cts: int
+    # AXE-1013 : sous chaque chiffre, ce qui attend encore au 471.
+    entrees_non_classees_cts: int = 0
+    sorties_non_classees_cts: int = 0
     statut_invitation: str | None
     mode_acces_bancaire: str
     forme_juridique: str
@@ -1279,6 +1283,8 @@ def _agregat(
         ca_ht_cts=stocke.ca_ht_cts,
         charges_cts=stocke.charges_cts,
         resultat_cts=stocke.resultat_cts,
+        entrees_non_classees_cts=stocke.entrees_non_classees_cts,
+        sorties_non_classees_cts=stocke.sorties_non_classees_cts,
         statut_invitation=statut_invitation,
         mode_acces_bancaire=dossier.mode_acces_bancaire,
         forme_juridique=dossier.forme_juridique,
@@ -1312,6 +1318,11 @@ def calculer_agregat(
     plus (invitation, preuves, guide du greffe)."""
     ledger = _ledger_avec_decisions(dossier, base, decisions)
     liasse = _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
+    entrees, sorties = (
+        non_classes(ledger.grand_livre(dossier.id), liasse.exercice_debut, liasse.exercice_fin)
+        if liasse.exercice_debut and liasse.exercice_fin
+        else (0, 0)
+    )
     return AgregatStocke(
         ca_ht_cts=liasse.cases.get("CA_HT", 0),
         charges_cts=liasse.cases.get("CHARGES", 0),
@@ -1319,6 +1330,8 @@ def calculer_agregat(
         exercice_debut=liasse.exercice_debut.isoformat() if liasse.exercice_debut else None,
         exercice_fin=liasse.exercice_fin.isoformat() if liasse.exercice_fin else None,
         alerte_tva=_alerte_franchise_tva(dossier, ledger.grand_livre(dossier.id)),
+        entrees_non_classees_cts=entrees,
+        sorties_non_classees_cts=sorties,
     )
 
 

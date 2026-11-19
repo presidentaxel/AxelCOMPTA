@@ -73,6 +73,9 @@ export type DossierAgregat = {
   ca_ht_cts: number;
   charges_cts: number;
   resultat_cts: number;
+  /** AXE-1013 : encore au compte d'attente (471) sur l'exercice. */
+  entrees_non_classees_cts?: number;
+  sorties_non_classees_cts?: number;
   statut_invitation: "invité" | "actif" | null;
   mode_acces_bancaire: "gestionnaire" | "chauffeur_direct";
   forme_juridique: string;

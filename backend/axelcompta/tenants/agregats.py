@@ -26,7 +26,7 @@ from axelcompta.core.ids import DossierId, TenantId
 # formule de la liasse, la matrice des statuts, les seuils de franchise ou
 # le pack métier. Les lignes calculées avec une autre version sont ignorées
 # et recalculées au fil des lectures.
-VERSION_CALCUL = 1
+VERSION_CALCUL = 2  # AXE-1013 : entrées et sorties non classées
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +37,9 @@ class AgregatStocke:
     exercice_debut: str | None  # ISO, comme `DossierResume`
     exercice_fin: str | None
     alerte_tva: str | None
+    # AXE-1013 : encore au 471 sur l'exercice, en centimes positifs.
+    entrees_non_classees_cts: int = 0
+    sorties_non_classees_cts: int = 0
 
 
 @dataclass(frozen=True, slots=True)
