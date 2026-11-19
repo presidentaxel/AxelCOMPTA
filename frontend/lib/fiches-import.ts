@@ -236,6 +236,7 @@ const MOTIFS_CATEGORIE: [RegExp, string][] = [
   [/kbis|k-bis|extrait/i, "kbis"],
   [/statut/i, "statuts"],
   [/\brib\b|iban/i, "rib"],
+  [/carte[ ._-]?grise|certificat (d.?)?immatriculation/i, "carte_grise"],
   [/lettre|mission|confr[eè]re/i, "lettre_comptable"],
   [/relev[eé]|releve/i, "releve_bancaire"],
 ];
