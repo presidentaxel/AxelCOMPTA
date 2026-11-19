@@ -996,8 +996,9 @@ function Chiffre({
       <dt className="text-xs text-subtle">{libelle}</dt>
       <dd className={`mt-0.5 truncate text-sm font-semibold tabular-nums ${couleur}`}>{valeur}</dd>
       {nonClasse !== 0 && (
-        <dd className="mt-0.5 truncate text-xs tabular-nums text-warning" title="Encore au compte d'attente (471)">
-          {formatMontant(nonClasse)} non classé
+        <dd className="mt-0.5 text-xs leading-tight text-warning" title="Encore au compte d'attente (471)">
+          <span className="block tabular-nums">{formatMontant(nonClasse)}</span>
+          non classé
         </dd>
       )}
     </div>
