@@ -38,8 +38,8 @@ export function VersementsPlateformes({ dossierId }: { dossierId: string }) {
         </tr>
       </thead>
       <tbody>
-        {versements.map((v) => (
-          <tr key={`${v.plateforme}-${v.du}`} className="border-b border-slate-100 align-top">
+        {versements.map((v, rang) => (
+          <tr key={`${v.plateforme}-${v.du}-${v.au}-${rang}`} className="border-b border-slate-100 align-top">
             <td className="px-2 py-2 text-ink">
               {v.plateforme} · {formatDate(v.du)} au {formatDate(v.au)}
               <span className="block text-xs text-subtle">{etatVersement(v.etat, v.motif)}</span>
