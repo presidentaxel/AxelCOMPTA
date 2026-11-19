@@ -692,6 +692,40 @@ def test_un_document_reclasse_a_la_main_est_relu() -> None:
     assert (relu["categorie"], relu["statut_traitement"]) == ("releve_plateforme", "traite")
 
 
+def test_l_ocr_propose_un_rangement_et_un_rangement_a_la_main_le_protege() -> None:
+    """AXE-995 : la proposition de l'OCR s'affiche avec son emplacement ; un
+    document rangé par une personne est marqué, l'OCR ne le déplacera plus."""
+    client, _file = _client()
+    fiche = _ouvrir(client, siren="")
+    route = f"/portefeuille/imports/{fiche['id']}/documents"
+    depose = client.post(
+        route,
+        files={"fichier": ("teletransmission.pdf", b"%PDF-1.4 edi", "application/pdf")},
+        data={"emplacement": "documents:autre"},
+        headers=EN_TETE,
+    ).json()
+    (document,) = [d for e in depose["emplacements"] for d in e["documents"]]
+    fiches = cast(FastAPI, client.app).dependency_overrides[get_fiches_import]()
+    (stocke,) = [d for d in fiches.instantane(TenantId("TENANT_DEMO"), fiche["id"]).documents]
+    fiches.ranger(replace(stocke, donnees={"proposition_ocr": "accuse_reception"}))
+
+    vue = client.get(f"/portefeuille/imports/{fiche['id']}", headers=EN_TETE).json()
+    (propose,) = [d for e in vue["emplacements"] for d in e["documents"]]
+    assert propose["proposition"]["categorie"] == "accuse_reception"
+    assert propose["proposition"]["emplacement"].startswith("reprise:accuse_reception")
+
+    range_ = client.patch(
+        f"{route}/{document['id']}",
+        json={"emplacement": "documents:kbis"},
+        headers=EN_TETE,
+    )
+    assert range_.status_code == 200, range_.text
+    (relu,) = [d for e in range_.json()["emplacements"] for d in e["documents"]]
+    assert relu["proposition"] is None
+    (garde,) = [d for d in fiches.instantane(TenantId("TENANT_DEMO"), fiche["id"]).documents]
+    assert (garde.donnees or {})["range_par"] == "humain"
+
+
 def test_les_criteres_d_import_d_une_fiche_sans_dossier() -> None:
     """AXE-989 : sans dossier, rien à vérifier ; la fiche n'est pas importée."""
     client, _file = _client()

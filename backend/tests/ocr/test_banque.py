@@ -43,6 +43,29 @@ def test_une_operation_oubliee_se_voit_au_centime() -> None:
     assert erreur.endswith("(écart −122,22 €).")
 
 
+def test_un_solde_debiteur_lu_en_positif_est_retourne_par_l_arithmetique() -> None:
+    # SG 11-2025 (SYBD) : −227,04 € lu 227,04 €, écart de 2 × 227,04 €.
+    lu: dict[str, object] = {
+        **RELEVE,
+        "montants": [
+            {"nom": "solde_debut_cts", "valeur_cts": 22704},
+            {"nom": "solde_fin_cts", "valeur_cts": 55074},
+        ],
+    }
+    (erreur,) = RELEVE_BANCAIRE.controler(lu, Contexte())
+    assert erreur.endswith("(écart −454,08 €).")
+    corrige = RELEVE_BANCAIRE.corriger(lu)
+    assert RELEVE_BANCAIRE.controler(corrige, Contexte()) == []
+    assert RELEVE_BANCAIRE.donnees(corrige)["solde_debut_cts"] == -22704
+
+
+def test_un_ecart_que_le_signe_n_explique_pas_n_est_pas_corrige() -> None:
+    oublie: dict[str, object] = {**RELEVE, "operations": RELEVE["operations"][:1]}
+    assert RELEVE_BANCAIRE.corriger(oublie) == oublie
+    juste: dict[str, object] = dict(RELEVE)
+    assert RELEVE_BANCAIRE.corriger(juste) == juste
+
+
 def test_un_rib_et_sa_cle() -> None:
     bon = {
         "titulaire": "SYBD",
