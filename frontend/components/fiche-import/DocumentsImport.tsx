@@ -12,6 +12,7 @@ import {
   rangerDocumentImport,
   retirerDocumentImport,
   telechargerDocumentImport,
+  validerLectureImport,
 } from "@/lib/auth-gestionnaire";
 import {
   ajouterAnnee,
@@ -527,6 +528,9 @@ function LigneDocument({
               ))}
             </ul>
           )}
+          {modifiable && document.lecture && (
+            <CorrigerLecture fiche={fiche} document={document} lecture={document.lecture} onFiche={onFiche} />
+          )}
         </div>
       ) : (
         <p className={`mt-1 flex items-center gap-1 text-xs ${couleur}`}>
@@ -551,6 +555,95 @@ function LigneDocument({
         <RangerDocument document={document} erreur={erreur} onRanger={onRanger} />
       )}
     </li>
+  );
+}
+
+type Montant = { nom: string; valeur_cts: number };
+
+/** AXE-991 : ce que l'OCR a lu, corrigeable champ par champ (textes et
+ * montants ; les listes, comme les opérations d'un relevé, restent telles
+ * quelles). Les contrôles repassent à la validation ; sans eux, une raison. */
+function CorrigerLecture({
+  fiche,
+  document,
+  lecture,
+  onFiche,
+}: {
+  fiche: FicheImport;
+  document: DocumentImport;
+  lecture: Record<string, unknown>;
+  onFiche: (fiche: FicheImport) => void;
+}) {
+  const [ouvert, setOuvert] = useState(false);
+  const [lu, setLu] = useState(lecture);
+  const [raison, setRaison] = useState("");
+  const [erreur, setErreur] = useState("");
+  const montants = Array.isArray(lu.montants) ? (lu.montants as Montant[]) : [];
+  const textes = Object.entries(lu).filter(([, v]) => typeof v === "string") as [string, string][];
+  const listes = Object.entries(lu).filter(([k, v]) => Array.isArray(v) && k !== "montants");
+
+  async function valider() {
+    setErreur("");
+    try {
+      onFiche(await validerLectureImport(fiche.id, document.id, lu, raison));
+    } catch (exception) {
+      setErreur(exception instanceof Error ? exception.message : "Erreur inattendue.");
+    }
+  }
+
+  if (!ouvert) {
+    return (
+      <Button size="sm" variant="secondary" className="mt-1" onClick={() => setOuvert(true)}>
+        Voir et corriger la lecture
+      </Button>
+    );
+  }
+  return (
+    <div className="mt-2 space-y-1 text-ink">
+      {textes.map(([cle, valeur]) => (
+        <label key={cle} className="flex items-center gap-2">
+          <span className="w-40 shrink-0 text-subtle">{cle}</span>
+          <input
+            value={valeur}
+            onChange={(e) => setLu({ ...lu, [cle]: e.target.value })}
+            className="h-7 min-w-0 flex-1 rounded-md border border-border bg-surface px-2"
+          />
+        </label>
+      ))}
+      {montants.map((m, rang) => (
+        <label key={m.nom} className="flex items-center gap-2">
+          <span className="w-40 shrink-0 text-subtle">{m.nom} (€)</span>
+          <input
+            inputMode="decimal"
+            defaultValue={(m.valeur_cts / 100).toFixed(2)}
+            onChange={(e) => {
+              const cts = Math.round(Number(e.target.value.replace(/\s/g, "").replace(",", ".")) * 100);
+              if (Number.isNaN(cts)) return;
+              const suivants = montants.map((x, i) => (i === rang ? { ...x, valeur_cts: cts } : x));
+              setLu({ ...lu, montants: suivants });
+            }}
+            className="h-7 w-36 rounded-md border border-border bg-surface px-2 text-right tabular-nums"
+          />
+        </label>
+      ))}
+      {listes.map(([cle, valeur]) => (
+        <p key={cle} className="text-subtle">
+          {cle} : {(valeur as unknown[]).length} ligne(s) lue(s), gardées telles quelles.
+        </p>
+      ))}
+      <label className="flex items-center gap-2">
+        <span className="w-40 shrink-0 text-subtle">Raison (si les contrôles échouent)</span>
+        <input
+          value={raison}
+          onChange={(e) => setRaison(e.target.value)}
+          className="h-7 min-w-0 flex-1 rounded-md border border-border bg-surface px-2"
+        />
+      </label>
+      <Button size="sm" onClick={() => void valider()}>
+        Valider la lecture
+      </Button>
+      {erreur && <p className="text-danger">{erreur}</p>}
+    </div>
   );
 }
 

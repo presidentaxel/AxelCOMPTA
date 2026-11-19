@@ -1644,6 +1644,21 @@ export async function rangerDocumentImport(id: string, documentId: string, empla
   );
 }
 
+/** AXE-991 : la lecture corrigée repasse les contrôles ; sans eux, une raison. */
+export async function validerLectureImport(
+  id: string,
+  documentId: string,
+  lu: Record<string, unknown>,
+  raison: string,
+): Promise<FicheImport> {
+  return ficheOuErreur(
+    await requeteGestionnaire(
+      `/portefeuille/imports/${id}/documents/${documentId}/lecture`,
+      jsonImport("POST", { lu, raison }),
+    ),
+  );
+}
+
 /** AXE-989 : les critères d'import de la fiche, calculés maintenant. */
 export async function lireValidationImport(id: string): Promise<ValidationImport> {
   const reponse = await requeteGestionnaire(`/portefeuille/imports/${id}/validation`);
