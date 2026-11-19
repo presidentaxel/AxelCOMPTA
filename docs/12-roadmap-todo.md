@@ -1,6 +1,6 @@
 # 12 — Roadmap et TODO maître
 
-> Statut : brouillon à valider. Dernière mise à jour : 2026-11-17.
+> Statut : brouillon à valider. Dernière mise à jour : 2026-11-19.
 > **Seule source de l'état du projet dans le repo** (fait, en cours, prévu).
 > Le suivi au jour le jour est dans Linear, projet
 > [Axel Compta — V1 prod](https://linear.app/axel-project/project/axel-compta-v1-prod-api-ingestion-fiabilite-899778ce7b41)
@@ -16,27 +16,40 @@
 > #3 à #39) est archivé tel quel dans
 > [archive/12-recalage-2026-09.md](archive/12-recalage-2026-09.md).
 
-## État au 2026-11-17 (à lire avant tout le reste)
+## État au 2026-11-19 (à lire avant tout le reste)
 
-**Le 17/11 en bref** (détail dans « Fait du 16/11 au soir au 17/11 ») :
-26 PR de plus (#202 à #227). La production est surveillée par Sentry
-(passages manqués, jobs en échec) et relâche seule un job abandonné par
-un redéploiement. Les webhooks Rollee sont traités par chauffeur : un job
-dure de 10 à 80 s au lieu de 24 à 65 min. L'expert-comptable débloque une
-semaine Rollee « à vérifier » et retient ou écarte un compte bancaire. La
-page publique est en ligne (AXE-949). Les virements internes sont
-reconnus à chaque passage horaire, même quand les deux jambes arrivent à
-des synchros différentes (AXE-968). Les fiches d'import s'ignorent, et
-chaque compte d'une fiche se marque pro ou perso.
+**Le 18/11 en bref** (détail dans « Fait du 17/11 au soir au 18/11 ») :
+30 PR de plus (#228 à #257), et trois promotions vers `prod` (#243, #252,
+#257). `main` et `prod` sont recollées (#236) : **leurs arbres sont
+identiques au 19/11**, `prod` ne garde que ses commits de merge. La
+journée a porté sur les **fiches d'import** :
+- couverture bancaire par compte, prouvée par le solde (AXE-973), et
+  écriture en comptabilité des relevés d'avant Digifactory (AXE-833) ;
+- couverture des plateformes, mois par mois, et lecture des
+  récapitulatifs Uber (AXE-987) ;
+- reprise comptable préremplie depuis le dernier FEC (AXE-976), et FEC de
+  la fiche proposé au bilan d'ouverture (AXE-942) ;
+- critères d'import revus chaque heure : une fiche n'est « Traitée » que
+  si l'exercice à déclarer est complet et l'exercice en cours à jour
+  (AXE-989) ;
+- **OCR des documents d'import** par Claude (Haiku 5.5, puis Sonnet 5.5,
+  puis un humain), allumé en production le 18/11 au soir (AXE-943).
 
-**⚠️ Cette promotion recolle `main` et `prod`.** `prod` était à la PR #221.
-#222 à #231 arrivent ici, avec la page publique déjà en production
-(AXE-949, migration `b6e2f9a4c715`). Les deux migrations qui suivaient
-`d4b7e9a2c361` sont remises en file : `e1c8a4f72b09` suit `b6e2f9a4c715`,
-puis `f7a2c9e4b318`. Une seule tête, le déploiement peut migrer. Après
-le merge, remerger `prod` dans `main` pour que la suite parte de là.
-La contrainte d'ignore et les colonnes d'archives sont déjà sur la base
-réelle : les migrations ne les recréent pas.
+Côté expert, l'écart d'une semaine Rollee s'impute en un clic
+(AXE-969). Les 10 fiches complètes sans dossier ont leur dossier, créé
+par le worker (AXE-974).
+
+**⚠️ L'OCR envoie les documents en clair à Anthropic.** Kbis, statuts,
+liasses, relevés bancaires (IBAN, libellés) et RIB partent tels quels :
+l'OCR ne passe pas par la pseudonymisation. `ocr/client.py` emprunte
+seulement les en-têtes et le calcul de coût de `pseudonymize/`. Cela
+contredit l'invariant n° 5 des règles du projet, le doc 10 (« seuls des
+libellés pseudonymisés partent chez Anthropic »), l'ADR-005 et la
+politique de confidentialité publiée (section 3 et tableau des
+sous-traitants). C'est en production depuis le 18/11 au soir
+(`AXELCOMPTA_OCR_ACTIF=1`). À trancher par Louis (voir « Décisions à
+prendre ») : couper l'OCR, ou acter l'exception et mettre à jour les
+textes juridiques, le doc 10 et l'ADR-005 avant de continuer.
 
 **En une phrase (16/11) :** du 13 au 16/11, 16 PR (#166 à #185) ont fait tourner
 Rollee sur la base réelle. Le pilote a montré que le modèle « une période
@@ -68,20 +81,21 @@ envoie le code, passe les migrations, puis remplace les conteneurs ; si
 les migrations échouent, l'API en service n'est pas arrêtée. Premier
 déploiement vert le 16/11 à 15:54 : `https://api.axelproject.fr/sante`
 répond `{"statut":"ok"}`, le front est sur `https://compta.axelproject.fr`.
-Trois promotions de `main` vers `prod` depuis : #207 et #209 le 16/11,
-#221 le 17/11 (jusqu'à #220). Reste d'AXE-811 : ADR-003 en « décidé »,
+Sept promotions de `main` vers `prod` depuis : #207 et #209 le 16/11,
+#221 et #232 le 17/11, #243, #252 et #257 le 18/11 (jusqu'à #256). Reste d'AXE-811 : ADR-003 en « décidé »,
 restauration chronométrée, runbook. Mode d'emploi :
 [backend/README.md](../backend/README.md), « Déployer la production ».
 
-**La base réelle est à jour de `prod` au 17/11** (migration `b6e2f9a4c715`,
-demandes d'échange ; le déploiement de `prod` passe les migrations
-lui-même). La contrainte d'`e1c8a4f72b09` (fiche d'import « ignorée »,
-#224) est déjà posée à la main, sans avancer le numéro Alembic. Le pilote
+**La base réelle est à jour de `prod` au 18/11** (migration
+`a3d9e6f1c204`, relecture des documents d'import, appliquée à la main
+avec l'accord de Louis avant la promotion #252 ; le déploiement de `prod`
+passe les migrations lui-même). La chaîne est `b6e2f9a4c715` →
+`e1c8a4f72b09` → `f7a2c9e4b318` → `a3d9e6f1c204`, une seule tête. Le pilote
 tourne sur la prod depuis le 14/11, avec l'accord de Louis : chaque
 écriture en simulation d'abord, puis appliquée après son OK. La reprise
 des virements internes ne se lance plus à la main : l'étape horaire
-d'AXE-968 l'écrira au premier passage après la promotion de #225. Reste
-à lancer une fois : la ventilation de l'historique sur les 512x
+d'AXE-968 l'écrit depuis la promotion du 17/11 (#232). Restait à lancer
+une fois au 17/11 : la ventilation de l'historique sur les 512x
 (AXE-832). Hors Rollee, AXE-842 (clés INSEE/RNE, S3,
 Anthropic, reprises du 10 au 13/11) et AXE-850 (écritures restées au 471)
 restent ouverts. Le crontab d'AXE-842 n'attend plus le poste de Louis : le
@@ -124,6 +138,112 @@ du 13 au 16/11 ».
 
 Client de référence V1 : Serenity Gestion, installé étape par étape avant
 toute autre vente.
+
+### Fait du 17/11 au soir au 18/11 (PR #228 à #257)
+
+**Production et exploitation**
+- `main` remise au niveau de `prod` (#236) : page publique (AXE-949),
+  migrations remises en file (`b6e2f9a4c715` → `e1c8a4f72b09` →
+  `f7a2c9e4b318`, une seule tête) et AXE-972. Promotions du 17/11 (#232,
+  #222 à #233), puis du 18/11 (#243 : #237 à #241 ; #252 : #244 à #251 ;
+  #257 : OCR). AXE-972 (#235) est passée directement sur `prod`.
+- Variables posées dans `/opt/axelcompta/.env` : `AXELCOMPTA_URL_DOSSIER`
+  et `DOCUMENTS_BUCKET` le 17/11 (#232), `AXELCOMPTA_OCR_ACTIF=1` et
+  `AXELCOMPTA_OCR_PLAFOND_MOIS_USD=4` le 18/11 (#257, ancien fichier
+  gardé en `.env.avant-ocr`).
+- Une seule migration : `a3d9e6f1c204` (#250), le rôle web peut
+  enregistrer ce que la relecture tire d'un document d'import. Appliquée
+  sur la prod le 18/11 avec l'accord de Louis, avant la promotion.
+- La file du mode expert ne répond plus 500 « cursor already closed »
+  (AXE-977, #242).
+- Les dates saisies se comparent au jour de Paris, pas au jour UTC
+  (AXE-920, #244, `core/temps.py`).
+
+**Fiches d'import : documents et reprise**
+- Tout l'historique comptable se reprend (AXE-970, #231) : n'importe
+  quelle année de clôture depuis 2000, dépôt en vrac ou en archive par
+  exercice, rangement automatique, « Ranger dans » pour reclasser. Une
+  archive zip est gardée intacte (l'archive fiscale OneUp est signée) ;
+  ses fichiers deviennent des documents. Un FEC est reconnu à son
+  contenu.
+- Archives OneUp (AXE-972, #235) : fichiers techniques laissés dans le
+  zip, impression PDF du FEC rangée avec le FEC, « N versions de ce
+  document : gardez la bonne ». Aucune version n'est supprimée d'office.
+- Pas de doublon au dépôt : même empreinte SHA-256, même document
+  (AXE-971, #233). Les relevés bancaires sont obligatoires tant que la
+  banque connectée ne couvre pas tout depuis le plus ancien exercice que
+  nous tenons.
+- Le compteur ne compte que les documents utiles à la reprise (AXE-975,
+  #240).
+- La reprise comptable se préremplit depuis le dernier FEC clos : crédit
+  de TVA (44567), véhicule (2182 ou loyers 612), emprunts (164), sans
+  jamais écraser une saisie (AXE-976, #241).
+- Le FEC de la fiche est proposé sur **Bilan d'ouverture** du mode expert
+  (AXE-942, #247). La balance n'est pas encore lue pour cela (AXE-992).
+- Un document redéposé ou reclassé est relu ; un Excel n'est plus déplié
+  comme un zip ; les relevés Société Générale sont reconnus (AXE-988,
+  #250).
+
+**Fiches d'import : banque et plateformes**
+- **Couverture bancaire** par compte (AXE-973, #237 et #238) : une frise
+  « prouvé par le solde », « couvert », « écart au solde », « manquant »,
+  et la liste des relevés à demander. Sources : FEC, QIF, relevés lus,
+  Digifactory, création de la société. Un compte de FEC ou de relevé se
+  rattache au compte Digifactory qu'il représente ; un solde lu sur un
+  relevé se saisit.
+- **Écrire les relevés en comptabilité** (AXE-833, #248) : les opérations
+  d'avant Digifactory partent par la synchro ordinaire (job
+  `releves_fiche`), **seulement si le solde prouve la période** au
+  centime. Rejouer n'écrit rien de plus.
+- **Couverture des plateformes** mois par mois (AXE-987, #249) : Rollee,
+  récapitulatif déposé, « à compléter », « ni banque ni Rollee » (#250).
+  Les récapitulatifs fiscaux mensuels d'Uber sont lus sans OCR ; le
+  lecteur prend le total, pas le HT (#256).
+- Pro ou Perso choisi sur la fiche : appliqué aux comptes du dossier si
+  c'est l'expert habilité qui l'enregistre, sinon proposé à l'expert dans
+  Entreprises (AXE-986, #245).
+
+**Fiches d'import : critères et dossiers**
+- **Critères d'import** revus chaque heure (AXE-989, #251) : exercice à
+  déclarer complet (banque et plateformes), exercice en cours à jour
+  (Digifactory relevé il y a moins de 3 jours, Rollee il y a moins de
+  10 jours), chaque compte décidé, et les données qu'on ne récupère qu'à
+  l'import (capital, associés, déficits, crédit de TVA, véhicule,
+  emprunts, TVA déjà déclarée). Toutes les fiches sont repassées « En
+  traitement » jusqu'à ce que leurs critères soient remplis.
+- Chaque fiche active complète a son dossier, créé par le worker : le
+  rôle web n'a pas `INSERT` sur `dossiers` (AXE-974, #239). En prod,
+  Entreprises est passée de 13 à 23 entreprises. Entreprises et Imports
+  comptent les mêmes entreprises (#228, #234) ; bordures de la fiche
+  (#229).
+
+**OCR des documents d'import (AXE-943, #253 à #256)**
+- Nouveau module `ocr/`. Un document est lu dans la minute, puis chaque
+  heure en rattrapage (job `ocr_documents`, 60 documents par passage au
+  plus). Haiku 5.5 lit et rend un JSON au schéma de sa catégorie ; les
+  contrôles de la catégorie vérifient ; si l'un échoue, Sonnet 5.5
+  relit ; sinon un humain, avec la raison en rouge.
+- Sections couvertes : Documents (Kbis, statuts, lettre de l'ancien
+  expert, classement des « Autre »), Reprise (liasse, comptes annuels,
+  balance, grand livre, TVA, IS, accusés, paiements, pièces, tableau
+  d'emprunt), Banque (relevés prouvés au centime, RIB avec clé IBAN),
+  Plateformes (Bolt, Heetch, Free Now, Allocab, scans).
+- Un relevé lu devient une source de la couverture bancaire et peut être
+  écrit en comptabilité, comme un QIF. Déficits, capital, siège et NAF se
+  préremplissent dans les champs vides.
+- Plafond : 4 $ par mois en prod. Environ 489 documents attendaient au
+  18/11, estimés à 2 à 4 $. **Voir l'encadré ⚠️ en tête** : les
+  documents partent en clair.
+- Suites ouvertes : AXE-990 (préremplir associés, crédit de TVA et
+  emprunts depuis l'OCR), AXE-991 (corriger ou valider un document
+  refusé), AXE-992 (balance comme bilan d'ouverture), AXE-993 (carte
+  grise).
+
+**Comptabilité et rapprochements**
+- **Imputer l'écart** d'une semaine Rollee « à vérifier » (AXE-969,
+  #246) : la semaine est écrite, puis une OD solde le 467x sur un compte
+  choisi selon le sens de l'écart (658, 455, 512x ; 758, 7068, 706). Le
+  seuil d'une imputation d'office attend toujours l'expert-comptable.
 
 ### Fait du 16/11 au soir au 17/11 (PR #202 à #227)
 
@@ -674,43 +794,42 @@ Les relevés CSV (AXE-801) restent la source de secours pour un chauffeur
 sans Rollee. Les cinq tickets Rollee sont faits depuis le 12/11 (PR #132 à
 #136).
 
-### En cours (17/11)
+### En cours (19/11)
 
-- Cette promotion amène #222 à #231. Au premier passage horaire qui suit,
-  l'étape d'AXE-968 écrit les virements internes de tout l'historique
-  (MK DRIVING : 212 OD en simulation). À surveiller dans le journal du
-  worker : « virements internes : N paire(s) au 580 ».
-- Page publique (AXE-949), déjà en production. Restent : le webhook Slack
-  dans le `.env` du droplet, la relecture du texte par Louis, la durée de
-  conservation des demandes, et l'analytics si Louis le veut.
-- Ventiler l'historique sur les 512x (AXE-832), une fois, après la
-  promotion : simulation, puis `--appliquer` avec l'accord de Louis. Sans
-  elle, deux virements entre comptes aux libellés différents ne se
-  reconnaissent pas.
-- AXE-969 : rendre simple à l'expert de voir et d'imputer un petit écart
-  de semaine Rollee (2,00 € versés en trop chez MK DRIVING), pour solder
-  le 467x.
+- **OCR en clair chez Anthropic** (encadré ⚠️ en tête) : décision de
+  Louis avant tout autre document lu. Sinon, à surveiller dans le journal
+  du worker : « OCR : N document(s) lu(s), X à vérifier, Y rangé(s),
+  Z $ », et le plafond de 4 $ du mois.
+- Fiches d'import : remplir les critères d'AXE-989 fiche par fiche
+  (toutes sont repassées « En traitement » le 18/11). Cas suivis :
+  KERFICE SERVICE (rattacher le FEC 2024 à la Bred, solde du 30/09/2025,
+  relevés Bred jusqu'au 19/08/2026, puis « Écrire les relevés ») et SYBD
+  (sans banque connectée). Suites : AXE-990 à 993.
+- Les 12 récapitulatifs Uber restés « à traiter » en prod ne sont pas
+  relus par le lecteur exact corrigé (#256) : le passage OCR les reprend,
+  sinon il faut les redéposer.
+- Page publique (AXE-949), en production. Restent : le webhook Slack
+  dans le `.env` du droplet (AXE-962), la relecture du texte par Louis, la
+  durée de conservation des demandes, et l'analytics si Louis le veut.
+- Ventiler l'historique sur les 512x (AXE-832), une fois : simulation,
+  puis `--appliquer` avec l'accord de Louis, si ce n'est pas fait depuis
+  le 17/11.
 - Pilote Rollee sur la prod : une synchro complète (bouton
-  **Synchroniser**) avec le code du 16/11, pour stocker Heetch, Allocab et
-  Free Now, récupérer les jours mis de côté avant la lecture jour par jour
-  (14/11), et réécrire les motifs des semaines à vérifier. Puis comprendre
-  pourquoi les comptes de flotte de DIGI_4952 ne remontent rien.
+  **Synchroniser**), puis comprendre pourquoi les comptes de flotte de
+  DIGI_4952 ne remontent rien.
 - Questions à Rollee (Pierrick, AXE-939) : la commission Uber (0 chez
   Rollee), les jours sans course non remontés (MK DRIVING, 2 € le 24/10),
   les comptes de flotte muets, trois profils toujours en erreur 500.
 - AXE-811 : la production tourne depuis le 16/11 ; restent l'ADR-003 en
   « décidé » (région, offre de sauvegarde, CLOUD Act), une restauration
   chronométrée (RTO, RPO) et le runbook dans `docs/`.
-- Fiches d'import : premières fiches remplies sur la prod, et AXE-942
-  (banque, Rollee et FEC depuis la fiche).
 - AXE-842 : appliquer en production le reste de ce qui est mergé depuis le
-  05/11 (crontab, clés, reprises du 10 au 13/11). Décision de Louis du
-  06/11 : étape par étape, chaque reprise en simulation, puis appliquée
-  après accord. La reprise des virements internes (AXE-930) passe
-  maintenant par l'étape horaire d'AXE-968.
+  05/11 (clés, reprises du 10 au 13/11). Décision de Louis du 06/11 :
+  étape par étape, chaque reprise en simulation, puis appliquée après
+  accord.
 - Vérifications sur de vraies données : lecture d'un vrai SIREN à l'INSEE
-  et au RNE, un vrai FEC repris. Rollee est vérifié sur la prod depuis le
-  14/11 (montants en euros, jours, flottes).
+  et au RNE (préremplissage des fiches), un vrai FEC repris au bilan
+  d'ouverture (proposé depuis la fiche par #247).
 
 ### Prévu
 
@@ -745,18 +864,19 @@ AXE-424, et tout le cœur VTC ci-dessus. Reste, dans l'ordre :
   dans l'entrée du LLM.
 - AXE-903 : mesurer le rappel de la détection d'anomalies.
 - ~~AXE-912 : débloquer une semaine de plateforme « à vérifier »~~ : fait
-  le 16/11 (#210). Suite : AXE-969 (imputer un petit écart).
+  le 16/11 (#210). ~~AXE-969 : imputer un écart~~ : fait le 18/11
+  (#246) ; l'imputation d'office sous un seuil attend l'expert-comptable.
 
 **Après, ou à trancher**
 - AXE-423 : finir l'audit du dataset 10 ans. La relecture des 500 lignes
   (ancien J1) en est toujours à 7/500.
-- AXE-833 : reprendre les mois d'avant la connexion Digifactory.
+- ~~AXE-833 : reprendre les mois d'avant la connexion Digifactory~~ :
+  fait le 18/11 (#248), depuis les relevés de la fiche d'import.
 - AXE-433 : connexion bancaire directe par le chauffeur (basse priorité).
 - PDF CERFA du réel normal (2050 à 2059) et 2057 : suites d'AXE-484
   (basse priorité, la 2033 reste la liasse des chauffeurs).
 - AXE-765 : connecter Qonto et un accès dédié pour le bot Finance & Admin.
-- AXE-920 : dividendes, « date dans le futur » entre minuit et 1 h (date
-  UTC au lieu de Paris) ; un test échoue sur `main` à cette heure-là.
+- ~~AXE-920 : dates comparées au jour UTC~~ : fait le 18/11 (#244).
 
 ### Plan V1 de l'analyse critique du 2026-11-05 : où on en est
 
@@ -787,6 +907,13 @@ sur une référence provisoire). Détail plus haut.
 
 ### Décisions à prendre (ouvertes dans Linear)
 
+- **OCR des documents d'import (AXE-943)** : les documents partent en
+  clair chez Anthropic (encadré ⚠️ en tête). Couper l'OCR
+  (`AXELCOMPTA_OCR_ACTIF` vide sur le droplet) le temps de décider ? Ou
+  l'acter comme exception à la pseudonymisation : mettre à jour la
+  politique de confidentialité, l'annexe art. 28, le doc 10 et l'ADR-005,
+  et le faire relire par le juriste (AXE-813) ?
+
 - AXE-905 : le taux automatique mesuré à 38 % pour 85 % visés. Compter
   comme automatiques les recettes imputées par le rapprochement Rollee ?
   Imputer seule la rémunération du dirigeant ? Accepter que les repas
@@ -801,8 +928,8 @@ sur une référence provisoire). Détail plus haut.
   reste sur le 4672 de B'CARS (arrondi Bolt) : l'accepter ou l'écrire ?
 - MK DRIVING : quel compte bancaire reçoit Uber de juin à début août ?
   Sans lui, 9 semaines Uber restent sans virement.
-- Petits écarts de semaine Rollee (AXE-969) : à partir de quel montant
-  l'expert impute-t-il l'écart, et sur quel compte ? Question à
+- Petits écarts de semaine Rollee (AXE-969, imputation manuelle livrée le
+  18/11) : sous quel montant l'imputer d'office, et sur quel compte ? Question à
   l'expert-comptable.
 - Rémunération du dirigeant : la règle du pack la laisse en confiance
   basse, parce que le compte dépend du statut (641, 644 ou 108). Pour une
@@ -826,12 +953,16 @@ sur une référence provisoire). Détail plus haut.
 - ~~Valider l'application de la reprise des virements internes
   (AXE-930)~~ : remplacée par l'étape horaire d'AXE-968, qui écrit à la
   promotion de #225.
-- Avant de promouvoir #222 (porte des dossiers) : poser
-  `AXELCOMPTA_URL_DOSSIER=https://app-compta.axelproject.fr` dans le
-  `.env` du droplet (absent au 17/11), et autoriser
+- ~~Poser `AXELCOMPTA_URL_DOSSIER` sur le droplet~~ : fait le 17/11
+  (#232). Reste : autoriser
   `https://app-compta.axelproject.fr/auth/lien` et
   `https://app-compta.axelproject.fr/dossier/accepter-invitation` dans
-  Supabase.
+  les URL de redirection Supabase.
+- Créer le bucket privé `documents` dans Supabase Storage (100 Mo par
+  fichier au moins), si ce n'est pas fait : sans lui, les pièces d'import
+  restent en base (#232).
+- Retirer à la main `info.txt` et `logs.txt` déjà sortis de l'archive
+  OneUp de KERFICE (AXE-972 ne reclasse pas l'existant).
 - Poser `AXELCOMPTA_SLACK_DEMANDES_WEBHOOK` sur le droplet (AXE-962, absent
   au 17/11), et brancher une alerte (e-mail ou téléphone) sur le moniteur
   Sentry `axelcompta-taches`.
@@ -846,9 +977,8 @@ sur une référence provisoire). Détail plus haut.
 - Compléter l'hébergeur applicatif dans les textes juridiques
   (`mentions-legales.md`, `confidentialite.md`, aujourd'hui « À
   COMPLÉTER ») : fournisseur et région du droplet.
-- ~~Promouvoir `main` vers `prod` pour livrer AXE-952~~ : fait le 16/11
-  (#209). Prochaine promotion : après avoir mergé `prod` dans `main`
-  (encadré ⚠️ en tête).
+- ~~Remerger `prod` dans `main`~~ : fait le 18/11 (#236). Les
+  promotions suivantes partent de `main` en merge commit.
 
 ### Ce qui reste vrai de septembre
 

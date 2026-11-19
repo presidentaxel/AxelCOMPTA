@@ -3,6 +3,14 @@
 > **État au 2026-11-05** (ajouté) : décision prise, pas encore implémentée.
 > Les photos de justificatifs sont stockées (AXE-425), pas lues. Le spike
 > sur 30 tickets réels (doc 12 §0.3) n'est pas fait.
+>
+> **État au 2026-11-19** (ajouté) : un autre OCR a été livré, hors de
+> cette cascade, pour les **documents des fiches d'import** (AXE-943,
+> module `ocr/`, PR #253 à #256) : Claude Haiku 5.5, puis Sonnet 5.5 si un
+> contrôle échoue, puis un humain. Pas d'étage open-source, et les
+> documents partent **sans pseudonymisation**, contrairement à l'étage 4
+> ci-dessous. Les justificatifs du quotidien ne sont toujours pas lus. Cet
+> ADR est à réécrire une fois la décision du doc 12 prise (encadré ⚠️).
 
 **Date :** 2026-06-16  
 **Mis à jour :** 2026-06-25  

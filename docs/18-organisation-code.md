@@ -2,7 +2,7 @@
 
 > Carte du code : où vit chaque module et quelles dépendances il a le droit
 > d'avoir. L'état d'avancement n'est pas ici, il est dans le
-> [doc 12](12-roadmap-todo.md). Dernière mise à jour : 2026-11-16.
+> [doc 12](12-roadmap-todo.md). Dernière mise à jour : 2026-11-19.
 
 Ce doc fait le lien entre l'arborescence réelle du repo (`backend/`,
 `frontend/`) et le découpage en modules défini en [doc 03 §3](03-architecture.md#3--découpage-en-modules-monolithe-modulaire).
@@ -39,6 +39,7 @@ AxeLCompta/
 │   ├── pseudonymize/  # seule porte vers un LLM : prompt pseudonymisé, fournisseur Anthropic (API Batch, AXE-887)
 │   ├── jobs/          # file de jobs Postgres (ADR-002), exécutée par worker.py depuis le 2026-11-09
 │   ├── prospection/   # demandes d'échange de la page publique, notifiées sur Slack (AXE-949) ; ne dépend que de core
+│   ├── ocr/           # lecture des documents d'import par Claude : Haiku → Sonnet → humain, contrôles par catégorie (AXE-943)
 │   └── ml/            # V1 ; le modèle (v2) s'entraîne dans _AUDIT_DONNEES/entrainer_modele.py
 ├── frontend/          # Next.js : page publique (/), écrans gestionnaire (web) et chauffeur (mobile), auth Supabase
 └── _AUDIT_DONNEES/    # audit du dataset historique, source pour packs/ et categorize/
@@ -74,6 +75,9 @@ graph TD
     pseudonymize["pseudonymize"] --> core
     jobs["jobs"] --> core
     prospection["prospection"] --> core
+    ocr["ocr"] --> core
+    ocr --> tenants
+    ocr -. en-têtes et coût seulement .-> pseudonymize
     ml["ml"] -. artefact chargé, jamais importé .-> categorize
     api["api"] -. façades publiques seulement .-> tenants
     api -. façades publiques seulement .-> categorize
@@ -87,6 +91,12 @@ graph TD
 - `ledger` → `categorize`, `ml`, ou `api` : jamais, dans aucun sens.
 - `categorize` → `ledger` directement : passe obligatoirement par `workflow`.
 - Tout import direct de `ml` au runtime : les modèles sont des artefacts chargés.
+
+`ocr/` (AXE-943, 18/11) n'a pas encore de contrat import-linter ni de
+`README.md`. Il importe aussi deux points d'entrée de la racine
+(`depot_documents_import`, `stockage_documents`), et il appelle Anthropic
+**sans** passer par la pseudonymisation : il n'emprunte à
+`pseudonymize/` que les en-têtes et le calcul de coût (doc 12, encadré ⚠️).
 
 ## Ce qui se passe en pratique pour la démo (doc 17)
 
@@ -154,6 +164,11 @@ AXE-808). Depuis le 2026-11-11 (complété le 2026-11-17) :
 | `virements_internes_dossier.py` | étape horaire : les virements internes encore au 471 passent au 580, sur tout le grand livre ; l'appariement pur est dans `workflow/virement_interne.py` (AXE-930, AXE-968) |
 | `surveillance.py` | Sentry pour le worker et les tâches : job en échec, check-in du moniteur `axelcompta-taches` (AXE-959) |
 | `environnement.py` | charge `.env` puis `.env.dev` ; `ENV=dev` coupe Sentry (#219) |
+| `couverture_plateformes.py` | la couverture des plateformes d'une fiche d'import, mois par mois ; les récapitulatifs Uber sont lus par `ingestion/recaps_plateforme.py` (AXE-987) |
+| `releves_en_compta.py`, `releves_en_compta_service.py` | « Écrire les relevés » : les relevés d'avant Digifactory d'une fiche, écrits seulement si le solde prouve la période (job `releves_fiche`, AXE-833) |
+| `validation_fiches.py`, `validation_fiches_service.py` | les critères d'import d'une fiche, revus chaque heure ; les règles pures sont dans `tenants/fiches_import_validation.py` (AXE-989) |
+| `ingestion/imputation_ecart.py` | l'OD qui solde l'écart d'une semaine Rollee sur le compte choisi par l'expert (AXE-969) |
+| `core/temps.py` | `aujourd_hui_paris()` : le jour civil comparé aux dates saisies (AXE-920) |
 
 `api/app.py` est le point d'entrée HTTP depuis le 2026-10-25
 (`uvicorn axelcompta.api.app:app`). Il sert l'app construite par

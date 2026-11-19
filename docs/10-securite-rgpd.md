@@ -1,6 +1,6 @@
 # 10 — Sécurité, RGPD et protection des données
 
-> **État au 2026-11-17** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-19** (ajouté ; le reste du doc décrit la cible) :
 > - Fait : RLS par dossier sur les tables, pseudonymisation obligatoire
 >   avant tout LLM avec tests de fuite (AXE-436), journal d'audit
 >   append-only des décisions et signatures, Sentry seulement si un DSN est
@@ -32,6 +32,12 @@
 > - IA (AXE-887, AXE-888) : seuls des libellés pseudonymisés partent chez
 >   Anthropic, montant en ordre de grandeur ; une fuite détectée bloque
 >   l'envoi. Clé dans l'environnement du serveur, jamais dans le repo.
+> - **⚠️ Exception non décidée : l'OCR des fiches d'import (AXE-943).**
+>   Depuis le 18/11 au soir (`AXELCOMPTA_OCR_ACTIF=1` sur le droplet), les
+>   documents déposés sur une fiche (Kbis, statuts, liasses, relevés
+>   bancaires avec IBAN, RIB) partent **en clair** chez Anthropic, sans
+>   pseudonymisation. Ni ce doc, ni l'ADR-005, ni la politique de
+>   confidentialité ne le prévoient. Décision ouverte au doc 12.
 > - Compte de test (AXE-822) : lecture seule, date de fin obligatoire
 >   (90 jours au plus), chaque ouverture de dossier tracée au journal
 >   d'audit.
