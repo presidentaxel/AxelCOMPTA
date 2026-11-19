@@ -63,8 +63,7 @@ export function EmplacementsSection({
 
   /** Le document change de carte tout de suite. Seul le dernier choix de ce
    * document est envoyé, puis remplace la fiche ; un échec la relit. */
-  function ranger(document: DocumentImport, categorie: string) {
-    const emplacement = `reprise:${categorie}:${document.exercice}`;
+  function ranger(document: DocumentImport, emplacement: string) {
     if (emplacement === document.emplacement) return;
     const ticket = (essais.current.get(document.id) ?? 0) + 1;
     essais.current.set(document.id, ticket);
@@ -341,7 +340,7 @@ function CarteEmplacement({
   emplacement: EmplacementImport;
   modifiable: boolean;
   onFiche: (fiche: FicheImport) => void;
-  onRanger: (document: DocumentImport, categorie: string) => void;
+  onRanger: (document: DocumentImport, emplacement: string) => void;
   erreurs: Record<string, string>;
 }) {
   const [survol, setSurvol] = useState(false);
@@ -471,7 +470,7 @@ function LigneDocument({
   document: DocumentImport;
   modifiable: boolean;
   onFiche: (fiche: FicheImport) => void;
-  onRanger: (document: DocumentImport, categorie: string) => void;
+  onRanger: (document: DocumentImport, emplacement: string) => void;
   erreur: string;
 }) {
   async function ouvrir() {
@@ -536,6 +535,18 @@ function LigneDocument({
           {document.resume && <span className="text-subtle">· {document.resume}</span>}
         </p>
       )}
+      {modifiable && document.proposition && (
+        <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-subtle">
+          L&apos;OCR pense que ce document est : {document.proposition.libelle}.
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => document.proposition && onRanger(document, document.proposition.emplacement)}
+          >
+            Ranger en {document.proposition.libelle}
+          </Button>
+        </p>
+      )}
       {modifiable && document.exercice !== null && document.emplacement.startsWith("reprise:") && (
         <RangerDocument document={document} erreur={erreur} onRanger={onRanger} />
       )}
@@ -552,14 +563,14 @@ function RangerDocument({
 }: {
   document: DocumentImport;
   erreur: string;
-  onRanger: (document: DocumentImport, categorie: string) => void;
+  onRanger: (document: DocumentImport, emplacement: string) => void;
 }) {
   return (
     <label className="mt-1 flex flex-wrap items-center gap-2 text-xs text-subtle">
       Ranger dans
       <select
         value={document.categorie}
-        onChange={(e) => onRanger(document, e.target.value)}
+        onChange={(e) => onRanger(document, `reprise:${e.target.value}:${document.exercice}`)}
         className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-ink"
         aria-label={`Ranger ${document.nom_fichier} dans`}
       >

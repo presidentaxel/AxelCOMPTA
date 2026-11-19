@@ -34,7 +34,15 @@ from axelcompta.tenants.fiches_import_etat import exercices
 
 from .categories import Contexte
 from .client import MEDIA_LISIBLES
-from .lecture import VERSION, Appeler, lire, meta, traitement
+from .lecture import VERSION, Appeler, Lecture, lire, meta, traitement
+from .reclassement import (
+    PROPOSITION,
+    RECLASSEMENT,
+    libelle,
+    nature_differente,
+    phrase_proposition,
+    range_a_la_main,
+)
 from .registre import REGISTRE, categorie_ocr
 
 VARIABLE_ACTIF = "AXELCOMPTA_OCR_ACTIF"
@@ -86,7 +94,7 @@ def depense_du_mois(documents: Iterable[DocumentImport], maintenant: datetime) -
     mois = maintenant.strftime("%Y-%m")
     total = 0.0
     for document in documents:
-        for cle in ("ocr", "ocr_classement"):
+        for cle in ("ocr", "ocr_classement", RECLASSEMENT):
             lecture = (document.donnees or {}).get(cle)
             if isinstance(lecture, dict) and str(lecture.get("le", "")).startswith(mois):
                 total += float(lecture.get("cout_usd") or 0)
@@ -114,6 +122,7 @@ class Bilan:
     lus: int = 0
     a_verifier: int = 0
     ranges: int = 0
+    reclasses: int = 0  # AXE-995 : mal rangés, déplacés par l'OCR
     cout_usd: float = 0.0
     plafond_atteint: bool = False
 
@@ -122,7 +131,7 @@ class Bilan:
             return ""
         texte = (
             f"OCR : {self.lus} document(s) lu(s), {self.a_verifier} à vérifier, "
-            f"{self.ranges} rangé(s), {self.cout_usd:.2f} $"
+            f"{self.ranges} rangé(s), {self.reclasses} reclassé(s), {self.cout_usd:.2f} $"
         )
         return texte + (" ; plafond du mois atteint" if self.plafond_atteint else "")
 
@@ -145,14 +154,61 @@ def lire_document(
     categorie = REGISTRE.get(document.categorie)
     if categorie is None or document.statut_traitement != "a_traiter":
         return document
-    lecture = lire(
-        categorie, contenu, media, contexte(fiche, documents, document.exercice), appeler
-    )
+    ctx = contexte(fiche, documents, document.exercice)
+    lecture = lire(categorie, contenu, media, ctx, appeler)
     bilan.cout_usd += lecture.cout_usd
     bilan.lus += 1
-    bilan.a_verifier += not lecture.acceptee
     statut, resume, donnees = traitement(categorie, lecture, document.donnees, maintenant)
-    return replace(document, statut_traitement=statut, resume=resume, donnees=donnees)  # type: ignore[arg-type]
+    lu = replace(document, statut_traitement=statut, resume=resume, donnees=donnees)  # type: ignore[arg-type]
+    nature = nature_differente(categorie.cle, lecture, REGISTRE)
+    if nature is not None:
+        lu = _mal_range(
+            lu, document.donnees, nature, lecture, contenu, media, ctx, appeler, maintenant, bilan
+        )
+    bilan.a_verifier += lu.statut_traitement == "a_traiter"
+    return lu
+
+
+def _mal_range(
+    lu: DocumentImport,
+    avant: Mapping[str, object] | None,
+    nature: str,
+    premiere: Lecture,
+    contenu: bytes,
+    media: str,
+    ctx: Contexte,
+    appeler: Appeler,
+    maintenant: datetime,
+    bilan: Bilan,
+) -> DocumentImport:
+    """AXE-995 : relu dans la catégorie constatée ; reclassé si cette lecture
+    passe ses contrôles, sinon la catégorie est seulement proposée. Chaque
+    lecture garde son coût, pour le plafond du mois."""
+    donnees = dict(lu.donnees or {})
+    if range_a_la_main(lu):
+        donnees[PROPOSITION] = nature
+        return replace(lu, donnees=donnees, resume=f"{lu.resume} {phrase_proposition(nature)}")
+    autre = REGISTRE[nature]
+    seconde = lire(autre, contenu, media, ctx, appeler)
+    bilan.cout_usd += seconde.cout_usd
+    if not seconde.acceptee:
+        donnees[RECLASSEMENT] = {**meta(seconde, maintenant), "de": lu.categorie, "vers": nature}
+        donnees[PROPOSITION] = nature
+        return replace(lu, donnees=donnees, resume=f"{lu.resume} {phrase_proposition(nature)}")
+    section = lire_emplacement(lu.emplacement)[0] if lu.emplacement else "documents"
+    range_ = reclasser(lu, emplacement_classe(nature, lu.exercice, section))
+    # Repartir des données d'avant la première lecture : rien de ce qu'elle
+    # a tiré pour la mauvaise catégorie ne reste.
+    statut, resume, nouvelles = traitement(autre, seconde, avant, maintenant)
+    nouvelles.pop(PROPOSITION, None)
+    nouvelles[RECLASSEMENT] = {**meta(premiere, maintenant), "de": lu.categorie, "vers": nature}
+    bilan.reclasses += 1
+    return replace(
+        range_,
+        statut_traitement=statut,  # type: ignore[arg-type]
+        resume=f"Reclassé par l'OCR : était {libelle(lu.categorie)}. {resume}",
+        donnees=nouvelles,
+    )
 
 
 ILLISIBLE = "Format que l'OCR ne lit pas (seuls les PDF et les images le sont) : à lire à la main."
