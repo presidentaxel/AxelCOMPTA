@@ -148,3 +148,33 @@ def champs_lus_dans_un_fec(fiche: FicheImport) -> dict[str, str]:
         for cle, detail in lu(fiche.champs).items()
         if isinstance(detail, dict) and fiche.champs.get(cle) == detail.get("valeur")
     }
+
+
+def balances_lues(
+    documents: Sequence[DocumentImport],
+) -> list[tuple[DocumentImport, date, dict[str, int]]]:
+    """AXE-992 : les balances lues et acceptées par l'OCR, avec leur date
+    d'arrêté et leurs soldes par compte (débit moins crédit)."""
+    lues = []
+    for d in documents:
+        donnees = d.donnees or {}
+        soldes = donnees.get("soldes_cts")
+        lu = donnees.get("lu")
+        if d.categorie != "balance" or d.statut_traitement != "traite":
+            continue
+        if not isinstance(soldes, dict) or not isinstance(lu, dict):
+            continue
+        try:
+            arrete = date.fromisoformat(str(lu.get("exercice_fin") or ""))
+        except ValueError:
+            continue
+        lues.append((d, arrete, {str(c): int(str(v)) for c, v in soldes.items()}))
+    return lues
+
+
+def derniere_balance(
+    documents: Sequence[DocumentImport], aujourd_hui: date
+) -> tuple[DocumentImport, date] | None:
+    """La balance lue la plus récente arrêtée avant aujourd'hui."""
+    passees = [(d, arrete) for d, arrete, _s in balances_lues(documents) if arrete < aujourd_hui]
+    return max(passees, key=lambda b: b[1]) if passees else None
