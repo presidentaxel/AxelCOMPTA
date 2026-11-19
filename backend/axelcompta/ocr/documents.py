@@ -10,10 +10,14 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 
+from axelcompta.core.errors import SaisieInvalide
+from axelcompta.tenants.fiches_import_listes import ranger_associes
+
 from .categories import Categorie, Contexte
-from .controles import controle_date, controle_siren, euros, liste, montants, texte
+from .controles import controle_date, controle_siren, entier, euros, liste, montants, texte
 
 TYPES_RANGES = (
     "liasse",
@@ -111,6 +115,29 @@ def _statuts(lu: Mapping[str, object], _ctx: Contexte) -> list[str]:
     return erreurs
 
 
+def _associes(lu: Mapping[str, object]) -> dict[str, str]:
+    """AXE-990 : les associés des statuts et leur part du capital, au format
+    de la fiche ; rien si la liste ne se valide pas (total au-delà de 100 %)."""
+    associes = [a for a in liste(lu, "associes") if str(a.get("nom") or "").strip()]
+    parts = [entier(a.get("parts")) for a in associes]
+    total = montants(lu).get("nombre_parts_total") or sum(parts)
+    if not associes:
+        return {}
+    lignes = [
+        {
+            "prenom": str(a.get("prenom") or "").strip(),
+            "nom": str(a.get("nom") or "").strip(),
+            "fonction": "associe",
+            "pourcentage": f"{p * 100 / total:.2f}" if total else "",
+        }
+        for a, p in zip(associes, parts, strict=True)
+    ]
+    try:
+        return {"associes": ranger_associes(json.dumps(lignes, ensure_ascii=False))}
+    except SaisieInvalide:
+        return {}
+
+
 def _resume_statuts(lu: Mapping[str, object]) -> str:
     associes = liste(lu, "associes")
     capital = montants(lu).get("capital_cts")
@@ -137,7 +164,7 @@ STATUTS = Categorie(
     listes={"associes": {"nom": "string", "prenom": "string", "parts": "integer"}},
     controler=_statuts,
     resumer=_resume_statuts,
-    champs_fiche=lambda lu: _champs_identite(lu, ()),
+    champs_fiche=lambda lu: {**_champs_identite(lu, ()), **_associes(lu)},
 )
 
 

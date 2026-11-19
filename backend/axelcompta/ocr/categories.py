@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 CONSIGNE_COMMUNE = """Tu lis un document d'une petite société française (souvent un chauffeur VTC).
@@ -59,6 +60,11 @@ class Categorie:
     # Les champs de la fiche que la lecture remplit s'ils sont vides
     # (capital d'un Kbis, déficits d'une liasse), en texte comme une saisie.
     champs_fiche: Callable[[Mapping[str, object]], dict[str, str]] = lambda _lu: {}
+    # AXE-990 : les champs qui dépendent de la clôture de l'exercice source
+    # (capital restant dû d'un emprunt à cette date).
+    champs_a_la_cloture: Callable[[Mapping[str, object], date], dict[str, str]] = (
+        lambda _lu, _cloture: {}
+    )
     # Pour une pièce d'un exercice : ne remplir la fiche que depuis l'exercice
     # source (la dernière liasse déposée donne les déficits à reporter).
     exercice_source_seul: bool = False
