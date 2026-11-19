@@ -139,6 +139,7 @@ from axelcompta.closing.models import (
     SaisiesCloture,
 )
 from axelcompta.closing.ouverture import id_a_nouveaux
+from axelcompta.closing.ouverture_balance import analyser_balance
 from axelcompta.closing.ouverture_depot import (
     ROLE_DIRIGEANT,
     OuvertureDejaFaite,
@@ -411,8 +412,10 @@ from axelcompta.tenants.fiches_import_etat import emplacements as emplacements_i
 from axelcompta.tenants.fiches_import_etat import exercices as exercices_import
 from axelcompta.tenants.fiches_import_postgres import PostgresFichesImport
 from axelcompta.tenants.fiches_import_reprise import (
+    balances_lues,
     champs_lus_dans_un_fec,
     dernier_fec,
+    derniere_balance,
     preremplir_reprise,
 )
 from axelcompta.tenants.franchise_tva import MillesimeInconnu, suivre_franchise
@@ -4909,6 +4912,12 @@ def _analyser_fec(
         _correspondance(correspondance),
         date.today(),
     )
+    return _sauf_si_deja_faite(analyse, dossier, ouvertures, ledger)
+
+
+def _sauf_si_deja_faite(
+    analyse: Analyse, dossier: Dossier, ouvertures: OuverturesRepository, ledger: LedgerService
+) -> Analyse:
     deja = ouvertures.obtenir(dossier.id) is not None or any(
         e.id == id_a_nouveaux(dossier.id, dossier.exercice_debut.year)
         for e in ledger.grand_livre(dossier.id)
@@ -5017,6 +5026,20 @@ def _importer_fec(
     correspondance, attestation, deficits = formulaire
     ouvertures, ledger = depots
     analyse = _analyser_fec(dossier, contenu, nom_fichier, correspondance, ouvertures, ledger)
+    return _enregistrer_ouverture(dossier, analyse, nom_fichier, formulaire, importeur, ouvertures)
+
+
+def _enregistrer_ouverture(
+    dossier: Dossier,
+    analyse: Analyse,
+    nom_fichier: str,
+    formulaire: tuple[str, str, int],
+    importeur: _Importeur,
+    ouvertures: OuverturesRepository,
+) -> OuvertureVue:
+    """Commun au FEC et à la balance (AXE-992) : refus, attestation mot pour
+    mot, déficits, puis l'écriture d'à-nouveaux et sa trace."""
+    correspondance, attestation, deficits = formulaire
     if analyse.a_nouveaux is None:
         raise FecRefuse(" ".join(analyse.refus) or "Rien à reprendre.")
     if attestation.strip() != analyse.attestation:
@@ -5094,6 +5117,7 @@ def _enregistrer_routes_ouverture(app: FastAPI) -> None:
         )
 
     _enregistrer_routes_ouverture_expert(app)
+    _enregistrer_routes_ouverture_balance(app)
 
 
 class FecDeLaFicheVue(BaseModel):
@@ -5106,12 +5130,13 @@ class FecDeLaFicheVue(BaseModel):
     nom_fichier: str | None = None
     exercice: int | None = None
     deficits: str | None = None
+    # AXE-992 : sans FEC, la balance de clôture lue par l'OCR.
+    balance_document_id: str | None = None
+    balance_au: str | None = None
 
 
-def fec_de_la_fiche(
-    dossier: Dossier, fiches: FichesImportRepository, aujourd_hui: date
-) -> FecDeLaFicheVue:
-    fiche = next(
+def _fiche_du_dossier(dossier: Dossier, fiches: FichesImportRepository) -> FicheImport | None:
+    return next(
         (
             f
             for f in fiches.toutes(dossier.tenant_id)
@@ -5119,12 +5144,25 @@ def fec_de_la_fiche(
         ),
         None,
     )
+
+
+def fec_de_la_fiche(
+    dossier: Dossier, fiches: FichesImportRepository, aujourd_hui: date
+) -> FecDeLaFicheVue:
+    fiche = _fiche_du_dossier(dossier, fiches)
     if fiche is None:
         return FecDeLaFicheVue(trouve=False)
     documents = fiches.instantane(dossier.tenant_id, fiche.id).documents
     fec = dernier_fec(documents, aujourd_hui)
     if fec is None:
-        return FecDeLaFicheVue(trouve=False, fiche_id=fiche.id)
+        balance = derniere_balance(documents, aujourd_hui)
+        return FecDeLaFicheVue(
+            trouve=False,
+            fiche_id=fiche.id,
+            deficits=(fiche.champs.get("deficits") or "").strip() or None,
+            balance_document_id=balance[0].id if balance else None,
+            balance_au=balance[1].isoformat() if balance else None,
+        )
     return FecDeLaFicheVue(
         trouve=True,
         fiche_id=fiche.id,
@@ -5186,6 +5224,86 @@ def _enregistrer_routes_ouverture_expert(app: FastAPI) -> None:
             (correspondance, attestation, deficits_euros),
             importeur,
             (ouvertures, ledger),
+        )
+
+
+def _analyser_balance_fiche(
+    dossier: Dossier,
+    fiches: FichesImportRepository,
+    document_id: str,
+    correspondance: str,
+    depots: tuple[OuverturesRepository, LedgerService],
+) -> tuple[Analyse, DocumentImport]:
+    """AXE-992 : la balance est relue sur la fiche du dossier, jamais prise
+    du navigateur ; seule une balance lue et acceptée par l'OCR compte."""
+    fiche = _fiche_du_dossier(dossier, fiches)
+    documents = fiches.instantane(dossier.tenant_id, fiche.id).documents if fiche else []
+    trouvee = next(
+        (b for b in balances_lues(documents) if b[0].id == document_id),
+        None,
+    )
+    if trouvee is None:
+        raise HTTPException(status_code=404, detail="Balance introuvable sur la fiche d'import.")
+    document, cloture, soldes_cts = trouvee
+    ouvertures, ledger = depots
+    analyse = analyser_balance(
+        soldes_cts,
+        cloture,
+        document.empreinte,
+        dossier.id,
+        dossier.exercice_debut,
+        _correspondance(correspondance),
+    )
+    return _sauf_si_deja_faite(analyse, dossier, ouvertures, ledger), document
+
+
+def _enregistrer_routes_ouverture_balance(app: FastAPI) -> None:
+    """AXE-992 : sans FEC, l'expert reprend le bilan d'ouverture depuis la
+    balance de clôture lue sur la fiche d'import, avec la même analyse, son
+    attestation propre et un motif."""
+
+    @app.post(
+        "/expert/dossiers/{dossier_id}/ouverture/balance/analyse", response_model=AnalyseFecVue
+    )
+    def analyser_ouverture_balance(
+        dossier: DossierExpertDep,
+        fiches: FichesImportDep,
+        ouvertures: OuverturesDep,
+        ledger: LedgerBaseDep,
+        document_id: Annotated[str, Form()],
+        correspondance: Annotated[str, Form()] = "{}",
+    ) -> AnalyseFecVue:
+        depots = (ouvertures, ledger)
+        analyse, _doc = _analyser_balance_fiche(
+            dossier, fiches, document_id, correspondance, depots
+        )
+        return _vue_analyse(analyse)
+
+    @app.post("/expert/dossiers/{dossier_id}/ouverture/balance", response_model=OuvertureVue)
+    def importer_ouverture_balance(
+        dossier: DossierExpertDep,
+        fiches: FichesImportDep,
+        ouvertures: OuverturesDep,
+        ledger: LedgerBaseDep,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        experts: ExpertsDep,
+        document_id: Annotated[str, Form()],
+        attestation: Annotated[str, Form()],
+        motif: Annotated[str, Form()],
+        correspondance: Annotated[str, Form()] = "{}",
+        deficits_euros: Annotated[int, Form()] = 0,
+    ) -> OuvertureVue:
+        _tenant, identite, actif = _expert(identite, role, experts)
+        importeur = _Importeur(
+            ROLE_EXPERT, identite.user_id, actif.habilitation.nom, motif_valide(motif)
+        )
+        analyse, document = _analyser_balance_fiche(
+            dossier, fiches, document_id, correspondance, (ouvertures, ledger)
+        )
+        formulaire = (correspondance, attestation, deficits_euros)
+        return _enregistrer_ouverture(
+            dossier, analyse, document.nom_fichier, formulaire, importeur, ouvertures
         )
 
 

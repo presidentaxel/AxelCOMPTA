@@ -61,6 +61,11 @@ ATTESTATION = (
     "J'atteste que ce fichier est le FEC de l'exercice clos le {cloture}, "
     "produit par l'outil comptable précédent de la société, sans modification."
 )
+# AXE-992 : une balance lue par l'OCR n'est pas le fichier d'origine.
+ATTESTATION_BALANCE = (
+    "J'atteste que cette balance est la balance de clôture de l'exercice clos le {cloture}, "
+    "établie par l'outil comptable précédent de la société, et que j'ai vérifié les soldes lus."
+)
 
 
 class FecRefuse(SaisieInvalide):
@@ -98,10 +103,12 @@ class Analyse:
     refus: tuple[str, ...]
     alertes: tuple[str, ...]
     a_nouveaux: Ecriture | None
+    source: str = "fec"  # « balance » : AXE-992
 
     @property
     def attestation(self) -> str:
-        return ATTESTATION.format(cloture=self.cloture.strftime("%d/%m/%Y"))
+        modele = ATTESTATION_BALANCE if self.source == "balance" else ATTESTATION
+        return modele.format(cloture=self.cloture.strftime("%d/%m/%Y"))
 
 
 def empreinte(contenu: bytes) -> str:
