@@ -47,9 +47,13 @@ contredit l'invariant n° 5 des règles du projet, le doc 10 (« seuls des
 libellés pseudonymisés partent chez Anthropic »), l'ADR-005 et la
 politique de confidentialité publiée (section 3 et tableau des
 sous-traitants). C'est en production depuis le 18/11 au soir
-(`AXELCOMPTA_OCR_ACTIF=1`). À trancher par Louis (voir « Décisions à
-prendre ») : couper l'OCR, ou acter l'exception et mettre à jour les
-textes juridiques, le doc 10 et l'ADR-005 avant de continuer.
+(`AXELCOMPTA_OCR_ACTIF=1`). **Décision de Louis du 19/11 (AXE-994)** :
+l'OCR continue de tourner, et l'exception est actée et encadrée
+(conditions d'Anthropic, politique de confidentialité, annexe art. 28,
+AIPD, doc 10, ADR-005, relecture par le juriste). Ensuite, on va pas à
+pas vers une solution plus propre : texte extrait chez nous et
+pseudonymisé pour les PDF texte, puis masquage ou OCR local pour les
+scans.
 
 **En une phrase (16/11) :** du 13 au 16/11, 16 PR (#166 à #185) ont fait tourner
 Rollee sur la base réelle. Le pilote a montré que le modèle « une période
@@ -796,8 +800,9 @@ sans Rollee. Les cinq tickets Rollee sont faits depuis le 12/11 (PR #132 à
 
 ### En cours (19/11)
 
-- **OCR en clair chez Anthropic** (encadré ⚠️ en tête) : décision de
-  Louis avant tout autre document lu. Sinon, à surveiller dans le journal
+- **OCR en clair chez Anthropic** (encadré ⚠️ en tête, AXE-994) :
+  exception actée le 19/11 ; reste à mettre à jour les textes
+  juridiques, le doc 10 et l'ADR-005. À surveiller dans le journal
   du worker : « OCR : N document(s) lu(s), X à vérifier, Y rangé(s),
   Z $ », et le plafond de 4 $ du mois.
 - Fiches d'import : remplir les critères d'AXE-989 fiche par fiche
@@ -907,12 +912,9 @@ sur une référence provisoire). Détail plus haut.
 
 ### Décisions à prendre (ouvertes dans Linear)
 
-- **OCR des documents d'import (AXE-943)** : les documents partent en
-  clair chez Anthropic (encadré ⚠️ en tête). Couper l'OCR
-  (`AXELCOMPTA_OCR_ACTIF` vide sur le droplet) le temps de décider ? Ou
-  l'acter comme exception à la pseudonymisation : mettre à jour la
-  politique de confidentialité, l'annexe art. 28, le doc 10 et l'ADR-005,
-  et le faire relire par le juriste (AXE-813) ?
+- ~~OCR des documents d'import en clair chez Anthropic~~ : tranché le
+  19/11 (AXE-994), exception actée et encadrée, puis passage pas à pas
+  à la pseudonymisation.
 
 - AXE-905 : le taux automatique mesuré à 38 % pour 85 % visés. Compter
   comme automatiques les recettes imputées par le rapprochement Rollee ?

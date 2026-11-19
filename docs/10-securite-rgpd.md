@@ -32,12 +32,15 @@
 > - IA (AXE-887, AXE-888) : seuls des libellés pseudonymisés partent chez
 >   Anthropic, montant en ordre de grandeur ; une fuite détectée bloque
 >   l'envoi. Clé dans l'environnement du serveur, jamais dans le repo.
-> - **⚠️ Exception non décidée : l'OCR des fiches d'import (AXE-943).**
+> - **⚠️ Exception actée le 19/11 (AXE-994) : l'OCR des fiches d'import (AXE-943).**
 >   Depuis le 18/11 au soir (`AXELCOMPTA_OCR_ACTIF=1` sur le droplet), les
 >   documents déposés sur une fiche (Kbis, statuts, liasses, relevés
 >   bancaires avec IBAN, RIB) partent **en clair** chez Anthropic, sans
->   pseudonymisation. Ni ce doc, ni l'ADR-005, ni la politique de
->   confidentialité ne le prévoient. Décision ouverte au doc 12.
+>   pseudonymisation. Décision de Louis : on garde l'envoi en
+>   clair et on l'encadre (textes juridiques, AIPD, relecture par le
+>   juriste), puis on passe pas à pas à la pseudonymisation (texte
+>   extrait chez nous pour les PDF texte, masquage ou OCR local pour les
+>   scans). Ce doc et la politique de confidentialité restent à réécrire.
 > - Compte de test (AXE-822) : lecture seule, date de fin obligatoire
 >   (90 jours au plus), chaque ouverture de dossier tracée au journal
 >   d'audit.

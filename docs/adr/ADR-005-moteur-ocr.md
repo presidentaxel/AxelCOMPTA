@@ -9,8 +9,9 @@
 > module `ocr/`, PR #253 à #256) : Claude Haiku 5.5, puis Sonnet 5.5 si un
 > contrôle échoue, puis un humain. Pas d'étage open-source, et les
 > documents partent **sans pseudonymisation**, contrairement à l'étage 4
-> ci-dessous. Les justificatifs du quotidien ne sont toujours pas lus. Cet
-> ADR est à réécrire une fois la décision du doc 12 prise (encadré ⚠️).
+> ci-dessous. Les justificatifs du quotidien ne sont toujours pas lus. Le
+> 19/11, Louis a acté l'exception et un passage progressif à la
+> pseudonymisation (AXE-994) : cet ADR est à réécrire en conséquence.
 
 **Date :** 2026-06-16  
 **Mis à jour :** 2026-06-25  
