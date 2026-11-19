@@ -328,17 +328,17 @@ def completer_fiche(
     lecture = (lu.donnees or {}).get("lu")
     if categorie is None or lu.statut_traitement != "traite" or not isinstance(lecture, dict):
         return None
-    if categorie.exercice_source_seul:
-        sources = [
-            e.annee
-            for e in exercices(fiche.champs, maintenant.date(), documents)
-            if e.role == "source"
-        ]
-        if lu.exercice not in sources:
-            return None
+    sources = [
+        e for e in exercices(fiche.champs, maintenant.date(), documents) if e.role == "source"
+    ]
+    if categorie.exercice_source_seul and lu.exercice not in [e.annee for e in sources]:
+        return None
+    lus = dict(categorie.champs_fiche(lecture))
+    if sources:
+        lus.update(categorie.champs_a_la_cloture(lecture, sources[-1].fin))
     nouveaux = {
         champ: valeur
-        for champ, valeur in categorie.champs_fiche(lecture).items()
+        for champ, valeur in lus.items()
         if valeur and not (fiche.champs.get(champ) or "").strip()
     }
     if not nouveaux:
