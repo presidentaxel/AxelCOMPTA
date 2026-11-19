@@ -11,13 +11,23 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 
 from axelcompta.core.errors import SaisieInvalide
 from axelcompta.tenants.fiches_import_listes import ranger_associes
 
 from .categories import DESCRIPTION_NATURES, NATURES, Categorie, Contexte
-from .controles import controle_date, controle_siren, entier, euros, liste, montants, texte
+from .controles import (
+    controle_date,
+    controle_siren,
+    date_lue,
+    entier,
+    euros,
+    liste,
+    montants,
+    texte,
+)
 
 TYPES_RANGES = NATURES
 
@@ -169,6 +179,92 @@ Document : un courrier de l'ancien expert-comptable (lettre de fin de mission, d
 )
 
 
+_IMMATRICULATION = re.compile(
+    r"^[A-Z]{2}-?\d{3}-?[A-Z]{2}$"  # depuis 2009 : AB-123-CD
+    r"|^\d{1,4} ?[A-Z]{1,3} ?(\d{2}|2A|2B|97\d)$"  # avant 2009 : 1234 AB 75
+)
+
+
+_FORMES = re.compile(r"\b(SASU|SAS|SARL|EURL|EI|SCI|STE|SOCIETE|M|MME|MR)\b")
+
+
+def _normal(texte_: str) -> str:
+    """Majuscules, sans ponctuation ni forme juridique, espaces simples."""
+    propre = re.sub(r"[^A-Z0-9 ]", " ", texte_.upper())
+    return " ".join(_FORMES.sub(" ", propre).split())
+
+
+def _titulaire_connu(titulaire: str, champs: Mapping[str, str]) -> bool | None:
+    """La société (dénomination entière) ou le dirigeant (son nom) ; `None`
+    si la fiche ne connaît ni l'une ni l'autre."""
+    denomination = _normal(champs.get("denomination", ""))
+    nom = _normal(champs.get("nom", ""))
+    if not denomination and not nom:
+        return None
+    lu = f" {_normal(titulaire)} "
+    return bool(denomination and f" {denomination} " in lu) or bool(nom and f" {nom} " in lu)
+
+
+def _carte_grise(lu: Mapping[str, object], ctx: Contexte) -> list[str]:
+    erreurs = []
+    immat = texte(lu, "immatriculation").upper().replace(" ", "")
+    if not immat:
+        erreurs.append("Immatriculation : non lue.")
+    elif not _IMMATRICULATION.match(immat):
+        erreurs.append(f"Immatriculation lue {immat} : ni AB-123-CD, ni l'ancien format.")
+    erreurs += controle_date(
+        lu, "date_premiere_immatriculation", "Date de première immatriculation", True
+    )
+    titulaire = texte(lu, "titulaire")
+    if not titulaire:
+        erreurs.append("Titulaire : non lu.")
+    elif _titulaire_connu(titulaire, ctx.champs) is False:
+        erreurs.append(
+            f"Titulaire lu « {texte(lu, 'titulaire')} » : ni la société, ni le dirigeant de la "
+            "fiche. Véhicule d'un tiers, ou en LOA au nom du loueur ?"
+        )
+    return erreurs
+
+
+def _detail_vehicule(lu: Mapping[str, object]) -> str:
+    morceaux = [
+        " ".join(m for m in (texte(lu, "marque"), texte(lu, "modele")) if m),
+        texte(lu, "immatriculation").upper(),
+    ]
+    jour = date_lue(texte(lu, "date_premiere_immatriculation"))
+    if jour is not None:
+        morceaux.append(f"1re immatriculation le {jour:%d/%m/%Y}")
+    if texte(lu, "energie"):
+        morceaux.append(texte(lu, "energie").lower())
+    if texte(lu, "puissance_fiscale"):
+        morceaux.append(f"{texte(lu, 'puissance_fiscale')} CV")
+    return ", ".join(m for m in morceaux if m) + " (carte grise)."
+
+
+CARTE_GRISE = Categorie(
+    "carte_grise",
+    """Document : un certificat d'immatriculation (carte grise) d'un véhicule.
+- immatriculation (champ A, AB-123-CD), marque (D.1), modele (D.3, ou D.2 à défaut),
+  date_premiere_immatriculation (B), titulaire (C.1, la société ou la personne au nom de qui le
+  véhicule est immatriculé), energie (P.3 : essence, diesel, hybride, électrique…),
+  puissance_fiscale (P.6, en chevaux fiscaux, le nombre seul).""",
+    textes=(
+        "immatriculation",
+        "marque",
+        "modele",
+        "date_premiere_immatriculation",
+        "titulaire",
+        "energie",
+        "puissance_fiscale",
+    ),
+    controler=_carte_grise,
+    resumer=lambda lu: f"Carte grise lue : {_detail_vehicule(lu)}",
+    # Le choix Acheté, LOA ou LLD ne se lit pas sur une carte grise : seul
+    # le détail se remplit (AXE-993).
+    champs_fiche=lambda lu: {"vehicule_detail": _detail_vehicule(lu)},
+)
+
+
 def _classement(lu: Mapping[str, object], _ctx: Contexte) -> list[str]:
     erreurs = []
     if texte(lu, "type_document") not in TYPES_RANGES or texte(lu, "type_document") == "autre":
@@ -193,4 +289,4 @@ CLASSEMENT = Categorie(
     constater_nature=False,
 )
 
-DOCUMENTS: dict[str, Categorie] = {c.cle: c for c in (KBIS, STATUTS, LETTRE_COMPTABLE)}
+DOCUMENTS: dict[str, Categorie] = {c.cle: c for c in (KBIS, STATUTS, LETTRE_COMPTABLE, CARTE_GRISE)}

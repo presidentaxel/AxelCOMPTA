@@ -56,6 +56,7 @@ NATURES = (
     "kbis",
     "statuts",
     "lettre_comptable",
+    "carte_grise",
     "autre",
 )
 NATURE_CONSTATEE = "nature_constatee"
@@ -68,7 +69,8 @@ DESCRIPTION_NATURES = """liasse (liasse fiscale 2033, 2050, 2065, 2031, ou leur 
   (facture, reçu, ticket, note de frais), emprunt (tableau d'amortissement, échéancier de prêt),
   releve_bancaire (relevé de compte), rib, releve_plateforme (récapitulatif ou relevé Uber, Bolt,
   Heetch, Free Now…), kbis, statuts, lettre_comptable (courrier de l'ancien expert-comptable ; pas
-  un courrier de banque), autre (tout le reste : tarifs ou conditions d'une banque, mandat SEPA,
+  un courrier de banque), carte_grise (certificat d'immatriculation d'un véhicule), autre (tout le
+  reste : tarifs ou conditions d'une banque, mandat SEPA,
   contrat, courrier commercial…)"""
 
 Controle = Callable[[Mapping[str, object], Contexte], list[str]]

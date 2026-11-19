@@ -270,6 +270,8 @@ CATEGORIES_DOCUMENTS: dict[str, str] = {
     "kbis": "Kbis",
     "statuts": "Statuts",
     "rib": "RIB",
+    # AXE-993 : le certificat d'immatriculation du véhicule.
+    "carte_grise": "Carte grise",
     "lettre_comptable": "Lettre de l'ancien expert-comptable",
     "releve_bancaire": "Relevé bancaire",
     # AXE-989 : sans lui, on ne sépare pas capital et intérêts.
