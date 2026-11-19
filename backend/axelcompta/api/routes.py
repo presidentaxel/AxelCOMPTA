@@ -196,6 +196,7 @@ from axelcompta.depot_documents_import import Fichier as FichierImport
 from axelcompta.depot_documents_import import (
     depot_sur_emplacement,
     depot_sur_exercice,
+    emplacement_classe,
     promus,
     sans_doublons,
 )
@@ -295,6 +296,8 @@ from axelcompta.manques_rollee import manques as manques_rollee
 from axelcompta.nouveaux_contacts import fiche_sirene, recherche_entreprises
 from axelcompta.ocr.lecture import a_verifier as a_verifier_ocr
 from axelcompta.ocr.passage import ocr_actif
+from axelcompta.ocr.reclassement import RANGE_PAR
+from axelcompta.ocr.reclassement import proposition as proposition_ocr
 from axelcompta.packs.vtc_demo import (
     charger_categories_banque,
     charger_compte_par_categorie,
@@ -375,6 +378,7 @@ from axelcompta.tenants.fiches_import import (
     DocumentImport,
     FicheImport,
     champs_du_registre,
+    lire_emplacement,
     nouvelle_fiche,
     preremplir,
 )
@@ -8936,6 +8940,12 @@ class ExerciceImportVue(BaseModel):
     en_retard: bool
 
 
+class PropositionRangementVue(BaseModel):
+    categorie: str
+    libelle: str
+    emplacement: str
+
+
 class DocumentImportVue(BaseModel):
     id: str
     origine_id: str | None = None  # AXE-970 : l'archive d'où il sort
@@ -8952,6 +8962,8 @@ class DocumentImportVue(BaseModel):
     # AXE-943 : l'OCR n'a pas pu valider sa lecture ; un humain tranche.
     a_verifier: bool = False
     controles: list[str] = []
+    # AXE-995 : l'OCR pense que le document est mal rangé ; un clic le range.
+    proposition: PropositionRangementVue | None = None
 
 
 class PeriodeBanqueVue(BaseModel):
@@ -9156,6 +9168,18 @@ def _sections_vue(fiche: FicheImport, documents: list[DocumentImport]) -> list[S
     ]
 
 
+def _proposition_vue(d: DocumentImport) -> PropositionRangementVue | None:
+    categorie = proposition_ocr(d.donnees)
+    if categorie is None or categorie == d.categorie:
+        return None
+    section = lire_emplacement(d.emplacement)[0] if d.emplacement else "documents"
+    return PropositionRangementVue(
+        categorie=categorie,
+        libelle=CATEGORIES_DOCUMENTS.get(categorie, categorie),
+        emplacement=emplacement_classe(categorie, d.exercice, section),
+    )
+
+
 def _document_vue(d: DocumentImport) -> DocumentImportVue:
     verifier, controles = a_verifier_ocr(d.donnees)
     return DocumentImportVue(
@@ -9173,6 +9197,7 @@ def _document_vue(d: DocumentImport) -> DocumentImportVue:
         resume=d.resume,
         a_verifier=verifier,
         controles=controles,
+        proposition=_proposition_vue(d),
     )
 
 
@@ -9680,8 +9705,15 @@ def _enregistrer_routes_exercices_import(app: FastAPI) -> None:
         )
         if document is None:
             raise HTTPException(status_code=404, detail="Document introuvable.")
-        rangee = fiches.ranger(_relu(fiches, reclasser_document(document, corps.emplacement)))
+        rangee = fiches.ranger(
+            _range_a_la_main(_relu(fiches, reclasser_document(document, corps.emplacement)))
+        )
         return _fiche_vue(_reprise_relue(fiches, rangee))
+
+
+def _range_a_la_main(document: DocumentImport) -> DocumentImport:
+    """AXE-995 : rangé par une personne, l'OCR ne le déplacera plus d'office."""
+    return dataclasses.replace(document, donnees={**(document.donnees or {}), RANGE_PAR: "humain"})
 
 
 def _relu(fiches: FichesImportRepository, document: DocumentImport) -> DocumentImport:

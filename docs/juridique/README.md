@@ -28,7 +28,9 @@
   (eu-west-1) et Digifactory cités, aucun prix, Bridge jamais présenté
   comme un appel direct. Depuis AXE-887, il vérifie aussi que le
   fournisseur d'IA n'est cité que dans la politique de confidentialité, avec
-  la pseudonymisation, et que Rollee y figure.
+  la pseudonymisation, et que Rollee y figure. Depuis AXE-994, il vérifie
+  aussi qu'elle dit que les documents de reprise partent en entier, sans
+  pseudonymisation (ADR-009).
 - La page publique (`/`) renvoie vers ces cinq textes dans son pied de page, et
   son formulaire recueille un nom, un e-mail, une organisation et un message
   (AXE-949). La confidentialité le dit, avec Slack comme sous-traitant : le
