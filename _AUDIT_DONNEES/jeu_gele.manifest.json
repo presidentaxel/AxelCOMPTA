@@ -1,6 +1,6 @@
 {
   "regle": "sha256(dossier_id) % 100 < 15",
-  "source": "fec_ml_taxonomie.csv",
+  "source": "fec_ml_taxonomie_v2.csv",
   "etiquettes": "mapping compte PCG -> catégorie, sans relecture humaine (décision du 19/11)",
   "dossiers": [
     "DOS_054da9792a9d",
@@ -15,6 +15,6 @@
     "DOS_dbb291e9e7dc",
     "DOS_e435a38f3976"
   ],
-  "lignes": 4600,
-  "empreinte": "50855db1374965661c5ed5f0644bca0118d5752cfde163306133aed79926f09f"
+  "lignes": 4727,
+  "empreinte": "d1f60335671eb23d466667e5abedd4ab8cdfdf83dcc50a0c0e77741376eeefb5"
 }
