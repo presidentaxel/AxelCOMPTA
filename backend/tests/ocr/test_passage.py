@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from axelcompta.core.ids import TenantId
 from axelcompta.ocr.categories import Categorie
 from axelcompta.ocr.lecture import HAIKU, SONNET, Appel
-from axelcompta.ocr.passage import a_lire, media_type, passer
+from axelcompta.ocr.passage import ILLISIBLE, a_lire, media_type, passer
 from axelcompta.tenants.fiches_import import document_import, nouvelle_fiche
 from axelcompta.tenants.fiches_import_depot import FichesImportMemoire
 
@@ -111,7 +111,19 @@ def test_un_document_illisible_par_l_ocr_n_est_pas_envoye() -> None:
     fiches.deposer(tableur, b"PK\x03\x04")
     passer(fiches, T, _appeler, LE, plafond_usd=5.0)
     reste = next(d for d in fiches.instantane(T, fiche_id).documents if d.id == "xlsx")
-    assert reste == replace(tableur, statut_traitement=reste.statut_traitement)
+    # Rien n'est envoyé, mais le document le dit, et n'attend plus l'OCR.
+    assert (reste.categorie, reste.statut_traitement) == ("autre", "a_traiter")
+    assert reste.resume == f"À vérifier par un humain : {ILLISIBLE}"
+    marque = (reste.donnees or {})["ocr_classement"]
+    assert isinstance(marque, dict)
+    assert (marque["cout_usd"], marque["a_verifier"]) == (0.0, True)
+    assert not a_lire(reste)
+    assert reste == replace(
+        tableur,
+        statut_traitement=reste.statut_traitement,
+        resume=reste.resume,
+        donnees=reste.donnees,
+    )
 
 
 def test_la_liasse_de_l_exercice_source_remplit_les_deficits_vides() -> None:

@@ -20,7 +20,7 @@ SONNET = "claude-sonnet-5-5"
 MODELES = (HAIKU, SONNET)
 # Change quand une consigne ou un schéma change : les lectures d'une version
 # précédente restent, mais un document « à vérifier » peut être relu.
-VERSION = "ocr-1"
+VERSION = "ocr-2"  # 19/11 : TVA sans période, signe des soldes, actif net (AXE-996, 997, 1000)
 A_VERIFIER = "À vérifier par un humain"
 
 
@@ -57,9 +57,10 @@ def lire(
     for modele in MODELES:
         appel = appeler(modele, categorie, contenu, media_type)
         cout += appel.cout_usd
-        echecs = [appel.erreur] if appel.lu is None else categorie.controler(appel.lu, ctx)
+        lu = None if appel.lu is None else categorie.corriger(appel.lu)
+        echecs = [appel.erreur] if lu is None else categorie.controler(lu, ctx)
         essais.append({"modele": modele, "echecs": echecs})
-        derniere = Lecture(modele, appel.lu, tuple(echecs), cout, tuple(essais))
+        derniere = Lecture(modele, lu, tuple(echecs), cout, tuple(essais))
         if derniere.acceptee:
             break
     return derniere

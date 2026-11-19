@@ -86,7 +86,9 @@ MONTANTS_BILAN = (
 CONSIGNE_BILAN = """\
 - siren, denomination, formulaire (2033, 2050, 2065, 2031…), exercice_debut, exercice_fin.
 - montants de l'exercice (pas de l'exercice précédent) : chiffre_affaires_cts, resultat_cts,
-  capital_cts, total_actif_cts et total_passif_cts (totaux du bilan), impot_societes_cts,
+  capital_cts, total_actif_cts et total_passif_cts (totaux du bilan : l'actif NET, colonne
+  « Net » de l'exercice, après amortissements et dépréciations, jamais la colonne « Brut » ;
+  il est égal au total du passif), impot_societes_cts,
   deficits_reportables_cts (déficits restant à reporter en fin d'exercice, 2033-B ou 2058-B),
   immobilisations_brutes_cts, amortissements_cts, emprunts_cts (emprunts et dettes auprès des
   établissements de crédit), tresorerie_cts (disponibilités)."""
@@ -187,7 +189,9 @@ GRAND_LIVRE = Categorie(
 
 def _tva(lu: Mapping[str, object], ctx: Contexte) -> list[str]:
     erreurs = controle_siren(lu, ctx.siren)
-    erreurs += controle_date(lu, "periode_fin", "Fin de période", True)
+    # Un récapitulatif annuel n'imprime pas toujours sa période : rangé sur
+    # un exercice, il en prend la période ; en vrac, elle est obligatoire.
+    erreurs += controle_date(lu, "periode_fin", "Fin de période", ctx.exercice is None)
     m = montants(lu)
     collectee, deductible = m.get("tva_collectee_cts"), m.get("tva_deductible_cts")
     nette = m.get("tva_nette_cts")
@@ -209,7 +213,8 @@ DECLARATION_TVA = Categorie(
     "declaration_tva",
     """Document : une déclaration de TVA (CA3 mensuelle ou trimestrielle, CA12 annuelle, 3517) ou
 sa synthèse.
-- siren, formulaire (CA3, CA12…), periode_debut, periode_fin.
+- siren, formulaire (CA3, CA12…), periode_debut, periode_fin. Si le document n'imprime ni SIREN
+  ni période (un récapitulatif des montants de l'année), laisse-les vides : ne les déduis pas.
 - montants : tva_collectee_cts (TVA brute due), tva_deductible_cts (total à déduire),
   tva_nette_cts (TVA nette due, positive, ou crédit de TVA, négatif), acomptes_cts (acomptes
   déjà versés, CA12).""",
@@ -217,8 +222,13 @@ sa synthèse.
     montants=("tva_collectee_cts", "tva_deductible_cts", "tva_nette_cts", "acomptes_cts"),
     controler=_tva,
     resumer=lambda lu: (
-        f"Déclaration de TVA lue : du {texte(lu, 'periode_debut')} au "
-        f"{texte(lu, 'periode_fin')}, nette {euros(montants(lu).get('tva_nette_cts', 0))}."
+        "Déclaration de TVA lue : "
+        + (
+            f"du {texte(lu, 'periode_debut')} au {texte(lu, 'periode_fin')}"
+            if texte(lu, "periode_fin")
+            else "période non imprimée, celle de l'exercice"
+        )
+        + f", nette {euros(montants(lu).get('tva_nette_cts', 0))}."
     ),
 )
 

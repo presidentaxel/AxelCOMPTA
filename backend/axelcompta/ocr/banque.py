@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from itertools import product
 
 from .categories import Categorie, Contexte
 from .controles import controle_date, date_lue, entier, euros, iban_valide, liste, montants, texte
@@ -23,6 +24,36 @@ def _operations(lu: Mapping[str, object]) -> list[tuple[str, int, str]]:
         (str(o.get("date") or ""), entier(o.get("montant_cts")), str(o.get("libelle") or ""))
         for o in liste(lu, "operations")
     ]
+
+
+def _signes_des_soldes(lu: dict[str, object]) -> dict[str, object]:
+    """Un solde débiteur lu en positif (colonne Débit, mention « débiteur ») :
+    si les opérations ne tombent pas juste et qu'**un seul** jeu de signes des
+    deux soldes les fait tomber juste au centime, c'est celui-là. Sinon, rien
+    ne change et le contrôle signale l'écart."""
+    m = montants(lu)
+    debut, fin = m.get("solde_debut_cts"), m.get("solde_fin_cts")
+    if debut is None or fin is None:
+        return lu
+    somme = sum(montant for _j, montant, _l in _operations(lu))
+    if debut + somme == fin:
+        return lu
+    justes = {
+        (sd * debut, sf * fin)
+        for sd, sf in product((1, -1), repeat=2)
+        if sd * debut + somme == sf * fin
+    }
+    if len(justes) != 1:
+        return lu
+    ((nouveau_debut, nouvelle_fin),) = justes
+    corriges = {"solde_debut_cts": nouveau_debut, "solde_fin_cts": nouvelle_fin}
+    return {
+        **lu,
+        "montants": [
+            {**m_, "valeur_cts": corriges.get(str(m_.get("nom")), m_.get("valeur_cts"))}
+            for m_ in liste(lu, "montants")
+        ],
+    }
 
 
 def _releve(lu: Mapping[str, object], _ctx: Contexte) -> list[str]:
@@ -65,13 +96,15 @@ RELEVE_BANCAIRE = Categorie(
     """Document : un relevé de compte bancaire (un ou plusieurs mois).
 - banque, titulaire, iban (sans espace), periode_debut et periode_fin (les dates du relevé).
 - montants : solde_debut_cts (ancien solde, au début de la période) et solde_fin_cts (nouveau
-  solde, à la fin), créditeur positif, débiteur négatif.
+  solde, à la fin), créditeur positif, débiteur négatif. Un solde porté dans la colonne Débit,
+  ou marqué « débiteur », « DB », « - », est négatif.
 - operations : chaque opération, dans l'ordre, avec date (date d'opération), libelle (le libellé
   complet), montant_cts (crédit positif, débit négatif). N'oublie aucune ligne, et ne compte pas
   les lignes de total ni les soldes intermédiaires.""",
     textes=("banque", "titulaire", "iban", "periode_debut", "periode_fin"),
     montants=("solde_debut_cts", "solde_fin_cts"),
     listes={"operations": {"date": "string", "libelle": "string", "montant_cts": "integer"}},
+    corriger=_signes_des_soldes,
     controler=_releve,
     resumer=lambda lu: (
         f"Relevé lu : {texte(lu, 'banque')}, du {texte(lu, 'periode_debut')} au "

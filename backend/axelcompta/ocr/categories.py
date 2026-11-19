@@ -48,6 +48,9 @@ class Categorie:
     montants: tuple[str, ...] = ()
     # Une liste d'objets : nom -> {champ: "string" | "integer"}.
     listes: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    # Une correction sûre avant les contrôles : un signe que l'arithmétique
+    # du document prouve (un solde débiteur lu en positif), jamais une devinette.
+    corriger: Callable[[dict[str, object]], dict[str, object]] = lambda lu: lu
     controler: Controle = lambda _lu, _ctx: []
     resumer: Resume = lambda _lu: "Lu par l'OCR."
     # Ce que la fiche garde du document, au-delà de la lecture brute
