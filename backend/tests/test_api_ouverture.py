@@ -228,6 +228,8 @@ def test_l_expert_reprend_le_fec_depose_sur_la_fiche_d_import() -> None:
         "nom_fichier": None,
         "exercice": None,
         "deficits": None,
+        "balance_document_id": None,
+        "balance_au": None,
     }
 
     _fiche_avec_fec(client)
@@ -254,3 +256,75 @@ def test_un_dossier_hors_lettre_de_mission_ne_montre_pas_le_fec_de_sa_fiche() ->
         f"/expert/dossiers/{REPRISE}/ouverture/fiche", headers=_en_tete_gestionnaire()
     )
     assert reponse.status_code == 403
+
+
+# AXE-992 : une balance de clôture au 31/12/2025, arrêtée avant l'affectation
+# du résultat (classes 6 et 7 encore soldées), lue et acceptée par l'OCR.
+SOLDES_BALANCE = {
+    "101300": -50000,
+    "512000": 834700,
+    "401000": -120000,
+    "445660": 15300,
+    "606100": 220000,
+    "706000": -900000,
+}
+
+
+def _fiche_avec_balance(client: TestClient) -> tuple[FichesImportMemoire, str]:
+    depot = client.app.dependency_overrides[get_dossiers]()  # type: ignore[attr-defined]
+    dossier = depot.obtenir(DossierId(REPRISE))
+    fiches = FichesImportMemoire()
+    client.app.dependency_overrides[get_fiches_import] = lambda: fiches  # type: ignore[attr-defined]
+    fiche = nouvelle_fiche("fiche-reprise", dossier.tenant_id, "Dupont", "Karim", "", "b", LE)
+    fiches.enregistrer(dataclasses.replace(fiche, dossier_id=dossier.id))
+    contenu = b"%PDF-1.4 balance"
+    document = document_import(
+        "balance-2025", fiche, "reprise:balance:2025", "Balance 2025.pdf", "", contenu, "b", LE
+    )
+    donnees = {"lu": {"exercice_fin": "2025-12-31"}, "soldes_cts": SOLDES_BALANCE}
+    fiches.deposer(
+        dataclasses.replace(document, statut_traitement="traite", donnees=donnees), contenu
+    )
+    return fiches, document.id
+
+
+def test_sans_fec_l_expert_reprend_la_balance_lue_sur_la_fiche() -> None:
+    client = _client_expert()
+    ouvertures = _avec_dossier_a_reprendre(client)
+    experts = client.app.dependency_overrides[get_experts]()  # type: ignore[attr-defined]
+    experts.habilitations.clear()
+    _expert_habilite(experts, dossiers=(DossierId(REPRISE),))
+    entete = _en_tete_gestionnaire()
+    _fiches, document_id = _fiche_avec_balance(client)
+
+    propose = client.get(f"/expert/dossiers/{REPRISE}/ouverture/fiche", headers=entete).json()
+    assert propose["trouve"] is False  # pas de FEC
+    assert (propose["balance_document_id"], propose["balance_au"]) == (document_id, "2025-12-31")
+
+    url = f"/expert/dossiers/{REPRISE}/ouverture/balance"
+    analyse = client.post(f"{url}/analyse", data={"document_id": document_id}, headers=entete)
+    assert analyse.status_code == 200, analyse.text
+    corps = analyse.json()
+    assert corps["possible"] is True, corps["refus"]
+    assert corps["attestation"].startswith("J'atteste que cette balance est la balance")
+    assert corps["resultat_cts"] == 680000
+    assert any("avant l'affectation du résultat" in a for a in corps["alertes"])
+    lignes = {lg["compte"]: lg for lg in corps["a_nouveaux"]}
+    assert lignes["120"]["credit_cts"] == 680000  # le bénéfice, en attente d'affectation
+    assert "606100" not in lignes and "706000" not in lignes
+
+    reprise = client.post(
+        url,
+        data={
+            "document_id": document_id,
+            "attestation": corps["attestation"],
+            "motif": "Pas de FEC : balance du cabinet précédent",
+        },
+        headers=entete,
+    )
+    assert reprise.status_code == 200, reprise.text
+    importee = ouvertures.obtenir(DossierId(REPRISE))
+    assert importee is not None and importee.nom_fichier == "Balance 2025.pdf"
+
+    inconnue = client.post(f"{url}/analyse", data={"document_id": "autre"}, headers=entete)
+    assert inconnue.status_code == 404

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 CONSIGNE_COMMUNE = """Tu lis un document d'une petite société française (souvent un chauffeur VTC).
@@ -95,10 +96,19 @@ class Categorie:
     # Les champs de la fiche que la lecture remplit s'ils sont vides
     # (capital d'un Kbis, déficits d'une liasse), en texte comme une saisie.
     champs_fiche: Callable[[Mapping[str, object]], dict[str, str]] = lambda _lu: {}
+    # AXE-990 : les champs qui dépendent de la clôture de l'exercice source
+    # (capital restant dû d'un emprunt à cette date).
+    champs_a_la_cloture: Callable[[Mapping[str, object], date], dict[str, str]] = (
+        lambda _lu, _cloture: {}
+    )
     # Pour une pièce d'un exercice : ne remplir la fiche que depuis l'exercice
     # source (la dernière liasse déposée donne les déficits à reporter).
     exercice_source_seul: bool = False
     max_tokens: int = 8_000
+    # AXE-999 : n'envoyer que les dernières pages d'un PDF (0 : tout), et ne
+    # pas lire du tout quand le FEC lu du même exercice dit déjà tout.
+    dernieres_pages: int = 0
+    inutile_avec_fec: bool = False
     # AXE-995 : la lecture dit aussi ce que le document est vraiment, pour
     # voir qu'il est mal rangé. Le classement d'un « Autre » le dit déjà.
     constater_nature: bool = True

@@ -62,7 +62,8 @@ def _pourcentage(texte: str) -> str:
         raise SaisieInvalide("Part du capital : un pourcentage, par exemple 50.") from exc
     if not 0 <= valeur <= 100:
         raise SaisieInvalide("Part du capital : entre 0 et 100 %.")
-    return str(valeur.quantize(Decimal("0.01")).normalize())
+    # format "f" : 100 reste « 100 », pas « 1E+2 » (normalize() seul).
+    return format(valeur.quantize(Decimal("0.01")).normalize(), "f")
 
 
 def _associe(ligne: object) -> Associe:

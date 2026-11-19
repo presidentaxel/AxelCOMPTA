@@ -35,6 +35,7 @@ from axelcompta.tenants.fiches_import_etat import exercices
 from .categories import Contexte
 from .client import MEDIA_LISIBLES
 from .lecture import VERSION, Appeler, Lecture, lire, meta, traitement
+from .pages import dernieres_pages
 from .reclassement import (
     PROPOSITION,
     RECLASSEMENT,
@@ -155,7 +156,14 @@ def lire_document(
     if categorie is None or document.statut_traitement != "a_traiter":
         return document
     ctx = contexte(fiche, documents, document.exercice)
-    lecture = lire(categorie, contenu, media, ctx, appeler)
+    if categorie.inutile_avec_fec and ctx.fec is not None:
+        return _garde_sans_lecture(document, maintenant)
+    # AXE-999 : seulement pour la lecture dans sa catégorie ; une relecture
+    # dans une autre catégorie (AXE-995) reçoit le document entier.
+    envoye = contenu
+    if categorie.dernieres_pages and media == "application/pdf":
+        envoye = dernieres_pages(contenu, categorie.dernieres_pages)
+    lecture = lire(categorie, envoye, media, ctx, appeler)
     bilan.cout_usd += lecture.cout_usd
     bilan.lus += 1
     statut, resume, donnees = traitement(categorie, lecture, document.donnees, maintenant)
@@ -209,6 +217,24 @@ def _mal_range(
         resume=f"Reclassé par l'OCR : était {libelle(lu.categorie)}. {resume}",
         donnees=nouvelles,
     )
+
+
+SANS_LECTURE = "Gardé sans lecture : le FEC du même exercice est lu, il dit déjà tout."
+
+
+def _garde_sans_lecture(document: DocumentImport, maintenant: datetime) -> DocumentImport:
+    """AXE-999 : un grand livre dont le FEC est lu n'apprend rien de plus ;
+    il est gardé, traité, sans appel ni coût."""
+    marque = {
+        "version": VERSION,
+        "le": maintenant.isoformat(timespec="seconds"),
+        "cout_usd": 0.0,
+        "a_verifier": False,
+        "controles": [],
+        "essais": [],
+    }
+    donnees = {**(document.donnees or {}), "ocr": marque}
+    return replace(document, statut_traitement="traite", resume=SANS_LECTURE, donnees=donnees)
 
 
 ILLISIBLE = "Format que l'OCR ne lit pas (seuls les PDF et les images le sont) : à lire à la main."
@@ -302,17 +328,17 @@ def completer_fiche(
     lecture = (lu.donnees or {}).get("lu")
     if categorie is None or lu.statut_traitement != "traite" or not isinstance(lecture, dict):
         return None
-    if categorie.exercice_source_seul:
-        sources = [
-            e.annee
-            for e in exercices(fiche.champs, maintenant.date(), documents)
-            if e.role == "source"
-        ]
-        if lu.exercice not in sources:
-            return None
+    sources = [
+        e for e in exercices(fiche.champs, maintenant.date(), documents) if e.role == "source"
+    ]
+    if categorie.exercice_source_seul and lu.exercice not in [e.annee for e in sources]:
+        return None
+    lus = dict(categorie.champs_fiche(lecture))
+    if sources:
+        lus.update(categorie.champs_a_la_cloture(lecture, sources[-1].fin))
     nouveaux = {
         champ: valeur
-        for champ, valeur in categorie.champs_fiche(lecture).items()
+        for champ, valeur in lus.items()
         if valeur and not (fiche.champs.get(champ) or "").strip()
     }
     if not nouveaux:
