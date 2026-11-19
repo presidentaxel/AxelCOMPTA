@@ -103,6 +103,10 @@ class Categorie:
     # source (la dernière liasse déposée donne les déficits à reporter).
     exercice_source_seul: bool = False
     max_tokens: int = 8_000
+    # AXE-999 : n'envoyer que les dernières pages d'un PDF (0 : tout), et ne
+    # pas lire du tout quand le FEC lu du même exercice dit déjà tout.
+    dernieres_pages: int = 0
+    inutile_avec_fec: bool = False
     # AXE-995 : la lecture dit aussi ce que le document est vraiment, pour
     # voir qu'il est mal rangé. Le classement d'un « Autre » le dit déjà.
     constater_nature: bool = True
