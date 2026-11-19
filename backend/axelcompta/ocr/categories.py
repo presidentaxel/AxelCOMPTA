@@ -63,6 +63,10 @@ class Categorie:
     # source (la dernière liasse déposée donne les déficits à reporter).
     exercice_source_seul: bool = False
     max_tokens: int = 8_000
+    # AXE-999 : n'envoyer que les dernières pages d'un PDF (0 : tout), et ne
+    # pas lire du tout quand le FEC lu du même exercice dit déjà tout.
+    dernieres_pages: int = 0
+    inutile_avec_fec: bool = False
 
     def schema(self) -> dict[str, Any]:
         return schema(self.textes, self.montants, self.listes)

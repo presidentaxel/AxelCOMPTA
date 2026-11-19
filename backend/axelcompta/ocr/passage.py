@@ -35,6 +35,7 @@ from axelcompta.tenants.fiches_import_etat import exercices
 from .categories import Contexte
 from .client import MEDIA_LISIBLES
 from .lecture import VERSION, Appeler, lire, meta, traitement
+from .pages import dernieres_pages
 from .registre import REGISTRE, categorie_ocr
 
 VARIABLE_ACTIF = "AXELCOMPTA_OCR_ACTIF"
@@ -145,14 +146,35 @@ def lire_document(
     categorie = REGISTRE.get(document.categorie)
     if categorie is None or document.statut_traitement != "a_traiter":
         return document
-    lecture = lire(
-        categorie, contenu, media, contexte(fiche, documents, document.exercice), appeler
-    )
+    ctx = contexte(fiche, documents, document.exercice)
+    if categorie.inutile_avec_fec and ctx.fec is not None:
+        return _garde_sans_lecture(document, maintenant)
+    if categorie.dernieres_pages and media == "application/pdf":
+        contenu = dernieres_pages(contenu, categorie.dernieres_pages)
+    lecture = lire(categorie, contenu, media, ctx, appeler)
     bilan.cout_usd += lecture.cout_usd
     bilan.lus += 1
     bilan.a_verifier += not lecture.acceptee
     statut, resume, donnees = traitement(categorie, lecture, document.donnees, maintenant)
     return replace(document, statut_traitement=statut, resume=resume, donnees=donnees)  # type: ignore[arg-type]
+
+
+SANS_LECTURE = "Gardé sans lecture : le FEC du même exercice est lu, il dit déjà tout."
+
+
+def _garde_sans_lecture(document: DocumentImport, maintenant: datetime) -> DocumentImport:
+    """AXE-999 : un grand livre dont le FEC est lu n'apprend rien de plus ;
+    il est gardé, traité, sans appel ni coût."""
+    marque = {
+        "version": VERSION,
+        "le": maintenant.isoformat(timespec="seconds"),
+        "cout_usd": 0.0,
+        "a_verifier": False,
+        "controles": [],
+        "essais": [],
+    }
+    donnees = {**(document.donnees or {}), "ocr": marque}
+    return replace(document, statut_traitement="traite", resume=SANS_LECTURE, donnees=donnees)
 
 
 ILLISIBLE = "Format que l'OCR ne lit pas (seuls les PDF et les images le sont) : à lire à la main."

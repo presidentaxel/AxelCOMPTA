@@ -175,10 +175,13 @@ GRAND_LIVRE = Categorie(
     """Document : un grand livre.
 - siren, exercice_debut, exercice_fin.
 - montants : total_debit_cts et total_credit_cts, les totaux généraux des mouvements (le dernier
-  total « Total général » ou « Total grand livre »).""",
+  total « Total général » ou « Total grand livre »). Tu ne vois que les dernières pages du
+  document : c'est là que sont ces totaux.""",
     textes=("siren", "exercice_debut", "exercice_fin"),
     montants=("total_debit_cts", "total_credit_cts"),
     controler=_grand_livre,
+    dernieres_pages=2,
+    inutile_avec_fec=True,
     resumer=lambda lu: (
         f"Grand livre lu : du {texte(lu, 'exercice_debut')} au "
         f"{texte(lu, 'exercice_fin')}, "
