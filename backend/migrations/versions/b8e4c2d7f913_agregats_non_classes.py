@@ -25,11 +25,15 @@ _COLONNES = ("entrees_non_classees_cts", "sorties_non_classees_cts")
 
 
 def upgrade() -> None:
+    # La base réelle a reçu ces colonnes à la main le 19/11, avec
+    # alembic_version resté sur a3d9e6f1c204 : chaque ajout ne part que s'il manque.
+    existantes = {c["name"] for c in sa.inspect(op.get_bind()).get_columns("agregats_dossier")}
     for nom in _COLONNES:
-        op.add_column(
-            "agregats_dossier",
-            sa.Column(nom, sa.BigInteger(), nullable=False, server_default="0"),
-        )
+        if nom not in existantes:
+            op.add_column(
+                "agregats_dossier",
+                sa.Column(nom, sa.BigInteger(), nullable=False, server_default="0"),
+            )
 
 
 def downgrade() -> None:
