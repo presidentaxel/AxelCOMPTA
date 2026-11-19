@@ -1,9 +1,10 @@
 # Confidentialité et sous-traitance des données
 
-> Version du 2026-11-16. Projet, à relire par un juriste (AXE-813). Écrit à
-> partir des services réellement branchés dans le code le 2026-11-16
+> Version du 2026-11-19. Projet, à relire par un juriste (AXE-813). Écrit à
+> partir des services réellement branchés dans le code le 2026-11-19
 > (ajouts depuis le 2026-11-10 : Rollee, Anthropic, INSEE et RNE ; depuis le
-> 2026-11-13 : les demandes d'échange de la page publique et Slack).
+> 2026-11-13 : les demandes d'échange de la page publique et Slack ; depuis
+> le 2026-11-18 : la lecture des documents de reprise par Anthropic).
 
 ## 1. Qui fait quoi
 
@@ -24,6 +25,9 @@ Contact : contact@axelproject.fr.
 - Opérations bancaires des comptes professionnels : date, libellé, montant,
   compte, moyen de paiement, catégorie donnée par la banque.
 - Justificatifs (photos de tickets et de factures) déposés par le dirigeant.
+- Documents déposés pour reprendre la comptabilité d'une entreprise (Kbis,
+  statuts, liasses, comptes annuels, déclarations, relevés bancaires, RIB,
+  récapitulatifs des plateformes, pièces) et ce qui en est lu.
 - Écritures comptables, FEC, liasses fiscales, déclarations de TVA préparées.
 - Identité de l'entreprise, de son dirigeant et de ses associés (nom,
   naissance, adresse, titres détenus), saisie par le dirigeant.
@@ -73,6 +77,23 @@ un nom connu du dossier. La proposition n'est jamais appliquée seule : une
 personne la confirme ou la corrige. Ce service est désactivé tant
 qu'AXEL PROJECT ne l'a pas allumé.
 
+**Lecture des documents de reprise.** Quand un gestionnaire dépose les
+documents d'une entreprise pour reprendre sa comptabilité (Kbis, statuts,
+liasses, déclarations, relevés bancaires, RIB, récapitulatifs des
+plateformes, pièces), AxeLCompta peut en faire lire le contenu par
+Anthropic (modèle Claude), pour remplir la reprise sans ressaisie.
+**Ces documents partent en entier et ne sont pas pseudonymisés** : ils
+contiennent les noms, adresses, numéros SIREN, montants, IBAN et libellés
+d'opérations qui y sont imprimés. Ce qui est lu n'est jamais appliqué sans
+contrôle : chaque lecture est vérifiée (calculs, recoupement avec les autres
+documents de l'entreprise), sinon une personne la vérifie ; une information
+déjà saisie n'est jamais remplacée. Ce service peut être coupé à tout moment
+par AXEL PROJECT, et ses envois sont plafonnés chaque mois. AXEL PROJECT
+s'engage à réduire ce qui part, puis à pseudonymiser ces documents quand
+c'est possible.
+[À COMPLÉTER par le juriste : base légale de cette lecture, information des
+personnes concernées, et son inscription dans l'analyse d'impact, doc 02 §8.]
+
 ## 4. Sous-traitants et services utilisés
 
 | Service | Rôle | Où sont les données |
@@ -81,7 +102,7 @@ qu'AXEL PROJECT ne l'a pas allumé.
 | **Digifactory** | Transmission des opérations bancaires de l'entreprise (`entrepreneur.digifactory.fr`) | [À COMPLÉTER : localisation des données chez Digifactory] |
 | **Sentry** (Functional Software, Inc.), seulement s'il est activé | Rapports d'erreurs techniques, sans donnée personnelle (`send_default_pii` désactivé côté serveur) | [À COMPLÉTER : région du projet Sentry] |
 | **Rollee**, seulement si le dirigeant relie ses plateformes | Lecture des revenus et des versements des plateformes (Uber, Bolt) reliées par le dirigeant dans Rollee Connect. AxeLCompta ne transmet à Rollee que l'identifiant du dossier ; les identifiants Uber et Bolt sont saisis chez Rollee, jamais chez AxeLCompta. | [À COMPLÉTER : localisation des données chez Rollee] |
-| **Anthropic, PBC**, seulement si le service est activé | Proposition de catégorie pour des libellés d'opérations pseudonymisés (section 3) | [À COMPLÉTER : région de traitement et durée de conservation chez Anthropic] |
+| **Anthropic, PBC**, seulement si le service est activé | Proposition de catégorie pour des libellés d'opérations pseudonymisés, et lecture des documents de reprise, envoyés en entier (section 3) | [À COMPLÉTER : région de traitement, durée de conservation et usage des données chez Anthropic, selon le contrat signé] |
 | **Slack** (Salesforce, Inc.) | Messagerie interne d'AXEL PROJECT : chaque demande d'échange y est publiée (nom, e-mail, organisation, profil, message) pour qu'un membre de l'équipe y réponde | [À COMPLÉTER : localisation des données chez Slack, entité contractante] |
 | Hébergeur de l'application | Serveur web et API | [À COMPLÉTER : hébergeur applicatif, AXE-811] |
 
@@ -159,8 +180,11 @@ traitement à :
    (sécurité par ligne), double authentification des administrateurs et des
    experts-comptables, journal des accès et des exports, écritures
    comptables non modifiables ;
-4. n'ajouter un sous-traitant qu'après en avoir informé le client, qui peut
-   s'y opposer ; la liste à jour est la section 4 ;
+4. n'ajouter un sous-traitant, ou un nouvel usage d'un sous-traitant déjà
+   listé, qu'après en avoir informé le client, qui peut s'y opposer ; la
+   liste à jour est la section 4
+   [À COMPLÉTER : information des clients existants de la lecture des
+   documents de reprise par Anthropic, depuis le 2026-11-18] ;
 5. aider le client à répondre aux demandes des personnes et à ses
    obligations (sécurité, notification de violation, analyse d'impact) ;
 6. notifier au client toute violation de données dans les meilleurs délais

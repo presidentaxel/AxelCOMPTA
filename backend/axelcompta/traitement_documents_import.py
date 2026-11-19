@@ -38,6 +38,12 @@ from axelcompta.tenants.fiches_import import StatutDocument
 
 A_LIRE = "À lire : sera lu par l'OCR (AXE-943), ou compilé à la main."
 IMPRESSION_FEC = "Impression PDF du FEC : c'est le fichier texte du FEC qui se lit."
+# AXE-1001 : un téléchargement interrompu (Chrome, Firefox, Safari) est
+# incomplet ; il ne se lit pas, il se redemande.
+EXTENSIONS_INCOMPLETES = (".crdownload", ".part", ".partial", ".download", ".tmp")
+INCOMPLET = "Téléchargement incomplet ({extension}) : redemandez ce fichier au client."
+A_LIRE_MAIN = "À lire à la main : l'OCR ne lit que les PDF et les images."
+_SIGNATURES_LISIBLES = (b"%PDF", b"\xff\xd8\xff", b"\x89PNG", b"GIF8")
 
 
 @dataclass(frozen=True, slots=True)
@@ -260,6 +266,8 @@ def traiter(
     a été lu. `siren` : celui de la fiche, pour signaler un FEC d'une autre
     société."""
     extension = Path(nom_fichier).suffix.lower()
+    if extension in EXTENSIONS_INCOMPLETES:
+        return Traitement("illisible", INCOMPLET.format(extension=extension))
     if extension == ".qif":
         return _qif(contenu)
     if est_fec(contenu) or (categorie == "fec" and extension in (".txt", ".csv")):
@@ -270,7 +278,13 @@ def traiter(
         return _recap_plateforme(contenu)
     if categorie == "archive" or extension == ".zip":
         return Traitement("traite", "Archive gardée intacte ; ses fichiers sont rangés à part.")
-    return Traitement("a_traiter", A_LIRE)
+    return Traitement("a_traiter", A_LIRE if _lisible_par_l_ocr(contenu) else A_LIRE_MAIN)
+
+
+def _lisible_par_l_ocr(contenu: bytes) -> bool:
+    """Ce que l'OCR accepte (PDF, images), lu dans les premiers octets."""
+    webp = contenu[:4] == b"RIFF" and contenu[8:12] == b"WEBP"
+    return webp or contenu.startswith(_SIGNATURES_LISIBLES)
 
 
 MOIS_FR = (

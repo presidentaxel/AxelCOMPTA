@@ -114,3 +114,33 @@ def test_un_meme_fichier_depose_deux_fois_d_un_coup_ne_compte_qu_une_fois() -> N
     gardes, ecartes = sans_doublons(depot_sur_exercice(FICHE, 2022, double, "a", LE), set())
     assert [d.nom_fichier for d, _ in gardes] == ["x.pdf"]
     assert ecartes == ["copie de x.pdf"]
+
+
+def test_un_telechargement_interrompu_est_dit_incomplet_meme_dans_une_archive() -> None:
+    """AXE-1001 : « Balance Comptable LSKN COMPAGNY.pdf.crdownload » (Chrome)
+    ne se lit pas : il se redemande, et la fiche ne peut pas être traitée."""
+    archive = _zip({"Clôture 2023-2024/Balance Comptable.pdf.crdownload": b"%PDF-1.4 tronq"})
+    lot = depot_sur_exercice(
+        FICHE, 2024, [Fichier("Clôture 2023-2024.zip", "application/zip", archive)], "a@x.fr", LE
+    )
+    (_zip_, _), (incomplet, _) = lot
+    assert incomplet.statut_traitement == "illisible"
+    assert incomplet.resume == (
+        "Téléchargement incomplet (.crdownload) : redemandez ce fichier au client."
+    )
+
+
+def test_un_tableur_est_a_lire_a_la_main_et_un_pdf_par_l_ocr() -> None:
+    """AXE-1001 : l'OCR ne lit que les PDF et les images ; l'écran le dit dès le dépôt."""
+    tableur = b"PK\x03\x04 xl/workbook.xml"
+    ((excel, _),) = depot_sur_emplacement(
+        FICHE, "reprise:autre:2025", Fichier("CA 2025.xlsx", "", tableur), "a@x.fr", LE
+    )
+    ((pdf, _),) = depot_sur_emplacement(
+        FICHE, "reprise:liasse:2025", Fichier("liasse.pdf", "", b"%PDF-1.4"), "a@x.fr", LE
+    )
+    assert (excel.statut_traitement, excel.resume) == (
+        "a_traiter",
+        "À lire à la main : l'OCR ne lit que les PDF et les images.",
+    )
+    assert pdf.resume.startswith("À lire : sera lu par l'OCR")

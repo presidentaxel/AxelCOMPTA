@@ -801,8 +801,8 @@ sans Rollee. Les cinq tickets Rollee sont faits depuis le 12/11 (PR #132 à
 ### En cours (19/11)
 
 - **OCR en clair chez Anthropic** (encadré ⚠️ en tête, AXE-994) :
-  exception actée le 19/11 ; reste à mettre à jour les textes
-  juridiques, le doc 10 et l'ADR-005. À surveiller dans le journal
+  exception actée le 19/11 et écrite (ADR-009, confidentialité, doc 10,
+  invariant n° 5). Restent des actions hors code (plus bas). À surveiller dans le journal
   du worker : « OCR : N document(s) lu(s), X à vérifier, Y rangé(s),
   Z $ », et le plafond de 4 $ du mois.
 - Fiches d'import : remplir les critères d'AXE-989 fiche par fiche
@@ -940,6 +940,12 @@ sur une référence provisoire). Détail plus haut.
   dossier.
 
 ### Actions hors code (Louis)
+
+- OCR en clair (ADR-009, AXE-994) : lire dans le contrat Anthropic la
+  durée de conservation, l'usage pour l'entraînement, la région et le DPA,
+  puis remplir les blancs de la confidentialité ; informer les clients
+  existants du nouvel usage ; ajouter la lecture des documents à l'AIPD ;
+  faire relire par le juriste (AXE-813).
 
 - Poser une limite de dépense dans la console Anthropic, une clé par
   environnement, avant `AXELCOMPTA_LLM_ACTIF=1`.
