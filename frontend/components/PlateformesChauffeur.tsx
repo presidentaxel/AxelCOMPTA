@@ -77,8 +77,10 @@ export function PlateformesChauffeur({ dossierId }: { dossierId: string }) {
         <>
           {etat.donnees.comptes.length > 0 && (
             <ul className="mt-3 space-y-2">
-              {etat.donnees.comptes.map((compte) => (
-                <li key={compte.nom} className="flex min-w-0 items-center gap-2 text-sm leading-none text-ink">
+              {etat.donnees.comptes.map((compte, rang) => (
+                // Deux comptes Rollee peuvent porter la même plateforme (Uber
+                // en direct et Uber flotte) : le nom ne suffit pas comme clé.
+                <li key={`${compte.nom}-${rang}`} className="flex min-w-0 items-center gap-2 text-sm leading-none text-ink">
                   <span className="min-w-0">
                     <LogoPlateforme nom={compte.nom} />
                   </span>
