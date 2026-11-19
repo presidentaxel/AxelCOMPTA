@@ -139,7 +139,7 @@ def lire_document(
     """Le document après sa lecture (et son classement s'il était en « Autre »)."""
     media = media_type(contenu)
     if media not in MEDIA_LISIBLES:
-        return document
+        return _illisible(document, maintenant)
     if document.categorie == "autre":
         document = _classer(fiche, documents, document, contenu, media, appeler, maintenant, bilan)
     categorie = REGISTRE.get(document.categorie)
@@ -153,6 +153,25 @@ def lire_document(
     bilan.a_verifier += not lecture.acceptee
     statut, resume, donnees = traitement(categorie, lecture, document.donnees, maintenant)
     return replace(document, statut_traitement=statut, resume=resume, donnees=donnees)  # type: ignore[arg-type]
+
+
+ILLISIBLE = "Format que l'OCR ne lit pas (seuls les PDF et les images le sont) : à lire à la main."
+
+
+def _illisible(document: DocumentImport, maintenant: datetime) -> DocumentImport:
+    """Un tableur, un fichier tronqué… : marqué une fois, sans appel ni
+    coût, pour qu'il ne reste pas « sera lu par l'OCR » indéfiniment."""
+    cle = "ocr_classement" if document.categorie == "autre" else "ocr"
+    marque = {
+        "version": VERSION,
+        "le": maintenant.isoformat(timespec="seconds"),
+        "cout_usd": 0.0,
+        "a_verifier": True,
+        "controles": [ILLISIBLE],
+        "essais": [],
+    }
+    donnees = {**(document.donnees or {}), cle: marque}
+    return replace(document, resume=f"À vérifier par un humain : {ILLISIBLE}", donnees=donnees)
 
 
 def _classer(
