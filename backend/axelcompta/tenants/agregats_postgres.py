@@ -29,6 +29,8 @@ def _valeur_de(ligne: Row[tuple[object, ...]]) -> AgregatStocke:
         exercice_debut=_iso(ligne.exercice_debut),
         exercice_fin=_iso(ligne.exercice_fin),
         alerte_tva=ligne.alerte_tva,
+        entrees_non_classees_cts=ligne.entrees_non_classees_cts,
+        sorties_non_classees_cts=ligne.sorties_non_classees_cts,
     )
 
 
@@ -44,6 +46,8 @@ def _colonnes(valeur: AgregatStocke) -> dict[str, object]:
         else None,
         "exercice_fin": date.fromisoformat(valeur.exercice_fin) if valeur.exercice_fin else None,
         "alerte_tva": valeur.alerte_tva,
+        "entrees_non_classees_cts": valeur.entrees_non_classees_cts,
+        "sorties_non_classees_cts": valeur.sorties_non_classees_cts,
         "calcule_le": datetime.now(UTC),
     }
 
