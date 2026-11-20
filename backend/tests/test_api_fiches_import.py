@@ -726,6 +726,43 @@ def test_l_ocr_propose_un_rangement_et_un_rangement_a_la_main_le_protege() -> No
     assert (garde.donnees or {})["range_par"] == "humain"
 
 
+def test_l_expert_corrige_ou_valide_une_lecture_refusee_par_l_ocr() -> None:
+    """AXE-991 : la lecture est montrée, corrigée, et repasse les contrôles."""
+    client, _file = _client()
+    fiche = _ouvrir(client, siren="")
+    route = f"/portefeuille/imports/{fiche['id']}/documents"
+    depose = client.post(
+        route,
+        files={"fichier": ("rib.pdf", b"%PDF-1.4 rib", "application/pdf")},
+        data={"emplacement": "banque:rib"},
+        headers=EN_TETE,
+    ).json()
+    (document,) = [d for e in depose["emplacements"] for d in e["documents"]]
+    fiches = cast(FastAPI, client.app).dependency_overrides[get_fiches_import]()
+    (stocke,) = list(fiches.instantane(TenantId("TENANT_DEMO"), fiche["id"]).documents)
+    lu = {"titulaire": "SYBD", "iban": "FR76 faux", "bic": "", "banque": "SG"}
+    fiches.ranger(
+        replace(
+            stocke,
+            resume="À vérifier par un humain : IBAN lu invalide.",
+            donnees={"lu": lu, "ocr": {"version": "ocr-2", "a_verifier": True}},
+        )
+    )
+    vue = client.get(f"/portefeuille/imports/{fiche['id']}", headers=EN_TETE).json()
+    (a_voir,) = [d for e in vue["emplacements"] for d in e["documents"]]
+    assert a_voir["a_verifier"] and a_voir["lecture"] == lu
+
+    url = f"{route}/{document['id']}/lecture"
+    refuse = client.post(url, json={"lu": lu}, headers=EN_TETE)
+    assert refuse.status_code == 422, refuse.text
+    corrige = {**lu, "iban": "FR7630006000011234567890189"}
+    valide = client.post(url, json={"lu": corrige}, headers=EN_TETE)
+    assert valide.status_code == 200, valide.text
+    (traite,) = [d for e in valide.json()["emplacements"] for d in e["documents"]]
+    assert traite["statut_traitement"] == "traite" and not traite["a_verifier"]
+    assert traite["lecture"] is None
+
+
 def test_les_criteres_d_import_d_une_fiche_sans_dossier() -> None:
     """AXE-989 : sans dossier, rien à vérifier ; la fiche n'est pas importée."""
     client, _file = _client()
