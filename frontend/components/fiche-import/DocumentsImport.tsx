@@ -4,6 +4,7 @@ import { AlertTriangle, Check, Download, FileText, LoaderCircle, Plus, Trash2, U
 import { useRef, useState } from "react";
 
 import { Badge } from "@/components/Badge";
+import { Dialogue } from "@/components/Dialogue";
 import { ApercuDocument } from "@/components/fiche-import/ApercuDocument";
 import { Button } from "@/components/ui/button";
 import {
@@ -623,7 +624,13 @@ function CorrigerLecture({
     );
   }
   return (
-    <div className="mt-2 grid gap-3 text-ink lg:grid-cols-2">
+    <Dialogue
+      titre={`Corriger la lecture : ${nomCourt(document.nom_fichier)}`}
+      titreId={`titre-lecture-${document.id}`}
+      onFermer={() => setOuvert(false)}
+      large
+    >
+      <div className="mt-4 grid gap-4 text-sm text-ink lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <ApercuDocument ficheId={fiche.id} documentId={document.id} lecture={lu} />
       <div className="space-y-1">
         <label className="flex items-center gap-2">
@@ -683,7 +690,8 @@ function CorrigerLecture({
         </Button>
         {erreur && <p className="text-danger">{erreur}</p>}
       </div>
-    </div>
+      </div>
+    </Dialogue>
   );
 }
 

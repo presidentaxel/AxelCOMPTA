@@ -6,7 +6,7 @@ import { telechargerDocumentImport } from "@/lib/auth-gestionnaire";
 import { trouverCadres, type MorceauTexte } from "@/lib/cadres-lecture";
 
 const PAGES_MAX = 6; // un relevé ou une liasse : les premières pages suffisent à relire
-const LARGEUR = 520;
+const LARGEUR = 720;
 
 type Page = { url: string; largeur: number; hauteur: number; morceaux: MorceauTexte[] };
 
@@ -86,7 +86,7 @@ export function ApercuDocument({
   if (image) return <img src={image} alt="Document" className="max-h-[70vh] w-full object-contain" />;
   if (!pages) return <p className="text-subtle">Préview en cours…</p>;
   return (
-    <div className="max-h-[70vh] space-y-2 overflow-y-auto">
+    <div className="max-h-[75vh] space-y-2 overflow-auto">
       {pages.map((page, rang) => (
         <div key={rang} className="relative" style={{ width: page.largeur, height: page.hauteur }}>
           <img src={page.url} alt={`Page ${rang + 1}`} width={page.largeur} height={page.hauteur} />

@@ -21,11 +21,14 @@ export function Dialogue({
   titreId,
   onFermer,
   children,
+  large = false,
 }: {
   titre: string;
   titreId: string;
   onFermer: () => void;
   children: ReactNode;
+  /** AXE-1015 : un document à côté de sa lecture demande toute la largeur. */
+  large?: boolean;
 }) {
   const fenetre = useRef<HTMLDivElement>(null);
   // `onFermer` change à chaque rendu de l'appelant : on lit toujours la
@@ -81,7 +84,7 @@ export function Dialogue({
         aria-modal="true"
         aria-labelledby={titreId}
         tabIndex={-1}
-        className="feuille-chauffeur w-full max-w-[520px] overflow-y-auto rounded-xl border border-border bg-canvas p-6 text-ink shadow-overlay outline-none"
+        className={`feuille-chauffeur w-full ${large ? "max-w-[min(1280px,96vw)]" : "max-w-[520px]"} overflow-y-auto rounded-xl border border-border bg-canvas p-6 text-ink shadow-overlay outline-none`}
       >
         <h2 id={titreId} className="text-xl font-semibold">
           {titre}
