@@ -62,6 +62,8 @@ from sklearn.metrics import balanced_accuracy_score
 from sklearn.model_selection import GroupKFold
 from sklearn.pipeline import Pipeline
 
+from jeu_gele import est_gele
+
 ENTREE = Path("resultats/fec_ml_taxonomie_v2.csv")
 SORTIE_MODELE = Path("modeles/tfidf_logreg_v2.joblib")
 SORTIE_RAPPORT = Path("resultats/rapport_modele_v2.txt")
@@ -126,14 +128,19 @@ def poids_racine(etiquettes: list[str]) -> dict[str, float]:
     return {c: math.sqrt(n / (k * v)) for c, v in compte.items()}
 
 
-def lignes_audit(chemin: Path) -> list[tuple[str, str, str]]:
-    """(groupe, texte, catégorie). Montants déjà en convention FEC."""
+def lignes_audit(chemin: Path, gelees: bool = False) -> list[tuple[str, str, str]]:
+    """(groupe, texte, catégorie). Montants déjà en convention FEC. Sans
+    `gelees`, les dossiers du jeu gelé sont écartés (AXE-902) ; avec, seuls
+    eux sont gardés (pour comparer des modèles, `comparer_modeles.py`)."""
     lignes = []
     with chemin.open(newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             if row["categorie"] in EXCLUES or not row["libelle_bancaire"].strip():
                 continue
             if row.get("type_transaction") == "composite":
+                continue
+            # AXE-902 : aucun modèle ne voit les dossiers du jeu gelé.
+            if est_gele(row["dossier_id"]) != gelees:
                 continue
             try:
                 montant = float(row["montant"])
