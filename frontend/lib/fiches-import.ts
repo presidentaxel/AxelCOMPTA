@@ -72,6 +72,8 @@ export type DocumentImport = {
   controles?: string[];
   /** AXE-991 : ce que l'OCR a lu, quand le document est à vérifier. */
   lecture?: Record<string, unknown> | null;
+  /** AXE-1015 : tous les champs de sa catégorie, pour saisir les manquants. */
+  champs_lecture?: { textes: string[]; montants: string[] } | null;
   /** AXE-995 : l'OCR pense que le document est mal rangé ; un clic le range. */
   proposition?: { categorie: string; libelle: string; emplacement: string } | null;
 };

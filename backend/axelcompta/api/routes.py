@@ -299,6 +299,7 @@ from axelcompta.ocr.passage import completer_fiche, ocr_actif
 from axelcompta.ocr.passage import contexte as contexte_ocr
 from axelcompta.ocr.reclassement import RANGE_PAR
 from axelcompta.ocr.reclassement import proposition as proposition_ocr
+from axelcompta.ocr.registre import REGISTRE as REGISTRE_OCR
 from axelcompta.ocr.validation import valider_lecture
 from axelcompta.packs.vtc_demo import (
     charger_categories_banque,
@@ -8979,6 +8980,8 @@ class DocumentImportVue(BaseModel):
     controles: list[str] = []
     # AXE-991 : ce que l'OCR a lu, pour le corriger (seulement à vérifier).
     lecture: dict[str, Any] | None = None
+    # AXE-1015 : tous les champs de sa catégorie, pour saisir ceux qui manquent.
+    champs_lecture: dict[str, list[str]] | None = None
     # AXE-995 : l'OCR pense que le document est mal rangé ; un clic le range.
     proposition: PropositionRangementVue | None = None
 
@@ -9223,6 +9226,7 @@ def _document_vue(d: DocumentImport) -> DocumentImportVue:
         a_verifier=verifier,
         controles=controles,
         lecture=_lecture_a_corriger(d) if verifier else None,
+        champs_lecture=_champs_lecture(d.categorie) if verifier else None,
         proposition=_proposition_vue(d),
     )
 
@@ -9757,6 +9761,11 @@ def _enregistrer_route_lecture_document(app: FastAPI) -> None:
         return _valider_lecture_document(
             fiches, tenant_id, fiche_id, document_id, corps, identite.email
         )
+
+
+def _champs_lecture(categorie: str) -> dict[str, list[str]] | None:
+    lue = REGISTRE_OCR.get(categorie)
+    return {"textes": list(lue.textes), "montants": list(lue.montants)} if lue else None
 
 
 def _lecture_a_corriger(d: DocumentImport) -> dict[str, Any] | None:

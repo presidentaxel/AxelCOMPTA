@@ -4,6 +4,7 @@ import { AlertTriangle, Check, Download, FileText, LoaderCircle, Plus, Trash2, U
 import { useRef, useState } from "react";
 
 import { Badge } from "@/components/Badge";
+import { ApercuDocument } from "@/components/fiche-import/ApercuDocument";
 import { Button } from "@/components/ui/button";
 import {
   deposerDocumentImport,
@@ -529,7 +530,13 @@ function LigneDocument({
             </ul>
           )}
           {modifiable && document.lecture && (
-            <CorrigerLecture fiche={fiche} document={document} lecture={document.lecture} onFiche={onFiche} />
+            <CorrigerLecture
+              fiche={fiche}
+              document={document}
+              lecture={document.lecture}
+              onFiche={onFiche}
+              onRanger={onRanger}
+            />
           )}
         </div>
       ) : (
@@ -568,19 +575,36 @@ function CorrigerLecture({
   document,
   lecture,
   onFiche,
+  onRanger,
 }: {
   fiche: FicheImport;
   document: DocumentImport;
   lecture: Record<string, unknown>;
   onFiche: (fiche: FicheImport) => void;
+  onRanger: (document: DocumentImport, emplacement: string) => void;
 }) {
   const [ouvert, setOuvert] = useState(false);
   const [lu, setLu] = useState(lecture);
   const [raison, setRaison] = useState("");
   const [erreur, setErreur] = useState("");
+  const attendus = document.champs_lecture ?? { textes: [], montants: [] };
   const montants = Array.isArray(lu.montants) ? (lu.montants as Montant[]) : [];
-  const textes = Object.entries(lu).filter(([, v]) => typeof v === "string") as [string, string][];
+  // AXE-1015 : tous les champs de la catégorie, même ceux que l'OCR n'a pas trouvés.
+  const textes = [...new Set([...attendus.textes, ...Object.keys(lu).filter((k) => typeof lu[k] === "string")])];
+  const nomsMontants = [...new Set([...attendus.montants, ...montants.map((m) => m.nom)])];
   const listes = Object.entries(lu).filter(([k, v]) => Array.isArray(v) && k !== "montants");
+  const emplacements = [
+    ...fiche.emplacements.map((e) => ({ cle: e.cle, libelle: e.libelle })),
+    ...(document.exercice === null
+      ? []
+      : CATEGORIES_EXERCICE.map((c) => ({ cle: `reprise:${c.cle}:${document.exercice}`, libelle: `${c.libelle} ${document.exercice}` }))),
+  ].filter((e, i, tous) => tous.findIndex((x) => x.cle === e.cle) === i);
+
+  function changerMontant(nom: string, texte: string) {
+    const cts = Math.round(Number(texte.replace(/\s/g, "").replace(",", ".")) * 100);
+    const autres = montants.filter((m) => m.nom !== nom);
+    setLu({ ...lu, montants: texte.trim() === "" || Number.isNaN(cts) ? autres : [...autres, { nom, valeur_cts: cts }] });
+  }
 
   async function valider() {
     setErreur("");
@@ -599,50 +623,66 @@ function CorrigerLecture({
     );
   }
   return (
-    <div className="mt-2 space-y-1 text-ink">
-      {textes.map(([cle, valeur]) => (
-        <label key={cle} className="flex items-center gap-2">
-          <span className="w-40 shrink-0 text-subtle">{cle}</span>
+    <div className="mt-2 grid gap-3 text-ink lg:grid-cols-2">
+      <ApercuDocument ficheId={fiche.id} documentId={document.id} lecture={lu} />
+      <div className="space-y-1">
+        <label className="flex items-center gap-2">
+          <span className="w-40 shrink-0 text-subtle">Nature, emplacement</span>
+          <select
+            value={document.emplacement}
+            onChange={(e) => onRanger(document, e.target.value)}
+            className="h-7 min-w-0 flex-1 rounded-md border border-border bg-surface px-2"
+          >
+            {emplacements.map((e) => (
+              <option key={e.cle} value={e.cle}>
+                {e.libelle}
+              </option>
+            ))}
+          </select>
+        </label>
+        {textes.map((cle) => (
+          <label key={cle} className="flex items-center gap-2">
+            <span className="w-40 shrink-0 text-subtle">{cle}</span>
+            <input
+              value={typeof lu[cle] === "string" ? (lu[cle] as string) : ""}
+              onChange={(e) => setLu({ ...lu, [cle]: e.target.value })}
+              className="h-7 min-w-0 flex-1 rounded-md border border-border bg-surface px-2"
+            />
+          </label>
+        ))}
+        {nomsMontants.map((nom) => {
+          const montant = montants.find((m) => m.nom === nom);
+          return (
+            <label key={nom} className="flex items-center gap-2">
+              <span className="w-40 shrink-0 text-subtle">{nom} (€)</span>
+              <input
+                inputMode="decimal"
+                defaultValue={montant ? (montant.valeur_cts / 100).toFixed(2) : ""}
+                placeholder="non lu"
+                onChange={(e) => changerMontant(nom, e.target.value)}
+                className="h-7 w-36 rounded-md border border-border bg-surface px-2 text-right tabular-nums"
+              />
+            </label>
+          );
+        })}
+        {listes.map(([cle, valeur]) => (
+          <p key={cle} className="text-subtle">
+            {cle} : {(valeur as unknown[]).length} ligne(s) lue(s), gardées telles quelles.
+          </p>
+        ))}
+        <label className="flex items-center gap-2">
+          <span className="w-40 shrink-0 text-subtle">Raison (si les contrôles échouent)</span>
           <input
-            value={valeur}
-            onChange={(e) => setLu({ ...lu, [cle]: e.target.value })}
+            value={raison}
+            onChange={(e) => setRaison(e.target.value)}
             className="h-7 min-w-0 flex-1 rounded-md border border-border bg-surface px-2"
           />
         </label>
-      ))}
-      {montants.map((m, rang) => (
-        <label key={m.nom} className="flex items-center gap-2">
-          <span className="w-40 shrink-0 text-subtle">{m.nom} (€)</span>
-          <input
-            inputMode="decimal"
-            defaultValue={(m.valeur_cts / 100).toFixed(2)}
-            onChange={(e) => {
-              const cts = Math.round(Number(e.target.value.replace(/\s/g, "").replace(",", ".")) * 100);
-              if (Number.isNaN(cts)) return;
-              const suivants = montants.map((x, i) => (i === rang ? { ...x, valeur_cts: cts } : x));
-              setLu({ ...lu, montants: suivants });
-            }}
-            className="h-7 w-36 rounded-md border border-border bg-surface px-2 text-right tabular-nums"
-          />
-        </label>
-      ))}
-      {listes.map(([cle, valeur]) => (
-        <p key={cle} className="text-subtle">
-          {cle} : {(valeur as unknown[]).length} ligne(s) lue(s), gardées telles quelles.
-        </p>
-      ))}
-      <label className="flex items-center gap-2">
-        <span className="w-40 shrink-0 text-subtle">Raison (si les contrôles échouent)</span>
-        <input
-          value={raison}
-          onChange={(e) => setRaison(e.target.value)}
-          className="h-7 min-w-0 flex-1 rounded-md border border-border bg-surface px-2"
-        />
-      </label>
-      <Button size="sm" onClick={() => void valider()}>
-        Valider la lecture
-      </Button>
-      {erreur && <p className="text-danger">{erreur}</p>}
+        <Button size="sm" onClick={() => void valider()}>
+          Valider la lecture
+        </Button>
+        {erreur && <p className="text-danger">{erreur}</p>}
+      </div>
     </div>
   );
 }

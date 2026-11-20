@@ -751,6 +751,10 @@ def test_l_expert_corrige_ou_valide_une_lecture_refusee_par_l_ocr() -> None:
     vue = client.get(f"/portefeuille/imports/{fiche['id']}", headers=EN_TETE).json()
     (a_voir,) = [d for e in vue["emplacements"] for d in e["documents"]]
     assert a_voir["a_verifier"] and a_voir["lecture"] == lu
+    assert a_voir["champs_lecture"] == {
+        "textes": ["titulaire", "iban", "bic", "banque"],
+        "montants": [],
+    }
 
     url = f"{route}/{document['id']}/lecture"
     refuse = client.post(url, json={"lu": lu}, headers=EN_TETE)
