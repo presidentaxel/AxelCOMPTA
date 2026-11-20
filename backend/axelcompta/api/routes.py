@@ -295,9 +295,11 @@ from axelcompta.ledger.service import LedgerService
 from axelcompta.manques_rollee import manques as manques_rollee
 from axelcompta.nouveaux_contacts import fiche_sirene, recherche_entreprises
 from axelcompta.ocr.lecture import a_verifier as a_verifier_ocr
-from axelcompta.ocr.passage import ocr_actif
+from axelcompta.ocr.passage import completer_fiche, ocr_actif
+from axelcompta.ocr.passage import contexte as contexte_ocr
 from axelcompta.ocr.reclassement import RANGE_PAR
 from axelcompta.ocr.reclassement import proposition as proposition_ocr
+from axelcompta.ocr.validation import valider_lecture
 from axelcompta.packs.vtc_demo import (
     charger_categories_banque,
     charger_compte_par_categorie,
@@ -8975,6 +8977,8 @@ class DocumentImportVue(BaseModel):
     # AXE-943 : l'OCR n'a pas pu valider sa lecture ; un humain tranche.
     a_verifier: bool = False
     controles: list[str] = []
+    # AXE-991 : ce que l'OCR a lu, pour le corriger (seulement à vérifier).
+    lecture: dict[str, Any] | None = None
     # AXE-995 : l'OCR pense que le document est mal rangé ; un clic le range.
     proposition: PropositionRangementVue | None = None
 
@@ -9035,6 +9039,14 @@ class CouvertureBanqueVue(BaseModel):
     comptes: list[CompteBanqueVue]
     a_completer: list[str]
     comptes_connus: list[CompteConnuVue] = []
+
+
+class LectureCorrigeeVue(BaseModel):
+    """AXE-991 : la lecture corrigée par un humain, et sa raison s'il valide
+    malgré les contrôles."""
+
+    lu: dict[str, Any]
+    raison: str = ""
 
 
 class RangementDocumentVue(BaseModel):
@@ -9210,6 +9222,7 @@ def _document_vue(d: DocumentImport) -> DocumentImportVue:
         resume=d.resume,
         a_verifier=verifier,
         controles=controles,
+        lecture=_lecture_a_corriger(d) if verifier else None,
         proposition=_proposition_vue(d),
     )
 
@@ -9722,6 +9735,57 @@ def _enregistrer_routes_exercices_import(app: FastAPI) -> None:
             _range_a_la_main(_relu(fiches, reclasser_document(document, corps.emplacement)))
         )
         return _fiche_vue(_reprise_relue(fiches, rangee))
+
+
+def _enregistrer_route_lecture_document(app: FastAPI) -> None:
+    """AXE-991 : corriger ou valider une lecture refusée par l'OCR."""
+
+    @app.post(
+        "/portefeuille/imports/{fiche_id}/documents/{document_id}/lecture",
+        response_model=FicheImportVue,
+    )
+    def valider_lecture_document(
+        fiche_id: str,
+        document_id: str,
+        corps: LectureCorrigeeVue,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+    ) -> FicheImportVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        return _valider_lecture_document(
+            fiches, tenant_id, fiche_id, document_id, corps, identite.email
+        )
+
+
+def _lecture_a_corriger(d: DocumentImport) -> dict[str, Any] | None:
+    lu = (d.donnees or {}).get("lu")
+    return dict(lu) if isinstance(lu, dict) and lu else None
+
+
+def _valider_lecture_document(
+    fiches: FichesImportRepository,
+    tenant_id: TenantId,
+    fiche_id: str,
+    document_id: str,
+    corps: LectureCorrigeeVue,
+    par: str,
+) -> FicheImportVue:
+    """AXE-991 : la lecture corrigée repasse les contrôles ; acceptée (ou
+    validée avec une raison), elle remplit la fiche comme une lecture OCR."""
+    instantane = fiches.instantane(tenant_id, fiche_id)
+    document = next((d for d in instantane.documents if d.id == document_id), None)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document introuvable.")
+    maintenant = datetime.now(UTC)
+    ctx = contexte_ocr(instantane.fiche, instantane.documents, document.exercice)
+    valide = valider_lecture(document, corps.lu, ctx, corps.raison, par, maintenant)
+    rangee = fiches.ranger(valide)
+    complete = completer_fiche(rangee.fiche, rangee.documents, valide, maintenant)
+    if complete is not None:
+        rangee = fiches.enregistrer(complete)
+    return _fiche_vue(_reprise_relue(fiches, rangee))
 
 
 def _range_a_la_main(document: DocumentImport) -> DocumentImport:
@@ -10245,6 +10309,7 @@ def _enregistrer_routes_imports(app: FastAPI) -> None:
     _enregistrer_routes_documents_import(app)
     _enregistrer_route_retrait_document_import(app)
     _enregistrer_routes_exercices_import(app)
+    _enregistrer_route_lecture_document(app)
     _enregistrer_route_couverture_banque(app)
     _enregistrer_route_validation_import(app)
     _enregistrer_routes_reglages_banque(app)

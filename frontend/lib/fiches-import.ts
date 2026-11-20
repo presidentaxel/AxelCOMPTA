@@ -70,6 +70,8 @@ export type DocumentImport = {
   /** AXE-943 : l'OCR (Haiku puis Sonnet) n'a pas pu valider sa lecture. */
   a_verifier?: boolean;
   controles?: string[];
+  /** AXE-991 : ce que l'OCR a lu, quand le document est à vérifier. */
+  lecture?: Record<string, unknown> | null;
   /** AXE-995 : l'OCR pense que le document est mal rangé ; un clic le range. */
   proposition?: { categorie: string; libelle: string; emplacement: string } | null;
 };
