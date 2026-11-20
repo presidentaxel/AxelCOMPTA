@@ -431,6 +431,7 @@ reprise en simulation, puis appliquée après accord.
    | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `AXELCOMPTA_LLM_ACTIF=1` | allumer l'étage LLM (AXE-887, plus bas) |
    | `AXELCOMPTA_LLM_PLAFOND_CHAUFFEUR_USD`, `AXELCOMPTA_LLM_PLAFOND_GLOBAL_USD` | changer le budget de l'IA (0,50 $ et 100 $ par défaut) |
    | `AXELCOMPTA_ROLLEE_RAPPROCHEMENT=1` | relier seuls les users Rollee la nuit (AXE-911, après la simulation) |
+   | `AXELCOMPTA_OCR_ACTIF=1`, `AXELCOMPTA_OCR_PLAFOND_MOIS_USD` | lire les documents des fiches d'import par Claude (AXE-943, job `ocr_documents`) ; 4 $ par mois sur la prod. Les documents partent en clair : voir le doc 12, encadré ⚠️ |
 
 4. Reprise de la TVA déductible des dépenses déjà passées TTC (AXE-831) :
 

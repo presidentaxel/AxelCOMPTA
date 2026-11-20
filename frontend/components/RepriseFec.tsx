@@ -37,6 +37,9 @@ export type FecPropose = {
   /** Déficits saisis sur la fiche, pour préremplir. */
   deficits: string | null;
   charger: () => Promise<File>;
+  /** AXE-992 : la balance proposée a sa propre phrase et son bouton. */
+  phrase?: string;
+  bouton?: string;
 };
 
 function message(exception: unknown, repli: string): string {
@@ -166,7 +169,7 @@ function Formulaire({
       {propose && (
         <div className="rounded-md border border-border bg-canvas-app p-3">
           <p>
-            {propose.libelle} est déposé sur la fiche d&apos;import de ce dossier.
+            {propose.phrase ?? `${propose.libelle} est déposé sur la fiche d'import de ce dossier.`}
             {fichier === null ? "" : ` Fichier : ${fichier.name}.`}
           </p>
           <Button
@@ -177,7 +180,7 @@ function Formulaire({
             disabled={envoi}
             onClick={() => void utiliserPropose()}
           >
-            Utiliser ce FEC
+            {propose.bouton ?? "Utiliser ce FEC"}
           </Button>
         </div>
       )}

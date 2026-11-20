@@ -139,6 +139,7 @@ from axelcompta.closing.models import (
     SaisiesCloture,
 )
 from axelcompta.closing.ouverture import id_a_nouveaux
+from axelcompta.closing.ouverture_balance import analyser_balance
 from axelcompta.closing.ouverture_depot import (
     ROLE_DIRIGEANT,
     OuvertureDejaFaite,
@@ -195,6 +196,7 @@ from axelcompta.depot_documents_import import Fichier as FichierImport
 from axelcompta.depot_documents_import import (
     depot_sur_emplacement,
     depot_sur_exercice,
+    emplacement_classe,
     promus,
     sans_doublons,
 )
@@ -293,7 +295,12 @@ from axelcompta.ledger.service import LedgerService
 from axelcompta.manques_rollee import manques as manques_rollee
 from axelcompta.nouveaux_contacts import fiche_sirene, recherche_entreprises
 from axelcompta.ocr.lecture import a_verifier as a_verifier_ocr
-from axelcompta.ocr.passage import ocr_actif
+from axelcompta.ocr.passage import completer_fiche, ocr_actif
+from axelcompta.ocr.passage import contexte as contexte_ocr
+from axelcompta.ocr.reclassement import RANGE_PAR
+from axelcompta.ocr.reclassement import proposition as proposition_ocr
+from axelcompta.ocr.registre import REGISTRE as REGISTRE_OCR
+from axelcompta.ocr.validation import valider_lecture
 from axelcompta.packs.vtc_demo import (
     charger_categories_banque,
     charger_compte_par_categorie,
@@ -374,6 +381,7 @@ from axelcompta.tenants.fiches_import import (
     DocumentImport,
     FicheImport,
     champs_du_registre,
+    lire_emplacement,
     nouvelle_fiche,
     preremplir,
 )
@@ -411,8 +419,10 @@ from axelcompta.tenants.fiches_import_etat import emplacements as emplacements_i
 from axelcompta.tenants.fiches_import_etat import exercices as exercices_import
 from axelcompta.tenants.fiches_import_postgres import PostgresFichesImport
 from axelcompta.tenants.fiches_import_reprise import (
+    balances_lues,
     champs_lus_dans_un_fec,
     dernier_fec,
+    derniere_balance,
     preremplir_reprise,
 )
 from axelcompta.tenants.franchise_tva import MillesimeInconnu, suivre_franchise
@@ -527,6 +537,7 @@ from axelcompta.workflow.journal_acces import (
 )
 from axelcompta.workflow.lots_llm import LotsLlm, LotsLlmMemoire
 from axelcompta.workflow.lots_llm_postgres import PostgresLotsLlm
+from axelcompta.workflow.non_classes import non_classes
 from axelcompta.workflow.notifications import (
     NotificationRepository,
     ecritures_a_trancher,
@@ -705,6 +716,9 @@ class DossierAgregat(BaseModel):
     ca_ht_cts: int
     charges_cts: int
     resultat_cts: int
+    # AXE-1013 : sous chaque chiffre, ce qui attend encore au 471.
+    entrees_non_classees_cts: int = 0
+    sorties_non_classees_cts: int = 0
     statut_invitation: str | None
     mode_acces_bancaire: str
     forme_juridique: str
@@ -1272,6 +1286,8 @@ def _agregat(
         ca_ht_cts=stocke.ca_ht_cts,
         charges_cts=stocke.charges_cts,
         resultat_cts=stocke.resultat_cts,
+        entrees_non_classees_cts=stocke.entrees_non_classees_cts,
+        sorties_non_classees_cts=stocke.sorties_non_classees_cts,
         statut_invitation=statut_invitation,
         mode_acces_bancaire=dossier.mode_acces_bancaire,
         forme_juridique=dossier.forme_juridique,
@@ -1305,6 +1321,11 @@ def calculer_agregat(
     plus (invitation, preuves, guide du greffe)."""
     ledger = _ledger_avec_decisions(dossier, base, decisions)
     liasse = _construire_liasse(dossier, ledger, _provisions_saisies(dossier, provisions))
+    entrees, sorties = (
+        non_classes(ledger.grand_livre(dossier.id), liasse.exercice_debut, liasse.exercice_fin)
+        if liasse.exercice_debut and liasse.exercice_fin
+        else (0, 0)
+    )
     return AgregatStocke(
         ca_ht_cts=liasse.cases.get("CA_HT", 0),
         charges_cts=liasse.cases.get("CHARGES", 0),
@@ -1312,6 +1333,8 @@ def calculer_agregat(
         exercice_debut=liasse.exercice_debut.isoformat() if liasse.exercice_debut else None,
         exercice_fin=liasse.exercice_fin.isoformat() if liasse.exercice_fin else None,
         alerte_tva=_alerte_franchise_tva(dossier, ledger.grand_livre(dossier.id)),
+        entrees_non_classees_cts=entrees,
+        sorties_non_classees_cts=sorties,
     )
 
 
@@ -4909,6 +4932,12 @@ def _analyser_fec(
         _correspondance(correspondance),
         date.today(),
     )
+    return _sauf_si_deja_faite(analyse, dossier, ouvertures, ledger)
+
+
+def _sauf_si_deja_faite(
+    analyse: Analyse, dossier: Dossier, ouvertures: OuverturesRepository, ledger: LedgerService
+) -> Analyse:
     deja = ouvertures.obtenir(dossier.id) is not None or any(
         e.id == id_a_nouveaux(dossier.id, dossier.exercice_debut.year)
         for e in ledger.grand_livre(dossier.id)
@@ -5017,6 +5046,20 @@ def _importer_fec(
     correspondance, attestation, deficits = formulaire
     ouvertures, ledger = depots
     analyse = _analyser_fec(dossier, contenu, nom_fichier, correspondance, ouvertures, ledger)
+    return _enregistrer_ouverture(dossier, analyse, nom_fichier, formulaire, importeur, ouvertures)
+
+
+def _enregistrer_ouverture(
+    dossier: Dossier,
+    analyse: Analyse,
+    nom_fichier: str,
+    formulaire: tuple[str, str, int],
+    importeur: _Importeur,
+    ouvertures: OuverturesRepository,
+) -> OuvertureVue:
+    """Commun au FEC et à la balance (AXE-992) : refus, attestation mot pour
+    mot, déficits, puis l'écriture d'à-nouveaux et sa trace."""
+    correspondance, attestation, deficits = formulaire
     if analyse.a_nouveaux is None:
         raise FecRefuse(" ".join(analyse.refus) or "Rien à reprendre.")
     if attestation.strip() != analyse.attestation:
@@ -5094,6 +5137,7 @@ def _enregistrer_routes_ouverture(app: FastAPI) -> None:
         )
 
     _enregistrer_routes_ouverture_expert(app)
+    _enregistrer_routes_ouverture_balance(app)
 
 
 class FecDeLaFicheVue(BaseModel):
@@ -5106,12 +5150,13 @@ class FecDeLaFicheVue(BaseModel):
     nom_fichier: str | None = None
     exercice: int | None = None
     deficits: str | None = None
+    # AXE-992 : sans FEC, la balance de clôture lue par l'OCR.
+    balance_document_id: str | None = None
+    balance_au: str | None = None
 
 
-def fec_de_la_fiche(
-    dossier: Dossier, fiches: FichesImportRepository, aujourd_hui: date
-) -> FecDeLaFicheVue:
-    fiche = next(
+def _fiche_du_dossier(dossier: Dossier, fiches: FichesImportRepository) -> FicheImport | None:
+    return next(
         (
             f
             for f in fiches.toutes(dossier.tenant_id)
@@ -5119,12 +5164,25 @@ def fec_de_la_fiche(
         ),
         None,
     )
+
+
+def fec_de_la_fiche(
+    dossier: Dossier, fiches: FichesImportRepository, aujourd_hui: date
+) -> FecDeLaFicheVue:
+    fiche = _fiche_du_dossier(dossier, fiches)
     if fiche is None:
         return FecDeLaFicheVue(trouve=False)
     documents = fiches.instantane(dossier.tenant_id, fiche.id).documents
     fec = dernier_fec(documents, aujourd_hui)
     if fec is None:
-        return FecDeLaFicheVue(trouve=False, fiche_id=fiche.id)
+        balance = derniere_balance(documents, aujourd_hui)
+        return FecDeLaFicheVue(
+            trouve=False,
+            fiche_id=fiche.id,
+            deficits=(fiche.champs.get("deficits") or "").strip() or None,
+            balance_document_id=balance[0].id if balance else None,
+            balance_au=balance[1].isoformat() if balance else None,
+        )
     return FecDeLaFicheVue(
         trouve=True,
         fiche_id=fiche.id,
@@ -5186,6 +5244,86 @@ def _enregistrer_routes_ouverture_expert(app: FastAPI) -> None:
             (correspondance, attestation, deficits_euros),
             importeur,
             (ouvertures, ledger),
+        )
+
+
+def _analyser_balance_fiche(
+    dossier: Dossier,
+    fiches: FichesImportRepository,
+    document_id: str,
+    correspondance: str,
+    depots: tuple[OuverturesRepository, LedgerService],
+) -> tuple[Analyse, DocumentImport]:
+    """AXE-992 : la balance est relue sur la fiche du dossier, jamais prise
+    du navigateur ; seule une balance lue et acceptée par l'OCR compte."""
+    fiche = _fiche_du_dossier(dossier, fiches)
+    documents = fiches.instantane(dossier.tenant_id, fiche.id).documents if fiche else []
+    trouvee = next(
+        (b for b in balances_lues(documents) if b[0].id == document_id),
+        None,
+    )
+    if trouvee is None:
+        raise HTTPException(status_code=404, detail="Balance introuvable sur la fiche d'import.")
+    document, cloture, soldes_cts = trouvee
+    ouvertures, ledger = depots
+    analyse = analyser_balance(
+        soldes_cts,
+        cloture,
+        document.empreinte,
+        dossier.id,
+        dossier.exercice_debut,
+        _correspondance(correspondance),
+    )
+    return _sauf_si_deja_faite(analyse, dossier, ouvertures, ledger), document
+
+
+def _enregistrer_routes_ouverture_balance(app: FastAPI) -> None:
+    """AXE-992 : sans FEC, l'expert reprend le bilan d'ouverture depuis la
+    balance de clôture lue sur la fiche d'import, avec la même analyse, son
+    attestation propre et un motif."""
+
+    @app.post(
+        "/expert/dossiers/{dossier_id}/ouverture/balance/analyse", response_model=AnalyseFecVue
+    )
+    def analyser_ouverture_balance(
+        dossier: DossierExpertDep,
+        fiches: FichesImportDep,
+        ouvertures: OuverturesDep,
+        ledger: LedgerBaseDep,
+        document_id: Annotated[str, Form()],
+        correspondance: Annotated[str, Form()] = "{}",
+    ) -> AnalyseFecVue:
+        depots = (ouvertures, ledger)
+        analyse, _doc = _analyser_balance_fiche(
+            dossier, fiches, document_id, correspondance, depots
+        )
+        return _vue_analyse(analyse)
+
+    @app.post("/expert/dossiers/{dossier_id}/ouverture/balance", response_model=OuvertureVue)
+    def importer_ouverture_balance(
+        dossier: DossierExpertDep,
+        fiches: FichesImportDep,
+        ouvertures: OuverturesDep,
+        ledger: LedgerBaseDep,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        experts: ExpertsDep,
+        document_id: Annotated[str, Form()],
+        attestation: Annotated[str, Form()],
+        motif: Annotated[str, Form()],
+        correspondance: Annotated[str, Form()] = "{}",
+        deficits_euros: Annotated[int, Form()] = 0,
+    ) -> OuvertureVue:
+        _tenant, identite, actif = _expert(identite, role, experts)
+        importeur = _Importeur(
+            ROLE_EXPERT, identite.user_id, actif.habilitation.nom, motif_valide(motif)
+        )
+        analyse, document = _analyser_balance_fiche(
+            dossier, fiches, document_id, correspondance, (ouvertures, ledger)
+        )
+        formulaire = (correspondance, attestation, deficits_euros)
+        return _enregistrer_ouverture(
+            dossier, analyse, document.nom_fichier, formulaire, importeur, ouvertures
         )
 
 
@@ -8818,6 +8956,12 @@ class ExerciceImportVue(BaseModel):
     en_retard: bool
 
 
+class PropositionRangementVue(BaseModel):
+    categorie: str
+    libelle: str
+    emplacement: str
+
+
 class DocumentImportVue(BaseModel):
     id: str
     origine_id: str | None = None  # AXE-970 : l'archive d'où il sort
@@ -8834,6 +8978,12 @@ class DocumentImportVue(BaseModel):
     # AXE-943 : l'OCR n'a pas pu valider sa lecture ; un humain tranche.
     a_verifier: bool = False
     controles: list[str] = []
+    # AXE-991 : ce que l'OCR a lu, pour le corriger (seulement à vérifier).
+    lecture: dict[str, Any] | None = None
+    # AXE-1015 : tous les champs de sa catégorie, pour saisir ceux qui manquent.
+    champs_lecture: dict[str, list[str]] | None = None
+    # AXE-995 : l'OCR pense que le document est mal rangé ; un clic le range.
+    proposition: PropositionRangementVue | None = None
 
 
 class PeriodeBanqueVue(BaseModel):
@@ -8892,6 +9042,14 @@ class CouvertureBanqueVue(BaseModel):
     comptes: list[CompteBanqueVue]
     a_completer: list[str]
     comptes_connus: list[CompteConnuVue] = []
+
+
+class LectureCorrigeeVue(BaseModel):
+    """AXE-991 : la lecture corrigée par un humain, et sa raison s'il valide
+    malgré les contrôles."""
+
+    lu: dict[str, Any]
+    raison: str = ""
 
 
 class RangementDocumentVue(BaseModel):
@@ -9038,6 +9196,18 @@ def _sections_vue(fiche: FicheImport, documents: list[DocumentImport]) -> list[S
     ]
 
 
+def _proposition_vue(d: DocumentImport) -> PropositionRangementVue | None:
+    categorie = proposition_ocr(d.donnees)
+    if categorie is None or categorie == d.categorie:
+        return None
+    section = lire_emplacement(d.emplacement)[0] if d.emplacement else "documents"
+    return PropositionRangementVue(
+        categorie=categorie,
+        libelle=CATEGORIES_DOCUMENTS.get(categorie, categorie),
+        emplacement=emplacement_classe(categorie, d.exercice, section),
+    )
+
+
 def _document_vue(d: DocumentImport) -> DocumentImportVue:
     verifier, controles = a_verifier_ocr(d.donnees)
     return DocumentImportVue(
@@ -9055,6 +9225,9 @@ def _document_vue(d: DocumentImport) -> DocumentImportVue:
         resume=d.resume,
         a_verifier=verifier,
         controles=controles,
+        lecture=_lecture_a_corriger(d) if verifier else None,
+        champs_lecture=_champs_lecture(d.categorie) if verifier else None,
+        proposition=_proposition_vue(d),
     )
 
 
@@ -9562,8 +9735,71 @@ def _enregistrer_routes_exercices_import(app: FastAPI) -> None:
         )
         if document is None:
             raise HTTPException(status_code=404, detail="Document introuvable.")
-        rangee = fiches.ranger(_relu(fiches, reclasser_document(document, corps.emplacement)))
+        rangee = fiches.ranger(
+            _range_a_la_main(_relu(fiches, reclasser_document(document, corps.emplacement)))
+        )
         return _fiche_vue(_reprise_relue(fiches, rangee))
+
+
+def _enregistrer_route_lecture_document(app: FastAPI) -> None:
+    """AXE-991 : corriger ou valider une lecture refusée par l'OCR."""
+
+    @app.post(
+        "/portefeuille/imports/{fiche_id}/documents/{document_id}/lecture",
+        response_model=FicheImportVue,
+    )
+    def valider_lecture_document(
+        fiche_id: str,
+        document_id: str,
+        corps: LectureCorrigeeVue,
+        identite: IdentiteDep,
+        role: RoleMembreDep,
+        fiches: FichesImportDep,
+    ) -> FicheImportVue:
+        tenant_id, identite = _verifier_acces_gestionnaire(identite)
+        _exiger_ecriture(role, REFUS_IMPORT_LECTURE)
+        return _valider_lecture_document(
+            fiches, tenant_id, fiche_id, document_id, corps, identite.email
+        )
+
+
+def _champs_lecture(categorie: str) -> dict[str, list[str]] | None:
+    lue = REGISTRE_OCR.get(categorie)
+    return {"textes": list(lue.textes), "montants": list(lue.montants)} if lue else None
+
+
+def _lecture_a_corriger(d: DocumentImport) -> dict[str, Any] | None:
+    lu = (d.donnees or {}).get("lu")
+    return dict(lu) if isinstance(lu, dict) and lu else None
+
+
+def _valider_lecture_document(
+    fiches: FichesImportRepository,
+    tenant_id: TenantId,
+    fiche_id: str,
+    document_id: str,
+    corps: LectureCorrigeeVue,
+    par: str,
+) -> FicheImportVue:
+    """AXE-991 : la lecture corrigée repasse les contrôles ; acceptée (ou
+    validée avec une raison), elle remplit la fiche comme une lecture OCR."""
+    instantane = fiches.instantane(tenant_id, fiche_id)
+    document = next((d for d in instantane.documents if d.id == document_id), None)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document introuvable.")
+    maintenant = datetime.now(UTC)
+    ctx = contexte_ocr(instantane.fiche, instantane.documents, document.exercice)
+    valide = valider_lecture(document, corps.lu, ctx, corps.raison, par, maintenant)
+    rangee = fiches.ranger(valide)
+    complete = completer_fiche(rangee.fiche, rangee.documents, valide, maintenant)
+    if complete is not None:
+        rangee = fiches.enregistrer(complete)
+    return _fiche_vue(_reprise_relue(fiches, rangee))
+
+
+def _range_a_la_main(document: DocumentImport) -> DocumentImport:
+    """AXE-995 : rangé par une personne, l'OCR ne le déplacera plus d'office."""
+    return dataclasses.replace(document, donnees={**(document.donnees or {}), RANGE_PAR: "humain"})
 
 
 def _relu(fiches: FichesImportRepository, document: DocumentImport) -> DocumentImport:
@@ -10082,6 +10318,7 @@ def _enregistrer_routes_imports(app: FastAPI) -> None:
     _enregistrer_routes_documents_import(app)
     _enregistrer_route_retrait_document_import(app)
     _enregistrer_routes_exercices_import(app)
+    _enregistrer_route_lecture_document(app)
     _enregistrer_route_couverture_banque(app)
     _enregistrer_route_validation_import(app)
     _enregistrer_routes_reglages_banque(app)

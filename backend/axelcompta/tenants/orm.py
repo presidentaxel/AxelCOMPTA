@@ -297,6 +297,8 @@ agregats_dossier = Table(
     Column("exercice_fin", Date, nullable=True),
     Column("alerte_tva", Text, nullable=True),
     Column("calcule_le", DateTime(timezone=True), nullable=True),
+    Column("entrees_non_classees_cts", BigInteger, nullable=False, server_default="0"),
+    Column("sorties_non_classees_cts", BigInteger, nullable=False, server_default="0"),
 )
 
 # Tags d'un portefeuille (AXE-829). Les tags proposés y sont créés au besoin.

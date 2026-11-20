@@ -22,6 +22,8 @@
     "lib/fiches-import.ts",
     "lib/fiches-import.test.ts",
     "lib/liens-rollee.test.ts",
+    "lib/cadres-lecture.ts",
+    "lib/cadres-lecture.test.ts",
     "lib/imputation-ecart.ts",
     "lib/imputation-ecart.test.ts",
     "lib/loa.ts",

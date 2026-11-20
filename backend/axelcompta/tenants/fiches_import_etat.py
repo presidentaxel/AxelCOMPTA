@@ -59,6 +59,7 @@ SECTION_PAR_CATEGORIE = {
     "releve_plateforme": "plateformes",
     "kbis": "documents",
     "statuts": "documents",
+    "carte_grise": "documents",
     "lettre_comptable": "documents",
     "autre": "documents",
 }
@@ -422,6 +423,15 @@ def _vides(
             "Statuts",
             "Dernière version signée.",
             True,
+        ),
+        Emplacement(
+            "documents:carte_grise",
+            "documents",
+            "carte_grise",
+            None,
+            "Carte grise",
+            "Du véhicule de la société, s'il y en a un : elle remplit le véhicule.",
+            False,
         ),
         Emplacement(
             "documents:lettre_comptable",

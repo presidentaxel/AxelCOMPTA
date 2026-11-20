@@ -97,6 +97,28 @@ def test_une_ca12_dont_la_nette_est_le_solde_apres_acomptes() -> None:
     assert DECLARATION_TVA.controler(lu, Contexte())
 
 
+def test_un_recapitulatif_de_tva_sans_periode_rangee_sur_un_exercice() -> None:
+    # « declaration-tva KERFICE SERVICE 2023.pdf » : les montants, ni SIREN ni période.
+    lu = {
+        "siren": "",
+        "formulaire": "",
+        "periode_debut": "",
+        "periode_fin": "",
+        "montants": _m(tva_collectee_cts=635500, tva_deductible_cts=697100, tva_nette_cts=-61600),
+    }
+    assert DECLARATION_TVA.controler(lu, Contexte(exercice=2023)) == []
+    assert DECLARATION_TVA.resumer(lu) == (
+        "Déclaration de TVA lue : période non imprimée, celle de l'exercice, nette −616,00 €."
+    )
+    # En vrac, sans exercice, la période reste obligatoire ; l'arithmétique aussi.
+    assert DECLARATION_TVA.controler(lu, Contexte()) == ["Fin de période : non lue."]
+    faux = {
+        **lu,
+        "montants": _m(tva_collectee_cts=635500, tva_deductible_cts=697100, tva_nette_cts=61600),
+    }
+    assert DECLARATION_TVA.controler(faux, Contexte(exercice=2023))
+
+
 def test_une_piece_ht_tva_ttc() -> None:
     lu = {
         "emetteur": "TotalEnergies",

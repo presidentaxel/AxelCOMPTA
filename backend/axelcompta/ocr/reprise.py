@@ -17,9 +17,19 @@ fiche (critère d'import d'AXE-989), jamais par-dessus une saisie.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import date
 
 from .categories import Categorie, Contexte, Resume
-from .controles import controle_date, controle_siren, entier, euros, liste, montants, texte
+from .controles import (
+    controle_date,
+    controle_siren,
+    date_lue,
+    entier,
+    euros,
+    liste,
+    montants,
+    texte,
+)
 
 ARRONDI_EURO = 100  # une liasse, une CA3 sont imprimées en euros entiers
 
@@ -86,7 +96,9 @@ MONTANTS_BILAN = (
 CONSIGNE_BILAN = """\
 - siren, denomination, formulaire (2033, 2050, 2065, 2031…), exercice_debut, exercice_fin.
 - montants de l'exercice (pas de l'exercice précédent) : chiffre_affaires_cts, resultat_cts,
-  capital_cts, total_actif_cts et total_passif_cts (totaux du bilan), impot_societes_cts,
+  capital_cts, total_actif_cts et total_passif_cts (totaux du bilan : l'actif NET, colonne
+  « Net » de l'exercice, après amortissements et dépréciations, jamais la colonne « Brut » ;
+  il est égal au total du passif), impot_societes_cts,
   deficits_reportables_cts (déficits restant à reporter en fin d'exercice, 2033-B ou 2058-B),
   immobilisations_brutes_cts, amortissements_cts, emprunts_cts (emprunts et dettes auprès des
   établissements de crédit), tresorerie_cts (disponibilités)."""
@@ -173,10 +185,13 @@ GRAND_LIVRE = Categorie(
     """Document : un grand livre.
 - siren, exercice_debut, exercice_fin.
 - montants : total_debit_cts et total_credit_cts, les totaux généraux des mouvements (le dernier
-  total « Total général » ou « Total grand livre »).""",
+  total « Total général » ou « Total grand livre »). Tu ne vois que les dernières pages du
+  document : c'est là que sont ces totaux.""",
     textes=("siren", "exercice_debut", "exercice_fin"),
     montants=("total_debit_cts", "total_credit_cts"),
     controler=_grand_livre,
+    dernieres_pages=2,
+    inutile_avec_fec=True,
     resumer=lambda lu: (
         f"Grand livre lu : du {texte(lu, 'exercice_debut')} au "
         f"{texte(lu, 'exercice_fin')}, "
@@ -187,7 +202,9 @@ GRAND_LIVRE = Categorie(
 
 def _tva(lu: Mapping[str, object], ctx: Contexte) -> list[str]:
     erreurs = controle_siren(lu, ctx.siren)
-    erreurs += controle_date(lu, "periode_fin", "Fin de période", True)
+    # Un récapitulatif annuel n'imprime pas toujours sa période : rangé sur
+    # un exercice, il en prend la période ; en vrac, elle est obligatoire.
+    erreurs += controle_date(lu, "periode_fin", "Fin de période", ctx.exercice is None)
     m = montants(lu)
     collectee, deductible = m.get("tva_collectee_cts"), m.get("tva_deductible_cts")
     nette = m.get("tva_nette_cts")
@@ -205,20 +222,53 @@ def _tva(lu: Mapping[str, object], ctx: Contexte) -> list[str]:
     return erreurs
 
 
+FORMULAIRES_ANNUELS = ("CA12", "3517")
+JOURS_ANNUELS = 300  # un exercice de 10 mois ou plus : une déclaration annuelle
+
+
+def _annuelle(lu: Mapping[str, object]) -> bool:
+    """Une déclaration qui couvre l'exercice (CA12, 3517-S, récapitulatif sans
+    période) : son solde est celui de la fin de l'exercice. Une CA3 mensuelle
+    ne dit que son mois."""
+    if any(f in texte(lu, "formulaire").upper() for f in FORMULAIRES_ANNUELS):
+        return True
+    debut, fin = date_lue(texte(lu, "periode_debut")), date_lue(texte(lu, "periode_fin"))
+    if debut is None or fin is None:
+        return not texte(lu, "periode_fin")
+    return (fin - debut).days >= JOURS_ANNUELS
+
+
+def _credit_tva(lu: Mapping[str, object]) -> dict[str, str]:
+    """AXE-990 : le crédit de TVA à reporter, depuis la déclaration annuelle
+    de l'exercice source : une TVA nette négative est un crédit, sinon 0."""
+    nette = montants(lu).get("tva_nette_cts")
+    if nette is None or not _annuelle(lu):
+        return {}
+    return {"credit_tva": f"{max(-nette, 0) / 100:.2f}"}
+
+
 DECLARATION_TVA = Categorie(
     "declaration_tva",
     """Document : une déclaration de TVA (CA3 mensuelle ou trimestrielle, CA12 annuelle, 3517) ou
 sa synthèse.
-- siren, formulaire (CA3, CA12…), periode_debut, periode_fin.
+- siren, formulaire (CA3, CA12…), periode_debut, periode_fin. Si le document n'imprime ni SIREN
+  ni période (un récapitulatif des montants de l'année), laisse-les vides : ne les déduis pas.
 - montants : tva_collectee_cts (TVA brute due), tva_deductible_cts (total à déduire),
   tva_nette_cts (TVA nette due, positive, ou crédit de TVA, négatif), acomptes_cts (acomptes
   déjà versés, CA12).""",
     textes=("siren", "formulaire", "periode_debut", "periode_fin"),
     montants=("tva_collectee_cts", "tva_deductible_cts", "tva_nette_cts", "acomptes_cts"),
     controler=_tva,
+    champs_fiche=_credit_tva,
+    exercice_source_seul=True,
     resumer=lambda lu: (
-        f"Déclaration de TVA lue : du {texte(lu, 'periode_debut')} au "
-        f"{texte(lu, 'periode_fin')}, nette {euros(montants(lu).get('tva_nette_cts', 0))}."
+        "Déclaration de TVA lue : "
+        + (
+            f"du {texte(lu, 'periode_debut')} au {texte(lu, 'periode_fin')}"
+            if texte(lu, "periode_fin")
+            else "période non imprimée, celle de l'exercice"
+        )
+        + f", nette {euros(montants(lu).get('tva_nette_cts', 0))}."
     ),
 )
 
@@ -340,6 +390,29 @@ def _emprunt(lu: Mapping[str, object], _ctx: Contexte) -> list[str]:
     return erreurs
 
 
+def _emprunt_a_la_cloture(lu: Mapping[str, object], cloture: date) -> dict[str, str]:
+    """AXE-990 : le capital restant dû à la clôture de l'exercice source,
+    lu sur la dernière échéance payée à cette date. Rien si le prêt commence
+    après, ou si aucune échéance ne se lit."""
+    payees = [
+        (jour, entier(e.get("capital_restant_cts")))
+        for e in liste(lu, "echeances")
+        if (jour := date_lue(str(e.get("date") or ""))) is not None and jour <= cloture
+    ]
+    if not payees:
+        return {}
+    _jour, restant = max(payees)
+    preteur = texte(lu, "preteur") or "Prêt"
+    if restant <= 0:
+        return {"emprunts": f"{preteur} : remboursé au {cloture:%d/%m/%Y}."}
+    return {
+        "emprunts": (
+            f"{preteur} : capital restant dû {euros(restant)} au {cloture:%d/%m/%Y} "
+            "(tableau d'amortissement)."
+        )
+    }
+
+
 EMPRUNT = Categorie(
     "emprunt",
     """Document : un tableau d'amortissement ou un échéancier de prêt.
@@ -361,6 +434,7 @@ EMPRUNT = Categorie(
         }
     },
     controler=_emprunt,
+    champs_a_la_cloture=_emprunt_a_la_cloture,
     resumer=lambda lu: (
         f"Emprunt lu : {texte(lu, 'preteur')}, "
         f"{euros(montants(lu).get('capital_emprunte_cts', 0))}, "

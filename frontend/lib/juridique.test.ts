@@ -90,6 +90,14 @@ test("le fournisseur d'IA n'est cité que dans la confidentialité, pseudonymisa
   assert.doesNotMatch(autres, /\b(LLM|Claude|Gemini|OpenAI|GPT|Mistral|Anthropic)\b/u);
 });
 
+test("la confidentialité dit que les documents de reprise partent en entier chez Anthropic", () => {
+  // AXE-994, ADR-009 : l'OCR des fiches d'import envoie les documents sans
+  // pseudonymisation. Le texte doit le dire tant que c'est vrai.
+  const confidentialite = lire("confidentialite");
+  assert.match(confidentialite, /Lecture des documents de reprise/u);
+  assert.match(confidentialite, /ne sont pas pseudonymisés/u);
+});
+
 test("la confidentialité décrit les demandes d'échange de la page publique et Slack", () => {
   // AXE-949 : le formulaire de la page publique recueille des données
   // personnelles et les poste sur Slack. Retirer l'un des deux sans toucher

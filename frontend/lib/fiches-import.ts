@@ -70,6 +70,12 @@ export type DocumentImport = {
   /** AXE-943 : l'OCR (Haiku puis Sonnet) n'a pas pu valider sa lecture. */
   a_verifier?: boolean;
   controles?: string[];
+  /** AXE-991 : ce que l'OCR a lu, quand le document est à vérifier. */
+  lecture?: Record<string, unknown> | null;
+  /** AXE-1015 : tous les champs de sa catégorie, pour saisir les manquants. */
+  champs_lecture?: { textes: string[]; montants: string[] } | null;
+  /** AXE-995 : l'OCR pense que le document est mal rangé ; un clic le range. */
+  proposition?: { categorie: string; libelle: string; emplacement: string } | null;
 };
 
 /** AXE-947 : un document attendu, son explication et ce qui y est déposé. */
@@ -234,6 +240,7 @@ const MOTIFS_CATEGORIE: [RegExp, string][] = [
   [/kbis|k-bis|extrait/i, "kbis"],
   [/statut/i, "statuts"],
   [/\brib\b|iban/i, "rib"],
+  [/carte[ ._-]?grise|certificat (d.?)?immatriculation/i, "carte_grise"],
   [/lettre|mission|confr[eè]re/i, "lettre_comptable"],
   [/relev[eé]|releve/i, "releve_bancaire"],
 ];

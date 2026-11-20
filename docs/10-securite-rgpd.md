@@ -1,6 +1,6 @@
 # 10 — Sécurité, RGPD et protection des données
 
-> **État au 2026-11-17** (ajouté ; le reste du doc décrit la cible) :
+> **État au 2026-11-19** (ajouté ; le reste du doc décrit la cible) :
 > - Fait : RLS par dossier sur les tables, pseudonymisation obligatoire
 >   avant tout LLM avec tests de fuite (AXE-436), journal d'audit
 >   append-only des décisions et signatures, Sentry seulement si un DSN est
@@ -29,9 +29,21 @@
 >   chauffeurs). Le gestionnaire ne voit **aucun montant**. Un compte au nom
 >   d'un autre chauffeur, porté par le même user « flotte », n'est ni relié,
 >   ni stocké, ni montré, et ses revenus ne sont pas lus (AXE-922, 923).
-> - IA (AXE-887, AXE-888) : seuls des libellés pseudonymisés partent chez
+> - IA de catégorisation (AXE-887, AXE-888) : seuls des libellés pseudonymisés partent chez
 >   Anthropic, montant en ordre de grandeur ; une fuite détectée bloque
 >   l'envoi. Clé dans l'environnement du serveur, jamais dans le repo.
+> - **Exception actée le 19/11 ([ADR-009](adr/ADR-009-ocr-documents-import-en-clair.md), AXE-994) : l'OCR des fiches d'import (AXE-943).**
+>   Depuis le 18/11 au soir (`AXELCOMPTA_OCR_ACTIF=1` sur le droplet), les
+>   documents déposés sur une fiche (Kbis, statuts, liasses, relevés
+>   bancaires avec IBAN, RIB) partent **en clair** chez Anthropic, sans
+>   pseudonymisation. Décision de Louis : on garde l'envoi en
+>   clair et on l'encadre (textes juridiques, AIPD, relecture par le
+>   juriste), puis on passe pas à pas à la pseudonymisation (texte
+>   extrait chez nous pour les PDF texte, masquage ou OCR local pour les
+>   scans). La politique de confidentialité le dit depuis le 19/11 ;
+>   restent les conditions d'Anthropic (rétention, entraînement, région),
+>   l'information des clients, l'AIPD et la relecture par le juriste
+>   (ADR-009, « Reste à faire »).
 > - Compte de test (AXE-822) : lecture seule, date de fin obligatoire
 >   (90 jours au plus), chaque ouverture de dossier tracée au journal
 >   d'audit.

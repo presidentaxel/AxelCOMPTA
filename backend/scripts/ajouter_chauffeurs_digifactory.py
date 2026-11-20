@@ -18,7 +18,8 @@ Usage, depuis backend/ :
     python scripts/ajouter_chauffeurs_digifactory.py --lister
     python scripts/ajouter_chauffeurs_digifactory.py --contacts 7416,8780 --sans-synchro
     python scripts/ajouter_chauffeurs_digifactory.py --contacts 7416,8780
-    python scripts/ajouter_chauffeurs_digifactory.py --sirene   # réaligne les dossiers existants
+    python scripts/ajouter_chauffeurs_digifactory.py --sirene   # simulation (AXE-842)
+    python scripts/ajouter_chauffeurs_digifactory.py --sirene --appliquer
 
 Idempotent : un contact déjà mappé est laissé tel quel. La synchro rejoue
 sans doublon (curseur).
@@ -86,15 +87,16 @@ def _fiche_sirene(siren: str | None) -> FicheSirene | None:
     return fiche_sirene(siren)
 
 
-def _aligner_sirene(depot: PostgresDossierRepository) -> None:
+def _aligner_sirene(depot: PostgresDossierRepository, appliquer: bool) -> None:
     """Dossiers déjà en base : forme, premier exercice, activité et éléments à
-    confirmer repris de Sirene. Un exercice déjà juste ne bouge pas."""
+    confirmer repris de Sirene. Un exercice déjà juste ne bouge pas. Sans
+    `appliquer`, rien n'est écrit : chaque ligne dit ce qui changerait."""
     for contact in asyncio.run(_contacts_bruts()).values():
         dossier = depot.par_contact_nr(numero_contact(contact))
         if dossier is None:
             continue
         siren = siren_contact(contact)
-        if siren and dossier.siren != siren:
+        if appliquer and siren and dossier.siren != siren:
             # AXE-849 : le SIREN, gardé pour relire les registres officiels.
             RegistresPostgres(engine_depuis_env()).poser_siren(dossier.id, siren)
         fiche = _fiche_sirene(siren)
@@ -102,11 +104,13 @@ def _aligner_sirene(depot: PostgresDossierRepository) -> None:
             print(f"{dossier.id} : pas de fiche Sirene, laissé tel quel", flush=True)
             continue
         nouveau = configurer_depuis_sirene(dossier, fiche, date.today())
-        if nouveau != dossier:
+        if appliquer and nouveau != dossier:
             depot.reconfigurer_depuis_sirene(nouveau)
+        change = "" if nouveau != dossier else " (inchangé)"
         print(
-            f"{dossier.id} : {nouveau.forme_juridique}, exercice du {nouveau.exercice_debut}, "
-            f"NAF {nouveau.code_naf}, à confirmer {list(nouveau.a_confirmer)}",
+            f"{dossier.id}{change} : {nouveau.forme_juridique}, "
+            f"exercice du {nouveau.exercice_debut}, NAF {nouveau.code_naf}, "
+            f"à confirmer {list(nouveau.a_confirmer)}",
             flush=True,
         )
 
@@ -122,6 +126,9 @@ def _arguments() -> argparse.Namespace:
         "--sirene", "--formes", action="store_true", help="réaligne les dossiers sur Sirene"
     )
     parseur.add_argument("--sans-synchro", action="store_true", help="dossiers seulement")
+    parseur.add_argument(
+        "--appliquer", action="store_true", help="avec --sirene : écrire (sinon simulation)"
+    )
     return parseur.parse_args()
 
 
@@ -178,7 +185,10 @@ def main() -> int:
     engine = engine_depuis_env()
     depot = PostgresDossierRepository(engine)
     if arguments.sirene:
-        _aligner_sirene(depot)
+        _aligner_sirene(depot, arguments.appliquer)
+        if not arguments.appliquer:
+            print("Simulation : rien n'a été écrit. Relancer avec --appliquer.", flush=True)
+            return 0
         _taguer_chauffeurs(depot, PostgresTagsRepository(engine))
         return 0
     contacts = asyncio.run(_contacts_bruts())

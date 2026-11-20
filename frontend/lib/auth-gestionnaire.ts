@@ -1372,6 +1372,9 @@ export type FecDeLaFiche = {
   nom_fichier: string | null;
   exercice: number | null;
   deficits: string | null;
+  /** AXE-992 : sans FEC, la balance de clôture lue par l'OCR. */
+  balance_document_id?: string | null;
+  balance_au?: string | null;
 };
 
 export async function lireFecDeLaFicheExpert(dossierId: string): Promise<FecDeLaFiche> {
@@ -1392,6 +1395,42 @@ export async function analyserFecExpert(
       body: corpsFec(fichier, { correspondance }),
     }),
     "Le FEC n'a pas pu être analysé.",
+  );
+}
+
+/** AXE-992 : la balance est relue sur la fiche par le serveur ; seul son
+ * identifiant part d'ici. */
+export async function analyserBalanceExpert(
+  dossierId: string,
+  documentId: string,
+  correspondance: string,
+): Promise<AnalyseFec> {
+  const corps = new FormData();
+  corps.append("document_id", documentId);
+  corps.append("correspondance", correspondance);
+  return lireJson(
+    await requeteGestionnaire(`/expert/dossiers/${dossierId}/ouverture/balance/analyse`, {
+      method: "POST",
+      body: corps,
+    }),
+    "La balance n'a pas pu être analysée.",
+  );
+}
+
+export async function reprendreBalanceExpert(
+  dossierId: string,
+  documentId: string,
+  champs: { correspondance: string; attestation: string; deficits_euros: string; motif: string },
+): Promise<OuvertureVue> {
+  const corps = new FormData();
+  corps.append("document_id", documentId);
+  for (const [nom, valeur] of Object.entries(champs)) corps.append(nom, valeur);
+  return lireJson(
+    await requeteGestionnaire(`/expert/dossiers/${dossierId}/ouverture/balance`, {
+      method: "POST",
+      body: corps,
+    }),
+    "Le bilan d'ouverture n'a pas pu être repris.",
   );
 }
 
@@ -1602,6 +1641,21 @@ export async function rangerDocumentImport(id: string, documentId: string, empla
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ emplacement }),
     }),
+  );
+}
+
+/** AXE-991 : la lecture corrigée repasse les contrôles ; sans eux, une raison. */
+export async function validerLectureImport(
+  id: string,
+  documentId: string,
+  lu: Record<string, unknown>,
+  raison: string,
+): Promise<FicheImport> {
+  return ficheOuErreur(
+    await requeteGestionnaire(
+      `/portefeuille/imports/${id}/documents/${documentId}/lecture`,
+      jsonImport("POST", { lu, raison }),
+    ),
   );
 }
 
