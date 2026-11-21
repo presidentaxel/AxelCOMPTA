@@ -181,6 +181,14 @@ un branchement Digifactory dans Intégrations et des dossiers portant un
 
 Idempotent et reprenable (curseur par dossier).
 
+Bulletin de connexion (AXE-728), en lecture seule : par dossier, opérations
+reçues et période, comptes, connexion, consentement, quarantaine non
+résolue, puis les dossiers à voir avant de catégoriser :
+
+```bash
+.venv/bin/python -m axelcompta.bulletin_connexion --tenant <tenant_id>
+```
+
 Prévenir les indivs qu'ils ont des opérations à confirmer : notification
 interne (cloche de l'espace chauffeur), aucun e-mail. Un même dossier n'est
 pas renotifié avant 6 h (sauf rappel à 7 jours).
