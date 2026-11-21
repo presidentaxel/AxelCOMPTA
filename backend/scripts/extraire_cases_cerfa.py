@@ -10,11 +10,19 @@ n'est pas un code de case et est écarté.
 À relancer à chaque nouveau millésime, puis vérifier le rendu à l'œil :
 un overlay mal aligné ne lève aucune erreur (ADR-006).
 
+Les formulaires du réel normal (2050-LIASSE) ont des codes à deux
+caractères (« AB », « 1A », « ØG » lu « 0G », « K4bis ») : option
+`--alphanumerique`. Elle relève aussi, par page, la place de la
+désignation de l'entreprise (clé `_designation`).
+
 Usage, depuis backend/ (pdfplumber : `pip install -e ".[dev]"`) :
 
     python scripts/extraire_cases_cerfa.py \\
         axelcompta/filings/cerfa/2033-sd_2026.pdf \\
         axelcompta/filings/cerfa/cases_2033-sd_2026.json
+    python scripts/extraire_cases_cerfa.py --alphanumerique \\
+        axelcompta/filings/cerfa/2050-liasse_2026.pdf \\
+        axelcompta/filings/cerfa/cases_2050-liasse_2026.json
 """
 
 from __future__ import annotations
@@ -30,6 +38,11 @@ import pdfplumber
 # Codes imprimés en dessin vectoriel (pas en texte) sur le millésime 2026 :
 # page → code → (code de la même colonne, code de la même ligne).
 DEDUITS = {"3": {"460": ("450", "462")}}
+# 2050-LIASSE 2026 : code collé au libellé (« EXERCICEWS ») ; page → code →
+# code de la même colonne. La ligne est celle du mot qui finit par le code.
+COLLES = {"10": {"WS": "WR"}}
+CODE_NUMERIQUE = r"\d{3}"
+CODE_ALPHANUMERIQUE = r"[A-Z0-9Ø]{2}(?:bis)?"
 MARGE_CADRE = 10.5  # écart max (pt) entre le code et les bords de sa cellule
 LARGEUR_MIN_CELLULE = 2.0
 
@@ -60,28 +73,70 @@ def _case(page: Any, mot: dict[str, Any]) -> list[float] | None:
     return [droite[0], suivants[0], round(hauteur - float(mot["bottom"]), 1)]
 
 
-def extraire(chemin_pdf: Path) -> dict[str, dict[str, list[float]]]:
+def _designation(page: Any) -> list[float] | None:
+    """[x, y] juste après « Désignation de l'entreprise », et après le trait
+    vertical qui ferme le libellé s'il y en a un tout près."""
+    mots = page.extract_words()
+    for avant, mot in zip(mots, mots[1:], strict=False):
+        if avant["text"] == "de" and mot["text"].startswith("l'entreprise"):
+            fin = float(mot["x1"])
+            traits = [
+                x for x in _bords_verticaux(page, (mot["top"] + mot["bottom"]) / 2) if x > fin
+            ]
+            x = traits[0] + 4 if traits and traits[0] - fin < 60 else fin + 6
+            return [round(x, 1), round(float(page.height - mot["bottom"]), 1)]
+    return None
+
+
+def _colles(page: Any, numero: str, cases: dict[str, list[float]]) -> None:
+    for code, meme_colonne in COLLES.get(numero, {}).items():
+        for mot in page.extract_words():
+            if len(mot["text"]) > len(code) and mot["text"].endswith(code):
+                x_gauche, x_droite, _ = cases[meme_colonne]
+                y = round(float(page.height - mot["bottom"]), 1)
+                cases[code] = [x_gauche, x_droite, y]
+                break
+
+
+def _cases_page(page: Any, motif: str) -> dict[str, list[float]]:
+    cases: dict[str, list[float]] = {}
+    for mot in page.extract_words():
+        texte = mot["text"].rstrip("–-")
+        code = texte.replace("Ø", "0")
+        if not re.fullmatch(motif, texte) or code in cases:
+            continue
+        case = _case(page, {**mot, "text": texte})
+        if case is not None:
+            cases[code] = case
+    return cases
+
+
+def extraire(chemin_pdf: Path, alphanumerique: bool = False) -> dict[str, dict[str, list[float]]]:
+    motif = CODE_ALPHANUMERIQUE if alphanumerique else CODE_NUMERIQUE
     resultat: dict[str, dict[str, list[float]]] = {}
     with pdfplumber.open(chemin_pdf) as pdf:
         for numero, page in enumerate(pdf.pages, start=1):
-            cases: dict[str, list[float]] = {}
-            for mot in page.extract_words():
-                if not re.fullmatch(r"\d{3}", mot["text"]) or mot["text"] in cases:
-                    continue
-                case = _case(page, mot)
-                if case is not None:
-                    cases[mot["text"]] = case
+            cases = _cases_page(page, motif)
+            if alphanumerique:
+                _colles(page, str(numero), cases)
+                designation = _designation(page)
+                if designation is not None:
+                    cases["_designation"] = designation
             resultat[str(numero)] = cases
-    for page, deduits in DEDUITS.items():
+    if alphanumerique:
+        return resultat
+    for numero_page, deduits in DEDUITS.items():
         for code, (meme_colonne, meme_ligne) in deduits.items():
-            x_gauche, x_droite, _ = resultat[page][meme_colonne]
-            resultat[page][code] = [x_gauche, x_droite, resultat[page][meme_ligne][2]]
+            x_gauche, x_droite, _ = resultat[numero_page][meme_colonne]
+            resultat[numero_page][code] = [x_gauche, x_droite, resultat[numero_page][meme_ligne][2]]
     return resultat
 
 
 def main() -> int:
-    source, cible = Path(sys.argv[1]), Path(sys.argv[2])
-    cases = extraire(source)
+    arguments = sys.argv[1:]
+    alphanumerique = "--alphanumerique" in arguments
+    source, cible = (Path(a) for a in arguments if a != "--alphanumerique")
+    cases = extraire(source, alphanumerique)
     cible.write_text(json.dumps(cases, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     for page, codes in cases.items():
         print(f"page {page} : {len(codes)} cases")

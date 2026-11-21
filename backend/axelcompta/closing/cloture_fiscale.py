@@ -45,6 +45,7 @@ from .liasse_2052 import compte_2052
 from .liasse_2054 import immobilisations_2054
 from .liasse_2055 import amortissements_2055
 from .liasse_2056 import provisions_2056
+from .liasse_2057 import echeances_2057
 from .liasse_2058 import deficits_2058, resultat_2058
 from .liasse_2058c import affectation_2058c, credit_bail_2058c
 from .liasse_2059a import plus_values_2059a
@@ -164,7 +165,7 @@ def _liasse_reel_normal(
     parametres: ParametresCloture,
     ecritures: tuple[Ecriture, ...] = (),
 ) -> dict[str, int]:
-    """Annexes 2050 à 2059-A : totaux repris de la 2033, détail du 2054,
+    """Annexes 2050 à 2059-A : totaux repris de la 2033, détail du 2054, 2057,
     affectation (2058-C) et plus-values (2059-A) quand elles existent."""
     exploitation, suite = compte_2052(balance)
     immos = immobilisations_2033c(m)
@@ -176,6 +177,7 @@ def _liasse_reel_normal(
         | _prefixer("2054", immobilisations_2054(m))
         | _prefixer("2055", amortissements_2055(immos))
         | _prefixer("2056", provisions_2056(m))
+        | _prefixer("2057", echeances_2057(balance))
         | _prefixer("2058A", resultat_2058(fiscal))
         | _prefixer("2058B", deficits_2058(releve))
         | _prefixer("2058C", affectation_2058c(ecritures, m))
